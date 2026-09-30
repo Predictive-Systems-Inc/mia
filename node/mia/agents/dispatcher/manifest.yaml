@@ -1,0 +1,26 @@
+id: dispatcher
+name: Dispatcher
+version: 0.1.0
+standard_version: "1.0"
+job_description: job.md
+instructions: {base: prompts/base.md, org_overrides: {allowed: true, locked_topics: [approvals, permissions]}}
+models: {classifier: rules, route: default}
+roles:
+  agent_role: agent.dispatcher
+  grants:
+    - data:core.person:read
+    - data:core.visit:read
+    - data:core.location:read
+    - data:dispatcher_*:write
+    - tool:dispatcher.get_my_visits:execute
+    - tool:dispatcher.record_absence:execute
+    - tool:dispatcher.find_replacements:execute
+    - tool:dispatcher.propose_assignment:request
+  denies: [tool:*:approve]
+  approvers: {dispatcher.propose_assignment: [supervisor, admin, owner]}
+tools:
+  - {id: dispatcher.get_my_visits, kind: agent, risk: read, approval: never, reads: [visit, location, job, person]}
+  - {id: dispatcher.record_absence, kind: agent, risk: write_internal, approval: never, reads: [visit], writes: [dispatcher_absences]}
+  - {id: dispatcher.find_replacements, kind: agent, risk: read, approval: never, reads: [visit, person, cleaning_availability, cleaning_work_limits, dispatcher_absences]}
+  - {id: dispatcher.propose_assignment, kind: agent, risk: write_internal, approval: always, writes: [approval]}
+tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.95}

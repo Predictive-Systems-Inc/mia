@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mia chat (dev)</title>
+<style>
+  :root { --bg:#f6f7f9; --panel:#fff; --ink:#1b1f24; --muted:#667085; --line:#e4e7ec;
+          --accent:#2f6fed; --mine:#e8f0fe; --ok:#1f8a4c; --bad:#c0362c; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; gap:12px; align-items:center; padding:10px 16px; background:var(--panel);
+           border-bottom:1px solid var(--line); position:sticky; top:0; }
+  header h1 { font-size:16px; margin:0 8px 0 0; }
+  header .note { color:var(--muted); font-size:12px; margin-left:auto; }
+  select, input, button { font:inherit; }
+  main { max-width:760px; margin:0 auto; padding:16px; padding-bottom:96px; }
+  .msg { margin:10px 0; display:flex; flex-direction:column; gap:6px; }
+  .msg.user { align-items:flex-end; }
+  .bubble { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:8px 12px;
+            max-width:90%; white-space:pre-wrap; }
+  .user .bubble { background:var(--mine); }
+  .who { font-size:12px; color:var(--muted); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 12px; max-width:90%; }
+  .card h3 { margin:0 0 6px; font-size:14px; }
+  .card dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:14px; }
+  .card dt { color:var(--muted); }
+  .card dd { margin:0; }
+  .approval { border-color:var(--accent); }
+  .approval .status { font-size:12px; color:var(--muted); margin:6px 0; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; }
+  .chips button, .actions button { border:1px solid var(--accent); color:var(--accent); background:#fff;
+            border-radius:16px; padding:4px 12px; cursor:pointer; }
+  .actions { display:flex; gap:8px; margin-top:8px; }
+  .actions .approve { background:var(--ok); border-color:var(--ok); color:#fff; }
+  .actions .reject { border-color:var(--bad); color:var(--bad); }
+  .sys { color:var(--muted); font-size:13px; text-align:center; }
+  form { position:fixed; bottom:0; left:0; right:0; display:flex; gap:8px; padding:12px 16px;
+         background:var(--panel); border-top:1px solid var(--line); }
+  form input { flex:1; padding:10px 12px; border:1px solid var(--line); border-radius:10px; }
+  form button { padding:10px 16px; border:0; border-radius:10px; background:var(--accent); color:#fff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mia</h1>
+  <label>Acting as <select id="actor"></select></label>
+  <span class="note">Dev page. Actor is sent as X-Mia-Actor (no real login yet).</span>
+</header>
+<main id="log"></main>
+<form id="send">
+  <input id="text" autocomplete="off" placeholder="Message Mia, e.g. Olen kipeä huomenna." required>
+  <button>Send</button>
+</form>
+<script>
+const log = document.getElementById("log");
+const actorSel = document.getElementById("actor");
+const threads = {};  // actor id -> thread id
+let people = [];
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function scroll() { window.scrollTo(0, document.body.scrollHeight); }
+function sys(text) { log.append(el("div", "sys", text)); scroll(); }
+function actorName() { return actorSel.selectedOptions[0]?.textContent || ""; }
+
+async function loadPeople() {
+  const res = await fetch("/persons");
+  people = await res.json();
+  for (const p of people) {
+    const o = el("option", null, `${p.name} (${p.roles.join(", ")})`);
+    o.value = p.id;
+    actorSel.append(o);
+  }
+  const juha = people.find(p => p.name.startsWith("Juha"));
+  if (juha) actorSel.value = juha.id;
+}
+actorSel.addEventListener("change", () => sys(`Now acting as ${actorName()}`));
+
+function renderCard(block) {
+  const card = el("div", "card" + (block.type === "approval_card" ? " approval" : ""));
+  card.append(el("h3", null, block.title));
+  if (block.subtitle) card.append(el("div", "status", block.subtitle));
+  if (block.summary) card.append(el("div", null, block.summary));
+  const dl = el("dl");
+  for (const f of block.fields || []) { dl.append(el("dt", null, f.label), el("dd", null, f.value)); }
+  card.append(dl);
+  if (block.type === "approval_card") {
+    const status = el("div", "status", `Status: ${block.status}`);
+    const actions = el("div", "actions");
+    for (const [label, outcome, cls] of [["Approve", "approved", "approve"], ["Reject", "rejected", "reject"]]) {
+      const b = el("button", cls, label);
+      b.onclick = () => decide(block.approval_id, outcome, status);
+      actions.append(b);
+    }
+    card.append(status, actions);
+  }
+  return card;
+}
+
+function renderBlocks(container, blocks, bubble) {
+  bubble.textContent = blocks.filter(b => b.type === "text").map(b => b.text).join("\n");
+  for (const block of blocks) {
+    if (block.type === "quick_replies") {
+      const chips = el("div", "chips");
+      for (const opt of block.options) {
+        const b = el("button", null, opt);
+        b.onclick = () => send(opt);
+        chips.append(b);
+      }
+      container.append(chips);
+    } else if (block.type === "card" || block.type === "approval_card") {
+      container.append(renderCard(block));
+    } else if (block.type === "file") {
+      const a = el("a", null, block.name); a.href = block.url; container.append(a);
+    } else if (block.type === "form") {
+      container.append(el("div", "card", `Form: ${block.title} (not rendered in the dev page)`));
+    }
+  }
+}
+
+async function decide(id, outcome, statusEl) {
+  const res = await fetch(`/approvals/${id}/decide`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-Mia-Actor": actorSel.value},
+    body: JSON.stringify({outcome}),
+  });
+  const body = await res.json();
+  if (res.ok) { statusEl.textContent = `Status: ${body.status} (by ${actorName()})`; sys(`Approval ${body.status}.`); }
+  else { sys(`Not allowed: ${body.detail}`); }
+}
+
+async function send(text) {
+  const actor = actorSel.value;
+  const mine = el("div", "msg user");
+  mine.append(el("div", "who", actorName()), el("div", "bubble", text));
+  log.append(mine);
+  const reply = el("div", "msg");
+  const bubble = el("div", "bubble", "...");
+  reply.append(el("div", "who", "Mia"), bubble);
+  log.append(reply);
+  scroll();
+  const res = await fetch("/chat/stream", {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-Mia-Actor": actor},
+    body: JSON.stringify({text, thread_id: threads[actor] || null}),
+  });
+  if (!res.ok) { bubble.textContent = `Error ${res.status}: ${await res.text()}`; return; }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "", streamed = "";
+  for (;;) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, {stream: true});
+    let idx;
+    while ((idx = buffer.indexOf("\n\n")) >= 0) {
+      const chunk = buffer.slice(0, idx); buffer = buffer.slice(idx + 2);
+      const event = /^event: (.*)$/m.exec(chunk)?.[1];
+      const data = JSON.parse(/^data: (.*)$/m.exec(chunk)?.[1] || "{}");
+      if (event === "thread") threads[actor] = data.thread_id;
+      if (event === "delta") { streamed += data.text; bubble.textContent = streamed; }
+      if (event === "blocks") renderBlocks(reply, data.blocks, bubble);
+      scroll();
+    }
+  }
+}
+
+document.getElementById("send").addEventListener("submit", e => {
+  e.preventDefault();
+  const input = document.getElementById("text");
+  const text = input.value.trim();
+  if (text) { input.value = ""; send(text); }
+});
+loadPeople();
+</script>
+</body>
+</html>
