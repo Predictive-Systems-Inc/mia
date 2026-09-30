@@ -27,3 +27,8 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
 - Decision: find_replacements also accepts location_name, date and time; get_my_visits also
   accepts person_name (permission checked). No separate search tool.
 - Reason: keeps the tool set at four while supporting natural requests.
+
+## D5: (answers Q5) Evals command
+- Decision: `uv run pytest node/tests/evals -m evals` (or `uv run pytest -m evals`); tests stay
+  under node/tests.
+- Reason: matches the layout; README and CI already use it.
