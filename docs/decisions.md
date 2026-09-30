@@ -32,3 +32,11 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
 - Decision: `uv run pytest node/tests/evals -m evals` (or `uv run pytest -m evals`); tests stay
   under node/tests.
 - Reason: matches the layout; README and CI already use it.
+
+## D6: (answers Q6) Travel in ranking, home base, cleaner confirmation
+- Decision: rank replacements by added travel (from the previous visit that day, or the
+  cleaner's home base address). Coordinates come from geocoding addresses. Each cleaner has a
+  home base address. After the supervisor picks a candidate, Mia asks that cleaner to confirm;
+  the visit changes only when the cleaner accepts. On decline, the supervisor is told and the
+  next candidate is offered.
+- Open follow-ups: geocoding provider, where home base is stored, confirmation timeout.
