@@ -17,3 +17,8 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
 - Decision: keep `test` as the deterministic rules model (FunctionModel plus the rules classifier
   named in the manifest). Pydantic AI's TestModel is used directly in unit tests only.
 - Reason: no API key needed, deterministic, and the brief, CI and .env.example stay unchanged.
+
+## D3: (answers Q3) Job and Visit live in core
+- Decision: location, job and visit are core data standard tables. The cleaning template adds
+  only industry extras (sites, checklists, availability, working-hour limits).
+- Reason: other industries reuse jobs and visits.
