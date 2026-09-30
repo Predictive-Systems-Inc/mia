@@ -4,21 +4,31 @@
 mia/
   CLAUDE.md
   README.md
-  pyproject.toml            uv project, one workspace for node/
-  .github/workflows/ci.yml
+  pyproject.toml            uv project; the package lives in node/mia
+  uv.lock
+  .env.example              every MIA_* variable with a comment
+  .pre-commit-config.yaml   ruff, mypy, detect-secrets (.secrets.baseline)
+  .github/workflows/ci.yml  jobs: lint, types, tests, evals
   node/
     mia/
-      settings.py           MIA_DB_PATH, MIA_MODEL, MIA_GATEWAY_URL, MIA_GATEWAY_KEY, MIA_EGRESS_LEVEL
-      core/                 models, db, events, rbac, approvals, egress, usage, ids
-      templates/cleaning/   models, seed
-      agents/               base.py, dispatcher/ (manifest.yaml, job.md, prompts/, tools.py, agent.py, tests/)
-      chat/                 blocks.py, router.py
+      settings.py           MIA_DB_PATH, MIA_MODEL, MIA_GATEWAY_URL, MIA_GATEWAY_KEY, MIA_EGRESS_LEVEL, MIA_ORG
+      schema.py             imports every table module (Alembic, tests)
+      cli.py                mia migrate | seed | serve | chat | decide
+      core/                 models, db, ids, events, store, rbac, approvals, egress, usage
+      templates/cleaning/   models (sites, checklists, availability, work limits), seed
+      agents/               base.py (manifest, guard, model factory)
+        dispatcher/         manifest.yaml, job.md, prompts/, models.py, classifier.py,
+                            scoring.py, rules.py, tools.py, agent.py, tests/scenarios.yaml
+      chat/                 blocks.py, service.py, router.py
       api/                  main.py
-      static/index.html
-    migrations/             alembic
-    config/                 policies/, org/
-    tests/                  unit tests and evals/
-  docs/
+      i18n/                 Finnish and English strings
+      static/index.html     dev chat page
+    migrations/             alembic.ini, env.py, versions/
+    config/                 policies/ (Casbin model.conf, policy.csv), org/demo/
+    tests/                  unit tests; evals/ (marker `evals`)
+  docs/                     spec, plan, brief, ADRs, questions, decisions, ideas
+  index.html, netlify/      existing marketing site (unchanged by the node build)
 ```
 
+Files beyond the brief's layout, and why, are listed in docs/adr/001-stack.md.
 Add new folders only with a reason recorded in an ADR.

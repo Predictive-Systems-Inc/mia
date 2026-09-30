@@ -103,9 +103,14 @@ function renderCard(block) {
 }
 
 function renderBlocks(container, blocks, bubble) {
-  bubble.textContent = blocks.filter(b => b.type === "text").map(b => b.text).join("\n");
+  // Blocks render in order: the first text block fills the streamed bubble, later ones get their own.
+  let firstText = true;
+  bubble.textContent = "";
   for (const block of blocks) {
-    if (block.type === "quick_replies") {
+    if (block.type === "text") {
+      if (firstText) { bubble.textContent = block.text; firstText = false; }
+      else { container.append(el("div", "bubble", block.text)); }
+    } else if (block.type === "quick_replies") {
       const chips = el("div", "chips");
       for (const opt of block.options) {
         const b = el("button", null, opt);

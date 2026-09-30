@@ -35,12 +35,12 @@ INJECTION = re.compile(
 FINNISH_HINT = re.compile(
     r"[äöå]|\b(olen|en|ei|ja|tai|kun|klo|että|mikä|mitä|voin|sinun|huomenna|tänään|kuka|"
     r"voi|näytä|minun|kaikki|vain|aamu|valitse|anna|tuurata|kiitos|moi|hei|parhaat)\b",
-    re.I,
+    re.IGNORECASE,
 )
 ENGLISH_HINT = re.compile(
     r"\b(i|i'm|my|me|the|to|at|for|and|is|are|you|your|who|what|show|can|assign|sick|"
     r"tomorrow|today|visits?|all|only|please|hello|hi|hey|thanks|thank|best)\b",
-    re.I,
+    re.IGNORECASE,
 )
 ABSENCE = re.compile(
     r"\b(sick|ill|unwell|fever|flu|absent|can'?t (come|make it|work)|cannot (come|work)|"

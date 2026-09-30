@@ -131,6 +131,10 @@ def test_dispatcher_pass_rate(template_db: Path, tmp_path: Path) -> None:
         f"{sid}: {sum(1 for f in runs if not f)}/{len(runs)} {next((f for f in runs if f), '')}"
         for sid, runs in results.items()
     ]
-    print(f"\ndispatcher evals: {passed}/{total} runs passed ({rate:.1%}), model={get_settings().MIA_MODEL}")
+    print(
+        f"\ndispatcher evals: {passed}/{total} runs passed ({rate:.1%}), model={get_settings().MIA_MODEL}"
+    )
     print("\n".join(report))
-    assert rate >= MANIFEST.tests["min_pass_rate"], "\n".join(r for r in report if not r.split(": ")[1].startswith(f"{RUNS}/"))
+    assert rate >= MANIFEST.tests["min_pass_rate"], "\n".join(
+        r for r in report if not r.split(": ")[1].startswith(f"{RUNS}/")
+    )
