@@ -63,13 +63,14 @@ async def _run_once(scenario: dict[str, Any], db_path: Path) -> list[str]:
     failures: list[str] = []
     with Session(engine, expire_on_commit=False) as session:
         sender = _person(session, scenario["as"])
-        thread_id = None
+        threads: dict[str, str] = {}
         for line in scenario.get("setup", []):
             text, _, who = line.partition("|")
             person = _person(session, who) if who else sender
-            reply = await run_turn(session, agent, person, text, None if who else thread_id)
-            thread_id = thread_id if who else reply.thread_id
+            reply = await run_turn(session, agent, person, text, threads.get(person.id))
+            threads[person.id] = reply.thread_id
             session.commit()
+        thread_id = threads.get(sender.id)
         mark = session.exec(select(Event).order_by(Event.id.desc())).first()  # type: ignore[union-attr]
         reply = await run_turn(session, agent, sender, scenario["message"], thread_id)
         session.commit()

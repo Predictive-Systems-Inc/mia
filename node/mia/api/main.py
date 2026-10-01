@@ -1,7 +1,10 @@
 """FastAPI app: health, the chat page, chat endpoints and approval decisions."""
 
+import asyncio
+import contextlib
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -9,17 +12,42 @@ from pydantic import BaseModel
 from sqlmodel import col, select
 
 import mia
+from mia.agents.dispatcher import cover
+from mia.chat.channels import NOTIFICATION
 from mia.chat.router import ActorHeader, resolve_actor
 from mia.chat.router import router as chat_router
 from mia.core import approvals
-from mia.core.db import session_scope
+from mia.core.db import session_scope, utcnow
 from mia.core.events import verify_chain
-from mia.core.models import Actor, Person
+from mia.core.models import Actor, Message, Person, Thread
 from mia.settings import get_settings
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
-app = FastAPI(title="Mia Node", version=mia.__version__)
+
+def tick() -> int:
+    """Run due work once (cover confirmation escalation). Returns how many items advanced."""
+    with session_scope() as session:
+        return cover.process_due(session, utcnow())
+
+
+async def _ticker(seconds: int) -> None:
+    while True:
+        await asyncio.sleep(seconds)
+        tick()
+
+
+@contextlib.asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Stand-in for the Huey worker: advance due cover requests every MIA_TICK_SECONDS."""
+    seconds = get_settings().MIA_TICK_SECONDS
+    task = asyncio.create_task(_ticker(seconds)) if seconds > 0 else None
+    yield
+    if task is not None:
+        task.cancel()
+
+
+app = FastAPI(title="Mia Node", version=mia.__version__, lifespan=lifespan)
 app.include_router(chat_router)
 
 
@@ -80,3 +108,28 @@ def decide(
         except approvals.ApprovalError as exc:
             raise HTTPException(403, str(exc)) from exc
         return DecideResponse(approval_id=row.id, status=row.status, decided_by=row.decided_by)
+
+
+class NotificationOut(BaseModel):
+    id: str
+    thread_id: str
+    blocks: list[dict[str, Any]]
+
+
+@app.get("/notifications", response_model=list[NotificationOut])
+def notifications(after: str = "", x_mia_actor: ActorHeader = None) -> list[NotificationOut]:
+    """Proactive messages for the acting person, oldest first, after a message id."""
+    with session_scope() as session:
+        person = resolve_actor(session, x_mia_actor)
+        stmt = (
+            select(Message)
+            .join(Thread, col(Thread.id) == col(Message.thread_id))
+            .where(Thread.person_id == person.id)
+            .where(Message.role == NOTIFICATION)
+            .where(col(Message.id) > after)
+            .order_by(col(Message.id))
+        )
+        return [
+            NotificationOut(id=m.id, thread_id=m.thread_id, blocks=m.blocks)
+            for m in session.exec(stmt)
+        ]

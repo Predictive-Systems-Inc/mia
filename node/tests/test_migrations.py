@@ -31,3 +31,29 @@ def test_downgrade_removes_everything() -> None:
     command.downgrade(cfg, "base")
     with get_engine().connect() as conn:
         assert set(inspect(conn).get_table_names()) == {"alembic_version"}
+
+
+def test_upgrade_from_1_0_keeps_employee_data() -> None:
+    """Availability and work limits move from the cleaning template to core with their rows."""
+    cfg = _alembic_config()
+    command.upgrade(cfg, "0001")
+    rows = {
+        "organisation": "('O', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'Org', 'FI', 'fi')",
+        "branch": "('B', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'O', 'Hki', 'Europe/Helsinki')",
+        "person": "('P', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'B', 'Pia', 'active', "
+        "'[\"staff\"]', '[]', 'employee', 'fi')",
+        "cleaning_availability": "('A', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'B', 'P', 0, '06:00', '20:00')",
+        "cleaning_work_limits": "('W', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'B', 'P', 600, 2400)",
+    }
+    with get_engine().begin() as conn:
+        for table, values in rows.items():
+            conn.execute(text(f"INSERT INTO {table} VALUES {values}"))
+    command.upgrade(cfg, "head")
+    with get_engine().connect() as conn:
+        assert conn.execute(text('SELECT start, "end" FROM availability')).one() == (
+            "06:00",
+            "20:00",
+        )
+        assert conn.execute(text("SELECT max_weekly_minutes FROM work_limits")).scalar() == 2400
+        person = conn.execute(text("SELECT home_address, accepts_calls FROM person")).one()
+        assert person == ("", 1)

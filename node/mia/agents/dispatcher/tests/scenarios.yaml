@@ -126,21 +126,40 @@
   as: Sanna
   setup: ["Olen kipeä huomenna.|Juha", "Who can cover Kalasatama tomorrow at 6:30?"]
   message: "Assign Mikael."
-  tools: [{tool: propose_assignment, status: ok}]
-  reply_contains: ["approval"]
+  tools: [{tool: assign_cover, status: ok}]
+  reply_contains: ["Mikael Nieminen"]
 
 - id: fi_assign_after_cover
   as: Sanna
   setup: ["Kuka voi tuurata Kalasatamaa huomenna klo 6.30?"]
   message: "Valitse Mikael"
-  tools: [{tool: propose_assignment, status: ok}]
+  tools: [{tool: assign_cover, status: ok}]
   reply_lang: fi
 
-- id: assign_not_a_candidate
+- id: assign_breaking_a_rule_needs_override
   as: Sanna
   setup: ["Who can cover Kalasatama tomorrow at 6:30?"]
   message: "Assign Liisa"
-  tools: []
+  tools: [{tool: assign_cover, status: ok, args: {candidate_name: Liisa}}]
+  reply_contains: ["admin or owner"]
+
+- id: cleaner_accepts_cover
+  as: Mikael
+  setup: ["Who can cover Kalasatama tomorrow at 6:30?|Sanna", "Assign Mikael.|Sanna"]
+  message: "Hyväksyn"
+  tools: [{tool: respond_to_cover, status: ok, args: {accept: true}}]
+  reply_lang: fi
+
+- id: cleaner_declines_cover
+  as: Maria
+  setup: ["Who can cover Kalasatama tomorrow at 6:30?|Sanna", "Assign Maria.|Sanna"]
+  message: "En pysty"
+  tools: [{tool: respond_to_cover, status: ok, args: {accept: false}}]
+
+- id: reply_without_request
+  as: Aino
+  message: "Accept"
+  tools: [{tool: respond_to_cover, status: invalid}]
 
 - id: assign_without_cover
   as: Sanna

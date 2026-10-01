@@ -16,7 +16,7 @@ from sqlmodel import Field, SQLModel
 from mia.core.db import TZDateTime, utcnow
 from mia.core.ids import new_id
 
-STANDARD_VERSION = "1.0"
+STANDARD_VERSION = "1.1"
 
 # Code lists, versioned with the standard.
 PersonStatus = Literal["active", "inactive"]
@@ -59,6 +59,32 @@ class Person(BranchScoped, table=True):
     skills: list[str] = Field(default_factory=list, sa_type=JSON)
     engagement_type: str = "employee"
     language: str = "fi"
+    # Home base (standard 1.1). Contact details: encrypted when field encryption lands.
+    home_address: str = ""
+    home_lat: float | None = None
+    home_lon: float | None = None
+    accepts_calls: bool = True
+
+
+class Availability(BranchScoped, table=True):
+    """Weekly availability window for a person (weekday 0 = Monday), local time "HH:MM"."""
+
+    __tablename__: ClassVar[str] = "availability"
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    weekday: int
+    start: str
+    end: str
+
+
+class WorkLimit(BranchScoped, table=True):
+    """Working-hour limits for a person, in minutes."""
+
+    __tablename__: ClassVar[str] = "work_limits"
+
+    person_id: str = Field(foreign_key="person.id", index=True, unique=True)
+    max_daily_minutes: int = 600
+    max_weekly_minutes: int = 2400
 
 
 class Client(BranchScoped, table=True):
@@ -72,6 +98,8 @@ class Location(BranchScoped, table=True):
     name: str
     address: str
     geofence: dict[str, Any] = Field(default_factory=dict, sa_type=JSON)
+    lat: float | None = None
+    lon: float | None = None
     instructions: str = ""
     # Encrypted in a later build (field-level encryption with the node master key).
     access_notes: str = ""
@@ -177,6 +205,18 @@ class UsageCloudRequest(BranchScoped, table=True):
     currency: str = "EUR"
     timestamp: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
     result: str = "success"  # success, error, retried
+
+
+class GeocodeCache(BranchScoped, table=True):
+    """One geocoded address, so each address leaves the node at most once per provider."""
+
+    __tablename__: ClassVar[str] = "geocode_cache"
+
+    address: str = Field(index=True)
+    provider: str
+    lat: float
+    lon: float
+    label: str = ""
 
 
 class EgressLog(BranchScoped, table=True):

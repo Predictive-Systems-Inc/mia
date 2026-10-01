@@ -1,8 +1,9 @@
 # 002: Data standard v1.0 field list
 
 ## Status
-Accepted for the initial build. Changes need the product owner (CLAUDE.md: ask before changing
-the data standard).
+Accepted for the initial build. Version 1.1 (ADR 005) adds home base fields, location
+coordinates, geocode_cache, and moves availability and work_limits into core. Changes need the
+product owner (CLAUDE.md: ask before changing the data standard).
 
 ## Context
 The spec lists entities and required fields. The build needs exact tables.

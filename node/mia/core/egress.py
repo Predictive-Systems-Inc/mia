@@ -128,14 +128,17 @@ def send(
     actor: Actor,
     agent_id: str,
     provider: str = "gateway",
+    pseudonymise: bool = True,
 ) -> tuple[str, Pseudonymiser]:
     """Apply the policy to a payload and log it. Returns what may leave plus the mapping.
 
     Raises EgressBlocked for level `none` (or an unknown level) before any network call.
+    `pseudonymise=False` is for payloads that must leave as they are (an address to geocode);
+    the request is still blocked by level `none` and still logged.
     """
     if level not in LEVELS or level == "none":
         raise EgressBlocked(f"egress level {level!r} blocks cloud requests")
-    pseudo = Pseudonymiser.for_branch(session, actor.branch_id)
+    pseudo = Pseudonymiser.for_branch(session, actor.branch_id) if pseudonymise else Pseudonymiser()
     outgoing = pseudo.apply(payload)
     store.insert(
         session,
@@ -159,10 +162,23 @@ def _usage_counts(body: dict[str, Any]) -> tuple[int, int]:
 
 
 class EgressTransport(httpx.AsyncBaseTransport):
-    """httpx transport that sends every request through send() and meters the response."""
+    """httpx transport that sends every request through send() and meters the response.
 
-    def __init__(self, inner: httpx.AsyncBaseTransport | None = None) -> None:
+    Model calls (POST bodies) are pseudonymised and metered in usage_cloud_requests. Service
+    calls such as geocoding use `pseudonymise=False, meter=False`; their URL query is what is
+    logged, because that is what leaves the node.
+    """
+
+    def __init__(
+        self,
+        inner: httpx.AsyncBaseTransport | None = None,
+        *,
+        pseudonymise: bool = True,
+        meter: bool = True,
+    ) -> None:
         self.inner = inner or httpx.AsyncHTTPTransport()
+        self.pseudonymise = pseudonymise
+        self.meter = meter
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         ctx = current_context()
@@ -170,18 +186,36 @@ class EgressTransport(httpx.AsyncBaseTransport):
         outgoing, pseudo = send(
             ctx.session,
             ctx.purpose,
-            raw,
+            raw or request.url.query.decode(),
             ctx.level,
             actor=ctx.actor,
             agent_id=ctx.agent_id,
             provider=ctx.provider,
+            pseudonymise=self.pseudonymise,
         )
         headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
-        forwarded = httpx.Request(request.method, request.url, headers=headers, content=outgoing)
+        body = outgoing if raw else b""
+        forwarded = httpx.Request(request.method, request.url, headers=headers, content=body)
         response = await self.inner.handle_async_request(forwarded)
         content = (await response.aread()).decode()
+        if self.meter:
+            self._record_usage(ctx, response.status_code, content)
+        resp_headers = {
+            k: v
+            for k, v in response.headers.items()
+            if k.lower() not in ("content-length", "content-encoding", "transfer-encoding")
+        }
+        return httpx.Response(
+            response.status_code,
+            headers=resp_headers,
+            content=pseudo.restore(content).encode(),
+            request=request,
+        )
+
+    @staticmethod
+    def _record_usage(ctx: EgressContext, status_code: int, content: str) -> None:
         model = "unknown"
-        result = "success" if response.status_code < 400 else "error"
+        result = "success" if status_code < 400 else "error"
         input_tokens = output_tokens = 0
         try:
             body = json.loads(content)
@@ -200,15 +234,4 @@ class EgressTransport(httpx.AsyncBaseTransport):
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             result=result,
-        )
-        resp_headers = {
-            k: v
-            for k, v in response.headers.items()
-            if k.lower() not in ("content-length", "content-encoding", "transfer-encoding")
-        }
-        return httpx.Response(
-            response.status_code,
-            headers=resp_headers,
-            content=pseudo.restore(content).encode(),
-            request=request,
         )

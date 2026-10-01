@@ -15,13 +15,16 @@ p, staff, *, data:core.location, read, allow
 p, staff, *, data:dispatcher_absences, write_own, allow
 p, staff, *, tool:dispatcher.get_my_visits, execute, allow
 p, staff, *, tool:dispatcher.record_absence, execute, allow
+p, staff, *, tool:dispatcher.respond_to_cover, execute, allow
 
 # supervisor: schedules and approvals for daily operations
 p, supervisor, *, data:core.*, read, allow
 p, supervisor, *, data:dispatcher_*, write, allow
 p, supervisor, *, tool:dispatcher.find_replacements, execute, allow
-p, supervisor, *, tool:dispatcher.propose_assignment, request, allow
-p, supervisor, *, tool:dispatcher.propose_assignment, approve, allow
+p, supervisor, *, tool:dispatcher.assign_cover, execute, allow
+
+# admin and owner decide cover overrides (instructions that break a scheduling rule)
+p, admin, *, tool:dispatcher.cover_override, approve, allow
 
 # admin: users, roles, settings (Phase 1 adds endpoints)
 p, admin, *, data:core.*, write, allow

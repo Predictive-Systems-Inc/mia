@@ -37,6 +37,8 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     monkeypatch.setenv("MIA_EGRESS_LEVEL", "pseudonymised")
     monkeypatch.setenv("MIA_GATEWAY_KEY", "test-key")
     monkeypatch.setenv("MIA_GATEWAY_URL", "http://gateway.test/v1")
+    monkeypatch.setenv("MIA_TICK_SECONDS", "0")
+    monkeypatch.setenv("MIA_GEOCODER", "static")
     get_settings.cache_clear()
     dispatcher_agent.get_agent.cache_clear()
     db.reset_engines()

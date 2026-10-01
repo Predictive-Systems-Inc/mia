@@ -79,7 +79,27 @@ async function loadPeople() {
   const juha = people.find(p => p.name.startsWith("Juha"));
   if (juha) actorSel.value = juha.id;
 }
-actorSel.addEventListener("change", () => sys(`Now acting as ${actorName()}`));
+actorSel.addEventListener("change", () => { sys(`Now acting as ${actorName()}`); poll(); });
+
+// Proactive messages (cover requests, updates) for the acting person.
+const seen = new Set();
+async function poll() {
+  const actor = actorSel.value;
+  if (!actor) return;
+  const res = await fetch("/notifications", {headers: {"X-Mia-Actor": actor}});
+  if (!res.ok) return;
+  for (const n of await res.json()) {
+    if (seen.has(n.id)) continue;
+    seen.add(n.id);
+    const box = el("div", "msg");
+    const bubble = el("div", "bubble");
+    box.append(el("div", "who", `Mia to ${actorName()}`), bubble);
+    log.append(box);
+    renderBlocks(box, n.blocks, bubble);
+    scroll();
+  }
+}
+setInterval(poll, 4000);
 
 function renderCard(block) {
   const card = el("div", "card" + (block.type === "approval_card" ? " approval" : ""));

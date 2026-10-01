@@ -146,17 +146,17 @@ def decide(intent: Intent, messages: list[ModelMessage], info: AgentInfo) -> Mod
         return _call("find_replacements", args)
     if intent.name == "assign":
         found = _last_return(messages, "find_replacements")
-        if not found or not found.get("candidates"):
+        if not found:
             return _final(info, [TextBlock(text=t("assign.need_candidates", lang))])
         hint = (intent.person_hint or "").lower()
-        for c in found["candidates"]:
+        visit_id = found["visit"]["visit_id"]
+        for c in found.get("candidates", []):
             first = c["name"].split()[0].lower()
             if hint.startswith(first) or first.startswith(hint):
-                args = {"visit_id": found["visit"]["visit_id"], "candidate_id": c["person_id"]}
-                return _call("propose_assignment", args)
-        names = ", ".join(c["name"] for c in found["candidates"])
-        text = t("assign.unknown_candidate", lang, name=intent.person_hint, names=names)
-        return _final(info, [TextBlock(text=text)])
+                return _call("assign_cover", {"visit_id": visit_id, "candidate_id": c["person_id"]})
+        return _call("assign_cover", {"visit_id": visit_id, "candidate_name": intent.person_hint})
+    if intent.name == "cover_reply":
+        return _call("respond_to_cover", {"accept": bool(intent.accept)})
     return _final(info, _help(lang))
 
 
@@ -169,6 +169,8 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
         return [TextBlock(text=t(key, lang))]
     if status == "invalid" and part.tool_name == "find_replacements":
         return [TextBlock(text=t("cover.visit_not_found", lang))]
+    if status == "invalid" and part.tool_name == "respond_to_cover":
+        return [TextBlock(text=t("respond.none", lang))]
     if status == "invalid":
         return [TextBlock(text=out.get("message", ""))]
     if part.tool_name == "record_absence":
@@ -214,7 +216,7 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
             CardBlock(title=t("cover.title", lang, **params), fields=fields),
             QuickRepliesBlock(options=options),
         ]
-    if part.tool_name == "propose_assignment":
+    if part.tool_name == "assign_cover":
         v = out["visit"]
         params = {
             "name": out["candidate"],
@@ -222,22 +224,25 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
             "date": _fmt_date(v["date"], lang),
             "time": v["start"],
         }
-        return [
-            TextBlock(text=t("assign.requested", lang, **params)),
-            ApprovalCardBlock(
-                approval_id=out["approval_id"],
-                title=t("approval.card_title", lang),
-                summary=out["summary"],
-                fields=[
-                    CardField(label=t("field.person", lang), value=out["candidate"]),
-                    CardField(
-                        label=t("field.visit", lang),
-                        value=f"{v['location']} {v['date']} {v['start']}",
-                    ),
-                ],
-                status=out["status"],
-            ),
-        ]
+        if out["status"] == "awaiting_approval":
+            return [
+                TextBlock(text=t("assign.override", lang, **params)),
+                ApprovalCardBlock(
+                    approval_id=out["approval_id"],
+                    title=t("approval.card_title", lang),
+                    summary=t("assign.override", lang, **params),
+                    fields=[CardField(label=t("field.person", lang), value=out["candidate"])],
+                    status="pending",
+                ),
+            ]
+        key = "assign.waiting_quiet" if out["stage"] == "waiting_quiet" else "assign.asking"
+        return [TextBlock(text=t(key, lang, **params))]
+    if part.tool_name == "respond_to_cover":
+        if not out["accepted"]:
+            return [TextBlock(text=t("respond.declined", lang))]
+        v = out["visit"]
+        params = {"location": v["location"], "date": _fmt_date(v["date"], lang), "time": v["start"]}
+        return [TextBlock(text=t("respond.accepted", lang, **params))]
     return [TextBlock(text=t("fallback.help", lang))]
 
 

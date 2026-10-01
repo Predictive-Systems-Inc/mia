@@ -2,7 +2,17 @@
 
 import datetime as dt
 
-from mia.agents.dispatcher.scoring import CandidateData, Slot, eligible, rank_candidates
+import pytest
+
+from mia.agents.dispatcher.scoring import (
+    CandidateData,
+    Slot,
+    added_travel_km,
+    distance_km,
+    eligible,
+    ineligibility,
+    rank_candidates,
+)
 
 TZ = dt.timezone(dt.timedelta(hours=3))
 DAY = dt.date(2026, 10, 1)  # a Thursday
@@ -68,7 +78,7 @@ def test_ranking_site_then_skills_then_fewest_hours() -> None:
         SLOT,
         ["general"],
     )
-    assert [r.name for r in ranked] == ["knows_site", "light", "busy"]
+    assert [r.name for r in ranked] == ["knows_site", "light", "busy"]  # travel unknown for all
     assert "knows the site" in ranked[0].reasons[0]
 
 
@@ -79,3 +89,50 @@ def test_nobody_available_returns_empty() -> None:
 def test_missing_skills_are_reported() -> None:
     ranked = rank_candidates([cand("a", skills=[])], SLOT, ["windows"])
     assert "missing skills: windows" in ranked[0].reasons
+
+
+SITE = (60.1875, 24.9770)  # Kalasatama
+NEAR = (60.1865, 24.9610)  # about 0.9 km away
+FAR = (60.1590, 24.8770)  # Lauttasaari, about 6.4 km away
+
+
+def test_distance() -> None:
+    assert distance_km(SITE, SITE) == 0
+    assert 0.8 < distance_km(SITE, NEAR) < 1.0
+    assert 6.0 < distance_km(SITE, FAR) < 6.8
+
+
+def test_added_travel_from_home_or_previous_visit() -> None:
+    slot = Slot(at(10), at(11), SITE)
+    assert added_travel_km(cand("a"), slot) is None  # no home base, no earlier visit
+    assert added_travel_km(cand("a", home=NEAR), Slot(at(10), at(11))) is None  # site unknown
+    from_home = added_travel_km(cand("a", home=FAR), slot)
+    assert from_home is not None and 6.0 < from_home < 6.8
+    earlier_near = cand("a", home=FAR, booked=[Slot(at(8), at(9), NEAR)])
+    nearby = added_travel_km(earlier_near, slot)
+    assert nearby is not None and nearby < 1.0
+    # A later visit at the same site costs nothing extra beyond reaching it.
+    later_here = cand("a", home=FAR, booked=[Slot(at(12), at(13), SITE)])
+    assert added_travel_km(later_here, slot) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_travel_ranks_after_site_and_skills_before_hours() -> None:
+    slot = Slot(at(10), at(11), SITE)
+    busy = [Slot(at(13), at(17), SITE)]
+    ranked = rank_candidates(
+        [cand("far_free", home=FAR), cand("near_busy", home=NEAR, booked=busy), cand("unknown")],
+        slot,
+        ["general"],
+    )
+    assert [r.name for r in ranked] == ["near_busy", "far_free", "unknown"]
+    assert "km added travel" in ranked[0].reasons[1] and "travel unknown" in ranked[2].reasons
+
+
+def test_ineligibility_lists_every_broken_rule() -> None:
+    c = cand("a", windows={}, absent_dates={DAY}, booked=[Slot(at(7), at(9))], max_daily_minutes=60)
+    assert ineligibility(c, SLOT) == [
+        "absent that day",
+        "outside availability",
+        "already booked at that time",
+        "over the daily hour limit",
+    ]

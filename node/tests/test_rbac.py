@@ -34,8 +34,9 @@ def test_supervisor_reads_everyone(people: dict[str, Person]) -> None:
 
 def test_role_hierarchy_owner_inherits_supervisor(people: dict[str, Person]) -> None:
     owner = Actor.person(people["Helena"])
-    tool = Resource(kind="tool", name="dispatcher.propose_assignment")
+    tool = Resource(kind="tool", name="dispatcher.cover_override")
     assert get_rbac().check(owner, tool, "approve")
+    assert not get_rbac().check(Actor.person(people["Sanna"]), tool, "approve")
 
 
 def test_agent_on_behalf_of_cleaner_is_limited_by_the_cleaner(people: dict[str, Person]) -> None:

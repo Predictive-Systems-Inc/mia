@@ -27,6 +27,7 @@ def test_no_provider_sdk_outside_egress_and_model_factory() -> None:
     )
     allowed = {
         MIA / "core" / "egress.py",
+        MIA / "core" / "geocoding.py",
         MIA / "agents" / "base.py",
         MIA / "agents" / "dispatcher" / "agent.py",
     }

@@ -1,5 +1,7 @@
 # Questions from the coding agent
 
+All questions below (Q1 to Q7) are answered in docs/decisions.md (D1 to D12).
+
 Format for each entry:
 
 ## Q1: short title

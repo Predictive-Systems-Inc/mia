@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     MIA_GATEWAY_KEY: str = ""
     MIA_EGRESS_LEVEL: EgressLevel = "pseudonymised"
     MIA_ORG: str = "demo"
+    MIA_TICK_SECONDS: int = 30
+    MIA_GEOCODER: str = "digitransit"
+    MIA_GEOCODER_KEY: str = ""
+    MIA_GEOCODER_URL: str = "https://api.digitransit.fi/geocoding/v1"
 
     @property
     def db_url(self) -> str:

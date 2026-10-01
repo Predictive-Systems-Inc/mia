@@ -1,7 +1,8 @@
 # 003: How tools declare risk and approval
 
 ## Status
-Accepted for the initial build.
+Accepted for the initial build. The assignment part is superseded by ADR 005 (decision D1: an
+explicit instruction is the approval); the guard and the money rule below still apply.
 
 ## Context
 Architecture rules 3 and 4: agents act only through registered tools, every tool call is

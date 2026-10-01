@@ -1,6 +1,6 @@
 """Demo data for a Hype-like cleaning company in Helsinki.
 
-One branch, an owner, one supervisor and five cleaners, four locations, six jobs, completed
+One branch, an owner, one supervisor and five cleaners (with home bases), four located sites, six jobs, completed
 visits for the past 14 days and planned visits for the next 7 days. All rows are written
 through mia.core.store, so seeding appears in the events log like any other write.
 """
@@ -11,13 +11,20 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, select
 
 from mia.core import store
-from mia.core.models import Actor, Branch, Client, Job, Location, Organisation, Person, Visit
-from mia.templates.cleaning.models import (
-    CleaningChecklist,
-    CleaningSite,
-    StaffAvailability,
+from mia.core.models import (
+    Actor,
+    Availability,
+    Branch,
+    Client,
+    GeocodeCache,
+    Job,
+    Location,
+    Organisation,
+    Person,
+    Visit,
     WorkLimit,
 )
+from mia.templates.cleaning.models import CleaningChecklist, CleaningSite
 
 WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
 
@@ -31,6 +38,23 @@ PERSONS = [
     ("Maria Mäkinen", ["staff"], ["general", "windows"], "fi", ("06:00", "20:00"), 2400),
     ("Liisa Heikkinen", ["staff"], ["general"], "en", ("10:00", "18:00"), 1200),
 ]
+
+# Demo home bases and site coordinates (approximate, Helsinki). Seeded as already geocoded
+# (provider "demo") so the demo never calls a geocoding service.
+HOMES = {
+    "Sanna Virtanen": ("Hämeentie 30, 00530 Helsinki", 60.1873, 24.9580),
+    "Juha Laine": ("Vilhonvuorenkatu 11, 00500 Helsinki", 60.1865, 24.9610),
+    "Mikael Nieminen": ("Mäkelänkatu 50, 00510 Helsinki", 60.1960, 24.9530),
+    "Aino Korhonen": ("Fleminginkatu 20, 00510 Helsinki", 60.1880, 24.9500),
+    "Maria Mäkinen": ("Lauttasaarentie 20, 00200 Helsinki", 60.1590, 24.8770),
+    "Liisa Heikkinen": ("Munkkiniementie 30, 00330 Helsinki", 60.1990, 24.8790),
+}
+SITE_COORDS = {
+    "kalasatama": (60.1875, 24.9770),
+    "pasila": (60.1990, 24.9330),
+    "kamppi": (60.1690, 24.9320),
+    "toolo": (60.1810, 24.9220),
+}
 
 LOCATIONS = [
     # key, client, client type, location name, address, site type, instructions
@@ -143,6 +167,13 @@ def local_dt(day: dt.date, hhmm: str, tz: str) -> dt.datetime:
     return dt.datetime.combine(day, dt.time(hour, minute), tzinfo=ZoneInfo(tz))
 
 
+def _cache(
+    session: Session, branch_id: str, address: str, lat: float, lon: float, actor: Actor
+) -> None:
+    row = GeocodeCache(branch_id=branch_id, address=address, provider="demo", lat=lat, lon=lon)
+    store.insert(session, row, actor)
+
+
 def is_seeded(session: Session) -> bool:
     return session.exec(select(Organisation).limit(1)).first() is not None
 
@@ -160,11 +191,23 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
 
     people: dict[str, Person] = {}
     for name, roles, skills, lang, window, weekly in PERSONS:
+        home = HOMES.get(name)
         person = store.insert(
             session,
-            Person(branch_id=branch.id, name=name, roles=roles, skills=skills, language=lang),
+            Person(
+                branch_id=branch.id,
+                name=name,
+                roles=roles,
+                skills=skills,
+                language=lang,
+                home_address=home[0] if home else "",
+                home_lat=home[1] if home else None,
+                home_lon=home[2] if home else None,
+            ),
             actor,
         )
+        if home:
+            _cache(session, branch.id, home[0], home[1], home[2], actor)
         people[name] = person
         store.insert(
             session,
@@ -173,7 +216,7 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
         )
         if window:
             for weekday in range(7):
-                row = StaffAvailability(
+                row = Availability(
                     branch_id=branch.id,
                     person_id=person.id,
                     weekday=weekday,
@@ -194,8 +237,11 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
             address=address,
             instructions=instructions,
             geofence={"radius_m": 100},
+            lat=SITE_COORDS[key][0],
+            lon=SITE_COORDS[key][1],
         )
         locations[key] = store.insert(session, loc, actor)
+        _cache(session, branch.id, address, SITE_COORDS[key][0], SITE_COORDS[key][1], actor)
         store.insert(
             session,
             CleaningSite(branch_id=branch.id, location_id=loc.id, site_type=site_type),

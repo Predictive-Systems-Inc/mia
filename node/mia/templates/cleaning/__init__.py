@@ -1,1 +1,1 @@
-"""Cleaning template: sites, checklists, staff availability and working-hour limits."""
+"""Cleaning template: sites and checklists on top of the data standard."""

@@ -153,7 +153,13 @@ def test_find_replacements_unknown_visit(
         tools.find_replacements(deps, tools.FindReplacementsInput(visit_id="nope"), "c1")
 
 
-def test_propose_then_approve_reassigns(
+def _assign(deps: AgentDeps, visit_id: str, person: Person) -> tools.AssignCoverOutput:
+    return tools.assign_cover(
+        deps, tools.AssignCoverInput(visit_id=visit_id, candidate_id=person.id), "c2"
+    )
+
+
+def test_instruction_is_the_approval_and_cleaner_confirms(
     session: Session, branch: Branch, people: dict[str, Person]
 ) -> None:
     juha = deps_for(session, branch, people["Juha"])
@@ -161,54 +167,70 @@ def test_propose_then_approve_reassigns(
     deps = deps_for(session, branch, people["Sanna"])
     found = tools.find_replacements(deps, kalasatama_input(deps), "c1")
     visit_id = found.visit.visit_id
-    proposal = tools.propose_assignment(
-        deps,
-        tools.ProposeAssignmentInput(visit_id=visit_id, candidate_id=people["Mikael"].id),
-        "c2",
-    )
+    out = _assign(deps, visit_id, people["Mikael"])
+    assert out.status == "asking" and out.approval_id is None
+    assert session.exec(select(Approval)).all() == []  # D1: no separate approval
+    instructed = session.exec(select(Event).where(Event.action == "assignment.instructed")).one()
+    assert instructed.after is not None and instructed.after["approved_by"] == people["Sanna"].id
     visit = session.get(Visit, visit_id)
     assert visit is not None and visit.assigned_person_ids == [people["Juha"].id]  # unchanged
-    approval = session.get(Approval, proposal.approval_id)
-    assert approval is not None and approval.channel == "app_only"
-    assert approval.evidence["triggered_by"] == [people["Juha"].id]
 
-    # Juha (triggered it) and Sanna (requested it) cannot approve; the owner can.
-    for blocked in ("Juha", "Sanna"):
-        with pytest.raises(approvals.ApprovalError):
-            approvals.decide(session, approval.id, Actor.person(people[blocked]), "approved")
-    approvals.decide(session, approval.id, Actor.person(people["Helena"]), "approved")
+    mikael = deps_for(session, branch, people["Mikael"])
+    answer = tools.respond_to_cover(mikael, tools.RespondToCoverInput(accept=True), "c3")
+    assert answer.accepted
     session.refresh(visit)
     assert visit.assigned_person_ids == [people["Mikael"].id]
     ev = session.exec(select(Event).where(Event.action == "visit.reassigned")).one()
-    assert ev.approval_id == approval.id and ev.actor_id == people["Helena"].id
+    assert ev.on_behalf_of == people["Mikael"].id
 
 
-def test_propose_rejects_ineligible_candidate(
+def test_rule_breaking_instruction_needs_override_approval(
     session: Session, branch: Branch, people: dict[str, Person]
 ) -> None:
     deps = deps_for(session, branch, people["Sanna"])
     found = tools.find_replacements(deps, kalasatama_input(deps), "c1")
-    with pytest.raises(LookupError, match="not eligible"):
-        tools.propose_assignment(
-            deps,
-            tools.ProposeAssignmentInput(
-                visit_id=found.visit.visit_id, candidate_id=people["Liisa"].id
-            ),
-            "c2",
-        )
-    with pytest.raises(LookupError):
-        tools.propose_assignment(
-            deps, tools.ProposeAssignmentInput(visit_id="x", candidate_id="y"), "c3"
-        )
+    out = _assign(deps, found.visit.visit_id, people["Liisa"])  # available only 10 to 18
+    assert out.status == "awaiting_approval" and out.approval_id
+    approval = session.get(Approval, out.approval_id)
+    assert approval is not None and approval.approver_roles == ["admin", "owner"]
+    assert "outside availability" in approval.evidence["reasons"]
+    with pytest.raises(approvals.ApprovalError):
+        approvals.decide(session, approval.id, Actor.person(people["Sanna"]), "approved")
+    approvals.decide(session, approval.id, Actor.person(people["Helena"]), "approved")
+    from mia.agents.dispatcher.models import CoverRequest
+
+    request = session.exec(select(CoverRequest)).one()
+    assert request.status == "asking"  # now Liisa is asked to confirm
 
 
-def test_cleaner_cannot_propose(
+def test_assign_refuses_absent_or_unknown(
     session: Session, branch: Branch, people: dict[str, Person]
 ) -> None:
+    deps = deps_for(session, branch, people["Sanna"])
+    found = tools.find_replacements(deps, kalasatama_input(deps), "c1")
+    maria = deps_for(session, branch, people["Maria"])
+    tools.record_absence(maria, tools.RecordAbsenceInput(date=tomorrow(deps)), "c0")
+    with pytest.raises(LookupError, match="absent"):
+        _assign(deps, found.visit.visit_id, people["Maria"])
+    with pytest.raises(LookupError, match="staff"):
+        _assign(deps, found.visit.visit_id, people["Helena"])
+    with pytest.raises(LookupError):
+        tools.assign_cover(deps, tools.AssignCoverInput(visit_id="x", candidate_id="y"), "c3")
+    with pytest.raises(LookupError):
+        tools.assign_cover(deps, tools.AssignCoverInput(visit_id=found.visit.visit_id), "c4")
+
+
+def test_cleaner_cannot_assign(session: Session, branch: Branch, people: dict[str, Person]) -> None:
     deps = deps_for(session, branch, people["Juha"])
-    binding = tools.BINDINGS[3]
-    out = call_tool(
-        deps, binding, tools.ProposeAssignmentInput(visit_id="x", candidate_id="y"), "c1"
-    )
+    binding = next(b for b in tools.BINDINGS if b.tool_id == "dispatcher.assign_cover")
+    out = call_tool(deps, binding, tools.AssignCoverInput(visit_id="x", candidate_id="y"), "c1")
     assert out["status"] == "denied"
-    assert session.exec(select(Approval)).all() == []
+
+
+def test_respond_without_request_is_invalid(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    deps = deps_for(session, branch, people["Aino"])
+    binding = next(b for b in tools.BINDINGS if b.tool_id == "dispatcher.respond_to_cover")
+    out = call_tool(deps, binding, tools.RespondToCoverInput(accept=True), "c1")
+    assert out["status"] == "invalid"

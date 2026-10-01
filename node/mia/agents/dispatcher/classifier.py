@@ -12,7 +12,13 @@ from typing import Literal
 from pydantic import BaseModel
 
 IntentName = Literal[
-    "report_absence", "absence_scope", "my_visits", "find_cover", "assign", "other"
+    "report_absence",
+    "absence_scope",
+    "my_visits",
+    "find_cover",
+    "assign",
+    "cover_reply",
+    "other",
 ]
 
 FI_WEEKDAYS = [
@@ -48,6 +54,12 @@ ABSENCE = re.compile(
     r"kipeä|kipeänä|sairas|sairaana|flunssa|kuumetta|poissa|en pääse|en tule|myöhässä|"
     r"myöhästyn|lähden aikaisin)\b",
     re.IGNORECASE,
+)
+ACCEPT = re.compile(
+    r"^\W*(hyväksyn|kyllä|käy|joo|ok|okei|accept|yes|sure|i can)\W*$", re.IGNORECASE
+)
+DECLINE = re.compile(
+    r"^\W*(en pysty|en voi|ei käy|kieltäydyn|decline|no|i can'?t|cannot)\W*$", re.IGNORECASE
 )
 SCOPE_ALL = re.compile(r"^\W*(kaikki|all|all of them|whole day|koko päivä[n]?)\W*$", re.IGNORECASE)
 SCOPE_MORNING = re.compile(
@@ -105,6 +117,7 @@ class Intent(BaseModel):
     date: dt.date | None = None
     time: dt.time | None = None
     reason: str | None = None
+    accept: bool | None = None
     partial_day: str | None = None
     person_hint: str | None = None
     location_hint: str | None = None
@@ -158,6 +171,10 @@ def classify(text: str, today: dt.date, default_lang: str = "en") -> Intent:
     lang = detect_language(text, default_lang)
     if INJECTION.search(text):
         return Intent(name="other", lang=lang, injection=True)
+    if ACCEPT.search(text):
+        return Intent(name="cover_reply", lang=lang, accept=True)
+    if DECLINE.search(text):
+        return Intent(name="cover_reply", lang=lang, accept=False)
     if SCOPE_ALL.search(text):
         return Intent(name="absence_scope", lang=lang, partial_day=None)
     if SCOPE_MORNING.search(text):

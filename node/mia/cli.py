@@ -97,6 +97,65 @@ def decide(args: argparse.Namespace) -> int:
     return 0
 
 
+def inbox(args: argparse.Namespace) -> int:
+    from mia.chat.blocks import ChatReply
+    from mia.chat.channels import NOTIFICATION
+    from mia.core.db import session_scope
+    from mia.core.models import Message, Thread
+
+    with session_scope() as session:
+        person = _find_person(session, args.as_person)
+        rows = session.exec(
+            select(Message)
+            .join(Thread, col(Thread.id) == col(Message.thread_id))
+            .where(Thread.person_id == person.id)
+            .where(Message.role == NOTIFICATION)
+            .order_by(col(Message.id))
+        ).all()
+        print(f"Messages from Mia to {person.name}: {len(rows)}")
+        for row in rows:
+            reply = ChatReply.model_validate(
+                {
+                    "thread_id": row.thread_id,
+                    "message_id": row.id,
+                    "agent_id": "dispatcher",
+                    "blocks": row.blocks,
+                }
+            )
+            print(f"\n[{row.created_at:%H:%M}] {reply.text()}")
+    return 0
+
+
+def tick(_args: argparse.Namespace) -> int:
+    from mia.api.main import tick as run_tick
+
+    print(f"advanced {run_tick()} cover request(s)")
+    return 0
+
+
+def geocode(_args: argparse.Namespace) -> int:
+    from mia.core import geocoding
+    from mia.core.db import session_scope
+    from mia.core.models import Actor, Branch
+
+    async def run() -> int:
+        missing_total = 0
+        with session_scope() as session:
+            for branch in session.exec(select(Branch)).all():
+                updated, missing = await geocoding.fill_missing(session, Actor.system(branch.id))
+                print(f"{branch.name}: geocoded {updated}")
+                for address in missing:
+                    print(f"  not found: {address}")
+                missing_total += len(missing)
+        return 1 if missing_total else 0
+
+    try:
+        return asyncio.run(run())
+    except geocoding.GeocodingError as exc:
+        print(f"geocoding failed: {exc}")
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mia", description="Mia Node command line")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -122,6 +181,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--as", dest="as_person", required=True)
     p.add_argument("--reason")
     p.set_defaults(func=decide)
+    p = sub.add_parser("inbox", help="show messages Mia sent to a person")
+    p.add_argument("--as", dest="as_person", required=True)
+    p.set_defaults(func=inbox)
+    sub.add_parser("tick", help="advance due cover confirmations once").set_defaults(func=tick)
+    sub.add_parser(
+        "geocode", help="geocode home bases and sites that have no coordinates"
+    ).set_defaults(func=geocode)
     return parser
 
 

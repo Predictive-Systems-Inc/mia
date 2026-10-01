@@ -9,14 +9,13 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, ToolBinding
-from mia.agents.dispatcher import scoring
+from mia.agents.dispatcher import cover, scoring
 from mia.agents.dispatcher.models import Absence
-from mia.core import approvals, store
-from mia.core.models import Actor, Approval, Job, Location, Person, Visit
+from mia.core import store
+from mia.core.db import utcnow
+from mia.core.models import Availability, Job, Location, Person, Visit, WorkLimit
 from mia.core.rbac import Resource, get_rbac
-from mia.templates.cleaning.models import StaffAvailability, WorkLimit
 
-APPROVAL_TYPE = "assignment_change"
 MORNING_ENDS = dt.time(12, 0)
 
 
@@ -251,12 +250,18 @@ def resolve_visit(session: Session, deps: AgentDeps, args: FindReplacementsInput
     return visits[0]
 
 
-def _slot(visit: Visit, tz: str) -> scoring.Slot:
+def _slot(session: Session, visit: Visit, tz: str) -> scoring.Slot:
     zone = ZoneInfo(tz)
-    return scoring.Slot(visit.planned_start.astimezone(zone), visit.planned_end.astimezone(zone))
+    loc = session.get(Location, visit.location_id)
+    where = (loc.lat, loc.lon) if loc and loc.lat is not None and loc.lon is not None else None
+    return scoring.Slot(
+        visit.planned_start.astimezone(zone), visit.planned_end.astimezone(zone), where
+    )
 
 
-def candidate_data(session: Session, deps: AgentDeps, visit: Visit) -> list[scoring.CandidateData]:
+def candidate_data(
+    session: Session, deps: AgentDeps, visit: Visit, *, include_assigned: bool = False
+) -> list[scoring.CandidateData]:
     """Gather everything scoring needs, for every active staff member not on the visit."""
     branch_id, tz = deps.branch.id, deps.branch.timezone
     week_start = visit.date - dt.timedelta(days=visit.date.weekday())
@@ -271,6 +276,7 @@ def candidate_data(session: Session, deps: AgentDeps, visit: Visit) -> list[scor
         .where(col(Visit.date) <= week_end)
         .where(Visit.status != "cancelled")
     ).all()
+    slots = {v.id: _slot(session, v, tz) for v in week_visits}
     past_here = session.exec(
         select(Visit)
         .where(Visit.location_id == visit.location_id)
@@ -278,16 +284,19 @@ def candidate_data(session: Session, deps: AgentDeps, visit: Visit) -> list[scor
     ).all()
     result = []
     for p in persons:
-        if "staff" not in p.roles or p.id in visit.assigned_person_ids:
+        if "staff" not in p.roles:
+            continue
+        if p.id in visit.assigned_person_ids and not include_assigned:
             continue
         windows = {
             a.weekday: (dt.time.fromisoformat(a.start), dt.time.fromisoformat(a.end))
-            for a in session.exec(
-                select(StaffAvailability).where(StaffAvailability.person_id == p.id)
-            )
+            for a in session.exec(select(Availability).where(Availability.person_id == p.id))
         }
         limit = session.exec(select(WorkLimit).where(WorkLimit.person_id == p.id)).first()
         absences = session.exec(select(Absence).where(Absence.person_id == p.id)).all()
+        home = (
+            (p.home_lat, p.home_lon) if p.home_lat is not None and p.home_lon is not None else None
+        )
         result.append(
             scoring.CandidateData(
                 person_id=p.id,
@@ -296,12 +305,22 @@ def candidate_data(session: Session, deps: AgentDeps, visit: Visit) -> list[scor
                 windows=windows,
                 max_daily_minutes=limit.max_daily_minutes if limit else 600,
                 max_weekly_minutes=limit.max_weekly_minutes if limit else 2400,
-                booked=[_slot(v, tz) for v in week_visits if p.id in v.assigned_person_ids],
+                booked=[slots[v.id] for v in week_visits if p.id in v.assigned_person_ids],
                 absent_dates={a.date for a in absences},
                 site_visits=sum(1 for v in past_here if p.id in v.assigned_person_ids),
+                home=home,
             )
         )
     return result
+
+
+def _ranked(deps: AgentDeps, visit: Visit) -> list[scoring.Ranked]:
+    job = deps.session.get(Job, visit.job_id)
+    return scoring.rank_candidates(
+        candidate_data(deps.session, deps, visit),
+        _slot(deps.session, visit, deps.branch.timezone),
+        job.required_skills if job else [],
+    )
 
 
 def find_replacements(
@@ -311,12 +330,7 @@ def find_replacements(
     _check(deps, Resource(kind="data", name="core.visit"), "read", tool_call_id)
     _check(deps, Resource(kind="data", name="core.person"), "read", tool_call_id)
     visit = resolve_visit(deps.session, deps, args)
-    job = deps.session.get(Job, visit.job_id)
-    ranked = scoring.rank_candidates(
-        candidate_data(deps.session, deps, visit),
-        _slot(visit, deps.branch.timezone),
-        job.required_skills if job else [],
-    )
+    ranked = _ranked(deps, visit)
     return FindReplacementsOutput(
         visit=visit_info(deps.session, visit, deps.branch.timezone),
         candidates=[
@@ -326,90 +340,102 @@ def find_replacements(
     )
 
 
-# ---- propose_assignment -------------------------------------------------------------------
+# ---- assign_cover -------------------------------------------------------------------------
 
 
-class ProposeAssignmentInput(BaseModel):
+class AssignCoverInput(BaseModel):
     visit_id: str
-    candidate_id: str = Field(description="person_id of one of the find_replacements candidates")
+    candidate_id: str | None = Field(None, description="person_id from find_replacements")
+    candidate_name: str | None = Field(
+        None, description="Name, when the person is not one of the suggested candidates"
+    )
 
 
-class ProposeAssignmentOutput(BaseModel):
-    approval_id: str
-    status: str
+class AssignCoverOutput(BaseModel):
+    status: str  # asking, awaiting_approval
+    stage: str
     candidate: str
     visit: VisitInfo
-    summary: str
+    approval_id: str | None = None
+    next_action_at: dt.datetime | None = None
 
 
-def propose_assignment(
-    deps: AgentDeps, args: ProposeAssignmentInput, tool_call_id: str
-) -> ProposeAssignmentOutput:
-    """Create an assignment_change approval. Does not change the visit."""
-    visit = deps.session.get(Visit, args.visit_id)
-    candidate = deps.session.get(Person, args.candidate_id)
+def assign_cover(deps: AgentDeps, args: AssignCoverInput, tool_call_id: str) -> AssignCoverOutput:
+    """Act on a person's explicit instruction to assign cover (the instruction is the approval).
+
+    The visit does not change here: the candidate is asked to confirm first. When the choice
+    breaks a hard rule, an override approval goes to admin or owner instead.
+    """
+    session = deps.session
+    visit = session.get(Visit, args.visit_id)
     if visit is None or visit.branch_id != deps.branch.id:
         raise LookupError("visit not found")
-    if candidate is None or candidate.branch_id != deps.branch.id:
-        raise LookupError("candidate not found")
-    pool = {c.person_id: c for c in candidate_data(deps.session, deps, visit)}
-    data = pool.get(candidate.id)
-    if data is None or not scoring.eligible(data, _slot(visit, deps.branch.timezone)):
-        raise LookupError(f"{candidate.name} is not eligible for this visit")
-    absent = {
-        a.person_id for a in deps.session.exec(select(Absence).where(Absence.date == visit.date))
-    }
+    if args.candidate_id:
+        person = session.get(Person, args.candidate_id)
+        if person is None or person.branch_id != deps.branch.id:
+            raise LookupError("candidate not found")
+    elif args.candidate_name:
+        person = find_person(session, deps.branch.id, args.candidate_name)
+    else:
+        raise LookupError("name the person to assign")
+    pool = {c.person_id: c for c in candidate_data(session, deps, visit, include_assigned=True)}
+    if person.id not in pool:
+        raise LookupError(f"{person.name} is not on the cleaning staff")
+    if person.id in visit.assigned_person_ids:
+        raise LookupError(f"{person.name} is already on this visit")
+    absent = {a.person_id for a in session.exec(select(Absence).where(Absence.date == visit.date))}
     replace = [p for p in visit.assigned_person_ids if p in absent] or list(
         visit.assigned_person_ids
     )
-    info = visit_info(deps.session, visit, deps.branch.timezone)
-    replaced = ", ".join(_names(deps.session, replace)) or "-"
-    summary = f"{candidate.name} replaces {replaced} at {info.location}, {info.date} {info.start}-{info.end}"
-    approval = approvals.request(
-        deps.session,
-        APPROVAL_TYPE,
-        ("visit", visit.id),
-        summary,
+    queue = [r.person_id for r in _ranked(deps, visit) if r.person_id != person.id]
+    request = cover.instruct(
+        session,
         deps.actor,
-        deps.manifest.roles.approvers["dispatcher.propose_assignment"],
-        channel="app_only",
-        evidence={
-            "visit_id": visit.id,
-            "candidate_id": candidate.id,
-            "replace_person_ids": replace,
-            "triggered_by": replace,
-            "tool_call_id": tool_call_id,
-        },
+        visit,
+        _slot(session, visit, deps.branch.timezone),
+        pool[person.id],
+        queue,
+        replace,
+        utcnow(),
         tool_call_id=tool_call_id,
     )
-    return ProposeAssignmentOutput(
-        approval_id=approval.id,
-        status=approval.status,
-        candidate=candidate.name,
-        visit=info,
-        summary=summary,
+    return AssignCoverOutput(
+        status=request.status,
+        stage=request.stage,
+        candidate=person.name,
+        visit=visit_info(session, visit, deps.branch.timezone),
+        approval_id=request.approval_id,
+        next_action_at=request.next_action_at,
     )
 
 
-def apply_assignment(session: Session, approval: Approval, decider: Actor) -> None:
-    """Approval handler: swap the replaced people for the candidate and emit visit.reassigned."""
-    visit = session.get(Visit, approval.evidence["visit_id"])
+# ---- respond_to_cover ---------------------------------------------------------------------
+
+
+class RespondToCoverInput(BaseModel):
+    accept: bool = Field(description="True when the user agrees to cover the visit")
+
+
+class RespondToCoverOutput(BaseModel):
+    accepted: bool
+    visit: VisitInfo
+
+
+def respond_to_cover(
+    deps: AgentDeps, args: RespondToCoverInput, tool_call_id: str
+) -> RespondToCoverOutput:
+    """The user's answer to a cover request sent to them. Accepting changes the visit."""
+    try:
+        request = cover.respond(deps.session, deps.person, args.accept, deps.actor, utcnow())
+    except cover.CoverError as exc:
+        raise LookupError(str(exc)) from exc
+    visit = deps.session.get(Visit, request.visit_id)
     if visit is None:
-        raise LookupError("visit no longer exists")
-    replace = set(approval.evidence.get("replace_person_ids", []))
-    candidate_id = approval.evidence["candidate_id"]
-    keep = [p for p in visit.assigned_person_ids if p not in replace and p != candidate_id]
-    store.update(
-        session,
-        visit,
-        {"assigned_person_ids": [candidate_id, *keep]},
-        decider,
-        action="visit.reassigned",
-        approval_id=approval.id,
+        raise LookupError("visit not found")
+    return RespondToCoverOutput(
+        accepted=args.accept, visit=visit_info(deps.session, visit, deps.branch.timezone)
     )
 
-
-approvals.register_handler(APPROVAL_TYPE, apply_assignment)
 
 BINDINGS = [
     ToolBinding(
@@ -434,10 +460,16 @@ BINDINGS = [
         "or location_name with date and time.",
     ),
     ToolBinding(
-        "dispatcher.propose_assignment",
-        propose_assignment,
-        ProposeAssignmentInput,
-        "Propose assigning a candidate from find_replacements to a visit. Creates an "
-        "approval; the visit does not change until a person approves it.",
+        "dispatcher.assign_cover",
+        assign_cover,
+        AssignCoverInput,
+        "Assign cover when the user explicitly tells you whom to assign. The person is asked "
+        "to confirm before the visit changes. Never call this on your own initiative.",
+    ),
+    ToolBinding(
+        "dispatcher.respond_to_cover",
+        respond_to_cover,
+        RespondToCoverInput,
+        "Record the user's yes or no to a cover request Mia sent them.",
     ),
 ]
