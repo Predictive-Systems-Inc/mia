@@ -40,3 +40,9 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   the visit changes only when the cleaner accepts. On decline, the supervisor is told and the
   next candidate is offered.
 - Open follow-ups: geocoding provider, where home base is stored, confirmation timeout.
+
+## D7: (answers Q6a) Geocoding is a tool with pluggable providers
+- Decision: geocoding is a core tool with one interface and swappable providers, chosen by
+  configuration. First provider: Digitransit (Finland). Requests leave the node only through
+  the egress layer and are logged; results are cached so each address is geocoded once.
+- Reason: Finnish address quality now, other countries (Philippines) later without code changes.
