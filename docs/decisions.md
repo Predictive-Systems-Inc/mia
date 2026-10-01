@@ -46,3 +46,11 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   configuration. First provider: Digitransit (Finland). Requests leave the node only through
   the egress layer and are logged; results are cached so each address is geocoded once.
 - Reason: Finnish address quality now, other countries (Philippines) later without code changes.
+
+## D8: (answers Q6b) Home base on the person, data standard 1.1
+- Decision: home address and its coordinates are person fields in the core data standard
+  (version 1.1, ADR to follow), encrypted with other contact details when field encryption lands.
+- Principle (applies to all later choices): every design decision must fit the architecture so
+  the system stays easy to maintain. Shared, industry-neutral data goes in the core standard;
+  industry fields in templates; agent working data in agent tables; external services behind
+  tools with pluggable providers and the egress layer.
