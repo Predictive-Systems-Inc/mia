@@ -27,7 +27,6 @@ mia/
     config/                 policies/ (Casbin model.conf, policy.csv), org/demo/
     tests/                  unit tests; evals/ (marker `evals`)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas
-  index.html, netlify/      existing marketing site (unchanged by the node build)
 ```
 
 Files beyond the brief's layout, and why, are listed in docs/adr/001-stack.md.

@@ -76,3 +76,7 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   If the visit starts within 60 minutes, call at once and move on after 5 minutes. Quiet hours
   (21:00 to 06:00): urgent cover (visit before 10:00 next morning) may message during quiet
   hours but never call before 06:00; other requests wait until quiet hours end.
+
+## D12: (answers Q7) Old marketing site removed
+- Decision: the Netlify site (index.html, netlify/, netlify.toml) is discarded; Mia has a new
+  website elsewhere. This repository holds only the Mia ERP monorepo.
