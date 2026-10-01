@@ -69,3 +69,10 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   adapter interface with a stub that logs the call request; the real voice adapter plugs in
   later. Calls only to people who agreed to calls, respecting quiet hours (spec, Voice rules).
 - Open: timings for each step.
+
+## D11: (answers Q6d) Confirmation timings and quiet hours
+- Decision: organisation settings with these defaults: wait 15 minutes after the message, then
+  call; wait 10 minutes after the call, then move to the next candidate and tell the supervisor.
+  If the visit starts within 60 minutes, call at once and move on after 5 minutes. Quiet hours
+  (21:00 to 06:00): urgent cover (visit before 10:00 next morning) may message during quiet
+  hours but never call before 06:00; other requests wait until quiet hours end.
