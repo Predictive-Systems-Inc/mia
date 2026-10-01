@@ -1,0 +1,9 @@
+# Organisation settings for the demo organisation (decision D11). Times are local "HH:MM".
+quiet_hours: {start: "21:00", end: "06:00"}
+cover_confirmation:
+  message_wait_minutes: 15     # after messaging the picked cleaner, wait this long, then call
+  call_wait_minutes: 10        # after the call, wait this long, then move to the next candidate
+  soon_window_minutes: 60      # visit starts within this window: call at once
+  soon_call_wait_minutes: 5    # and move on after this long
+  urgent_until: "10:00"        # during quiet hours, cover for visits before this time next
+                               # morning may be messaged (never called before quiet hours end)

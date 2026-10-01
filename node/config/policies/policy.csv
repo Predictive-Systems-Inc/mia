@@ -1,0 +1,33 @@
+# Standard human roles (spec: Roles and permissions). Domain "*" applies in every branch.
+# Agent roles are loaded from each agent manifest (grants and denies), not from this file.
+# Wildcards only for read and write permissions; risky tools are granted one by one.
+#
+# Role hierarchy: owner > admin > supervisor > staff; accountant > viewer.
+g, owner, admin, *
+g, admin, supervisor, *
+g, supervisor, staff, *
+g, accountant, viewer, *
+
+# staff: own schedule, own tasks
+p, staff, *, data:core.visit, read_own, allow
+p, staff, *, data:core.person, read_own, allow
+p, staff, *, data:core.location, read, allow
+p, staff, *, data:dispatcher_absences, write_own, allow
+p, staff, *, tool:dispatcher.get_my_visits, execute, allow
+p, staff, *, tool:dispatcher.record_absence, execute, allow
+p, staff, *, tool:dispatcher.respond_to_cover, execute, allow
+
+# supervisor: schedules and approvals for daily operations
+p, supervisor, *, data:core.*, read, allow
+p, supervisor, *, data:dispatcher_*, write, allow
+p, supervisor, *, tool:dispatcher.find_replacements, execute, allow
+p, supervisor, *, tool:dispatcher.assign_cover, execute, allow
+
+# admin and owner decide cover overrides (instructions that break a scheduling rule)
+p, admin, *, tool:dispatcher.cover_override, approve, allow
+
+# admin: users, roles, settings (Phase 1 adds endpoints)
+p, admin, *, data:core.*, write, allow
+
+# viewer: read reports
+p, viewer, *, data:reports, read, allow

@@ -1,0 +1,28 @@
+# Install once with: uv run pre-commit install
+# Ruff and mypy run from the project environment so versions match uv.lock and CI.
+repos:
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+        exclude: (uv\.lock|\.secrets\.baseline)$
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy (changed files in node/mia)
+        entry: uv run mypy
+        language: system
+        types: [python]
+        files: ^node/mia/
+        require_serial: true

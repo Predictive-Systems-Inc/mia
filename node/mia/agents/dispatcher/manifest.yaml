@@ -1,0 +1,30 @@
+id: dispatcher
+name: Dispatcher
+version: 0.1.0
+standard_version: "1.0"
+job_description: job.md
+instructions: {base: prompts/base.md, org_overrides: {allowed: true, locked_topics: [approvals, permissions]}}
+models: {classifier: rules, route: default}
+roles:
+  agent_role: agent.dispatcher
+  grants:
+    - data:core.person:read
+    - data:core.visit:read
+    - data:core.location:read
+    - data:dispatcher_*:write
+    - tool:dispatcher.get_my_visits:execute
+    - tool:dispatcher.record_absence:execute
+    - tool:dispatcher.find_replacements:execute
+    - tool:dispatcher.assign_cover:execute
+    - tool:dispatcher.respond_to_cover:execute
+  denies: [tool:*:approve]
+  # An explicit instruction is the approval (decision D1). Approvals are needed only when no
+  # rule allows the instruction (cover override) or for money, external and delete tools.
+  approvers: {dispatcher.cover_override: [admin, owner]}
+tools:
+  - {id: dispatcher.get_my_visits, kind: agent, risk: read, approval: never, reads: [visit, location, job, person]}
+  - {id: dispatcher.record_absence, kind: agent, risk: write_internal, approval: never, reads: [visit], writes: [dispatcher_absences]}
+  - {id: dispatcher.find_replacements, kind: agent, risk: read, approval: never, reads: [visit, person, location, availability, work_limits, dispatcher_absences]}
+  - {id: dispatcher.assign_cover, kind: agent, risk: write_internal, approval: never, reads: [visit, person, availability, work_limits, dispatcher_absences], writes: [dispatcher_cover_requests, chat_messages, approval]}
+  - {id: dispatcher.respond_to_cover, kind: agent, risk: write_internal, approval: never, reads: [dispatcher_cover_requests], writes: [visit, dispatcher_cover_requests, chat_messages]}
+tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.95}
