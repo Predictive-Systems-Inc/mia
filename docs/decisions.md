@@ -54,3 +54,10 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   the system stays easy to maintain. Shared, industry-neutral data goes in the core standard;
   industry fields in templates; agent working data in agent tables; external services behind
   tools with pluggable providers and the egress layer.
+
+## D9: Employee data is shared data
+- Decision: all employee data lives in the core data standard (1.1): home base address and
+  coordinates, skills, weekly availability and working-hour limits. The tables
+  cleaning_availability and cleaning_work_limits move to core. The cleaning template keeps only
+  industry data (sites, checklists).
+- Reason: employee data is industry-neutral and reused by every shift business and agent.
