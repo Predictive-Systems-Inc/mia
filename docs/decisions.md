@@ -61,3 +61,11 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   cleaning_availability and cleaning_work_limits move to core. The cleaning template keeps only
   industry data (sites, checklists).
 - Reason: employee data is industry-neutral and reused by every shift business and agent.
+
+## D10: (answers Q6c) Confirmation escalation: message, then call, then next candidate
+- Decision: Mia messages the picked cleaner for confirmation; with no response it escalates to a
+  phone call; with still no response it moves to the next candidate and tells the supervisor.
+- Build note: voice is deferred (brief non-goal), so the call step goes behind a channel
+  adapter interface with a stub that logs the call request; the real voice adapter plugs in
+  later. Calls only to people who agreed to calls, respecting quiet hours (spec, Voice rules).
+- Open: timings for each step.
