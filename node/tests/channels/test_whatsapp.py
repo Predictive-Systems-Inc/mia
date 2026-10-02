@@ -150,7 +150,7 @@ def test_send_posts_to_graph_api_and_returns_message_id(wa: WhatsAppAdapter) -> 
         result = asyncio.run(adapter.send(payload))
     assert result.ok and result.channel_message_id == "wamid.OUT"
     (req,) = seen
-    assert str(req.url) == "https://graph.facebook.com/v21.0/PNID/messages"
+    assert str(req.url) == "https://graph.facebook.com/v26.0/PNID/messages"
     assert req.headers["authorization"] == "Bearer tok"
     assert json.loads(req.content) == {"type": "text"}
 

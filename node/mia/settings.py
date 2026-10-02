@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     MIA_WA_VERIFY_TOKEN: str = ""
     MIA_WA_PHONE_NUMBER_ID: str = ""
     MIA_WA_NUMBER: str = ""
-    MIA_WA_GRAPH_URL: str = "https://graph.facebook.com/v21.0"
+    MIA_WA_GRAPH_URL: str = "https://graph.facebook.com/v26.0"
 
     @property
     def db_url(self) -> str:
