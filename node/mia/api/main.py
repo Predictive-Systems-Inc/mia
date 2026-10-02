@@ -18,7 +18,7 @@ from mia.agents.dispatcher import cover
 from mia.channels import inbound as channel_service
 from mia.channels import outbox, registry
 from mia.channels.router import router as channels_router
-from mia.channels.whatsapp import register_if_configured
+from mia.channels.setup import register_configured
 from mia.chat.channels import NOTIFICATION
 from mia.chat.router import ActorHeader, DbSession, resolve_actor
 from mia.chat.router import router as chat_router
@@ -44,7 +44,9 @@ async def run_due_work() -> tuple[int, int]:
     stale = utcnow() - dt.timedelta(minutes=1)
     for inbound_id in await asyncio.to_thread(channel_service.pending_inbound, stale):
         await channel_service.handle_inbound(inbound_id)  # lost to a restart before handling
-    sent = await outbox.send_due(utcnow())
+    # Simulated messages wait for `mia channels sim`, which shows them; the server would only
+    # "send" them into its own memory.
+    sent = await outbox.send_due(utcnow(), skip=frozenset({"sim"}))
     return advanced, sent
 
 
@@ -61,7 +63,7 @@ async def _ticker(seconds: int) -> None:
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Register configured channels, then run due work (cover, outbox) every MIA_TICK_SECONDS
     (a stand-in for the Huey worker)."""
-    register_if_configured(get_settings())
+    register_configured(get_settings())
     seconds = get_settings().MIA_TICK_SECONDS
     task = asyncio.create_task(_ticker(seconds)) if seconds > 0 else None
     yield

@@ -129,9 +129,7 @@ def inbox(args: argparse.Namespace) -> int:
 
 def tick(_args: argparse.Namespace) -> int:
     from mia.api.main import run_due_work
-    from mia.channels.whatsapp import register_if_configured
 
-    register_if_configured(get_settings())
     advanced, sent = asyncio.run(run_due_work())
     print(f"advanced {advanced} cover request(s), sent {sent} channel message(s)")
     return 0
@@ -225,7 +223,10 @@ def invite(args: argparse.Namespace) -> int:
         except linking.LinkingError as exc:
             raise SystemExit(str(exc)) from exc
         print(f"invite for {person.name}, valid 7 days, single use")
-        print(f"  link: {linking.invite_link(code)}")
+        if get_settings().MIA_WA_NUMBER:
+            print(f"  link: {linking.invite_link(code)}")
+        else:
+            print("  (no link: set MIA_WA_NUMBER to Mia's WhatsApp number for a wa.me link)")
         print(f"  or send this text to Mia on WhatsApp: LINK {code}")
     return 0
 
@@ -241,9 +242,8 @@ def channels_sim(args: argparse.Namespace) -> int:
     from mia.core.ids import new_id
     from mia.core.models import Actor, ChannelInbound, Principal
 
-    sim = SimAdapter()
-    registry.register(sim)
-    if sim not in registry.enabled():
+    sim = registry.get("sim")
+    if not isinstance(sim, SimAdapter) or sim not in registry.enabled():
         raise SystemExit("the sim channel is off: set channels.sim.enabled in the org settings")
     msg = InboundMessage(
         channel="sim",
@@ -262,17 +262,29 @@ def channels_sim(args: argparse.Namespace) -> int:
         )
         inbound_id = store.insert(session, row, actor, action="channel.received").id
 
-    async def run() -> None:
+    def show(title: str) -> None:
+        mine = [p for p in sim.sent if p.address == args.sender]
+        if mine:
+            print(title)
+        for payload in mine:
+            body = payload.body
+            print(f"[Mia -> {payload.address}] ({body.get('kind')})")
+            print(body.get("text") or body.get("name") or "")
+            for option in body.get("buttons") or body.get("rows") or []:
+                print(f"  [{option}]")
+        sim.sent.clear()
+
+    async def waiting() -> None:
+        await outbox.send_due(utcnow())
+
+    async def reply() -> None:
         await handle_inbound(inbound_id)
         await outbox.send_due(utcnow())
 
-    asyncio.run(run())
-    for payload in sim.sent:
-        body = payload.body
-        print(f"[Mia -> {payload.address}] ({body.get('kind')})")
-        print(body.get("text") or body.get("name") or "")
-        for option in body.get("buttons") or body.get("rows") or []:
-            print(f"  [{option}]")
+    asyncio.run(waiting())
+    show("-- waiting for this number --")
+    asyncio.run(reply())
+    show("-- reply --")
     return 0
 
 
@@ -332,8 +344,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point for `uv run mia`."""
+    """Entry point for `uv run mia`. Registers the configured channels, then runs the command."""
+    from mia.channels.setup import register_configured
+
     args = build_parser().parse_args(argv)
+    register_configured(get_settings())
     return int(args.func(args))
 
 

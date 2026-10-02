@@ -43,7 +43,7 @@ def outbox_actor(branch_id: str) -> Actor:
     return Actor(principal=Principal(type="system", id="channels.outbox"), branch_id=branch_id)
 
 
-def _lease(now: dt.datetime) -> list[_Lease]:
+def _lease(now: dt.datetime, skip: frozenset[str]) -> list[_Lease]:
     now = now.astimezone(dt.UTC)  # stored times are UTC; SQL compares them as strings
     with session_scope() as session:
         # Take the write lock before reading due rows, so two overlapping senders (ticker,
@@ -52,6 +52,7 @@ def _lease(now: dt.datetime) -> list[_Lease]:
         rows = session.exec(
             select(ChannelOutbox)
             .where(ChannelOutbox.status == "queued")
+            .where(col(ChannelOutbox.channel).not_in(skip))
             .where(
                 or_(col(ChannelOutbox.send_after).is_(None), col(ChannelOutbox.send_after) <= now)
             )
@@ -144,10 +145,10 @@ def _fall_back_to_notice(session: Session, row: ChannelOutbox, actor: Actor) -> 
     )
 
 
-async def send_due(now: dt.datetime) -> int:
-    """Send every due queued row once. Returns how many were sent successfully."""
+async def send_due(now: dt.datetime, skip: frozenset[str] = frozenset()) -> int:
+    """Send every due queued row once, except on channels in `skip`. Returns how many were sent."""
     sent = 0
-    for lease in await asyncio.to_thread(_lease, now):
+    for lease in await asyncio.to_thread(_lease, now, skip):
         try:
             adapter = registry.get(lease.channel)
         except KeyError:

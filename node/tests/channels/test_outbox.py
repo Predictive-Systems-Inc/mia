@@ -81,15 +81,18 @@ def test_channel_transport_refuses_requests_outside_an_outbox_send() -> None:
         asyncio.run(call())
 
 
-def test_tick_runs_cover_escalation_and_sends_the_outbox(
+def test_tick_leaves_simulated_messages_for_mia_channels_sim(
     session: Session, people: dict[str, Person], sim: SimAdapter, link: LinkFn
 ) -> None:
+    """The server's ticker sends real channels; `mia channels sim` shows simulated ones."""
     from mia.api.main import run_due_work
 
-    _queue(session, people["Juha"], link)
+    row = _queue(session, people["Juha"], link)
     advanced, sent = asyncio.run(run_due_work())
-    assert (advanced, sent) == (0, 1)
-    assert len(sim.sent) == 1
+    assert (advanced, sent) == (0, 0) and sim.sent == []
+    session.refresh(row)
+    assert row.status == "queued"
+    assert asyncio.run(outbox.send_due(utcnow())) == 1  # what `mia channels sim` does
 
 
 def test_health_reports_failed_channel_messages(

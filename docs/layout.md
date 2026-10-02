@@ -24,7 +24,7 @@ mia/
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls)
       channels/             messaging channels (ADR 007): base.py (adapter protocol), registry.py,
                             render.py (fallback rendering), service.py (deliver), inbound.py,
-                            outbox.py, linking.py (codes, invites), transport.py (the only HTTP
+                            outbox.py, linking.py (codes, invites), setup.py, transport.py (the only HTTP
                             exit for channels), router.py (webhooks), simulator.py ("sim" adapter)
         whatsapp/           adapter.py (Meta Cloud API), templates.py
       api/                  main.py
