@@ -1,4 +1,4 @@
-"""The `mia` command: migrate, seed, serve, chat, decide."""
+"""The `mia` command: migrate, seed, serve, chat, decide, inbox, tick, geocode, person."""
 
 import argparse
 import asyncio
@@ -156,6 +156,39 @@ def geocode(_args: argparse.Namespace) -> int:
         return 1
 
 
+def _only_branch_id(session: Session, branch_id: str | None) -> str:
+    from mia.core.models import Branch
+
+    if branch_id:
+        return branch_id
+    branches = session.exec(select(Branch)).all()
+    if len(branches) != 1:
+        raise SystemExit("pass --branch: the database has " + str(len(branches)) + " branches")
+    return branches[0].id
+
+
+def person_add(args: argparse.Namespace) -> int:
+    from mia.core import people
+    from mia.core.db import session_scope
+    from mia.core.models import Actor
+
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        try:
+            person = people.add_person(
+                session,
+                Actor.system(branch_id),
+                branch_id=branch_id,
+                name=args.name,
+                roles=args.roles,
+                language=args.lang,
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"added {person.name} ({person.id})")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mia", description="Mia Node command line")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -188,6 +221,15 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "geocode", help="geocode home bases and sites that have no coordinates"
     ).set_defaults(func=geocode)
+    person = sub.add_parser("person", help="manage people").add_subparsers(
+        dest="person_command", required=True
+    )
+    p = person.add_parser("add", help="add a person")
+    p.add_argument("name")
+    p.add_argument("--role", dest="roles", action="append", required=True)
+    p.add_argument("--lang", default="fi", choices=["fi", "en"])
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=person_add)
     return parser
 
 

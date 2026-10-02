@@ -52,3 +52,13 @@ def test_unknown_person(capsys: pytest.CaptureFixture[str]) -> None:
     main(["seed"])
     with pytest.raises(SystemExit, match="no person matches"):
         main(["chat", "hi", "--as", "Nobody"])
+
+
+def test_person_add(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["migrate"]) == 0
+    assert main(["seed"]) == 0
+    capsys.readouterr()
+    assert main(["person", "add", "Aada Koski", "--role", "staff", "--lang", "fi"]) == 0
+    assert re.search(r"added Aada Koski \(\w{26}\)", capsys.readouterr().out)
+    with pytest.raises(SystemExit, match="roles must be"):
+        main(["person", "add", "Bea", "--role", "janitor"])
