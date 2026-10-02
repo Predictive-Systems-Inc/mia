@@ -13,6 +13,7 @@ from sqlmodel import col, select
 
 import mia
 from mia.agents.dispatcher import cover
+from mia.channels import outbox
 from mia.chat.channels import NOTIFICATION
 from mia.chat.router import ActorHeader, DbSession, resolve_actor
 from mia.chat.router import router as chat_router
@@ -31,15 +32,22 @@ def tick() -> int:
         return cover.process_due(session, utcnow())
 
 
+async def run_due_work() -> tuple[int, int]:
+    """One round of due work: cover escalation, then the channel outbox. Returns both counts."""
+    advanced = await asyncio.to_thread(tick)  # sync DB work off the event loop
+    sent = await outbox.send_due(utcnow())
+    return advanced, sent
+
+
 async def _ticker(seconds: int) -> None:
     while True:
         await asyncio.sleep(seconds)
-        await asyncio.to_thread(tick)  # sync DB work off the event loop
+        await run_due_work()
 
 
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Stand-in for the Huey worker: advance due cover requests every MIA_TICK_SECONDS."""
+    """Stand-in for the Huey worker: run due work (cover, outbox) every MIA_TICK_SECONDS."""
     seconds = get_settings().MIA_TICK_SECONDS
     task = asyncio.create_task(_ticker(seconds)) if seconds > 0 else None
     yield

@@ -21,7 +21,7 @@ def test_no_table_writes_outside_core_and_templates() -> None:
 
 
 def test_no_provider_sdk_outside_egress_and_model_factory() -> None:
-    """Rule 6: agents and tools never import a provider SDK or an HTTP client directly."""
+    """Rule 6: only egress, geocoding, the model factory and channel transport touch HTTP."""
     pattern = re.compile(
         r"^\s*(import|from)\s+(openai|anthropic|google\.genai|httpx|requests)\b", re.MULTILINE
     )
@@ -30,6 +30,8 @@ def test_no_provider_sdk_outside_egress_and_model_factory() -> None:
         MIA / "core" / "geocoding.py",
         MIA / "agents" / "base.py",
         MIA / "agents" / "dispatcher" / "agent.py",
+        MIA / "channels" / "transport.py",  # rule 6: the only HTTP exit for channels
+        MIA / "channels" / "whatsapp" / "adapter.py",  # builds its client on ChannelTransport
     }
     offenders = [str(p) for p in _py_files() if p not in allowed and pattern.search(p.read_text())]
     assert offenders == []

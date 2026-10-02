@@ -19,6 +19,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.dispatcher import scoring
 from mia.agents.dispatcher.models import CoverRequest
+from mia.channels.base import TemplateCall
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.chat.channels import call_adapter, notify
 from mia.core import approvals, events, store
@@ -114,7 +115,24 @@ def _tell(
 ) -> None:
     person = _person(session, person_id)
     blocks: list[Block] = [TextBlock(text=t(key, person.language, **params))]
-    notify(session, person, blocks + (extra or []), actor, AGENT_ID)
+    template = None
+    if key == "cover.ask":  # asks are already gated by D11 (may_message), so they are urgent
+        lang = person.language
+        template = TemplateCall(
+            name="mia_cover_request",
+            lang=lang,
+            params=[person.name.split()[0], params["location"], params["date"], params["time"]],
+            buttons=[t("cover.reply_accept", lang), t("cover.reply_decline", lang)],
+        )
+    notify(
+        session,
+        person,
+        blocks + (extra or []),
+        actor,
+        AGENT_ID,
+        template=template,
+        urgent=template is not None,
+    )
 
 
 def cancel_open(session: Session, visit_id: str, actor: Actor, keep: str | None = None) -> None:

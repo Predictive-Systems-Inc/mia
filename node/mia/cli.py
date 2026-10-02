@@ -128,9 +128,10 @@ def inbox(args: argparse.Namespace) -> int:
 
 
 def tick(_args: argparse.Namespace) -> int:
-    from mia.api.main import tick as run_tick
+    from mia.api.main import run_due_work
 
-    print(f"advanced {run_tick()} cover request(s)")
+    advanced, sent = asyncio.run(run_due_work())
+    print(f"advanced {advanced} cover request(s), sent {sent} channel message(s)")
     return 0
 
 

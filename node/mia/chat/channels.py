@@ -11,6 +11,8 @@ from typing import Protocol
 from pydantic import BaseModel
 from sqlmodel import Session, col, select
 
+from mia.channels.base import TemplateCall
+from mia.channels.service import deliver
 from mia.chat.blocks import Block
 from mia.core import events, store
 from mia.core.models import Actor, Message, Person, Thread
@@ -19,9 +21,18 @@ NOTIFICATION = "notification"
 
 
 def notify(
-    session: Session, person: Person, blocks: list[Block], actor: Actor, agent_id: str
+    session: Session,
+    person: Person,
+    blocks: list[Block],
+    actor: Actor,
+    agent_id: str,
+    *,
+    template: TemplateCall | None = None,
+    urgent: bool = False,
+    sensitive: bool = False,
 ) -> Message:
-    """Store a proactive message for a person in their latest thread with the agent."""
+    """Store a proactive message in the person's latest thread with the agent (the app copy is
+    always kept), then queue it on every enabled channel the person has linked."""
     thread = session.exec(
         select(Thread)
         .where(Thread.person_id == person.id)
@@ -44,7 +55,18 @@ def notify(
         text=text,
         blocks=[b.model_dump(mode="json") for b in blocks],
     )
-    return store.insert(session, message, actor, action="notification.sent")
+    stored = store.insert(session, message, actor, action="notification.sent")
+    deliver(
+        session,
+        person,
+        blocks,
+        actor,
+        template=template,
+        urgent=urgent,
+        sensitive=sensitive,
+        source_id=stored.id,
+    )
+    return stored
 
 
 class CallResult(BaseModel):
