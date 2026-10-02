@@ -5,12 +5,13 @@ in a reply always point to approvals that exist, and every approval created in t
 card; user and assistant messages are stored through core services with events.
 """
 
+import asyncio
 import datetime as dt
 import html
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, AgentRunResult
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 from sqlmodel import Session, col, select
 
@@ -40,6 +41,7 @@ def wrap_user_text(text: str, person: Person) -> str:
 
 
 def history(session: Session, thread: Thread) -> list[ModelMessage]:
+    """The thread's Pydantic AI messages in order, for the next run's message history."""
     rows = session.exec(
         select(Message).where(Message.thread_id == thread.id).order_by(col(Message.id))
     ).all()
@@ -80,18 +82,10 @@ def check_blocks(session: Session, deps: AgentDeps, blocks: list[Block]) -> list
     return result
 
 
-async def run_turn(
-    session: Session,
-    agent: Agent[AgentDeps, Any],
-    person: Person,
-    text: str,
-    thread_id: str | None = None,
-) -> ChatReply:
-    """One user message in, one structured reply out.
-
-    Commits the user message before the model runs, so no write lock is held while waiting on
-    the network; tool calls and egress commit their own writes. The caller commits the reply.
-    """
+def _prepare(
+    session: Session, person: Person, text: str, thread_id: str | None
+) -> tuple[Thread, list[ModelMessage], AgentDeps, EgressContext]:
+    """Store the user message and commit it; build the run's deps and egress context."""
     branch = session.get(Branch, person.branch_id)
     if branch is None:
         raise ChatError("person has no branch")
@@ -115,7 +109,6 @@ async def run_turn(
         human,
     )
     session.commit()
-    lang = detect_language(text, person.language)
     deps = AgentDeps(
         session=session,
         actor=human.as_agent(MANIFEST.roles.agent_role),
@@ -123,7 +116,7 @@ async def run_turn(
         branch=branch,
         organisation_id=branch.organisation_id,
         today=dt.datetime.now(ZoneInfo(branch.timezone)).date(),
-        lang=lang,
+        lang=detect_language(text, person.language),
         manifest=MANIFEST,
     )
     ctx = EgressContext(
@@ -134,16 +127,20 @@ async def run_turn(
         purpose="chat",
         level=get_settings().MIA_EGRESS_LEVEL,
     )
-    with egress_context(ctx):
-        result = await agent.run(wrap_user_text(text, person), deps=deps, message_history=past)
-    output: AgentReply = result.output
-    blocks = check_blocks(session, deps, output.blocks)
+    return thread, past, deps, ctx
+
+
+def _finish(
+    session: Session, deps: AgentDeps, thread: Thread, result: AgentRunResult[AgentReply]
+) -> ChatReply:
+    """Check the reply's blocks and store the assistant message (the caller commits)."""
+    blocks = check_blocks(session, deps, result.output.blocks)
     reply_text = "\n".join(b.text for b in blocks if b.type == "text")
     new_messages = ModelMessagesTypeAdapter.dump_python(result.new_messages(), mode="json")
     message = store.insert(
         session,
         Message(
-            branch_id=branch.id,
+            branch_id=deps.branch.id,
             thread_id=thread.id,
             role="assistant",
             sender_id=MANIFEST.roles.agent_role,
@@ -157,3 +154,22 @@ async def run_turn(
     return ChatReply(
         thread_id=thread.id, message_id=message.id, agent_id=MANIFEST.id, blocks=blocks
     )
+
+
+async def run_turn(
+    session: Session,
+    agent: Agent[AgentDeps, Any],
+    person: Person,
+    text: str,
+    thread_id: str | None = None,
+) -> ChatReply:
+    """One user message in, one structured reply out.
+
+    Commits the user message before the model runs, so no write lock is held while waiting on
+    the network; tool calls and egress commit their own writes. The caller commits the reply.
+    Database work runs in worker threads (rule 12); only the agent run stays on the loop.
+    """
+    thread, past, deps, ctx = await asyncio.to_thread(_prepare, session, person, text, thread_id)
+    with egress_context(ctx):
+        result = await agent.run(wrap_user_text(text, person), deps=deps, message_history=past)
+    return await asyncio.to_thread(_finish, session, deps, thread, result)

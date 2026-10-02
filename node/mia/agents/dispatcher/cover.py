@@ -48,6 +48,7 @@ def quiet_end_after(now: dt.datetime, tz: str, org: OrgSettings) -> dt.datetime:
 
 
 def is_quiet(now: dt.datetime, tz: str, org: OrgSettings) -> bool:
+    """True when `now` falls inside the organisation's quiet hours in the branch time zone."""
     return org.quiet_hours.contains(_local(now, tz).time().replace(tzinfo=None))
 
 
@@ -61,14 +62,17 @@ def is_urgent_overnight(
 
 
 def is_soon(now: dt.datetime, visit_start: dt.datetime, org: OrgSettings) -> bool:
+    """True when the visit starts within the organisation's soon window."""
     return visit_start - now <= dt.timedelta(minutes=org.cover_confirmation.soon_window_minutes)
 
 
 def may_message(now: dt.datetime, visit_start: dt.datetime, tz: str, org: OrgSettings) -> bool:
+    """Messaging is allowed outside quiet hours, or inside them for urgent overnight cover (D11)."""
     return not is_quiet(now, tz, org) or is_urgent_overnight(now, visit_start, tz, org)
 
 
 def may_call(now: dt.datetime, tz: str, org: OrgSettings) -> bool:
+    """Calls are allowed only outside quiet hours (D11)."""
     return not is_quiet(now, tz, org)
 
 
@@ -132,6 +136,7 @@ def cancel_open(session: Session, visit_id: str, actor: Actor, keep: str | None 
 
 
 def system_actor(branch_id: str) -> Actor:
+    """The system actor for a branch, used for scheduled escalation steps."""
     return Actor.system(branch_id)
 
 

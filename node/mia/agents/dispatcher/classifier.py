@@ -157,6 +157,7 @@ def parse_date(text: str, today: dt.date) -> dt.date | None:
 
 
 def parse_time(text: str) -> dt.time | None:
+    """First HH:MM or HH.MM time in the text (24 hour clock), or None."""
     m = TIME.search(text)
     return dt.time(int(m[1]), int(m[2])) if m else None
 

@@ -40,3 +40,18 @@ def test_no_em_dashes_in_code_comments_or_docs() -> None:
     files = list(MIA.rglob("*.py")) + list(docs.rglob("adr/*.md"))
     offenders = [str(p) for p in files if "—" in p.read_text(encoding="utf-8")]
     assert offenders == []
+
+
+def test_public_functions_have_docstrings() -> None:
+    """Style rule: docstrings state what a function guarantees (core, chat, agents, channels)."""
+    import ast
+
+    missing = []
+    for p in MIA.rglob("*.py"):
+        if p.relative_to(MIA).parts[0] not in ("core", "chat", "agents", "channels"):
+            continue
+        for node in ast.parse(p.read_text(encoding="utf-8")).body:
+            is_func = isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            if is_func and not node.name.startswith("_") and ast.get_docstring(node) is None:
+                missing.append(f"{p.relative_to(MIA)}:{node.lineno} {node.name}")
+    assert missing == []

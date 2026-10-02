@@ -72,6 +72,7 @@ async def _turn(session: Session, body: ChatRequest, x_mia_actor: str | None) ->
 
 @router.post("/chat", response_model=ChatReply)
 async def chat(session: DbSession, body: ChatRequest, x_mia_actor: ActorHeader = None) -> ChatReply:
+    """One chat turn as JSON for the acting person."""
     return await _turn(session, body, x_mia_actor)
 
 

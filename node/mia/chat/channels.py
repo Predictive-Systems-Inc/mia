@@ -72,9 +72,11 @@ _call_adapter: CallAdapter = StubCallAdapter()
 
 
 def call_adapter() -> CallAdapter:
+    """The adapter used for outbound calls (the logging stub until voice exists)."""
     return _call_adapter
 
 
 def set_call_adapter(adapter: CallAdapter) -> None:
+    """Replace the call adapter for the whole process (tests and the future voice channel)."""
     global _call_adapter
     _call_adapter = adapter

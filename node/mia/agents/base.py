@@ -233,6 +233,8 @@ def call_tool(
 
 
 def to_pydantic_tool(binding: ToolBinding, spec: ToolSpec) -> Tool[AgentDeps]:
+    """Wrap a binding as a sequential Pydantic AI tool that always runs through call_tool."""
+
     async def run(ctx: RunContext[AgentDeps], args: BaseModel) -> dict[str, Any]:
         # Sync DB work runs off the event loop. One Session is not safe for concurrent use, so
         # the tool is marked sequential: tool calls in one run never overlap.
