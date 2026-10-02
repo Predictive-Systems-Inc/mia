@@ -6,11 +6,12 @@ Guarantees for every agent built here:
 - every tool call runs rbac.require() on the agent principal and the person it acts for;
 - tools with risk money, external or delete create an approval and stop (ApprovalRequired)
   unless an approved approval for that tool call is supplied;
-- every call is written to the events log with its inputs and result;
+- every call is written to the events log with its inputs and result, and committed;
 - the model comes from settings.MIA_MODEL: `test` uses the agent's deterministic rules model,
   anything else is a gateway route reached only through mia.core.egress.
 """
 
+import asyncio
 import datetime as dt
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -227,19 +228,26 @@ def call_tool(
         tool_call_id=tool_call_id,
     )
     deps.tool_log.append(ToolLogEntry(spec.id, tool_call_id, inputs, out))
+    deps.session.commit()  # the next step is usually a model call; do not hold the write lock
     return out
 
 
 def to_pydantic_tool(binding: ToolBinding, spec: ToolSpec) -> Tool[AgentDeps]:
     async def run(ctx: RunContext[AgentDeps], args: BaseModel) -> dict[str, Any]:
-        return call_tool(ctx.deps, binding, args, ctx.tool_call_id or new_id())
+        # Sync DB work runs off the event loop. One Session is not safe for concurrent use, so
+        # the tool is marked sequential: tool calls in one run never overlap.
+        return await asyncio.to_thread(
+            call_tool, ctx.deps, binding, args, ctx.tool_call_id or new_id()
+        )
 
     run.__annotations__ = {
         "ctx": RunContext[AgentDeps],
         "args": binding.input_type,
         "return": dict[str, Any],
     }
-    return Tool(run, takes_ctx=True, name=spec.name, description=binding.description)
+    return Tool(
+        run, takes_ctx=True, name=spec.name, description=binding.description, sequential=True
+    )
 
 
 def load_instructions(manifest: Manifest, agent_dir: Path, org: str) -> str:

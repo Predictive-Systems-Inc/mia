@@ -13,12 +13,18 @@ from sqlmodel import Session, select
 
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
+from pydantic_ai import models
+
 from mia.agents.dispatcher import agent as dispatcher_agent
 from mia.core import db
 from mia.core.models import Actor, Branch, Person
 from mia.schema import create_all
 from mia.settings import get_settings
 from mia.templates.cleaning.seed import seed
+
+# Any model other than TestModel or FunctionModel fails unless a test opts in with
+# models.override_allow_model_requests(True) (egress tests with a mock transport, real evals).
+models.ALLOW_MODEL_REQUESTS = False
 
 
 def pytest_configure(config: pytest.Config) -> None:

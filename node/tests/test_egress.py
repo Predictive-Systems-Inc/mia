@@ -2,9 +2,12 @@
 
 import asyncio
 import json
+import sqlite3
+from collections.abc import Iterator
 
 import httpx
 import pytest
+from pydantic_ai import models
 from sqlmodel import Session, select
 
 from mia.agents.dispatcher.agent import create_agent
@@ -12,6 +15,7 @@ from mia.chat.service import run_turn
 from mia.core import egress
 from mia.core.egress import EgressBlocked, EgressContext, EgressTransport, Pseudonymiser
 from mia.core.models import Actor, EgressLog, Person, UsageCloudRequest
+from mia.settings import get_settings
 
 
 class Recorder:
@@ -51,6 +55,13 @@ class Recorder:
                 "usage": {"prompt_tokens": 120, "completion_tokens": 30, "total_tokens": 150},
             },
         )
+
+
+@pytest.fixture
+def mock_network() -> Iterator[None]:
+    """Let a gateway model run; these tests replace the network with httpx.MockTransport."""
+    with models.override_allow_model_requests(True):
+        yield
 
 
 def _all_name_parts(people: dict[str, Person]) -> set[str]:
@@ -119,6 +130,7 @@ def test_pseudonymiser_is_stable_and_reversible(
     assert Pseudonymiser().apply("Juha") == "Juha"
 
 
+@pytest.mark.usefixtures("mock_network")
 def test_gateway_model_goes_through_egress(session: Session, people: dict[str, Person]) -> None:
     """Switching MIA_MODEL to a gateway route needs no code change and is logged pseudonymised."""
     recorder = Recorder(reply_text="Hei Person_3, kiitos.")
@@ -140,3 +152,31 @@ def test_gateway_model_goes_through_egress(session: Session, people: dict[str, P
     ordered = sorted(people.values(), key=lambda p: p.id)
     assert reply.blocks[0].type == "text"
     assert ordered[2].name in reply.blocks[0].text
+
+
+@pytest.mark.usefixtures("mock_network")
+def test_no_write_lock_is_held_during_the_model_call(
+    session: Session, people: dict[str, Person]
+) -> None:
+    """SQLite has one writer: a model call must not keep every other writer waiting."""
+    db_path = get_settings().MIA_DB_PATH
+    lock_free: list[bool] = []
+
+    class LockProbe(Recorder):
+        def __call__(self, request: httpx.Request) -> httpx.Response:
+            other = sqlite3.connect(db_path, timeout=0)
+            try:
+                other.execute("BEGIN IMMEDIATE")
+                other.rollback()
+                lock_free.append(True)
+            except sqlite3.OperationalError:
+                lock_free.append(False)
+            finally:
+                other.close()
+            return super().__call__(request)
+
+    agent = create_agent("gateway/dispatcher-default", transport=httpx.MockTransport(LockProbe()))
+    asyncio.run(run_turn(session, agent, people["Juha"], "Moi"))
+    assert lock_free == [True]
+    # What left the node stays logged even though the turn's transaction committed in parts.
+    assert len(session.exec(select(EgressLog)).all()) == 1

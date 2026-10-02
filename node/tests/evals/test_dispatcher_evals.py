@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 import yaml
+from pydantic_ai import models
 from sqlmodel import Session, select
 
 from mia.agents.dispatcher.agent import AGENT_DIR, MANIFEST, create_agent
@@ -29,6 +30,9 @@ from mia.templates.cleaning.seed import seed
 pytestmark = pytest.mark.evals
 
 RUNS = int(os.environ.get("MIA_EVAL_RUNS", "5"))
+# A real model is the point of MIA_EVAL_MODEL; conftest blocks model requests otherwise.
+if os.environ.get("MIA_EVAL_MODEL"):
+    models.ALLOW_MODEL_REQUESTS = True
 SCENARIOS: list[dict[str, Any]] = yaml.safe_load(
     (AGENT_DIR / MANIFEST.tests["suite"]).read_text(encoding="utf-8")
 )

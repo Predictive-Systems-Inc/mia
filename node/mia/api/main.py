@@ -14,7 +14,7 @@ from sqlmodel import col, select
 import mia
 from mia.agents.dispatcher import cover
 from mia.chat.channels import NOTIFICATION
-from mia.chat.router import ActorHeader, resolve_actor
+from mia.chat.router import ActorHeader, DbSession, resolve_actor
 from mia.chat.router import router as chat_router
 from mia.core import approvals
 from mia.core.db import session_scope, utcnow
@@ -34,7 +34,7 @@ def tick() -> int:
 async def _ticker(seconds: int) -> None:
     while True:
         await asyncio.sleep(seconds)
-        tick()
+        await asyncio.to_thread(tick)  # sync DB work off the event loop
 
 
 @contextlib.asynccontextmanager
@@ -52,14 +52,12 @@ app.include_router(chat_router)
 
 
 @app.get("/health")
-def health() -> dict[str, object]:
-    with session_scope() as session:
-        chain_ok = verify_chain(session)
+def health(session: DbSession) -> dict[str, object]:
     return {
         "status": "ok",
         "version": mia.__version__,
         "model": get_settings().MIA_MODEL,
-        "events_chain": chain_ok,
+        "events_chain": verify_chain(session),
     }
 
 
@@ -76,11 +74,10 @@ class PersonOut(BaseModel):
 
 
 @app.get("/persons", response_model=list[PersonOut])
-def persons() -> list[PersonOut]:
+def persons(session: DbSession) -> list[PersonOut]:
     """Demo only: lists people for the chat page's actor picker (no auth in this build)."""
-    with session_scope() as session:
-        rows = session.exec(select(Person).order_by(col(Person.id))).all()
-        return [PersonOut(id=p.id, name=p.name, roles=p.roles, language=p.language) for p in rows]
+    rows = session.exec(select(Person).order_by(col(Person.id))).all()
+    return [PersonOut(id=p.id, name=p.name, roles=p.roles, language=p.language) for p in rows]
 
 
 class DecideRequest(BaseModel):
@@ -96,18 +93,17 @@ class DecideResponse(BaseModel):
 
 @app.post("/approvals/{approval_id}/decide", response_model=DecideResponse)
 def decide(
-    approval_id: str, body: DecideRequest, x_mia_actor: ActorHeader = None
+    session: DbSession, approval_id: str, body: DecideRequest, x_mia_actor: ActorHeader = None
 ) -> DecideResponse:
     """Stand-in for the approvals inbox. Decisions come from the authenticated app channel."""
-    with session_scope() as session:
-        person = resolve_actor(session, x_mia_actor)
-        try:
-            row = approvals.decide(
-                session, approval_id, Actor.person(person), body.outcome, body.reason, channel="app"
-            )
-        except approvals.ApprovalError as exc:
-            raise HTTPException(403, str(exc)) from exc
-        return DecideResponse(approval_id=row.id, status=row.status, decided_by=row.decided_by)
+    person = resolve_actor(session, x_mia_actor)
+    try:
+        row = approvals.decide(
+            session, approval_id, Actor.person(person), body.outcome, body.reason, channel="app"
+        )
+    except approvals.ApprovalError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    return DecideResponse(approval_id=row.id, status=row.status, decided_by=row.decided_by)
 
 
 class NotificationOut(BaseModel):
@@ -117,19 +113,19 @@ class NotificationOut(BaseModel):
 
 
 @app.get("/notifications", response_model=list[NotificationOut])
-def notifications(after: str = "", x_mia_actor: ActorHeader = None) -> list[NotificationOut]:
+def notifications(
+    session: DbSession, after: str = "", x_mia_actor: ActorHeader = None
+) -> list[NotificationOut]:
     """Proactive messages for the acting person, oldest first, after a message id."""
-    with session_scope() as session:
-        person = resolve_actor(session, x_mia_actor)
-        stmt = (
-            select(Message)
-            .join(Thread, col(Thread.id) == col(Message.thread_id))
-            .where(Thread.person_id == person.id)
-            .where(Message.role == NOTIFICATION)
-            .where(col(Message.id) > after)
-            .order_by(col(Message.id))
-        )
-        return [
-            NotificationOut(id=m.id, thread_id=m.thread_id, blocks=m.blocks)
-            for m in session.exec(stmt)
-        ]
+    person = resolve_actor(session, x_mia_actor)
+    stmt = (
+        select(Message)
+        .join(Thread, col(Thread.id) == col(Message.thread_id))
+        .where(Thread.person_id == person.id)
+        .where(Message.role == NOTIFICATION)
+        .where(col(Message.id) > after)
+        .order_by(col(Message.id))
+    )
+    return [
+        NotificationOut(id=m.id, thread_id=m.thread_id, blocks=m.blocks) for m in session.exec(stmt)
+    ]

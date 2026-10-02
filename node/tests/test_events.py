@@ -1,7 +1,10 @@
 """Events log: append-only and hash-chained (required negative tests)."""
 
+import threading
+import time
+
 import pytest
-from sqlalchemy import text
+from sqlalchemy import Engine, text
 from sqlalchemy.exc import DatabaseError
 from sqlmodel import Session, select
 
@@ -71,3 +74,30 @@ def test_event_records_actor_and_on_behalf_of(session: Session) -> None:
     ev = events.emit(session, "x", ("thing", "1"), None, None, actor, tool_call_id="call-1")
     assert (ev.actor_type, ev.actor_id, ev.on_behalf_of) == ("agent", "agent.dispatcher", "P1")
     assert ev.tool_call_id == "call-1"
+
+
+def test_concurrent_writers_do_not_fork_the_chain(engine: Engine) -> None:
+    """A second writer waits for the first one's lock before it reads the last hash."""
+    first_holds_lock = threading.Event()
+
+    def first() -> None:
+        with Session(engine) as s:
+            _emit(s, 1)
+            first_holds_lock.set()
+            time.sleep(0.3)
+            s.commit()
+
+    def second() -> None:
+        first_holds_lock.wait()
+        with Session(engine) as s:
+            _emit(s, 1)
+            s.commit()
+
+    threads = [threading.Thread(target=first), threading.Thread(target=second)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    with Session(engine) as s:
+        assert len(s.exec(select(Event)).all()) == 2
+        assert verify_chain(s)
