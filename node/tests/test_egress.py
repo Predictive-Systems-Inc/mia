@@ -4,6 +4,7 @@ import asyncio
 import json
 import sqlite3
 from collections.abc import Iterator
+from typing import Any
 
 import httpx
 import pytest
@@ -180,3 +181,30 @@ def test_no_write_lock_is_held_during_the_model_call(
     assert lock_free == [True]
     # What left the node stays logged even though the turn's transaction committed in parts.
     assert len(session.exec(select(EgressLog)).all()) == 1
+
+
+@pytest.mark.usefixtures("mock_network")
+def test_egress_db_work_is_off_the_event_loop(
+    session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rule 12: the egress log and usage record are written in worker threads."""
+    import threading
+
+    from mia.core import usage
+
+    on_loop: list[bool] = []
+    real_send, real_record = egress.send, usage.record
+
+    def spy_send(*args: Any, **kwargs: Any) -> Any:
+        on_loop.append(threading.current_thread() is threading.main_thread())
+        return real_send(*args, **kwargs)
+
+    def spy_record(*args: Any, **kwargs: Any) -> Any:
+        on_loop.append(threading.current_thread() is threading.main_thread())
+        return real_record(*args, **kwargs)
+
+    monkeypatch.setattr(egress, "send", spy_send)
+    monkeypatch.setattr(usage, "record", spy_record)
+    agent = create_agent("gateway/dispatcher-default", transport=httpx.MockTransport(Recorder()))
+    asyncio.run(run_turn(session, agent, people["Juha"], "Moi"))
+    assert len(on_loop) == 2 and not any(on_loop)

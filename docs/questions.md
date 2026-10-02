@@ -65,3 +65,18 @@ Format for each entry:
 - Assumed answer: left unchanged. Suggest moving the site to its own repository or setting
   `publish` to a folder that holds only the site.
 - Blocking: no
+
+## Q8: Encrypting channel tokens at rest
+- Where: spec, Channel rules ("channel tokens encrypted")
+- Question: the node has no secret store or field encryption yet.
+- Assumed answer: MIA_WA_TOKEN and MIA_WA_APP_SECRET live in `.env` (file permissions, ignored by
+  git, excluded by detect-secrets) for Phase 1; they move to encrypted storage with field
+  encryption.
+- Blocking: no
+
+## Q9: One conversation across app and WhatsApp
+- Where: spec, Conversations; ADR 007
+- Question: should WhatsApp messages get their own thread?
+- Assumed answer: no. A person's latest thread with the agent is shared by the app and every
+  channel, so history and approvals stay in one place; the app shows the whole conversation.
+- Blocking: no

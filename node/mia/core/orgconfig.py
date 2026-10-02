@@ -29,9 +29,16 @@ class CoverConfirmation(BaseModel):
     urgent_until: dt.time = dt.time(10, 0)
 
 
+class ChannelConfig(BaseModel):
+    """Per-organisation switch for one messaging channel (off unless enabled)."""
+
+    enabled: bool = False
+
+
 class OrgSettings(BaseModel):
     quiet_hours: QuietHours = Field(default_factory=QuietHours)
     cover_confirmation: CoverConfirmation = Field(default_factory=CoverConfirmation)
+    channels: dict[str, ChannelConfig] = Field(default_factory=dict)
 
 
 @lru_cache

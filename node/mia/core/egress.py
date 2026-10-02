@@ -7,6 +7,7 @@ with a hash of the outgoing payload. EgressTransport plugs this into the HTTP cl
 model provider, so model code never talks to the network directly.
 """
 
+import asyncio
 import hashlib
 import json
 import re
@@ -96,6 +97,7 @@ _context: ContextVar[EgressContext | None] = ContextVar("mia_egress_context", de
 
 @contextmanager
 def egress_context(ctx: EgressContext) -> Iterator[EgressContext]:
+    """Set the egress context for the block; restored on exit even after errors."""
     token = _context.set(ctx)
     try:
         yield ctx
@@ -109,6 +111,7 @@ def bind_context(ctx: EgressContext) -> None:
 
 
 def current_context() -> EgressContext:
+    """The active egress context. Raises EgressBlocked when none is set."""
     ctx = _context.get()
     if ctx is None:
         raise EgressBlocked("no egress context: nothing leaves the node without one")
@@ -116,6 +119,7 @@ def current_context() -> EgressContext:
 
 
 def payload_hash(payload: str) -> str:
+    """SHA-256 hex digest of the payload, logged instead of the payload itself."""
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -183,26 +187,18 @@ class EgressTransport(httpx.AsyncBaseTransport):
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         ctx = current_context()
         raw = (await request.aread()).decode()
-        outgoing, pseudo = send(
-            ctx.session,
-            ctx.purpose,
-            raw or request.url.query.decode(),
-            ctx.level,
-            actor=ctx.actor,
-            agent_id=ctx.agent_id,
-            provider=ctx.provider,
-            pseudonymise=self.pseudonymise,
+        # Log and commit in a worker thread (rule 12): the lock is released before the network
+        # call, and the log of what left the node survives even if the rest of the turn fails.
+        outgoing, pseudo = await asyncio.to_thread(
+            self._log, ctx, raw or request.url.query.decode()
         )
-        # Release the write lock before waiting on the network, and keep the log of what left
-        # the node even if the rest of the turn rolls back.
-        ctx.session.commit()
         headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
         body = outgoing if raw else b""
         forwarded = httpx.Request(request.method, request.url, headers=headers, content=body)
         response = await self.inner.handle_async_request(forwarded)
         content = (await response.aread()).decode()
         if self.meter:
-            self._record_usage(ctx, response.status_code, content)
+            await asyncio.to_thread(self._record_usage, ctx, response.status_code, content)
         resp_headers = {
             k: v
             for k, v in response.headers.items()
@@ -214,6 +210,20 @@ class EgressTransport(httpx.AsyncBaseTransport):
             content=pseudo.restore(content).encode(),
             request=request,
         )
+
+    def _log(self, ctx: EgressContext, payload: str) -> tuple[str, Pseudonymiser]:
+        result = send(
+            ctx.session,
+            ctx.purpose,
+            payload,
+            ctx.level,
+            actor=ctx.actor,
+            agent_id=ctx.agent_id,
+            provider=ctx.provider,
+            pseudonymise=self.pseudonymise,
+        )
+        ctx.session.commit()
+        return result
 
     @staticmethod
     def _record_usage(ctx: EgressContext, status_code: int, content: str) -> None:

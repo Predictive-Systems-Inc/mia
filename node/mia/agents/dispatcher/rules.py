@@ -281,4 +281,5 @@ async def respond_stream(
 
 
 def rules_model() -> FunctionModel:
+    """The deterministic dispatcher model (MIA_MODEL=test): no network, same tools and guards."""
     return FunctionModel(respond, stream_function=respond_stream, model_name="dispatcher-rules")

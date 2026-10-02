@@ -44,6 +44,7 @@ def _names(session: Session, ids: list[str]) -> list[str]:
 
 
 def visit_info(session: Session, visit: Visit, tz: str) -> VisitInfo:
+    """A visit as the model sees it, with times in the branch time zone."""
     loc = session.get(Location, visit.location_id)
     job = session.get(Job, visit.job_id)
     zone = ZoneInfo(tz)
@@ -62,6 +63,7 @@ def visit_info(session: Session, visit: Visit, tz: str) -> VisitInfo:
 def visits_for(
     session: Session, branch_id: str, person_id: str, start: dt.date, end: dt.date
 ) -> list[Visit]:
+    """Visits in the branch between start and end (inclusive) assigned to the person, by start time."""
     stmt = (
         select(Visit)
         .where(Visit.branch_id == branch_id)

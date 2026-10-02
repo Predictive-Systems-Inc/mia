@@ -210,3 +210,26 @@ def test_user_text_cannot_close_or_open_the_boundary(
     inner = wrapped.split("\n", 1)[1].rsplit("\n", 1)[0]
     assert "<" not in inner and ">" not in inner
     assert wrapped.count("</user_message>") == 1
+
+
+def test_run_turn_db_work_is_off_the_event_loop(
+    session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rule 12: writes during a turn never run on the event loop thread."""
+    import asyncio
+    import threading
+
+    from mia.agents.dispatcher.agent import get_agent
+    from mia.chat.service import run_turn
+    from mia.core import store
+
+    on_loop: list[bool] = []
+    real_insert = store.insert
+
+    def spy(*args: object, **kwargs: object) -> object:
+        on_loop.append(threading.current_thread() is threading.main_thread())
+        return real_insert(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(store, "insert", spy)
+    asyncio.run(run_turn(session, get_agent(), people["Juha"], "Olen kipeä huomenna."))
+    assert on_loop and not any(on_loop)

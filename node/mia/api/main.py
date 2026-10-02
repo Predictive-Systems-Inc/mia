@@ -2,6 +2,8 @@
 
 import asyncio
 import contextlib
+import datetime as dt
+import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Literal
@@ -9,20 +11,25 @@ from typing import Any, Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlmodel import col, select
+from sqlmodel import Session, col, select
 
 import mia
 from mia.agents.dispatcher import cover
+from mia.channels import inbound as channel_service
+from mia.channels import outbox, registry
+from mia.channels.router import router as channels_router
+from mia.channels.setup import register_configured
 from mia.chat.channels import NOTIFICATION
 from mia.chat.router import ActorHeader, DbSession, resolve_actor
 from mia.chat.router import router as chat_router
 from mia.core import approvals
 from mia.core.db import session_scope, utcnow
 from mia.core.events import verify_chain
-from mia.core.models import Actor, Message, Person, Thread
+from mia.core.models import Actor, ChannelOutbox, Message, Person, Thread
 from mia.settings import get_settings
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
+log = logging.getLogger(__name__)
 
 
 def tick() -> int:
@@ -31,15 +38,30 @@ def tick() -> int:
         return cover.process_due(session, utcnow())
 
 
+async def run_due_work() -> tuple[int, int]:
+    """One round of due work: cover escalation, then the channel outbox. Returns both counts."""
+    advanced = await asyncio.to_thread(tick)  # sync DB work off the event loop
+    stale = utcnow() - dt.timedelta(minutes=1)
+    for inbound_id in await asyncio.to_thread(channel_service.pending_inbound, stale):
+        await channel_service.handle_inbound(inbound_id)  # lost to a restart before handling
+    sent = await outbox.send_due(utcnow())  # on-demand channels (the simulator) are left alone
+    return advanced, sent
+
+
 async def _ticker(seconds: int) -> None:
     while True:
         await asyncio.sleep(seconds)
-        await asyncio.to_thread(tick)  # sync DB work off the event loop
+        try:
+            await run_due_work()
+        except Exception:
+            log.exception("due work failed; retrying next tick")
 
 
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Stand-in for the Huey worker: advance due cover requests every MIA_TICK_SECONDS."""
+    """Register configured channels, then run due work (cover, outbox) every MIA_TICK_SECONDS
+    (a stand-in for the Huey worker)."""
+    register_configured(get_settings())
     seconds = get_settings().MIA_TICK_SECONDS
     task = asyncio.create_task(_ticker(seconds)) if seconds > 0 else None
     yield
@@ -49,6 +71,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Mia Node", version=mia.__version__, lifespan=lifespan)
 app.include_router(chat_router)
+app.include_router(channels_router)
 
 
 @app.get("/health")
@@ -58,7 +81,23 @@ def health(session: DbSession) -> dict[str, object]:
         "version": mia.__version__,
         "model": get_settings().MIA_MODEL,
         "events_chain": verify_chain(session),
+        "channels": channel_health(session),
     }
+
+
+def channel_health(session: Session) -> dict[str, dict[str, object]]:
+    """Each enabled channel with its failed messages in the last 24 hours."""
+    since = utcnow() - dt.timedelta(hours=24)
+    out: dict[str, dict[str, object]] = {}
+    for adapter in registry.enabled():
+        failed = session.exec(
+            select(ChannelOutbox)
+            .where(ChannelOutbox.channel == adapter.channel_id)
+            .where(ChannelOutbox.status == "failed")
+            .where(col(ChannelOutbox.updated_at) >= since)
+        ).all()
+        out[adapter.channel_id] = {"enabled": True, "failed_24h": len(failed)}
+    return out
 
 
 @app.get("/", include_in_schema=False)

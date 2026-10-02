@@ -10,13 +10,13 @@ import datetime as dt
 from datetime import datetime
 from typing import Any, ClassVar, Literal
 
-from sqlalchemy import JSON
+from sqlalchemy import JSON, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 from mia.core.db import TZDateTime, utcnow
 from mia.core.ids import new_id
 
-STANDARD_VERSION = "1.1"
+STANDARD_VERSION = "1.2"
 
 # Code lists, versioned with the standard.
 PersonStatus = Literal["active", "inactive"]
@@ -229,6 +229,80 @@ class EgressLog(BranchScoped, table=True):
     provider: str
     tokens: int = 0
     payload_hash: str
+
+
+# ---- channels (standard 1.2, ADR 007) ---------------------------------------------------------
+
+
+class ChannelIdentity(BranchScoped, table=True):
+    """A person's verified address on a messaging channel (for example a WhatsApp number)."""
+
+    __tablename__: ClassVar[str] = "channel_identities"
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    channel: str = Field(index=True)
+    address: str = Field(index=True)
+    status: str = "active"  # active, revoked
+    verified_at: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
+    consent_at: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
+    last_inbound_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+
+
+class ChannelLinkCode(BranchScoped, table=True):
+    """A one-time link code, stored only as an HMAC of the code."""
+
+    __tablename__: ClassVar[str] = "channel_link_codes"
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    code_hmac: str = Field(unique=True)
+    purpose: str  # invite, self
+    expires_at: datetime = Field(sa_type=TZDateTime)
+    used_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    created_by: str
+
+
+class ChannelLinkAttempt(Stamped, table=True):
+    """One attempt to redeem a link code, for the lockout count. Not tied to a branch."""
+
+    __tablename__: ClassVar[str] = "channel_link_attempts"
+
+    channel: str
+    address: str = Field(index=True)
+    ok: bool
+
+
+class ChannelOutbox(BranchScoped, table=True):
+    """One outbound channel message: queued, sent, delivered, read, failed or held."""
+
+    __tablename__: ClassVar[str] = "channel_outbox"
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    channel: str
+    address: str
+    kind: str = "message"
+    payload: dict[str, Any] = Field(default_factory=dict, sa_type=JSON)
+    idempotency_key: str = Field(unique=True)
+    status: str = Field(default="queued", index=True)
+    attempts: int = 0
+    send_after: datetime | None = Field(default=None, sa_type=TZDateTime)
+    channel_message_id: str | None = Field(default=None, index=True)
+    error_code: str | None = None
+
+
+class ChannelInbound(Stamped, table=True):
+    """One inbound channel message, unique per channel message id (Meta resends webhooks)."""
+
+    __tablename__: ClassVar[str] = "channel_inbound"
+    __table_args__ = (UniqueConstraint("channel", "channel_message_id"),)
+
+    channel: str
+    channel_message_id: str
+    address: str
+    branch_id: str | None = Field(default=None, foreign_key="branch.id")
+    person_id: str | None = None
+    body: dict[str, Any] = Field(default_factory=dict, sa_type=JSON)
+    status: str = Field(default="pending", index=True)  # pending, done, failed, ignored
+    error: str | None = None
 
 
 class Principal(SQLModel):

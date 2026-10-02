@@ -14,7 +14,7 @@ mia/
       settings.py           MIA_DB_PATH, MIA_MODEL, MIA_GATEWAY_URL, MIA_GATEWAY_KEY, MIA_EGRESS_LEVEL, MIA_ORG
       schema.py             imports every table module (Alembic, tests)
       cli.py                mia migrate | seed | serve | chat | decide | inbox | tick | geocode
-      core/                 models, db, ids, events, store, rbac, approvals, egress, usage,
+      core/                 models, db, ids, events, store, rbac, approvals, egress, usage, people,
                             geocoding (pluggable providers), orgconfig (organisation settings)
       templates/cleaning/   models (sites, checklists), seed
       agents/               base.py (manifest, guard, model factory)
@@ -22,6 +22,11 @@ mia/
                             scoring.py, cover.py (confirmation flow), rules.py, tools.py,
                             agent.py, tests/scenarios.yaml
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls)
+      channels/             messaging channels (ADR 007): base.py (adapter protocol), registry.py,
+                            render.py (fallback rendering), service.py (deliver), inbound.py,
+                            outbox.py, linking.py (codes, invites), setup.py, transport.py (the only HTTP
+                            exit for channels), router.py (webhooks), simulator.py ("sim" adapter)
+        whatsapp/           adapter.py (Meta Cloud API), templates.py
       api/                  main.py
       i18n/                 Finnish and English strings
       static/index.html     dev chat page

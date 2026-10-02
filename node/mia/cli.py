@@ -1,4 +1,5 @@
-"""The `mia` command: migrate, seed, serve, chat, decide."""
+"""The `mia` command: migrate, seed, serve, chat, decide, inbox, tick, geocode, person,
+invite, channels."""
 
 import argparse
 import asyncio
@@ -127,9 +128,10 @@ def inbox(args: argparse.Namespace) -> int:
 
 
 def tick(_args: argparse.Namespace) -> int:
-    from mia.api.main import tick as run_tick
+    from mia.api.main import run_due_work
 
-    print(f"advanced {run_tick()} cover request(s)")
+    advanced, sent = asyncio.run(run_due_work())
+    print(f"advanced {advanced} cover request(s), sent {sent} channel message(s)")
     return 0
 
 
@@ -154,6 +156,136 @@ def geocode(_args: argparse.Namespace) -> int:
     except geocoding.GeocodingError as exc:
         print(f"geocoding failed: {exc}")
         return 1
+
+
+def _only_branch_id(session: Session, branch_id: str | None) -> str:
+    from mia.core.models import Branch
+
+    if branch_id:
+        return branch_id
+    branches = session.exec(select(Branch)).all()
+    if len(branches) != 1:
+        raise SystemExit("pass --branch: the database has " + str(len(branches)) + " branches")
+    return branches[0].id
+
+
+def person_add(args: argparse.Namespace) -> int:
+    from mia.core import people
+    from mia.core.db import session_scope
+    from mia.core.models import Actor
+
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        try:
+            person = people.add_person(
+                session,
+                Actor.system(branch_id),
+                branch_id=branch_id,
+                name=args.name,
+                roles=args.roles,
+                language=args.lang,
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"added {person.name} ({person.id})")
+    return 0
+
+
+def _match_one(session: Session, who: str) -> Person:
+    """Exact id or full name, else a unique name prefix. Exits listing matches when ambiguous."""
+    people = session.exec(select(Person).order_by(col(Person.name))).all()
+    low = who.lower().strip()
+    exact = [p for p in people if p.id == who or p.name.lower() == low]
+    found = exact or [
+        p for p in people if any(part.lower().startswith(low) for part in [p.name, *p.name.split()])
+    ]
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        raise SystemExit(f"no person matches {who!r}")
+    raise SystemExit(f"{who!r} matches several people: " + ", ".join(p.name for p in found))
+
+
+def invite(args: argparse.Namespace) -> int:
+    from mia.channels import linking
+    from mia.core.db import session_scope
+    from mia.core.models import Actor
+
+    with session_scope() as session:
+        person = _match_one(session, args.name)
+        actor = (
+            Actor.person(_match_one(session, args.as_person))
+            if args.as_person
+            else Actor.system(person.branch_id)
+        )
+        try:
+            code = linking.create_code(session, actor, person, "invite")
+        except linking.LinkingError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"invite for {person.name}, valid 7 days, single use")
+        if get_settings().MIA_WA_NUMBER:
+            print(f"  link: {linking.invite_link(code)}")
+        else:
+            print("  (no link: set MIA_WA_NUMBER to Mia's WhatsApp number for a wa.me link)")
+        print(f"  or send this text to Mia on WhatsApp: LINK {code}")
+    return 0
+
+
+def channels_sim(args: argparse.Namespace) -> int:
+    """Send one message as if it came from a phone on the simulated channel; print Mia's replies."""
+    from mia.channels import outbox, registry
+    from mia.channels.base import InboundMessage
+    from mia.channels.inbound import handle_inbound
+    from mia.channels.simulator import SimAdapter
+    from mia.core import store
+    from mia.core.db import session_scope, utcnow
+    from mia.core.ids import new_id
+    from mia.core.models import Actor, ChannelInbound, Principal
+
+    sim = registry.get("sim")
+    if not isinstance(sim, SimAdapter) or sim not in registry.enabled():
+        raise SystemExit("the sim channel is off: set channels.sim.enabled in the org settings")
+    msg = InboundMessage(
+        channel="sim",
+        address=args.sender,
+        channel_message_id=new_id(),
+        text=args.text,
+        received_at=utcnow(),
+    )
+    actor = Actor(principal=Principal(type="system", id="channel:sim"), branch_id="")
+    with session_scope() as session:
+        row = ChannelInbound(
+            channel="sim",
+            channel_message_id=msg.channel_message_id,
+            address=msg.address,
+            body=msg.model_dump(mode="json"),
+        )
+        inbound_id = store.insert(session, row, actor, action="channel.received").id
+
+    def show(title: str) -> None:
+        mine = [p for p in sim.sent if p.address == args.sender]
+        if mine:
+            print(title)
+        for payload in mine:
+            body = payload.body
+            print(f"[Mia -> {payload.address}] ({body.get('kind')})")
+            print(body.get("text") or body.get("name") or "")
+            for option in body.get("buttons") or body.get("rows") or []:
+                print(f"  [{option}]")
+        sim.sent.clear()
+
+    async def waiting() -> None:
+        await outbox.send_due(utcnow(), on_demand_for=args.sender)
+
+    async def reply() -> None:
+        await handle_inbound(inbound_id)
+        await outbox.send_due(utcnow(), on_demand_for=args.sender)
+
+    asyncio.run(waiting())
+    show("-- waiting for this number --")
+    asyncio.run(reply())
+    show("-- reply --")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -188,12 +320,35 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "geocode", help="geocode home bases and sites that have no coordinates"
     ).set_defaults(func=geocode)
+    p = sub.add_parser("invite", help="create a WhatsApp invite link for a person")
+    p.add_argument("name")
+    p.add_argument("--as", dest="as_person", help="the inviting supervisor (told about problems)")
+    p.set_defaults(func=invite)
+    channels = sub.add_parser("channels", help="messaging channels").add_subparsers(
+        dest="channels_command", required=True
+    )
+    p = channels.add_parser("sim", help="send a message on the simulated channel")
+    p.add_argument("text")
+    p.add_argument("--from", dest="sender", required=True, help="the phone number it comes from")
+    p.set_defaults(func=channels_sim)
+    person = sub.add_parser("person", help="manage people").add_subparsers(
+        dest="person_command", required=True
+    )
+    p = person.add_parser("add", help="add a person")
+    p.add_argument("name")
+    p.add_argument("--role", dest="roles", action="append", required=True)
+    p.add_argument("--lang", default="fi", choices=["fi", "en"])
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=person_add)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point for `uv run mia`."""
+    """Entry point for `uv run mia`. Registers the configured channels, then runs the command."""
+    from mia.channels.setup import register_configured
+
     args = build_parser().parse_args(argv)
+    register_configured(get_settings())
     return int(args.func(args))
 
 

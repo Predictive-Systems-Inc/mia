@@ -95,6 +95,7 @@ def register_provider(name: str, factory: ProviderFactory) -> None:
 
 
 def get_provider(settings: Settings | None = None) -> GeocodeProvider:
+    """The geocoding provider named by MIA_GEOCODER. Raises GeocodingError if unknown."""
     settings = settings or get_settings()
     if settings.MIA_GEOCODER not in _providers:
         raise GeocodingError(f"unknown geocoder {settings.MIA_GEOCODER!r}")

@@ -55,11 +55,14 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | --- | --- |
 | `uv run mia migrate` | Create or upgrade the SQLite database (Alembic) |
 | `uv run mia seed` | Load demo data (once, on an empty database) |
-| `uv run mia serve` | FastAPI on port 8000: chat page `/`, `/health`, `/chat`, `/chat/stream`, `/ag-ui`, `/notifications`, `/approvals/{id}/decide` |
+| `uv run mia serve` | FastAPI on port 8000: chat page `/`, `/health`, `/chat`, `/chat/stream`, `/ag-ui`, `/notifications`, `/approvals/{id}/decide`, `/channels/{id}/webhook` |
 | `uv run mia chat "..." [--as NAME] [--thread ID]` | One chat turn from the terminal |
 | `uv run mia decide ID approved\|rejected --as NAME` | Decide an approval (stand-in for the inbox) |
 | `uv run mia inbox --as NAME` | Show messages Mia sent to a person |
-| `uv run mia tick` | Advance due cover confirmations once (`mia serve` does this every 30 s) |
+| `uv run mia tick` | Advance due cover confirmations and send the channel outbox once (`mia serve` does this every 30 s) |
+| `uv run mia person add NAME --role staff [--lang fi]` | Add a person |
+| `uv run mia invite NAME [--as SUPERVISOR]` | One-time WhatsApp invite link for a person (needs `MIA_NODE_SECRET`) |
+| `uv run mia channels sim "..." --from NUMBER` | Message Mia as a phone on the simulated channel (try `LINK <code>` first) |
 | `uv run mia geocode` | Geocode home bases and sites without coordinates (needs `MIA_GEOCODER_KEY`) |
 | `uv run pytest` | Unit tests |
 | `uv run pytest node/tests/evals -m evals` | Dispatcher evaluation suite (33 scenarios, 5 runs each) |
@@ -68,6 +71,19 @@ uv run mia chat "Show me Maria's visits." --as Juha
 
 The actor for HTTP calls is the `X-Mia-Actor: <person id>` header. There is no real login yet;
 do not expose a node built from this milestone to a network.
+
+## Messaging channels
+
+People can talk to Mia on WhatsApp as well as in the app (ADR 007). Try it without a Meta
+account on the simulated channel:
+
+```
+uv run mia invite Juha                       # prints a link and "LINK 123456"
+uv run mia channels sim "LINK 123456" --from 358401234567
+uv run mia channels sim "Olen kipeä huomenna." --from 358401234567
+```
+
+For the real WhatsApp number, follow docs/whatsapp-setup.md.
 
 ## Using a real model
 

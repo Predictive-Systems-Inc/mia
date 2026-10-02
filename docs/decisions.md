@@ -80,3 +80,12 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
 ## D12: (answers Q7) Old marketing site removed
 - Decision: the Netlify site (index.html, netlify/, netlify.toml) is discarded; Mia has a new
   website elsewhere. This repository holds only the Mia ERP monorepo.
+
+## D13: Focus on the local node; Mia Cloud is not built yet
+- Decision: build only the Mia Node for now: a local instance that answers through chat (Mia
+  apps over AG-UI) and outside channel adapters (spec, Channel adapter interface). Mia Cloud
+  (configuration UI, bundle sync, catalogue) is not built until decided otherwise; configuration
+  stays in node/config.
+- Changes the Phase 1 plan: outside channels move from deferred to in scope. Cloud model access
+  through core/egress.py stays; that is the model gateway, not Mia Cloud.
+- First channel: WhatsApp (WhatsApp Business Platform), following the spec build order.
