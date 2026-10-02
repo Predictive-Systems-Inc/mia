@@ -61,6 +61,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "channel.code_blocked": "Too many wrong codes. Try again in an hour.",
         "channel.text_only": "I can only read text messages for now. Please write your message.",
         "channel.error": "Sorry, something went wrong. Please try again.",
+        "channel.show": "Show",
     },
     "fi": {
         "absence.recorded": "Kirjasin poissaolosi ({date}). Nämä käynnit ovat vaarassa:",
@@ -122,5 +123,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "channel.code_blocked": "Liian monta väärää koodia. Yritä uudelleen tunnin kuluttua.",
         "channel.text_only": "Osaan toistaiseksi lukea vain tekstiviestejä. Kirjoita viestisi.",
         "channel.error": "Pahoittelut, jokin meni vikaan. Yritä uudelleen.",
+        "channel.show": "Näytä",
     },
 }

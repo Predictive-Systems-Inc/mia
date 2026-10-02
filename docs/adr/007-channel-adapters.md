@@ -27,3 +27,6 @@ chat/channels.py (in-app notifications and the call stub).
   channel egress.
 - The node needs a public HTTPS URL (Cloudflare Tunnel) and Meta-approved templates before
   proactive WhatsApp messages work; until then delivery falls back to the app copy.
+- A specific template (for example `mia_cover_request`) is the whole message: nothing is held
+  behind it. Only the generic `mia_new_message` notice holds the full message, which its "Show"
+  button releases; held messages older than a day expire instead of being sent.

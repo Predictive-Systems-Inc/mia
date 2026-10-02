@@ -39,7 +39,7 @@ def test_window_open_queues_rendered_payloads(
     assert rows[0].address == ADDR and rows[0].send_after is None
 
 
-def test_window_closed_uses_the_kind_template_and_holds_the_message(
+def test_window_closed_sends_only_the_specific_template(
     session: Session, people: dict[str, Person], sim: SimAdapter, link: LinkFn
 ) -> None:
     juha = people["Juha"]
@@ -50,11 +50,8 @@ def test_window_closed_uses_the_kind_template_and_holds_the_message(
     rows = deliver(
         session, juha, _blocks(), Actor.system(juha.branch_id), template=call, urgent=True, now=NOON
     )
-    assert [(r.status, r.payload["kind"]) for r in rows] == [
-        ("queued", "template"),
-        ("held", "buttons"),
-    ]
-    assert rows[0].payload["name"] == "mia_cover_request"
+    assert [(r.status, r.payload["kind"]) for r in rows] == [("queued", "template")]
+    assert rows[0].payload["name"] == "mia_cover_request"  # the template is the whole ask
 
 
 def test_window_closed_without_template_sends_new_message_notice(

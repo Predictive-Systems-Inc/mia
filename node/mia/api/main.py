@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import datetime as dt
+import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Literal
@@ -28,6 +29,7 @@ from mia.core.models import Actor, ChannelOutbox, Message, Person, Thread
 from mia.settings import get_settings
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
+log = logging.getLogger(__name__)
 
 
 def tick() -> int:
@@ -49,7 +51,10 @@ async def run_due_work() -> tuple[int, int]:
 async def _ticker(seconds: int) -> None:
     while True:
         await asyncio.sleep(seconds)
-        await run_due_work()
+        try:
+            await run_due_work()
+        except Exception:
+            log.exception("due work failed; retrying next tick")
 
 
 @contextlib.asynccontextmanager

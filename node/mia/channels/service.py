@@ -21,6 +21,7 @@ from mia.core.ids import new_id
 from mia.core.models import Actor, Branch, ChannelIdentity, ChannelOutbox, Person
 
 NEW_MESSAGE = "mia_new_message"
+TEMPLATE_KIND = "template"  # outbox kind of template rows (adapter payload shapes differ)
 
 
 def window_open(identity: ChannelIdentity, caps: ChannelCapabilities, now: dt.datetime) -> bool:
@@ -32,13 +33,15 @@ def window_open(identity: ChannelIdentity, caps: ChannelCapabilities, now: dt.da
 
 
 def quiet_until(now: dt.datetime, tz: str) -> dt.datetime | None:
-    """When quiet hours end, if `now` is inside them in the branch time zone; else None."""
+    """When quiet hours end (in UTC), if `now` is inside them in the branch time zone; else None."""
     quiet = orgconfig.load().quiet_hours
     local = now.astimezone(ZoneInfo(tz))
     if not quiet.contains(local.time().replace(tzinfo=None)):
         return None
     end = local.replace(hour=quiet.end.hour, minute=quiet.end.minute, second=0, microsecond=0)
-    return end if end > local else end + dt.timedelta(days=1)
+    end = end if end > local else end + dt.timedelta(days=1)
+    # UTC: send_after is compared in SQL as a string against UTC times, so offsets must match.
+    return end.astimezone(dt.UTC)
 
 
 def deliver(
@@ -77,14 +80,17 @@ def deliver(
         else:
             call = template or TemplateCall(name=NEW_MESSAGE, lang=person.language)
             notice = adapter.render_template(identity.address, call).body
-            bodies = [(notice, "queued")] + [(body, "held") for body in payloads]
+            bodies = [(notice, "queued")]
+            if call.name == NEW_MESSAGE:  # a specific template already is the whole message
+                bodies += [(body, "held") for body in payloads]
         for i, (body, status) in enumerate(bodies):
+            is_notice = i == 0 and not window_open(identity, adapter.capabilities, now)
             row = ChannelOutbox(
                 branch_id=person.branch_id,
                 person_id=person.id,
                 channel=adapter.channel_id,
                 address=identity.address,
-                kind=kind,
+                kind=TEMPLATE_KIND if is_notice else kind,
                 payload=body,
                 idempotency_key=f"{prefix}:{i}",
                 status=status,

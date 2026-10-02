@@ -73,11 +73,11 @@ def test_whole_demo_over_a_channel(
     (ask,) = sent_to(sim, "358400000003")
     assert ask["kind"] == "template" and ask["name"] == "mia_cover_request"
 
-    # Mikael taps the template's button: the held ask is released, the visit is his.
+    # Mikael taps the template's button: the visit is his, and the ask is not repeated.
     inbound(client, sim, "358400000003", "m1", button="Hyväksyn")
     visits = session.exec(select(Visit)).all()
     assert any(mikael.id in v.assigned_person_ids for v in visits)
-    assert [b["kind"] for b in sent_to(sim, "358400000003")][:2] == ["template", "buttons"]
+    assert [b["kind"] for b in sent_to(sim, "358400000003")] == ["template", "text"]
 
     # Sanna is told on her channel, and every proactive channel message has its app copy.
     asyncio.run(outbox.send_due(utcnow()))

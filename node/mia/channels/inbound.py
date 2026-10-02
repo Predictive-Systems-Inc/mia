@@ -8,8 +8,10 @@ worker threads and nothing holds the write lock across the model call.
 
 import asyncio
 import datetime as dt
+import logging
 
 from pydantic import BaseModel
+from sqlalchemy import text as sql
 from sqlmodel import Session, col, select
 
 from mia.agents.dispatcher.agent import MANIFEST, get_agent
@@ -28,7 +30,9 @@ from mia.core.models import (
     Principal,
     Thread,
 )
-from mia.i18n import t
+from mia.i18n import SUPPORTED, t
+
+log = logging.getLogger(__name__)
 
 
 class _Step(BaseModel):
@@ -42,14 +46,21 @@ class _Step(BaseModel):
     thread_id: str | None = None
 
 
+SHOW_LABELS = {t("channel.show", lang).casefold() for lang in SUPPORTED}
+
+
 def _both(key: str, **params: str) -> str:
     return t(key, "fi", **params) + "\n\n" + t(key, "en", **params)
 
 
 def _begin(session: Session, inbound_id: str, now: dt.datetime) -> _Step | None:
+    # Claim the row under the write lock, so two handlers (a webhook background task and the
+    # ticker's retry) never both run it: only `pending` rows are claimed, and only once.
+    session.execute(sql("UPDATE channel_inbound SET id = id WHERE 0"))
     row = session.get(ChannelInbound, inbound_id)
     if row is None or row.status != "pending":
         return None
+    _finish(session, row, "processing")
     msg = InboundMessage.model_validate(row.body)
     identity = linking.identity_for(session, row.channel, row.address)
     if identity is None:
@@ -78,6 +89,9 @@ def _begin(session: Session, inbound_id: str, now: dt.datetime) -> _Step | None:
     person = linked
     _touch(session, row, identity, person, now)
     outbox.release_held(session, identity)
+    if msg.button and msg.button.strip().casefold() in SHOW_LABELS:
+        _finish(session, row, "done")  # the new-message notice's button only releases held
+        return _Step(person=person)
     text = (msg.button or msg.text).strip()
     if not text:
         reply = t("channel.text_only", person.language)
@@ -178,11 +192,15 @@ async def handle_inbound(inbound_id: str) -> None:
             await outbox.send_direct(channel, address, direct)
     finally:
         await asyncio.to_thread(session.close)
-    await outbox.send_due(utcnow())
+    try:
+        await outbox.send_due(utcnow())
+    except Exception:
+        log.exception("sending the outbox after an inbound message failed")
 
 
 def pending_inbound(older_than: dt.datetime) -> list[str]:
     """Ids of inbound rows still pending since before `older_than` (lost to a restart)."""
+    older_than = older_than.astimezone(dt.UTC)  # stored times are UTC; SQL compares strings
     with session_scope() as session:
         rows = session.exec(
             select(ChannelInbound)

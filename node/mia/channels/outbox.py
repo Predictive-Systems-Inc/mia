@@ -13,15 +13,17 @@ import hashlib
 import json
 
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlmodel import Session, col, or_, select
 
 from mia.channels import registry
 from mia.channels.base import ChannelPayload, DeliveryResult, TemplateCall
 from mia.channels.render import to_parts
+from mia.channels.service import TEMPLATE_KIND
 from mia.channels.transport import sending
 from mia.chat.blocks import TextBlock
 from mia.core import events, store
-from mia.core.db import session_scope
+from mia.core.db import session_scope, utcnow
 from mia.core.models import Actor, ChannelIdentity, ChannelOutbox, Person, Principal
 
 BACKOFF_MINUTES = (1, 5, 30)
@@ -42,7 +44,11 @@ def outbox_actor(branch_id: str) -> Actor:
 
 
 def _lease(now: dt.datetime) -> list[_Lease]:
+    now = now.astimezone(dt.UTC)  # stored times are UTC; SQL compares them as strings
     with session_scope() as session:
+        # Take the write lock before reading due rows, so two overlapping senders (ticker,
+        # background tasks, `mia tick`) never lease the same row (see events._last_hash).
+        session.execute(text("UPDATE channel_outbox SET id = id WHERE 0"))
         rows = session.exec(
             select(ChannelOutbox)
             .where(ChannelOutbox.status == "queued")
@@ -94,7 +100,7 @@ def _record(lease: _Lease, result: DeliveryResult) -> None:
                 "channel_message_id": result.channel_message_id,
             }
             events.emit(session, "channel.sent", row, None, after, actor)
-        elif result.error_code == OUTSIDE_WINDOW and row.payload.get("kind") != "template":
+        elif result.error_code == OUTSIDE_WINDOW and row.kind != TEMPLATE_KIND:
             _fall_back_to_notice(session, row, actor)
         elif row.attempts >= MAX_ATTEMPTS:
             store.update(
@@ -129,7 +135,7 @@ def _fall_back_to_notice(session: Session, row: ChannelOutbox, actor: Actor) -> 
             person_id=row.person_id,
             channel=row.channel,
             address=row.address,
-            kind=row.kind,
+            kind=TEMPLATE_KIND,
             payload=notice.body,
             idempotency_key=f"{row.idempotency_key}:notice",
         ),
@@ -155,8 +161,16 @@ async def send_due(now: dt.datetime) -> int:
     return sent
 
 
+HELD_FOR = dt.timedelta(hours=24)
+
+
 def release_held(session: Session, identity: ChannelIdentity) -> int:
-    """Queue the messages held for this identity (the person wrote, so the window is open)."""
+    """Queue the messages held for this identity (the person wrote, so the window is open).
+
+    Messages held longer than a day are stale (a cover ask for a past visit) and expire instead.
+    Returns how many were queued.
+    """
+    cutoff = utcnow() - HELD_FOR
     rows = session.exec(
         select(ChannelOutbox)
         .where(ChannelOutbox.person_id == identity.person_id)
@@ -164,15 +178,16 @@ def release_held(session: Session, identity: ChannelIdentity) -> int:
         .where(ChannelOutbox.status == "held")
         .order_by(col(ChannelOutbox.id))
     ).all()
+    queued = 0
     for row in rows:
-        store.update(
-            session,
-            row,
-            {"status": "queued", "send_after": None},
-            outbox_actor(row.branch_id),
-            action="channel.released",
-        )
-    return len(rows)
+        actor = outbox_actor(row.branch_id)
+        if row.created_at < cutoff:
+            store.update(session, row, {"status": "expired"}, actor, action="channel.expired")
+            continue
+        changes = {"status": "queued", "send_after": None}
+        store.update(session, row, changes, actor, action="channel.released")
+        queued += 1
+    return queued
 
 
 async def send_direct(channel: str, address: str, text: str) -> bool:
@@ -211,8 +226,10 @@ def apply_status(
     ).first()
     if row is None:
         return
+    if row.status in ("held", "expired"):
+        return  # already handled; Meta redelivers status webhooks
     actor = outbox_actor(row.branch_id)
-    if status == "failed" and error == OUTSIDE_WINDOW and row.payload.get("kind") != "template":
+    if status == "failed" and error == OUTSIDE_WINDOW and row.kind != TEMPLATE_KIND:
         _fall_back_to_notice(session, row, actor)
         return
     changes: dict[str, object] = {"status": status}
