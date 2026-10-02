@@ -8,6 +8,7 @@ tool reported.
 """
 
 import datetime as dt
+import html
 import re
 from collections.abc import AsyncIterator
 from typing import Any
@@ -54,7 +55,7 @@ def _last_user_text(messages: list[ModelMessage]) -> str:
             for part in message.parts:
                 if isinstance(part, UserPromptPart) and isinstance(part.content, str):
                     m = USER_MESSAGE.search(part.content)
-                    return m[1] if m else part.content
+                    return html.unescape(m[1]) if m else part.content
     return ""
 
 

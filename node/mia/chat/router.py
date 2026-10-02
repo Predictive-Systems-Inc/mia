@@ -6,11 +6,11 @@ real authentication (Sprint 1); see docs/adr/001-stack.md.
 
 import datetime as dt
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from pydantic_ai.ui.ag_ui import AGUIAdapter
@@ -20,7 +20,7 @@ from mia.agents.base import AgentDeps
 from mia.agents.dispatcher.agent import MANIFEST, get_agent
 from mia.chat.blocks import ChatReply
 from mia.chat.service import ChatError, run_turn
-from mia.core.db import get_engine, session_scope
+from mia.core.db import session_scope
 from mia.core.egress import EgressContext, bind_context
 from mia.core.models import Actor, Branch, Person
 from mia.settings import get_settings
@@ -50,18 +50,29 @@ def resolve_actor(session: Session, header: str | None, body: str | None = None)
 ActorHeader = Annotated[str | None, Header(alias="X-Mia-Actor")]
 
 
-async def _turn(body: ChatRequest, x_mia_actor: str | None) -> ChatReply:
+def get_session() -> Iterator[Session]:
+    """One session per request: commits on success, rolls back on error, always closes."""
     with session_scope() as session:
-        person = resolve_actor(session, x_mia_actor, body.actor_id)
-        try:
-            return await run_turn(session, get_agent(), person, body.text, body.thread_id)
-        except ChatError as exc:
-            raise HTTPException(404, str(exc)) from exc
+        yield session
+
+
+# "function": commit before the response is sent, so a failed commit is a 500, not a lost write.
+DbSession = Annotated[Session, Depends(get_session, scope="function")]
+# "request": the AG-UI stream runs after the route returns; close only when the response ends.
+StreamSession = Annotated[Session, Depends(get_session, scope="request")]
+
+
+async def _turn(session: Session, body: ChatRequest, x_mia_actor: str | None) -> ChatReply:
+    person = resolve_actor(session, x_mia_actor, body.actor_id)
+    try:
+        return await run_turn(session, get_agent(), person, body.text, body.thread_id)
+    except ChatError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 @router.post("/chat", response_model=ChatReply)
-async def chat(body: ChatRequest, x_mia_actor: ActorHeader = None) -> ChatReply:
-    return await _turn(body, x_mia_actor)
+async def chat(session: DbSession, body: ChatRequest, x_mia_actor: ActorHeader = None) -> ChatReply:
+    return await _turn(session, body, x_mia_actor)
 
 
 def _sse(event: str, data: Any) -> str:
@@ -69,9 +80,11 @@ def _sse(event: str, data: Any) -> str:
 
 
 @router.post("/chat/stream")
-async def chat_stream(body: ChatRequest, x_mia_actor: ActorHeader = None) -> StreamingResponse:
+async def chat_stream(
+    session: DbSession, body: ChatRequest, x_mia_actor: ActorHeader = None
+) -> StreamingResponse:
     """Server-Sent Events: thread, text deltas, then the final blocks, then done."""
-    reply = await _turn(body, x_mia_actor)
+    reply = await _turn(session, body, x_mia_actor)
 
     async def events() -> AsyncIterator[str]:
         yield _sse("thread", {"thread_id": reply.thread_id})
@@ -87,13 +100,14 @@ async def chat_stream(body: ChatRequest, x_mia_actor: ActorHeader = None) -> Str
 
 
 @router.post("/ag-ui")
-async def ag_ui(request: Request, x_mia_actor: ActorHeader = None) -> Response:
-    """AG-UI endpoint for AG-UI clients. The run commits when the stream completes."""
-    session = Session(get_engine(), expire_on_commit=False)
+async def ag_ui(
+    request: Request, session: StreamSession, x_mia_actor: ActorHeader = None
+) -> Response:
+    """AG-UI endpoint for AG-UI clients. The session closes when the stream ends, even when the
+    client disconnects; tool calls and egress commit as they go."""
     person = resolve_actor(session, x_mia_actor)
     branch = session.get(Branch, person.branch_id)
     if branch is None:
-        session.close()
         raise HTTPException(500, "person has no branch")
     human = Actor.person(person)
     deps = AgentDeps(
@@ -118,10 +132,4 @@ async def ag_ui(request: Request, x_mia_actor: ActorHeader = None) -> Response:
         )
     )
 
-    def on_complete(_result: Any) -> None:
-        session.commit()
-        session.close()
-
-    return await AGUIAdapter.dispatch_request(
-        request, agent=get_agent(), deps=deps, on_complete=on_complete
-    )
+    return await AGUIAdapter.dispatch_request(request, agent=get_agent(), deps=deps)

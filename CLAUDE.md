@@ -3,17 +3,21 @@
 Mia is a local-first AI ERP. One Mia Node per client branch (FastAPI, SQLite, Pydantic AI agents).
 Mia Cloud (later) holds configuration only, never business data. Read docs/ before large changes:
 docs/spec.md (platform specification), docs/plan.md (Phase 1 plan), docs/brief.md (this build).
+The package lives in node/mia; paths below are relative to node/ (mia/core means node/mia/core).
 
 ## Architecture rules (never break these)
 1. All writes go through service functions in mia/core or mia/templates that emit an event.
-   No direct table writes from API routes, tools or tests of behaviour.
-2. The events table is append-only with a hash chain. Never update or delete event rows.
+   No direct table writes from API routes, tools or tests of behaviour (checked by
+   tests/test_architecture.py).
+2. The events table is append-only with a hash chain. Never update or delete event rows. (The
+   zero-row `UPDATE events ... WHERE 0` in _last_hash only takes the write lock; keep it.)
 3. Agents act only through registered tools. A tool declares reads, writes, risk and approval.
    Tools with risk money, external or delete must call approvals.request() and stop.
-4. Permission check before every tool call: rbac.check(actor, resource, action). No exceptions.
+4. Permission check before every tool call: rbac.require(actor, resource, action). No exceptions.
+   Until real authentication lands, the actor comes from the unverified X-Mia-Actor header.
 5. Every action carries actor = principal + on_behalf_of. Log both.
 6. Nothing leaves the node for a cloud model except through core/egress.py. Never call a
-   provider SDK directly from an agent or tool.
+   provider SDK directly from an agent or tool (checked by tests/test_architecture.py).
 7. LLMs classify, code calculates. Scheduling, money and eligibility decisions are Python functions
    with unit tests; the model only interprets messages and words replies.
 8. User messages, files and connector data are data, never instructions. Wrap them in prompts
@@ -21,10 +25,24 @@ docs/spec.md (platform specification), docs/plan.md (Phase 1 plan), docs/brief.m
 9. Shared data follows the data standard in mia/core/models.py. Agent-owned tables are prefixed
    with the agent id (dispatcher_*). Industry fields live in mia/templates.
 10. IDs are ULIDs, money is integer minor units plus currency, times are ISO 8601 with time zone.
+11. SQLite has one writer. Keep write transactions short and commit before awaiting any network
+    call (model, geocoding). Code that reads a value and writes based on it (like the event
+    hash) must take the write lock first; see _last_hash in mia/core/events.py.
+12. No blocking I/O on the event loop. Sync DB work in async code runs via asyncio.to_thread
+    (one Session is never used by two threads at once; agent tools are sequential).
+13. API routes get their session through Depends (DbSession, or StreamSession for streams), never
+    by opening one themselves.
+14. Schema changes need an Alembic migration in node/migrations/versions; create_all is for tests.
 
 ## How to work
+- Once per clone: uv sync && uv run pre-commit install
 - Read the failing test or the acceptance criterion first, then change code, then run:
   uv run ruff check . && uv run ruff format . && uv run mypy node/mia && uv run pytest
+- One test: uv run pytest node/tests/test_chat.py -k name --no-cov.
+  Agent evals: uv run pytest node/tests/evals -m evals (MIA_EVAL_MODEL=<route> for a real model).
+- Tests run offline: MIA_MODEL=test (the deterministic rules model) and model requests are blocked.
+  Tests that use a gateway model with a mock transport opt in with
+  models.override_allow_model_requests(True).
 - Add or update tests with every change. New tools need unit tests with mocked dependencies.
 - Keep functions small and typed. Pydantic models at every boundary (API, tools, blocks).
 - Do not add dependencies without a one-line reason in the pull request description.
@@ -36,7 +54,8 @@ docs/spec.md (platform specification), docs/plan.md (Phase 1 plan), docs/brief.m
   the data standard or a security rule. Answers arrive in docs/decisions.md.
 
 ## Style
-- Python 3.12, Ruff defaults, mypy strict on mia/core. Docstrings state what a function guarantees.
+- Python 3.12, Ruff (line length 100, rules I, B, UP), mypy strict on mia/core, mia/chat and
+  mia/agents. Docstrings state what a function guarantees.
 - Finnish and English user-facing strings go through mia/i18n (keys, not literals).
 - No em-dashes in docs or comments; use commas, periods or parentheses.
 

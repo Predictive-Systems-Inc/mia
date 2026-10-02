@@ -6,6 +6,7 @@ card; user and assistant messages are stored through core services with events.
 """
 
 import datetime as dt
+import html
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -29,8 +30,11 @@ class ChatError(Exception):
 
 
 def wrap_user_text(text: str, person: Person) -> str:
-    """Boundaries around untrusted user content (architecture rule 8)."""
-    clean = text.replace("</user_message>", "").replace("<user_message", "")
+    """Boundaries around untrusted user content (architecture rule 8).
+
+    Escapes <, > and & so no spelling of a tag (case, spaces, attributes) can close the boundary.
+    """
+    clean = html.escape(text, quote=False)
     roles = ",".join(person.roles)
     return f'<user_message source="app" sender_roles="{roles}">\n{clean}\n</user_message>'
 
@@ -83,7 +87,11 @@ async def run_turn(
     text: str,
     thread_id: str | None = None,
 ) -> ChatReply:
-    """One user message in, one structured reply out. Commits nothing; the caller does."""
+    """One user message in, one structured reply out.
+
+    Commits the user message before the model runs, so no write lock is held while waiting on
+    the network; tool calls and egress commit their own writes. The caller commits the reply.
+    """
     branch = session.get(Branch, person.branch_id)
     if branch is None:
         raise ChatError("person has no branch")
@@ -106,6 +114,7 @@ async def run_turn(
         ),
         human,
     )
+    session.commit()
     lang = detect_language(text, person.language)
     deps = AgentDeps(
         session=session,

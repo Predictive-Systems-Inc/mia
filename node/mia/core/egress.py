@@ -193,6 +193,9 @@ class EgressTransport(httpx.AsyncBaseTransport):
             provider=ctx.provider,
             pseudonymise=self.pseudonymise,
         )
+        # Release the write lock before waiting on the network, and keep the log of what left
+        # the node even if the rest of the turn rolls back.
+        ctx.session.commit()
         headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
         body = outgoing if raw else b""
         forwarded = httpx.Request(request.method, request.url, headers=headers, content=body)
@@ -235,3 +238,4 @@ class EgressTransport(httpx.AsyncBaseTransport):
             output_tokens=output_tokens,
             result=result,
         )
+        ctx.session.commit()

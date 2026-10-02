@@ -9,7 +9,7 @@ import hashlib
 import json
 from typing import Any
 
-from sqlalchemy import DDL, event
+from sqlalchemy import DDL, event, text
 from sqlalchemy.orm import Session as OrmSession
 from sqlmodel import Session, SQLModel, col, select
 
@@ -54,6 +54,10 @@ def compute_hash(prev_hash: str, ev: Event) -> str:
 
 
 def _last_hash(session: Session) -> str:
+    # Take the write lock before reading: pysqlite runs SELECTs outside a transaction until the
+    # first write, so two writers could otherwise read the same hash and fork the chain. A
+    # zero-row UPDATE starts the write transaction (waiting up to busy_timeout) and changes nothing.
+    session.execute(text("UPDATE events SET id = id WHERE 0"))
     last = session.exec(select(Event.hash).order_by(col(Event.id).desc()).limit(1)).first()
     return last or GENESIS_HASH
 
