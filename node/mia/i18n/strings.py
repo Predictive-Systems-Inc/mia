@@ -47,6 +47,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "field.visit": "Visit",
         "field.reasons": "Why",
         "field.status": "Status",
+        "channel.reply_with_number": "Reply with the number of your choice.",
+        "channel.open_in_app": "Open in the Mia app: {url}",
+        "channel.sensitive": "You have a message in the Mia app with personal details. Open it here: {url}",
+        "channel.choose": "Choose",
     },
     "fi": {
         "absence.recorded": "Kirjasin poissaolosi ({date}). Nämä käynnit ovat vaarassa:",
@@ -94,5 +98,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "field.visit": "Käynti",
         "field.reasons": "Perustelut",
         "field.status": "Tila",
+        "channel.reply_with_number": "Vastaa valintasi numerolla.",
+        "channel.open_in_app": "Avaa Mia-sovelluksessa: {url}",
+        "channel.sensitive": "Sinulle on Mia-sovelluksessa viesti, jossa on henkilötietoja. Avaa se tästä: {url}",
+        "channel.choose": "Valitse",
     },
 }
