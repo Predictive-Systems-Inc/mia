@@ -104,8 +104,9 @@ All writes go through `store.insert` / `store.update` and emit events (rule 1).
 1. `POST /channels/{id}/webhook`: `verify_webhook` on the raw body; 403 and an event if it fails.
 2. `receive` parses messages and status updates. Messages are inserted into `channel_inbound`
    (duplicates skipped by the unique key), the transaction commits, the route returns 200.
-3. A background task runs `handle_inbound` for each new row. The ticker retries rows left
-   `pending` after a restart.
+3. The webhook route is a sync `def` (FastAPI runs it in the threadpool; it only verifies and
+   inserts). It schedules `handle_inbound` for each new row with FastAPI `BackgroundTasks`,
+   which run after the 200 is sent. The ticker retries rows left `pending` after a restart.
 4. `handle_inbound`:
    - Unlinked address: text matching `LINK <6 digits>` runs `linking.redeem`; anything else
      gets a fixed public reply (i18n key) and status `ignored`. No agent runs.
