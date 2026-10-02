@@ -81,33 +81,68 @@ def test_channel_transport_refuses_requests_outside_an_outbox_send() -> None:
         asyncio.run(call())
 
 
-def test_tick_leaves_simulated_messages_for_mia_channels_sim(
+def test_tick_runs_cover_escalation_and_sends_the_outbox(
     session: Session, people: dict[str, Person], sim: SimAdapter, link: LinkFn
 ) -> None:
-    """The server's ticker sends real channels; `mia channels sim` shows simulated ones."""
     from mia.api.main import run_due_work
 
-    row = _queue(session, people["Juha"], link)
+    _queue(session, people["Juha"], link)
     advanced, sent = asyncio.run(run_due_work())
-    assert (advanced, sent) == (0, 0) and sim.sent == []
+    assert (advanced, sent) == (0, 1)
+    assert len(sim.sent) == 1
+
+
+def _on_demand_sim(monkeypatch: pytest.MonkeyPatch) -> SimAdapter:
+    from mia.channels import registry
+    from mia.core import orgconfig
+    from mia.core.orgconfig import ChannelConfig, OrgSettings
+
+    adapter = SimAdapter(on_demand=True)  # as registered by `mia` and `mia serve`
+    registry._adapters.clear()
+    registry.register(adapter)
+    org = OrgSettings(channels={"sim": ChannelConfig(enabled=True)})
+    monkeypatch.setattr(orgconfig, "load", lambda org_name=None: org)
+    return adapter
+
+
+def test_on_demand_channel_is_never_sent_without_asking_for_its_number(
+    session: Session, people: dict[str, Person], link: LinkFn, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Any send_due (ticker, inbound background task) leaves simulated messages queued."""
+    sim = _on_demand_sim(monkeypatch)
+    row = _queue(session, people["Juha"], link)
+    assert asyncio.run(outbox.send_due(utcnow())) == 0 and sim.sent == []
     session.refresh(row)
     assert row.status == "queued"
-    assert asyncio.run(outbox.send_due(utcnow())) == 1  # what `mia channels sim` does
 
 
-def test_health_reports_failed_channel_messages(
-    session: Session, people: dict[str, Person], sim: SimAdapter, link: LinkFn
+def test_on_demand_send_is_limited_to_the_asked_number(
+    session: Session, people: dict[str, Person], link: LinkFn, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from fastapi.testclient import TestClient
+    """`mia channels sim --from A` never consumes messages meant for B."""
+    sim = _on_demand_sim(monkeypatch)
+    for person, address in ((people["Juha"], "358400000002"), (people["Mikael"], "358400000003")):
+        link(person, address, last_inbound_at=utcnow())
+        deliver(
+            session, person, [TextBlock(text="Hei")], Actor.system(person.branch_id), urgent=True
+        )
+    session.commit()
+    assert asyncio.run(outbox.send_due(utcnow(), on_demand_for="358400000002")) == 1
+    assert [p.address for p in sim.sent] == ["358400000002"]
+    assert asyncio.run(outbox.send_due(utcnow(), on_demand_for="358400000003")) == 1
 
-    from mia.api.main import app
 
-    row = _queue(session, people["Juha"], link)
+def test_stale_on_demand_messages_expire_instead_of_being_sent(
+    session: Session, people: dict[str, Person], link: LinkFn, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from mia.core import store
 
+    sim = _on_demand_sim(monkeypatch)
+    row = _queue(session, people["Juha"], link)
     store.update(
-        session, row, {"status": "failed", "error_code": "131026"}, Actor.system(row.branch_id)
+        session, row, {"created_at": utcnow() - dt.timedelta(days=2)}, Actor.system(row.branch_id)
     )
     session.commit()
-    body = TestClient(app).get("/health").json()
-    assert body["channels"] == {"sim": {"enabled": True, "failed_24h": 1}}
+    assert asyncio.run(outbox.send_due(utcnow(), on_demand_for=ADDR)) == 0
+    session.refresh(row)
+    assert row.status == "expired" and sim.sent == []

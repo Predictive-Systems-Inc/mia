@@ -44,9 +44,7 @@ async def run_due_work() -> tuple[int, int]:
     stale = utcnow() - dt.timedelta(minutes=1)
     for inbound_id in await asyncio.to_thread(channel_service.pending_inbound, stale):
         await channel_service.handle_inbound(inbound_id)  # lost to a restart before handling
-    # Simulated messages wait for `mia channels sim`, which shows them; the server would only
-    # "send" them into its own memory.
-    sent = await outbox.send_due(utcnow(), skip=frozenset({"sim"}))
+    sent = await outbox.send_due(utcnow())  # on-demand channels (the simulator) are left alone
     return advanced, sent
 
 

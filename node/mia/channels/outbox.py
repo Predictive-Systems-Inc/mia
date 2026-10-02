@@ -29,6 +29,7 @@ from mia.core.models import Actor, ChannelIdentity, ChannelOutbox, Person, Princ
 BACKOFF_MINUTES = (1, 5, 30)
 MAX_ATTEMPTS = len(BACKOFF_MINUTES) + 1
 OUTSIDE_WINDOW = "131047"
+HELD_FOR = dt.timedelta(hours=24)  # held and on-demand messages are stale after this
 
 
 class _Lease(BaseModel):
@@ -43,8 +44,13 @@ def outbox_actor(branch_id: str) -> Actor:
     return Actor(principal=Principal(type="system", id="channels.outbox"), branch_id=branch_id)
 
 
-def _lease(now: dt.datetime, skip: frozenset[str]) -> list[_Lease]:
+def _on_demand_channels() -> list[str]:
+    return [cid for cid, a in registry._adapters.items() if getattr(a, "on_demand", False)]
+
+
+def _lease(now: dt.datetime, on_demand_for: str | None) -> list[_Lease]:
     now = now.astimezone(dt.UTC)  # stored times are UTC; SQL compares them as strings
+    on_demand = _on_demand_channels()
     with session_scope() as session:
         # Take the write lock before reading due rows, so two overlapping senders (ticker,
         # background tasks, `mia tick`) never lease the same row (see events._last_hash).
@@ -52,7 +58,12 @@ def _lease(now: dt.datetime, skip: frozenset[str]) -> list[_Lease]:
         rows = session.exec(
             select(ChannelOutbox)
             .where(ChannelOutbox.status == "queued")
-            .where(col(ChannelOutbox.channel).not_in(skip))
+            .where(
+                or_(
+                    col(ChannelOutbox.channel).not_in(on_demand),
+                    col(ChannelOutbox.address) == on_demand_for,
+                )
+            )
             .where(
                 or_(col(ChannelOutbox.send_after).is_(None), col(ChannelOutbox.send_after) <= now)
             )
@@ -60,6 +71,10 @@ def _lease(now: dt.datetime, skip: frozenset[str]) -> list[_Lease]:
         ).all()
         leases = []
         for row in rows:
+            if row.channel in on_demand and row.created_at < now - HELD_FOR:
+                actor = outbox_actor(row.branch_id)
+                store.update(session, row, {"status": "expired"}, actor, action="channel.expired")
+                continue
             attempts = row.attempts + 1
             wait = BACKOFF_MINUTES[min(attempts, len(BACKOFF_MINUTES)) - 1]
             store.update(
@@ -145,10 +160,11 @@ def _fall_back_to_notice(session: Session, row: ChannelOutbox, actor: Actor) -> 
     )
 
 
-async def send_due(now: dt.datetime, skip: frozenset[str] = frozenset()) -> int:
-    """Send every due queued row once, except on channels in `skip`. Returns how many were sent."""
+async def send_due(now: dt.datetime, on_demand_for: str | None = None) -> int:
+    """Send every due queued row once. Rows of on-demand channels (the simulator) are sent only
+    for the address `on_demand_for`, and expire after a day. Returns how many were sent."""
     sent = 0
-    for lease in await asyncio.to_thread(_lease, now, skip):
+    for lease in await asyncio.to_thread(_lease, now, on_demand_for):
         try:
             adapter = registry.get(lease.channel)
         except KeyError:
@@ -160,9 +176,6 @@ async def send_due(now: dt.datetime, skip: frozenset[str] = frozenset()) -> int:
         await asyncio.to_thread(_record, lease, result)
         sent += result.ok
     return sent
-
-
-HELD_FOR = dt.timedelta(hours=24)
 
 
 def release_held(session: Session, identity: ChannelIdentity) -> int:

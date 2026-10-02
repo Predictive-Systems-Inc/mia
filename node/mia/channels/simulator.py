@@ -32,12 +32,21 @@ def hub_signature_ok(secret: str, headers: Mapping[str, str], body: bytes) -> bo
 
 
 class SimAdapter:
-    """In-memory channel. `sent` records payloads; `fail_next` makes the next send fail."""
+    """In-memory channel. `sent` records payloads; `fail_next` makes the next send fail.
+
+    `on_demand=True` (how `mia` and `mia serve` register it): its messages are sent only by
+    `mia channels sim` for the number asked, never by the ticker or a background task, which
+    would send them into a process's memory where nobody sees them.
+    """
 
     channel_id = "sim"
 
     def __init__(
-        self, capabilities: ChannelCapabilities | None = None, secret: str = "sim-secret"
+        self,
+        capabilities: ChannelCapabilities | None = None,
+        secret: str = "sim-secret",
+        *,
+        on_demand: bool = False,
     ) -> None:
         from mia.channels.whatsapp.adapter import CAPABILITIES  # same limits as WhatsApp
 
@@ -45,6 +54,7 @@ class SimAdapter:
         self.secret = secret
         self.sent: list[ChannelPayload] = []
         self.fail_next: str | None = None
+        self.on_demand = on_demand
 
     def verify_webhook(self, headers: Mapping[str, str], body: bytes) -> bool:
         """Signed with the sim secret, like WhatsApp."""

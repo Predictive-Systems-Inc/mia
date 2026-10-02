@@ -13,5 +13,5 @@ from mia.settings import Settings
 
 def register_configured(settings: Settings) -> None:
     """Register the simulator and every channel whose settings are configured."""
-    registry.register(SimAdapter())
+    registry.register(SimAdapter(on_demand=True))
     register_if_configured(settings)

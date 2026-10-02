@@ -275,11 +275,11 @@ def channels_sim(args: argparse.Namespace) -> int:
         sim.sent.clear()
 
     async def waiting() -> None:
-        await outbox.send_due(utcnow())
+        await outbox.send_due(utcnow(), on_demand_for=args.sender)
 
     async def reply() -> None:
         await handle_inbound(inbound_id)
-        await outbox.send_due(utcnow())
+        await outbox.send_due(utcnow(), on_demand_for=args.sender)
 
     asyncio.run(waiting())
     show("-- waiting for this number --")
