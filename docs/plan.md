@@ -19,7 +19,9 @@ Build the Mia platform structure and one fully configured agent, the dispatcher,
 - Billing summary export (CSV) in code
 - Finnish and English UI
 
-**Out of scope (deferred):** Mia Cloud UI and bundle sync, catalogue and hiring, grading, subagents and variants, QA agent and audit reports, outside channels, voice, QuickBooks and other connectors, custom fields UI, chart and table blocks, payroll and social media agents.
+**Out of scope (deferred):** Mia Cloud UI and bundle sync (not built until decided otherwise, D13), catalogue and hiring, grading, subagents and variants, QA agent and audit reports, voice, QuickBooks and other connectors, custom fields UI, chart and table blocks, payroll and social media agents.
+
+**Added to scope (D13):** outside channels, WhatsApp first; see docs/superpowers/specs/2026-10-02-channel-adapters-whatsapp-design.md.
 
 **References:** the [Mia Agent Manifest Specification v0.1](https://claude.ai/code/artifact/36ffddd5-462a-46cc-b582-5dbcbf46720b) (architecture, RBAC, approvals, chat, egress, tech stack) and the Hype Siivous proposal (scope and timeline commitments).
 
