@@ -10,12 +10,12 @@ from typing import Any, Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlmodel import col, select
+from sqlmodel import Session, col, select
 
 import mia
 from mia.agents.dispatcher import cover
 from mia.channels import inbound as channel_service
-from mia.channels import outbox
+from mia.channels import outbox, registry
 from mia.channels.router import router as channels_router
 from mia.channels.whatsapp import register_if_configured
 from mia.chat.channels import NOTIFICATION
@@ -24,7 +24,7 @@ from mia.chat.router import router as chat_router
 from mia.core import approvals
 from mia.core.db import session_scope, utcnow
 from mia.core.events import verify_chain
-from mia.core.models import Actor, Message, Person, Thread
+from mia.core.models import Actor, ChannelOutbox, Message, Person, Thread
 from mia.settings import get_settings
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -76,7 +76,23 @@ def health(session: DbSession) -> dict[str, object]:
         "version": mia.__version__,
         "model": get_settings().MIA_MODEL,
         "events_chain": verify_chain(session),
+        "channels": channel_health(session),
     }
+
+
+def channel_health(session: Session) -> dict[str, dict[str, object]]:
+    """Each enabled channel with its failed messages in the last 24 hours."""
+    since = utcnow() - dt.timedelta(hours=24)
+    out: dict[str, dict[str, object]] = {}
+    for adapter in registry.enabled():
+        failed = session.exec(
+            select(ChannelOutbox)
+            .where(ChannelOutbox.channel == adapter.channel_id)
+            .where(ChannelOutbox.status == "failed")
+            .where(col(ChannelOutbox.updated_at) >= since)
+        ).all()
+        out[adapter.channel_id] = {"enabled": True, "failed_24h": len(failed)}
+    return out
 
 
 @app.get("/", include_in_schema=False)

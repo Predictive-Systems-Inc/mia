@@ -90,3 +90,21 @@ def test_tick_runs_cover_escalation_and_sends_the_outbox(
     advanced, sent = asyncio.run(run_due_work())
     assert (advanced, sent) == (0, 1)
     assert len(sim.sent) == 1
+
+
+def test_health_reports_failed_channel_messages(
+    session: Session, people: dict[str, Person], sim: SimAdapter, link: LinkFn
+) -> None:
+    from fastapi.testclient import TestClient
+
+    from mia.api.main import app
+
+    row = _queue(session, people["Juha"], link)
+    from mia.core import store
+
+    store.update(
+        session, row, {"status": "failed", "error_code": "131026"}, Actor.system(row.branch_id)
+    )
+    session.commit()
+    body = TestClient(app).get("/health").json()
+    assert body["channels"] == {"sim": {"enabled": True, "failed_24h": 1}}

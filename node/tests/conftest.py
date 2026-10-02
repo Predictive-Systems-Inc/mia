@@ -16,6 +16,7 @@ os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 from pydantic_ai import models
 
 from mia.agents.dispatcher import agent as dispatcher_agent
+from mia.channels import registry
 from mia.core import db
 from mia.core.models import Actor, Branch, Person
 from mia.schema import create_all
@@ -50,7 +51,10 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     get_settings.cache_clear()
     dispatcher_agent.get_agent.cache_clear()
     db.reset_engines()
+    saved_adapters = dict(registry._adapters)
     yield
+    registry._adapters.clear()
+    registry._adapters.update(saved_adapters)
     db.reset_engines()
     get_settings.cache_clear()
     dispatcher_agent.get_agent.cache_clear()

@@ -1,5 +1,5 @@
 """The `mia` command: migrate, seed, serve, chat, decide, inbox, tick, geocode, person,
-invite."""
+invite, channels."""
 
 import argparse
 import asyncio
@@ -230,6 +230,52 @@ def invite(args: argparse.Namespace) -> int:
     return 0
 
 
+def channels_sim(args: argparse.Namespace) -> int:
+    """Send one message as if it came from a phone on the simulated channel; print Mia's replies."""
+    from mia.channels import outbox, registry
+    from mia.channels.base import InboundMessage
+    from mia.channels.inbound import handle_inbound
+    from mia.channels.simulator import SimAdapter
+    from mia.core import store
+    from mia.core.db import session_scope, utcnow
+    from mia.core.ids import new_id
+    from mia.core.models import Actor, ChannelInbound, Principal
+
+    sim = SimAdapter()
+    registry.register(sim)
+    if sim not in registry.enabled():
+        raise SystemExit("the sim channel is off: set channels.sim.enabled in the org settings")
+    msg = InboundMessage(
+        channel="sim",
+        address=args.sender,
+        channel_message_id=new_id(),
+        text=args.text,
+        received_at=utcnow(),
+    )
+    actor = Actor(principal=Principal(type="system", id="channel:sim"), branch_id="")
+    with session_scope() as session:
+        row = ChannelInbound(
+            channel="sim",
+            channel_message_id=msg.channel_message_id,
+            address=msg.address,
+            body=msg.model_dump(mode="json"),
+        )
+        inbound_id = store.insert(session, row, actor, action="channel.received").id
+
+    async def run() -> None:
+        await handle_inbound(inbound_id)
+        await outbox.send_due(utcnow())
+
+    asyncio.run(run())
+    for payload in sim.sent:
+        body = payload.body
+        print(f"[Mia -> {payload.address}] ({body.get('kind')})")
+        print(body.get("text") or body.get("name") or "")
+        for option in body.get("buttons") or body.get("rows") or []:
+            print(f"  [{option}]")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mia", description="Mia Node command line")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -266,6 +312,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("name")
     p.add_argument("--as", dest="as_person", help="the inviting supervisor (told about problems)")
     p.set_defaults(func=invite)
+    channels = sub.add_parser("channels", help="messaging channels").add_subparsers(
+        dest="channels_command", required=True
+    )
+    p = channels.add_parser("sim", help="send a message on the simulated channel")
+    p.add_argument("text")
+    p.add_argument("--from", dest="sender", required=True, help="the phone number it comes from")
+    p.set_defaults(func=channels_sim)
     person = sub.add_parser("person", help="manage people").add_subparsers(
         dest="person_command", required=True
     )

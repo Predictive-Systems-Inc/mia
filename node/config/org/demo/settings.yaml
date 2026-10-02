@@ -7,3 +7,6 @@ cover_confirmation:
   soon_call_wait_minutes: 5    # and move on after this long
   urgent_until: "10:00"        # during quiet hours, cover for visits before this time next
                                # morning may be messaged (never called before quiet hours end)
+channels:                      # messaging channels (ADR 007); off unless enabled
+  sim: {enabled: true}         # simulated channel for local trials: uv run mia channels sim
+  whatsapp: {enabled: false}   # needs the MIA_WA_* settings, see docs/whatsapp-setup.md

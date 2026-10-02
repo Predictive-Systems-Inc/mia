@@ -57,3 +57,22 @@ def test_public_functions_have_docstrings() -> None:
             if is_func and not node.name.startswith("_") and ast.get_docstring(node) is None:
                 missing.append(f"{p.relative_to(MIA)}:{node.lineno} {node.name}")
     assert missing == []
+
+
+def test_agents_and_chat_never_import_a_specific_channel() -> None:
+    """Pluggable channels: agents and chat use mia.channels.service only, never an adapter."""
+    pattern = re.compile(r"^\s*(from|import)\s+mia\.channels\.(whatsapp|simulator)\b", re.MULTILINE)
+    offenders = [
+        str(p)
+        for p in MIA.rglob("*.py")
+        if p.relative_to(MIA).parts[0] in ("agents", "chat") and pattern.search(p.read_text())
+    ]
+    assert offenders == []
+
+
+def test_channel_adapters_reach_http_only_through_channel_transport() -> None:
+    """Every adapter that makes HTTP requests builds its client on ChannelTransport."""
+    for p in (MIA / "channels").rglob("adapter.py"):
+        text = p.read_text()
+        if "httpx.AsyncClient(" in text:
+            assert "transport=ChannelTransport(" in text, p

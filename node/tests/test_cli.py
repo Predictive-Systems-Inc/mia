@@ -62,3 +62,14 @@ def test_person_add(capsys: pytest.CaptureFixture[str]) -> None:
     assert re.search(r"added Aada Koski \(\w{26}\)", capsys.readouterr().out)
     with pytest.raises(SystemExit, match="roles must be"):
         main(["person", "add", "Bea", "--role", "janitor"])
+
+
+def test_channels_sim_links_and_chats(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["migrate"]) == 0 and main(["seed"]) == 0
+    assert main(["invite", "Juha"]) == 0
+    code = re.search(r"LINK (\d{6})", capsys.readouterr().out)
+    assert code
+    assert main(["channels", "sim", f"LINK {code[1]}", "--from", "358400000002"]) == 0
+    assert "Juha" in capsys.readouterr().out
+    assert main(["channels", "sim", "Olen kipeä huomenna.", "--from", "358400000002"]) == 0
+    assert "Kirjasin poissaolosi" in capsys.readouterr().out

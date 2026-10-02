@@ -1,7 +1,7 @@
 # 007: Channel adapters package and WhatsApp
 
 ## Status
-Proposed (decision D13). Design: docs/superpowers/specs/2026-10-02-channel-adapters-whatsapp-design.md.
+Accepted (decision D13), built on branch feat/channels-whatsapp. Design: docs/superpowers/specs/2026-10-02-channel-adapters-whatsapp-design.md.
 
 ## Context
 D13 brings outside channels into scope for the local node, WhatsApp first. The spec defines a
