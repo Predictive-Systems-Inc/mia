@@ -1,4 +1,5 @@
-"""The `mia` command: migrate, seed, serve, chat, decide, inbox, tick, geocode, person."""
+"""The `mia` command: migrate, seed, serve, chat, decide, inbox, tick, geocode, person,
+invite."""
 
 import argparse
 import asyncio
@@ -189,6 +190,43 @@ def person_add(args: argparse.Namespace) -> int:
     return 0
 
 
+def _match_one(session: Session, who: str) -> Person:
+    """Exact id or full name, else a unique name prefix. Exits listing matches when ambiguous."""
+    people = session.exec(select(Person).order_by(col(Person.name))).all()
+    low = who.lower().strip()
+    exact = [p for p in people if p.id == who or p.name.lower() == low]
+    found = exact or [
+        p for p in people if any(part.lower().startswith(low) for part in [p.name, *p.name.split()])
+    ]
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        raise SystemExit(f"no person matches {who!r}")
+    raise SystemExit(f"{who!r} matches several people: " + ", ".join(p.name for p in found))
+
+
+def invite(args: argparse.Namespace) -> int:
+    from mia.channels import linking
+    from mia.core.db import session_scope
+    from mia.core.models import Actor
+
+    with session_scope() as session:
+        person = _match_one(session, args.name)
+        actor = (
+            Actor.person(_match_one(session, args.as_person))
+            if args.as_person
+            else Actor.system(person.branch_id)
+        )
+        try:
+            code = linking.create_code(session, actor, person, "invite")
+        except linking.LinkingError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"invite for {person.name}, valid 7 days, single use")
+        print(f"  link: {linking.invite_link(code)}")
+        print(f"  or send this text to Mia on WhatsApp: LINK {code}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mia", description="Mia Node command line")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -221,6 +259,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "geocode", help="geocode home bases and sites that have no coordinates"
     ).set_defaults(func=geocode)
+    p = sub.add_parser("invite", help="create a WhatsApp invite link for a person")
+    p.add_argument("name")
+    p.add_argument("--as", dest="as_person", help="the inviting supervisor (told about problems)")
+    p.set_defaults(func=invite)
     person = sub.add_parser("person", help="manage people").add_subparsers(
         dest="person_command", required=True
     )
