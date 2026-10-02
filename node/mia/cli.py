@@ -129,7 +129,9 @@ def inbox(args: argparse.Namespace) -> int:
 
 def tick(_args: argparse.Namespace) -> int:
     from mia.api.main import run_due_work
+    from mia.channels.whatsapp import register_if_configured
 
+    register_if_configured(get_settings())
     advanced, sent = asyncio.run(run_due_work())
     print(f"advanced {advanced} cover request(s), sent {sent} channel message(s)")
     return 0

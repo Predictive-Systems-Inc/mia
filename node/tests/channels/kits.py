@@ -51,4 +51,49 @@ def sim_kit() -> Kit:
     )
 
 
-KITS: dict[str, Callable[[], Kit]] = {"sim": sim_kit}
+def whatsapp_kit() -> Kit:
+    import httpx
+
+    from mia.channels.whatsapp.adapter import WhatsAppAdapter
+    from mia.settings import Settings
+
+    sent: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"messages": [{"id": f"wamid.{len(sent)}"}]})
+
+    settings = Settings(
+        MIA_WA_TOKEN="tok", MIA_WA_APP_SECRET="app-secret", MIA_WA_PHONE_NUMBER_ID="PNID"
+    )
+    adapter = WhatsAppAdapter(settings, transport=httpx.MockTransport(handler))
+
+    def inbound(
+        address: str, text: str, msg_id: str, button: str | None = None, media: bool = False
+    ) -> bytes:
+        m: dict[str, Any] = {"from": address, "id": msg_id, "timestamp": "1790000000"}
+        if media:
+            m |= {"type": "image", "image": {"id": "MEDIA"}}
+        elif button:
+            reply = {"type": "button_reply", "button_reply": {"id": "b0", "title": button}}
+            m |= {"type": "interactive", "interactive": reply}
+        else:
+            m |= {"type": "text", "text": {"body": text}}
+        return _wa_envelope({"messages": [m]})
+
+    def status(msg_id: str, status: str, error_code: str | None = None) -> bytes:
+        s: dict[str, Any] = {"id": msg_id, "status": status, "recipient_id": "x"}
+        if error_code:
+            s["errors"] = [{"code": int(error_code)}]
+        return _wa_envelope({"statuses": [s]})
+
+    return Kit(adapter, inbound, status, _hub_sign("app-secret"), lambda: sent)
+
+
+def _wa_envelope(value: dict[str, Any]) -> bytes:
+    change = {"field": "messages", "value": {"messaging_product": "whatsapp", **value}}
+    envelope = {"object": "whatsapp_business_account", "entry": [{"id": "W", "changes": [change]}]}
+    return json.dumps(envelope).encode()
+
+
+KITS: dict[str, Callable[[], Kit]] = {"sim": sim_kit, "whatsapp": whatsapp_kit}

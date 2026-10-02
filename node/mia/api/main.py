@@ -17,6 +17,7 @@ from mia.agents.dispatcher import cover
 from mia.channels import inbound as channel_service
 from mia.channels import outbox
 from mia.channels.router import router as channels_router
+from mia.channels.whatsapp import register_if_configured
 from mia.chat.channels import NOTIFICATION
 from mia.chat.router import ActorHeader, DbSession, resolve_actor
 from mia.chat.router import router as chat_router
@@ -53,7 +54,9 @@ async def _ticker(seconds: int) -> None:
 
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Stand-in for the Huey worker: run due work (cover, outbox) every MIA_TICK_SECONDS."""
+    """Register configured channels, then run due work (cover, outbox) every MIA_TICK_SECONDS
+    (a stand-in for the Huey worker)."""
+    register_if_configured(get_settings())
     seconds = get_settings().MIA_TICK_SECONDS
     task = asyncio.create_task(_ticker(seconds)) if seconds > 0 else None
     yield

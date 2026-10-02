@@ -32,6 +32,7 @@ class ButtonsPart(BaseModel):
 class ListPart(BaseModel):
     text: str
     rows: list[str]
+    button: str = ""  # label of the button that opens the list, in the reader's language
 
 
 RenderedPart = TextPart | ButtonsPart | ListPart
@@ -113,7 +114,8 @@ def to_parts(
         if 0 < len(options) <= c.max_buttons and len(body) <= c.max_text:
             parts.append(ButtonsPart(text=body, buttons=[o[: c.max_button_label] for o in options]))
         elif 0 < len(options) <= c.max_list_rows and len(body) <= c.max_text:
-            parts.append(ListPart(text=body, rows=[o[: c.max_list_label] for o in options]))
+            rows = [o[: c.max_list_label] for o in options]
+            parts.append(ListPart(text=body, rows=rows, button=t("channel.choose", lang)))
         else:
             numbered = "\n".join(f"{i}. {o}" for i, o in enumerate(options, start=1))
             pending.append(f"{body}\n{numbered}\n{t('channel.reply_with_number', lang)}")

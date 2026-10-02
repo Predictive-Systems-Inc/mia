@@ -44,7 +44,7 @@ def test_button_labels_are_cut_to_the_channel_limit() -> None:
 def test_four_to_ten_options_become_a_list() -> None:
     options = ["a", "b", "c", "d", "e"]
     blocks: list[Block] = [TextBlock(text="Pick"), QuickRepliesBlock(options=options)]
-    assert to_parts(blocks, RICH, "en") == [ListPart(text="Pick", rows=options)]
+    assert to_parts(blocks, RICH, "en") == [ListPart(text="Pick", rows=options, button="Choose")]
 
 
 def test_text_only_channel_gets_numbered_options() -> None:

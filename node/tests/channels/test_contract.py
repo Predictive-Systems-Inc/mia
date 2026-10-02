@@ -6,6 +6,7 @@ import pytest
 
 from mia.channels.base import InboundMessage, StatusUpdate
 from mia.channels.render import to_parts
+from mia.channels.transport import sending
 from mia.chat.blocks import (
     ApprovalCardBlock,
     Block,
@@ -82,6 +83,7 @@ def test_send_returns_a_channel_message_id(kit: Kit) -> None:
     (payload,) = kit.adapter.render(
         "358401234567", to_parts([TextBlock(text="Hei")], kit.adapter.capabilities, "fi")
     )
-    result = asyncio.run(kit.adapter.send(payload))
+    with sending("contract"):  # adapters send only inside an outbox send
+        result = asyncio.run(kit.adapter.send(payload))
     assert result.ok and result.channel_message_id
     assert len(kit.sent()) == 1

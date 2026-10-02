@@ -21,16 +21,6 @@ from mia.channels.base import (
 from mia.channels.render import ButtonsPart, ListPart, RenderedPart
 from mia.core.ids import new_id
 
-WHATSAPP_LIKE = ChannelCapabilities(
-    max_text=4096,
-    max_buttons=3,
-    max_button_label=20,
-    max_list_rows=10,
-    max_list_label=24,
-    session_window_hours=24,
-    supports_templates=True,
-)
-
 
 def hub_signature_ok(secret: str, headers: Mapping[str, str], body: bytes) -> bool:
     """True when X-Hub-Signature-256 is the HMAC-SHA256 of the raw body with the secret."""
@@ -47,9 +37,11 @@ class SimAdapter:
     channel_id = "sim"
 
     def __init__(
-        self, capabilities: ChannelCapabilities = WHATSAPP_LIKE, secret: str = "sim-secret"
+        self, capabilities: ChannelCapabilities | None = None, secret: str = "sim-secret"
     ) -> None:
-        self.capabilities = capabilities
+        from mia.channels.whatsapp.adapter import CAPABILITIES  # same limits as WhatsApp
+
+        self.capabilities = capabilities or CAPABILITIES
         self.secret = secret
         self.sent: list[ChannelPayload] = []
         self.fail_next: str | None = None
