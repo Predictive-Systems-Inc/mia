@@ -17,7 +17,9 @@ from sqlmodel import Session, col, or_, select
 
 from mia.channels import registry
 from mia.channels.base import ChannelPayload, DeliveryResult, TemplateCall
+from mia.channels.render import to_parts
 from mia.channels.transport import sending
+from mia.chat.blocks import TextBlock
 from mia.core import events, store
 from mia.core.db import session_scope
 from mia.core.models import Actor, ChannelIdentity, ChannelOutbox, Person, Principal
@@ -171,3 +173,49 @@ def release_held(session: Session, identity: ChannelIdentity) -> int:
             action="channel.released",
         )
     return len(rows)
+
+
+async def send_direct(channel: str, address: str, text: str) -> bool:
+    """Reply to an address that is not linked to anyone (no person, so no outbox row).
+
+    Used only for answers to a message the address just sent, so the channel's window is open.
+    Logged as `channel.sent` with a payload hash, like outbox sends.
+    """
+    adapter = registry.get(channel)
+    parts = to_parts([TextBlock(text=text)], adapter.capabilities, "fi")
+    ok = True
+    for payload in adapter.render(address, parts):
+        with sending(f"direct:{address}"):
+            result = await adapter.send(payload)
+        ok = ok and result.ok
+        await asyncio.to_thread(_log_direct, channel, payload.body, result)
+    return ok
+
+
+def _log_direct(channel: str, body: dict[str, object], result: DeliveryResult) -> None:
+    digest = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+    actor = Actor(principal=Principal(type="system", id=f"channel:{channel}"), branch_id="")
+    after = {"channel": channel, "payload_hash": digest, "ok": result.ok}
+    with session_scope() as session:
+        events.emit(session, "channel.sent", ("channel", channel), None, after, actor)
+
+
+def apply_status(
+    session: Session, channel: str, message_id: str, status: str, error: str | None
+) -> None:
+    """Record a delivery status reported by the channel for one sent row."""
+    row = session.exec(
+        select(ChannelOutbox)
+        .where(ChannelOutbox.channel == channel)
+        .where(ChannelOutbox.channel_message_id == message_id)
+    ).first()
+    if row is None:
+        return
+    actor = outbox_actor(row.branch_id)
+    if status == "failed" and error == OUTSIDE_WINDOW and row.payload.get("kind") != "template":
+        _fall_back_to_notice(session, row, actor)
+        return
+    changes: dict[str, object] = {"status": status}
+    if error:
+        changes["error_code"] = error
+    store.update(session, row, changes, actor, action="channel.status")

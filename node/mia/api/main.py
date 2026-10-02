@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import datetime as dt
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Literal
@@ -13,7 +14,9 @@ from sqlmodel import col, select
 
 import mia
 from mia.agents.dispatcher import cover
+from mia.channels import inbound as channel_service
 from mia.channels import outbox
+from mia.channels.router import router as channels_router
 from mia.chat.channels import NOTIFICATION
 from mia.chat.router import ActorHeader, DbSession, resolve_actor
 from mia.chat.router import router as chat_router
@@ -35,6 +38,9 @@ def tick() -> int:
 async def run_due_work() -> tuple[int, int]:
     """One round of due work: cover escalation, then the channel outbox. Returns both counts."""
     advanced = await asyncio.to_thread(tick)  # sync DB work off the event loop
+    stale = utcnow() - dt.timedelta(minutes=1)
+    for inbound_id in await asyncio.to_thread(channel_service.pending_inbound, stale):
+        await channel_service.handle_inbound(inbound_id)  # lost to a restart before handling
     sent = await outbox.send_due(utcnow())
     return advanced, sent
 
@@ -57,6 +63,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Mia Node", version=mia.__version__, lifespan=lifespan)
 app.include_router(chat_router)
+app.include_router(channels_router)
 
 
 @app.get("/health")
