@@ -1,5 +1,5 @@
 """The `mia` command: migrate, seed, serve, chat, decide, inbox, tick, geocode, person,
-invite, channels."""
+invite, channels, backup, verify-db."""
 
 import argparse
 import asyncio
@@ -288,6 +288,71 @@ def channels_sim(args: argparse.Namespace) -> int:
     return 0
 
 
+def backup(args: argparse.Namespace) -> int:
+    """Write a consistent copy of the live database to a new file (SQLite online backup, safe
+    while the node runs). Never overwrites an existing file."""
+    import sqlite3
+    from contextlib import closing
+    from pathlib import Path
+
+    src_path, dest = get_settings().MIA_DB_PATH, Path(args.dest)
+    if not src_path.is_file():
+        raise SystemExit(f"no database at {src_path}")
+    if dest.exists():
+        raise SystemExit(f"{dest} exists; choose a new file name")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(src_path)) as src, closing(sqlite3.connect(dest)) as out:
+        src.backup(out)
+    print(f"backup written: {dest}")
+    return 0
+
+
+def verify_db(args: argparse.Namespace) -> int:
+    """Check a database copy (a Litestream restore or a `mia backup` file) without changing it:
+    SQLite integrity, the events hash chain, the migration revision and row counts per table.
+    Returns 0 only when the file opens, integrity is ok and the chain verifies."""
+    from pathlib import Path
+
+    from sqlalchemy import create_engine, inspect
+    from sqlalchemy.exc import DatabaseError
+
+    from mia.core.events import verify_chain
+
+    path = Path(args.path)
+    if not path.is_file():
+        print(f"FAILED: no database at {path}")
+        return 1
+    engine = create_engine(f"sqlite:///file:{path.resolve()}?mode=ro&uri=true")
+    try:
+        with engine.connect() as conn:
+            integrity = conn.exec_driver_sql("PRAGMA integrity_check").scalar()
+            tables = sorted(inspect(conn).get_table_names())
+            counts = {
+                t: conn.exec_driver_sql(f'SELECT count(*) FROM "{t}"').scalar() for t in tables
+            }
+            revision = (
+                conn.exec_driver_sql("SELECT version_num FROM alembic_version").scalar()
+                if "alembic_version" in tables
+                else None
+            )
+        with Session(engine) as session:
+            chain = "events" in tables and verify_chain(session)
+    except DatabaseError as exc:
+        print(f"FAILED: cannot read {path}: {exc.orig}")
+        return 1
+    finally:
+        engine.dispose()
+    print(f"database: {path}")
+    print(f"integrity: {integrity}")
+    print(f"migration: {revision or 'none'}")
+    print(f"events chain: {'intact' if chain else 'BROKEN or missing'}")
+    for table, n in counts.items():
+        print(f"  {table}: {n}")
+    ok = integrity == "ok" and chain
+    print("OK: restore verified" if ok else "FAILED: restore is not usable")
+    return 0 if ok else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mia", description="Mia Node command line")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -295,6 +360,14 @@ def build_parser() -> argparse.ArgumentParser:
         func=migrate
     )
     sub.add_parser("seed", help="load demo data").set_defaults(func=seed)
+    p = sub.add_parser("backup", help="write a consistent copy of the database to a new file")
+    p.add_argument("dest")
+    p.set_defaults(func=backup)
+    p = sub.add_parser(
+        "verify-db", help="check a restored copy: integrity, events chain, row counts"
+    )
+    p.add_argument("path")
+    p.set_defaults(func=verify_db)
     p = sub.add_parser("serve", help="start the API and chat page")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8000)
