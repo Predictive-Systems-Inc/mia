@@ -162,7 +162,7 @@ async def ag_ui_connect(
     thread = await asyncio.to_thread(_own_thread, session, person, body.thread_id)
     if run is not None:
         rows = await asyncio.to_thread(runs.stored_messages, session, body.thread_id)
-        return _stream(runs.rejoin(run, runs.messages_snapshot(rows)))
+        return _stream(runs.rejoin(run, runs.messages_snapshot(runs.rejoin_rows(run, rows))))
     if thread is None:
         raise HTTPException(404, "thread not found")
     events = await asyncio.to_thread(runs.snapshot, session, thread, new_id())

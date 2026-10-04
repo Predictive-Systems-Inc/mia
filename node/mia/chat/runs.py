@@ -20,6 +20,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from typing import Any
 
 from ag_ui.core import (
     AssistantMessage,
@@ -73,6 +74,8 @@ class LiveRun:
     token: CancellationToken = field(default_factory=CancellationToken)
     changed: asyncio.Condition = field(default_factory=asyncio.Condition)
     task: asyncio.Task[None] | None = None
+    # Ids are monotonic: every row this run stores sorts after `since` (see rejoin_rows).
+    since: str = field(default_factory=new_id)
 
     async def push(self, event: BaseEvent) -> None:
         async with self.changed:
@@ -117,6 +120,13 @@ async def follow(run: LiveRun, after: int = 0) -> AsyncIterator[str]:
             yield frame(data)
         if finished and seen >= len(run.events):
             return
+
+
+def rejoin_rows(run: LiveRun, rows: list[Message]) -> list[Message]:
+    """Stored rows for a rejoin snapshot, without this run's own reply: the replayed events carry
+    it (same message id), so including a reply committed before the run ended would show it twice.
+    """
+    return [r for r in rows if r.role == "user" or r.id < run.since]
 
 
 async def rejoin(run: LiveRun, history: MessagesSnapshotEvent) -> AsyncIterator[str]:
@@ -194,16 +204,13 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
             _prepare, session, person, text, run.thread_id, create=True
         )
         lang = deps.lang
+        # The wrapped text is the run's user prompt, so new_messages() (and the stored turn)
+        # include it, as in chat.service.run_turn. run_input only supplies thread and run ids.
         clean = run_input.model_copy(
-            update={
-                "messages": [UserMessage(id=new_id(), content=wrap_user_text(text, person))],
-                "tools": [],
-                "state": None,
-                "context": [],
-                "resume": None,
-            }
+            update={"messages": [], "tools": [], "state": None, "context": [], "resume": None}
         )
-        adapter = AGUIAdapter(agent=get_agent(), run_input=clean)
+        agent = get_agent()
+        adapter = AGUIAdapter(agent=agent, run_input=clean)
 
         async def on_complete(result: AgentRunResult[AgentReply]) -> AsyncIterator[BaseEvent]:
             reply = await asyncio.to_thread(_finish, session, deps, thread, result)
@@ -211,13 +218,18 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
             for event in _reply_events(reply):
                 yield event
 
-        with egress_context(ctx):
-            stream = adapter.run_stream(
+        async def native() -> AsyncIterator[Any]:
+            async with agent.run_stream_events(
+                wrap_user_text(text, person),
                 message_history=past,
                 deps=deps,
-                on_complete=on_complete,
                 cancellation_token=run.token,
-            )
+            ) as events:
+                async for item in events:
+                    yield item
+
+        with egress_context(ctx):
+            stream = adapter.transform_stream(native(), on_complete=on_complete)
             async for event in stream:
                 if isinstance(event, ToolCallStartEvent) and event.tool_call_name == OUTPUT_TOOL:
                     hidden.add(event.tool_call_id)

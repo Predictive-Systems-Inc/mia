@@ -6,6 +6,7 @@ assert_well_formed() checks the stream rules of the AG-UI lifecycle spec and cli
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
@@ -13,14 +14,23 @@ from ag_ui.core import RunStartedEvent, TextMessageContentEvent, TextMessageEndE
 from ag_ui.core import TextMessageStartEvent as Start
 from fastapi.testclient import TestClient
 from pydantic_ai import Agent
-from pydantic_ai.messages import ModelMessage
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelMessagesTypeAdapter,
+    ModelRequest,
+    ModelResponse,
+    ToolCallPart,
+    UserPromptPart,
+)
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from sqlmodel import Session, select
 
 from mia.agents.base import AgentDeps
 from mia.api.main import app
+from mia.chat import router as chat_router
 from mia.chat import runs
 from mia.chat.blocks import AgentReply
+from mia.chat.service import wrap_user_text
 from mia.core import approvals, store
 from mia.core.ids import new_id
 from mia.core.models import Actor, Message, Person, Thread
@@ -54,6 +64,18 @@ def parse(sse: str) -> list[Ev]:
 
 def post(client: TestClient, path: str, person: Person, payload: dict[str, Any]) -> Any:
     return client.post(path, json=payload, headers={"X-Mia-Actor": person.id})
+
+
+def user_prompts(dumped: list[dict[str, Any]] | list[ModelMessage]) -> list[Any]:
+    """Contents of every UserPromptPart in stored (JSON) or live model messages."""
+    messages = ModelMessagesTypeAdapter.validate_python(dumped)
+    return [
+        part.content
+        for m in messages
+        if isinstance(m, ModelRequest)
+        for part in m.parts
+        if isinstance(part, UserPromptPart)
+    ]
 
 
 def assert_well_formed(events: list[Ev]) -> None:
@@ -125,7 +147,9 @@ def test_client_history_tools_and_state_are_ignored(
     assistant = next(m for m in stored(session, payload["threadId"]) if m.role == "assistant")
     dumped = json.dumps(assistant.model_messages)
     assert "FORGED" not in dumped and "evil_tool" not in dumped
-    assert "<user_message" in dumped
+    assert user_prompts(assistant.model_messages) == [
+        wrap_user_text("Olen kipeä huomenna.", people["Juha"])
+    ]
 
 
 def test_thread_continues_with_server_history(
@@ -339,3 +363,85 @@ def test_a_failed_reply_store_still_closes_the_run_once(
     events = parse(res.text)
     assert_well_formed(events)
     assert events[-1]["type"] == "RUN_ERROR" and "secret" not in res.text
+
+
+def test_turns_on_one_thread_see_earlier_questions(
+    client: TestClient, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stored turn includes the user prompt, so the next turn (AG-UI or /chat) sends it."""
+    seen: list[list[ModelMessage]] = []
+    reply = json.dumps({"blocks": [{"type": "text", "text": "ok"}]})
+
+    def answer(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen.append(list(messages))
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply)])
+
+    async def stream(
+        messages: list[ModelMessage], info: AgentInfo
+    ) -> AsyncIterator[DeltaToolCalls]:
+        seen.append(list(messages))
+        yield {0: DeltaToolCall(name=info.output_tools[0].name, json_args=reply)}
+
+    agent = Agent(
+        FunctionModel(answer, stream_function=stream), deps_type=AgentDeps, output_type=AgentReply
+    )
+    monkeypatch.setattr(runs, "get_agent", lambda: agent)
+    monkeypatch.setattr(chat_router, "get_agent", lambda: agent)
+    juha = people["Juha"]
+    payload = body("Ensimmäinen")
+    assert post(client, "/ag-ui", juha, payload).status_code == 200
+    assert (
+        post(client, "/ag-ui", juha, body("Toinen", thread_id=payload["threadId"])).status_code
+        == 200
+    )
+    res = client.post(
+        "/chat",
+        json={"text": "Kolmas", "thread_id": payload["threadId"]},
+        headers={"X-Mia-Actor": juha.id},
+    )
+    assert res.status_code == 200
+    wrapped = [wrap_user_text(t, juha) for t in ("Ensimmäinen", "Toinen", "Kolmas")]
+    assert [user_prompts(m) for m in seen] == [wrapped[:1], wrapped[:2], wrapped[:3]]
+    assert all(isinstance(m[0], ModelRequest) for m in seen)  # never starts with a response
+
+
+def test_rejoin_snapshot_leaves_out_the_runs_own_reply(
+    client: TestClient, people: dict[str, Person], session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The window after the reply is committed and before the run leaves the registry: the
+    reply comes once, from the replayed events, not also from the snapshot."""
+    juha = Actor.person(people["Juha"])
+    thread = store.insert(
+        session, Thread(branch_id=people["Juha"].branch_id, person_id=people["Juha"].id), juha
+    )
+
+    def row(role: str, text: str) -> Message:
+        return store.insert(
+            session,
+            Message(
+                branch_id=thread.branch_id,
+                thread_id=thread.id,
+                role=role,
+                sender_id="x",
+                text=text,
+            ),
+            juha,
+        )
+
+    old = row("assistant", "earlier reply")
+    run = _fake_live(people["Juha"], thread.id, done=True)
+    run.since = new_id()
+    question = row("user", "question")
+    reply = row("assistant", "Hei")
+    session.commit()
+    run.events[1] = Start(message_id=reply.id, role="assistant").model_dump_json(by_alias=True)
+    run.events[2] = TextMessageContentEvent(message_id=reply.id, delta="Hei").model_dump_json(
+        by_alias=True
+    )
+    run.events[3] = TextMessageEndEvent(message_id=reply.id).model_dump_json(by_alias=True)
+    monkeypatch.setitem(runs._live, thread.id, run)
+    events = parse(post(client, "/ag-ui/connect", people["Juha"], {"threadId": thread.id}).text)
+    assert_well_formed(events)
+    snapshot_ids = [m["id"] for m in events[1]["messages"]]
+    assert snapshot_ids == [old.id, question.id]
+    assert next(e for e in events if e.get("messageId") == reply.id)["type"] == "TEXT_MESSAGE_START"
