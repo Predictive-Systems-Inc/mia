@@ -8,12 +8,16 @@ mia/
   uv.lock
   .env.example              every MIA_* variable with a comment
   .pre-commit-config.yaml   ruff, mypy, detect-secrets (.secrets.baseline)
-  .github/workflows/ci.yml  jobs: lint, types, tests, evals
+  .github/workflows/ci.yml  jobs: lint, types, tests, evals, docker (build, smoke and restore test)
+  Dockerfile                the node image (ADR 010); .dockerignore beside it
+  deploy/                   docker-compose.yml (node, litestream, tunnel), litestream.yml,
+                            install.md, restore-test.sh (ADR 010)
   node/
     mia/
       settings.py           MIA_DB_PATH, MIA_MODEL, MIA_GATEWAY_URL, MIA_GATEWAY_KEY, MIA_EGRESS_LEVEL, MIA_ORG
       schema.py             imports every table module (Alembic, tests)
-      cli.py                mia migrate | seed | serve | chat | decide | inbox | tick | geocode
+      cli.py                mia migrate | seed | serve | chat | decide | inbox | tick | geocode |
+                            backup | verify-db | ...
       core/                 models, db, ids, events, store, rbac, approvals, egress, usage, people,
                             geocoding (pluggable providers), orgconfig (organisation settings)
       templates/cleaning/   models (sites, checklists), seed
@@ -36,5 +40,5 @@ mia/
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas
 ```
 
-Files beyond the brief's layout, and why, are listed in docs/adr/001-stack.md and 005.
+Files beyond the brief's layout, and why, are listed in docs/adr/001-stack.md, 005 and 010.
 Add new folders only with a reason recorded in an ADR.

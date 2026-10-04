@@ -45,6 +45,25 @@ jobs:
       - run: cp .env.example .env && uv run mia migrate && uv run mia seed
       - run: uv run mia chat "Olen kipeä huomenna." --as Juha
 
+  # The install from deploy/install.md: build, start, health, then a backup restore test.
+  docker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp ../.env.example .env
+      - run: docker compose config --quiet
+      - run: docker compose up -d --build --wait
+      - run: curl -fsS http://127.0.0.1:8000/health
+      - run: docker compose exec -T node mia seed
+      - run: sleep 5 && ./restore-test.sh
+      - if: failure()
+        run: docker compose logs
+      - if: always()
+        run: docker compose down -v
+
   evals:
     runs-on: ubuntu-latest
     steps:
