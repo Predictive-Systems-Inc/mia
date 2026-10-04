@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from mia.api.main import app
+from mia.core.ids import new_id
 from mia.core.models import Approval, Event, Message, Person, Visit
 
 
@@ -162,7 +163,7 @@ def test_ag_ui_endpoint_runs_the_agent(
     client: TestClient, people: dict[str, Person], session: Session
 ) -> None:
     body = {
-        "threadId": "t1",
+        "threadId": new_id(),
         "runId": "r1",
         "state": {},
         "messages": [{"id": "m1", "role": "user", "content": "Olen kipeä huomenna."}],

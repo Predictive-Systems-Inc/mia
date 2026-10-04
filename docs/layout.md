@@ -21,7 +21,8 @@ mia/
         dispatcher/         manifest.yaml, job.md, prompts/, models.py, classifier.py,
                             scoring.py, cover.py (confirmation flow), rules.py, tools.py,
                             agent.py, tests/scenarios.yaml
-      chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls)
+      chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls),
+                            runs.py (live AG-UI runs: reconnect, catch-up, stop)
       channels/             messaging channels (ADR 007): base.py (adapter protocol), registry.py,
                             render.py (fallback rendering), service.py (deliver), inbound.py,
                             outbox.py, linking.py (codes, invites), setup.py, transport.py (the only HTTP
@@ -33,7 +34,8 @@ mia/
     migrations/             alembic.ini, env.py, versions/
     config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ (instructions, settings.yaml)
     tests/                  unit tests; evals/ (marker `evals`)
-  docs/                     spec, plan, brief, ADRs, questions, decisions, ideas
+  docs/                     spec, plan, brief, ADRs, questions, decisions, ideas,
+                            research/ (studies of outside code, such as copilotkit-practices.md)
 ```
 
 Files beyond the brief's layout, and why, are listed in docs/adr/001-stack.md and 005.

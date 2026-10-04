@@ -80,3 +80,12 @@ Format for each entry:
 - Assumed answer: no. A person's latest thread with the agent is shared by the app and every
   channel, so history and approvals stay in one place; the app shows the whole conversation.
 - Blocking: no
+
+## Q10: AG-UI thread ids
+- Where: spec, Chat ("the AG-UI stream reconnects and resumes"); rule 10 (IDs are ULIDs)
+- Question: AG-UI clients name the thread (`threadId`), and stock clients such as CopilotKit use
+  UUIDs. Should Mia accept any client-chosen id?
+- Assumed answer: no. A new thread's `threadId` must be a ULID (422 otherwise) and becomes the
+  chat_threads id; an existing thread must belong to the acting person (404 otherwise). Mia's own
+  apps generate ULIDs. Mapping outside ids would need a column on chat_threads (data standard).
+- Blocking: no
