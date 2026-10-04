@@ -31,7 +31,8 @@ mia/
       i18n/                 Finnish and English strings
       static/index.html     dev chat page
     migrations/             alembic.ini, env.py, versions/
-    config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ (instructions, settings.yaml)
+    config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ (instructions, settings.yaml),
+                            ollama/ (Modelfiles for local models, ADR 004)
     tests/                  unit tests; evals/ (marker `evals`)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas
 ```
