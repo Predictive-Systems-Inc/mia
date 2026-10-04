@@ -89,3 +89,13 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
 - Changes the Phase 1 plan: outside channels move from deferred to in scope. Cloud model access
   through core/egress.py stays; that is the model gateway, not Mia Cloud.
 - First channel: WhatsApp (WhatsApp Business Platform), following the spec build order.
+
+## D14: Agents follow the A2A standard
+- Decision: agent-to-agent communication follows A2A (Agent2Agent) 1.0. Mia agents publish
+  signed Agent Cards and accept A2A tasks; AG-UI stays for apps, MCP for connectors, channel
+  adapters for messaging apps. See ADR 008.
+
+## D15: (answers the AG-UI thread id question) Thread ids stay ULIDs
+- Decision: chat thread ids stay ULIDs (rule 10), also when an AG-UI client starts a thread with
+  its own threadId. AG-UI's threadId is an opaque string, so Mia's apps send a ULID; other ids
+  are rejected. No external-id column and no data standard change.

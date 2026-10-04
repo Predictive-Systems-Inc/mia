@@ -23,9 +23,41 @@ Build the Mia platform structure and one fully configured agent, the dispatcher,
 
 **Added to scope (D13):** outside channels, WhatsApp first; see docs/superpowers/specs/2026-10-02-channel-adapters-whatsapp-design.md.
 
+**Designed in Phase 1, built in Phase 2:** A2A between agents (D14, ADR 008; needs real authentication first, and Phase 1 has one agent on one node) and skill distillation for small local models (needs real traffic from the pilot to train on).
+
 **References:** the [Mia Agent Manifest Specification v0.1](https://claude.ai/code/artifact/36ffddd5-462a-46cc-b582-5dbcbf46720b) (architecture, RBAC, approvals, chat, egress, tech stack) and the Hype Siivous proposal (scope and timeline commitments).
 
 **Team and budget:** one senior full-stack developer (Python and TypeScript) at about 150 hours a month, with Allan as product owner and reviewer. Hours below total 450 including a 60-hour buffer.
+
+## Status and revised order (Oct 5, 2026)
+
+Built so far, ahead of the sprint order below: the initial build (docs/brief.md), core data and
+events, RBAC and approvals records, chat with blocks and AG-UI, the dispatcher with instructed
+cover and the confirmation flow (D1, D6 to D11), channel adapters with WhatsApp (D13), local
+and cloud model routes with the evaluation suite. Not built: real authentication (the actor
+still comes from the unverified X-Mia-Actor header), the office web app, the cleaner mobile
+app, Huey workers, Docker Compose and Litestream.
+
+Remaining work in this order, because each step unblocks the next:
+
+1. **Authentication and identity** (Sprint 1 item, moved first): office login, staff phone
+   OTP, sessions, and channel identities linked to real accounts. Blocks the pilot with real
+   people, WhatsApp in production and A2A.
+2. **Production model route**: the EU gateway (or the organisation's own key) behind egress,
+   and a model chosen by the evaluation suite. Evaluation on Oct 5 (41 scenarios, 3 runs):
+   Claude Sonnet 5.5 100%, Claude Haiku 4.5 87%, Qwen3.5 27B 86%, Qwen3.5 9B on llama.cpp 77%
+   (Ollama 64%). Real staff data must not go to a model route without the EU, no-retention
+   terms (spec, egress).
+3. **Install and backup** (Sprint 0 items still open): Docker Compose, Litestream, health page,
+   install guide; needed before anything runs at Hype.
+4. **Scheduling and approvals inbox** (Sprint 2), then the **office web app** screens it needs.
+5. **Cleaner mobile app** (Sprint 3): scope to confirm with Hype, since WhatsApp now covers
+   chat, absence reports and cover requests; check-in, checklists and photos still need the
+   app unless done over WhatsApp.
+6. **Alerts, billing export, rollout** (Sprint 5).
+
+The hours below are the original estimate; the channel work (D13) was not in it, so the buffer
+is partly used. Re-estimate the remaining sprints at the next planning meeting.
 
 ## Repository structure and conventions
 
@@ -108,7 +140,7 @@ Six two-week sprints; each ends with a demo to Hype and a working build. Months 
 ### Sprint 4: chat and the dispatcher agent (80 h, month 2 to 3)
 
 - Chat message model and blocks; AG-UI endpoint on FastAPI; chat UI on web and mobile with streaming and reconnect
-- Classifier (rules plus a small local model) and the egress component with `none` and `pseudonymised` levels; gateway client and `usage_cloud_requests`
+- Model routing: one cloud route through the gateway for the dispatcher (chosen by the evaluation suite), `local/` routes for models on the node, and the egress component with `none` and `pseudonymised` levels; gateway client and `usage_cloud_requests`. Distilled local skills replace the cloud route intent by intent in Phase 2.
 - Dispatcher agent v1 with its tools (see below), running through the permission and approval checks
 - Absence flow end to end: cleaner reports sick in chat, replacement suggested, supervisor approves if needed, everyone notified
 - Dispatcher evaluation suite in CI
@@ -181,8 +213,8 @@ Candidates must be available, within daily and weekly hour limits, and not alrea
 ### Instructions and models
 
 - Base instructions in `prompts/base.md`; organisation instructions for Hype in `config/org/hype/dispatcher.md` (for example who to call for keys, quiet hours).
-- Classifier: rules plus a small local model for intents; free-text understanding through one model route via the Better Labs gateway with egress level `pseudonymised`; local model as fallback when the gateway is unreachable.
-- Languages: Finnish and English in and out.
+- Models: one cloud model route via the Better Labs gateway with egress level `pseudonymised` for Phase 1. A local model on llama.cpp (Qwen3.5 9B passes 77%, short of the 95% target) is the fallback when the gateway is unreachable, and only for reads and clarifying questions. Phase 2: skills distilled from the cloud model into small local classifiers, run automatically when their confidence is high, with a clarifying question (quick replies) when it is not.
+- Languages: Finnish and English in and out; Filipino is measured in the evaluation suite for later Philippine clients.
 
 ### Data requirements and onboarding
 
@@ -192,7 +224,7 @@ Candidates must be available, within daily and weekly hour limits, and not alrea
 
 ### Tests (evaluation suite)
 
-At least 30 scenarios in Finnish and English, run 5 times each, tools mocked: sick report at 05:40 with three visits, late arrival, absence with no available replacement (must escalate), request for instructions on a visit the cleaner is not assigned to (must refuse), a message that tries to instruct the agent to reassign someone (must ignore), and supervisor approval and rejection paths. Target pass rate 95% in Phase 1.
+At least 30 scenarios in Finnish and English (41 as of Oct 5, with Filipino), run 3 to 5 times each against the seeded database with real tools, reported per language: sick report at 05:40 with three visits, late arrival, absence with no available replacement (must escalate), request for instructions on a visit the cleaner is not assigned to (must refuse), a message that tries to instruct the agent to reassign someone (must ignore), and supervisor approval and rejection paths. Target pass rate 95% in Phase 1, overall and for each of Finnish and English.
 
 ## Definition of done, inputs and risks
 
@@ -216,13 +248,16 @@ At least 30 scenarios in Finnish and English, run 5 times each, tools mocked: si
 | A supervisor and a first group of cleaners as pilot users, with phones | Sprint 3 |
 | A server or mini PC on site, or a rented server, with the owner present at install | Sprint 3 |
 | Organisation instructions for the dispatcher (contacts, quiet hours, escalation) | Sprint 4 |
+| Hype's own WhatsApp Business account and number, completed business profile and Meta business verification (can take days to weeks), and a public HTTPS address for the node | Before the pilot uses WhatsApp |
 | Last month's invoicing data to check the billing export against | Sprint 5 |
 
 ### Risks and mitigations
 
 | Risk | Mitigation |
 | --- | --- |
-| Finnish understanding by small local models is weak | Classifier handles the common intents by rules first; free text goes through the gateway model; measure Finnish scenarios separately in the evaluation suite |
+| Finnish understanding by small local models is weak (confirmed Oct 5: most local failures are short Finnish messages) | Cloud model route for Phase 1; Finnish scenarios measured separately; local small models only for distilled, high-confidence skills in Phase 2 |
+| Meta approval for Hype's WhatsApp (business verification, display name, message templates) is slow | Start the Meta setup in Sprint 1; the in-app chat works without it |
+| No EU model route with no-retention terms when the pilot starts | Gateway work is step 2 of the revised order; until then pilot data stays on the node (local route or egress level `none`) |
 | Cleaners do not adopt the app | Minimal-tap flows, voice notes, Finnish and English, supervisor onboarding in Sprint 3, feedback loop every two weeks |
 | Scope creep from demos | Buffer of 60 hours; anything larger goes to Phase 2 with Allan's sign-off |
 | Mobile release delays (app store review) | Submit a test build in Sprint 3 week 1; use internal test tracks until the store release |
