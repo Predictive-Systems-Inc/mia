@@ -13,6 +13,7 @@ from mia.agents.dispatcher.rules import rules_model
 from mia.agents.dispatcher.tools import BINDINGS
 from mia.chat.blocks import AgentReply, ChatReply, TextBlock
 from mia.core.models import Actor, Branch, Person
+from mia.settings import get_settings
 
 
 def test_manifest_matches_tools() -> None:
@@ -25,6 +26,28 @@ def test_model_factory() -> None:
     assert build_model("test", rules_model()).model_name == "dispatcher-rules"
     gateway = build_model("gateway/dispatcher-default", rules_model())
     assert isinstance(gateway, OpenAIChatModel) and gateway.model_name == "dispatcher-default"
+    local = build_model("local/qwen3.5:9b", rules_model())
+    assert isinstance(local, OpenAIChatModel) and local.model_name == "qwen3.5:9b"
+
+
+@pytest.mark.parametrize(
+    "url", ["https://openrouter.ai/api/v1", "http://8.8.8.8:11434/v1", "http://ollama:11434/v1"]
+)
+def test_local_model_refuses_a_url_off_the_node(url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """local/ skips egress, so it must never point at a server outside the node's network."""
+    monkeypatch.setenv("MIA_LOCAL_URL", url)
+    get_settings.cache_clear()
+    with pytest.raises(ValueError, match="not on this node"):
+        build_model("local/qwen3.5:9b", rules_model())
+
+
+@pytest.mark.parametrize("url", ["http://localhost:11434/v1", "http://192.168.1.20:11434/v1"])
+def test_local_model_accepts_loopback_and_private(
+    url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MIA_LOCAL_URL", url)
+    get_settings.cache_clear()
+    assert build_model("local/m", rules_model()).model_name == "m"
 
 
 def test_instructions_layers_and_locked_topics(tmp_path: object) -> None:

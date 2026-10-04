@@ -1,0 +1,5 @@
+# Mia's local Gemma 4 12B. Create once: ollama create gemma4-mia -f gemma4-mia.Modelfile
+# Same reasons as qwen3.5-mia.Modelfile: a context that fits Mia's prompt, low temperature.
+FROM gemma4:12b
+PARAMETER num_ctx 16384
+PARAMETER temperature 0.3

@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 import yaml
 from pydantic_ai import models
+from pydantic_ai.exceptions import AgentRunError
 from sqlmodel import Session, select
 
 from mia.agents.dispatcher.agent import AGENT_DIR, MANIFEST, create_agent
@@ -24,7 +25,6 @@ from mia.chat.service import run_turn
 from mia.core import db
 from mia.core.models import Event, Person
 from mia.schema import create_all
-from mia.settings import get_settings
 from mia.templates.cleaning.seed import seed
 
 pytestmark = pytest.mark.evals
@@ -57,7 +57,15 @@ def _person(session: Session, first_name: str) -> Person:
 
 
 def _subset(expected: dict[str, Any], actual: dict[str, Any]) -> bool:
-    return all(actual.get(k) == v for k, v in expected.items())
+    """Expected args are a subset of the actual ones; a name may be given in full ("Maria" matches
+    "Maria Mäkinen")."""
+
+    def same(want: Any, got: Any) -> bool:
+        if isinstance(want, str) and isinstance(got, str):
+            return got.lower().startswith(want.lower())
+        return bool(want == got)
+
+    return all(same(v, actual.get(k)) for k, v in expected.items())
 
 
 async def _run_once(scenario: dict[str, Any], db_path: Path) -> list[str]:
@@ -88,8 +96,14 @@ async def _run_once(scenario: dict[str, Any], db_path: Path) -> list[str]:
             for e in session.exec(after.order_by(Event.id))  # type: ignore[arg-type]
         ]
     expected = scenario["tools"]
+    alternative = scenario.get("or_tools")
+    if alternative is not None and [c["tool"] for c in calls] == [a["tool"] for a in alternative]:
+        expected = alternative
     if [c["tool"] for c in calls] != [e["tool"] for e in expected]:
-        failures.append(f"tools {[c['tool'] for c in calls]} != {[e['tool'] for e in expected]}")
+        failures.append(
+            f"tools {[c['tool'] for c in calls]} != {[e['tool'] for e in expected]}"
+            f" (reply: {reply.text()[:160]!r})"
+        )
     else:
         for exp, call in zip(expected, calls, strict=True):
             status = call["output"].get("status", "ok")
@@ -104,10 +118,12 @@ async def _run_once(scenario: dict[str, Any], db_path: Path) -> list[str]:
                 if not names or names[0] != scenario["first_candidate"]:
                     failures.append(f"first candidate {names[:1]} != {scenario['first_candidate']}")
     text = reply.text()
-    if "reply_lang" in scenario:
-        prose = " ".join(b.text for b in reply.blocks if b.type == "text")
-        if detect_language(prose, "?") != scenario["reply_lang"]:
-            failures.append(f"reply language is not {scenario['reply_lang']}: {prose!r}")
+    if "reply_lang" in scenario and detect_language(text, "?") != scenario["reply_lang"]:
+        # The whole reply (cards too): a model may answer with blocks and no separate text.
+        failures.append(f"reply language is not {scenario['reply_lang']}: {text[:160]!r}")
+    for kind in scenario.get("reply_blocks", []):
+        if kind not in {b.type for b in reply.blocks}:
+            failures.append(f"reply has no {kind} block")
     for fragment in scenario.get("reply_contains", []):
         if fragment not in text:
             failures.append(f"reply lacks {fragment!r}")
@@ -123,11 +139,17 @@ def test_scenarios_are_well_formed() -> None:
 
 def test_dispatcher_pass_rate(template_db: Path, tmp_path: Path) -> None:
     results: dict[str, list[list[str]]] = {}
-    for scenario in SCENARIOS:
+    real_model = bool(os.environ.get("MIA_EVAL_MODEL"))
+    # llm_only: languages the deterministic rules model does not read (Filipino).
+    for scenario in [s for s in SCENARIOS if real_model or not s.get("llm_only")]:
         for run in range(RUNS):
             path = tmp_path / f"{scenario['id']}-{run}.db"
             shutil.copy(template_db, path)
-            results.setdefault(scenario["id"], []).append(asyncio.run(_run_once(scenario, path)))
+            try:
+                failures = asyncio.run(_run_once(scenario, path))
+            except AgentRunError as exc:  # a crashed turn is a failed run, not the end of the eval
+                failures = [f"error {type(exc).__name__}: {str(exc)[:200]}"]
+            results.setdefault(scenario["id"], []).append(failures)
             db.reset_engines()
     total = sum(len(runs) for runs in results.values())
     passed = sum(1 for runs in results.values() for failures in runs if not failures)
@@ -137,8 +159,15 @@ def test_dispatcher_pass_rate(template_db: Path, tmp_path: Path) -> None:
         for sid, runs in results.items()
     ]
     print(
-        f"\ndispatcher evals: {passed}/{total} runs passed ({rate:.1%}), model={get_settings().MIA_MODEL}"
+        f"\ndispatcher evals: {passed}/{total} runs passed ({rate:.1%}), model={os.environ.get('MIA_EVAL_MODEL', 'test')}"
     )
+    by_lang: dict[str, list[int]] = {}
+    for sid, runs in results.items():
+        lang = sid.split("_")[0] if sid.split("_")[0] in ("fi", "en", "fil") else "other"
+        tally = by_lang.setdefault(lang, [0, 0])
+        tally[0] += sum(1 for f in runs if not f)
+        tally[1] += len(runs)
+    print("by language: " + ", ".join(f"{k} {p}/{n}" for k, (p, n) in sorted(by_lang.items())))
     print("\n".join(report))
     assert rate >= MANIFEST.tests["min_pass_rate"], "\n".join(
         r for r in report if not r.split(": ")[1].startswith(f"{RUNS}/")

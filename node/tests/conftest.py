@@ -42,8 +42,9 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     monkeypatch.setenv("MIA_DB_PATH", str(tmp_path / "mia.db"))
     monkeypatch.setenv("MIA_MODEL", "test")
     monkeypatch.setenv("MIA_EGRESS_LEVEL", "pseudonymised")
-    monkeypatch.setenv("MIA_GATEWAY_KEY", "test-key")
-    monkeypatch.setenv("MIA_GATEWAY_URL", "http://gateway.test/v1")
+    if not os.environ.get("MIA_EVAL_MODEL"):  # real evals keep the real gateway from the env
+        monkeypatch.setenv("MIA_GATEWAY_KEY", "test-key")
+        monkeypatch.setenv("MIA_GATEWAY_URL", "http://gateway.test/v1")
     monkeypatch.setenv("MIA_TICK_SECONDS", "0")
     monkeypatch.setenv("MIA_GEOCODER", "static")
     monkeypatch.setenv("MIA_NODE_SECRET", "test-node-secret")

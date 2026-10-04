@@ -168,7 +168,7 @@ def test_instruction_is_the_approval_and_cleaner_confirms(
     found = tools.find_replacements(deps, kalasatama_input(deps), "c1")
     visit_id = found.visit.visit_id
     out = _assign(deps, visit_id, people["Mikael"])
-    assert out.status == "asking" and out.approval_id is None
+    assert out.status == "asking" and out.approval_id is None and out.note is None
     assert session.exec(select(Approval)).all() == []  # D1: no separate approval
     instructed = session.exec(select(Event).where(Event.action == "assignment.instructed")).one()
     assert instructed.after is not None and instructed.after["approved_by"] == people["Sanna"].id
@@ -191,6 +191,7 @@ def test_rule_breaking_instruction_needs_override_approval(
     found = tools.find_replacements(deps, kalasatama_input(deps), "c1")
     out = _assign(deps, found.visit.visit_id, people["Liisa"])  # available only 10 to 18
     assert out.status == "awaiting_approval" and out.approval_id
+    assert out.note and "admin or owner" in out.note  # the model can tell the user who approves
     approval = session.get(Approval, out.approval_id)
     assert approval is not None and approval.approver_roles == ["admin", "owner"]
     assert "outside availability" in approval.evidence["reasons"]
@@ -234,3 +235,14 @@ def test_respond_without_request_is_invalid(
     binding = next(b for b in tools.BINDINGS if b.tool_id == "dispatcher.respond_to_cover")
     out = call_tool(deps, binding, tools.RespondToCoverInput(accept=True), "c1")
     assert out["status"] == "invalid"
+
+
+def test_running_late_affects_the_morning() -> None:
+    """Decided in code, not by the model: late with no part of day given means the morning."""
+    day = dt.date(2026, 10, 5)
+    late = tools.RecordAbsenceInput(date=day, reason="late")
+    assert late.partial_day == "morning"
+    assert tools.RecordAbsenceInput(
+        date=day, reason="late", partial_day="afternoon"
+    ).partial_day == ("afternoon")
+    assert tools.RecordAbsenceInput(date=day, reason="sick").partial_day is None

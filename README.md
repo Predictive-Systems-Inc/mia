@@ -87,10 +87,17 @@ For the real WhatsApp number, follow docs/whatsapp-setup.md.
 
 ## Using a real model
 
-Set `MIA_MODEL=gateway/<route>`, `MIA_GATEWAY_URL` and `MIA_GATEWAY_KEY` in `.env`. No code
-changes: requests go through the egress component, which pseudonymises person names, writes
-`egress_log` and meters `usage_cloud_requests`. `MIA_EGRESS_LEVEL=none` blocks cloud requests.
-To evaluate a real model: `MIA_EVAL_MODEL=gateway/<route> uv run pytest node/tests/evals -m evals`.
+Two kinds of model, chosen with `MIA_MODEL` in `.env`; no code changes:
+- Cloud: `MIA_MODEL=gateway/<route>` with `MIA_GATEWAY_URL` and `MIA_GATEWAY_KEY` (any
+  OpenAI-compatible endpoint, for example OpenRouter `https://openrouter.ai/api/v1`). Requests go
+  through the egress component, which pseudonymises person names, writes `egress_log` and meters
+  `usage_cloud_requests`. `MIA_EGRESS_LEVEL=none` blocks them.
+- Local: `MIA_MODEL=local/<model>` with `MIA_LOCAL_URL` (default Ollama,
+  `http://localhost:11434/v1`). Nothing leaves the node, so egress is skipped and it works with
+  `MIA_EGRESS_LEVEL=none`. The URL must be localhost or a private IP address.
+
+To evaluate a model: `MIA_EVAL_MODEL=gateway/<route>` or `local/<model>`, then
+`uv run pytest node/tests/evals -m evals`.
 
 ## Documents
 - docs/spec.md: Mia Agent Manifest Specification v0.1
