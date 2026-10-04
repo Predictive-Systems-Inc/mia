@@ -1,8 +1,9 @@
 """Structured reply blocks. Agents answer with these; the apps render them."""
 
-from typing import Annotated, Literal
+import json
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class TextBlock(BaseModel):
@@ -64,10 +65,79 @@ Block = Annotated[
 ]
 
 
+# Block tags by key: the tag itself, the class name, and the field only that block has.
+TAGS = {
+    "text": "text",
+    "textblock": "text",
+    "quick_replies": "quick_replies",
+    "quickrepliesblock": "quick_replies",
+    "options": "quick_replies",
+    "card": "card",
+    "cardblock": "card",
+    "approval_card": "approval_card",
+    "approvalcardblock": "approval_card",
+    "approval_id": "approval_card",
+    "form": "form",
+    "formblock": "form",
+    "form_id": "form",
+    "file": "file",
+    "fileblock": "file",
+    "url": "file",
+}
+
+
+def _decoded(value: Any) -> Any:
+    """A JSON object or list sent as a string, decoded; anything else unchanged."""
+    if isinstance(value, str) and value.strip()[:1] in ("{", "["):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return value
+    return value
+
+
+def _normalised_block(block: Any) -> Any:
+    """Translate the block shapes small models produce into the tagged form.
+
+    Handles a class name as the tag ("TextBlock"), a missing tag (inferred from the field only
+    that block has), the block wrapped under its tag ({"card": {...}}) and JSON sent as a
+    string. Anything else is returned unchanged and fails validation as before.
+    """
+    block = _decoded(block)
+    if isinstance(block, str):
+        return {"type": "text", "text": block}
+    if not isinstance(block, dict):
+        return block
+    tag = block.get("type")
+    if isinstance(tag, str) and tag.lower() in TAGS:
+        return {**block, "type": TAGS[tag.lower()]}
+    if tag is None and len(block) == 1:
+        ((key, inner),) = block.items()
+        inner = _decoded(inner)
+        if key in TAGS and isinstance(inner, dict):
+            return {**inner, "type": TAGS[key]}
+    if tag is None:
+        for key in block:
+            if key in TAGS and key not in ("card", "file", "form"):
+                return {**block, "type": TAGS[key]}
+        if "title" in block:
+            return {**block, "type": "card"}
+    return block
+
+
 class AgentReply(BaseModel):
     """What an agent returns: an ordered list of blocks, shortest useful answer first."""
 
     blocks: list[Block]
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalise_blocks(cls, data: Any) -> Any:
+        """Accept the near-miss shapes small local models produce (see _normalised_block)."""
+        data = _decoded(data)
+        if isinstance(data, dict) and isinstance(blocks := _decoded(data.get("blocks")), list):
+            return {**data, "blocks": [_normalised_block(b) for b in blocks]}
+        return data
 
 
 class ChatReply(BaseModel):

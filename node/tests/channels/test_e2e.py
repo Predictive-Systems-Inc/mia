@@ -6,9 +6,11 @@ import json
 from fastapi.testclient import TestClient
 from sqlmodel import Session, col, select
 
+from mia.agents.dispatcher import cover
 from mia.api.main import app
 from mia.channels import linking, outbox
 from mia.channels.simulator import SimAdapter
+from mia.core import orgconfig
 from mia.core import people as people_service
 from mia.core.db import utcnow
 from mia.core.events import verify_chain
@@ -80,7 +82,9 @@ def test_whole_demo_over_a_channel(
     assert [b["kind"] for b in sent_to(sim, "358400000003")] == ["template", "text"]
 
     # Sanna is told on her channel, and every proactive channel message has its app copy.
-    asyncio.run(outbox.send_due(utcnow()))
+    # Her notice is not urgent, so during quiet hours it waits: flush when they end, so the
+    # test passes at any time of day.
+    asyncio.run(outbox.send_due(cover.quiet_end_after(utcnow(), branch.timezone, orgconfig.load())))
     assert any("Mikael" in str(b.get("text")) for b in sent_to(sim, "358400000004"))
     for row in session.exec(
         select(ChannelOutbox).where(col(ChannelOutbox.person_id).in_([mikael.id, sanna.id]))
