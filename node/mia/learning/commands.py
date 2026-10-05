@@ -17,10 +17,11 @@ from mia.learning.checks import check_records
 from mia.learning.harvest import harvest
 from mia.learning.package import PromotionRefused, promote
 from mia.learning.public import load_public
-from mia.learning.schema import RoleSpec, load_records, load_role, write_records
+from mia.learning.schema import Record, RoleSpec, load_records, load_role, write_records
 from mia.learning.splits import assign_train_dev
 
 AGENTS = Path(__file__).resolve().parent.parent / "agents"
+LEARNING_PKGS = {"torch", "transformers", "accelerate", "onnx"}
 LEARNING_HINT = "install the learning group: uv sync --group learning"
 
 
@@ -53,12 +54,16 @@ def validate(args: argparse.Namespace) -> int:
             load_public(folder / "public.yaml")
         except (ValidationError, ValueError) as exc:
             errors.append(f"public.yaml: {exc}")
-    records = [
-        r
-        for s in ("train", "dev", "test")
-        if (folder / "data" / f"{s}.jsonl").exists()
-        for r in load_records(folder / "data" / f"{s}.jsonl")
-    ]
+    records: list[Record] = []
+    for s in ("train", "dev", "test"):
+        path = folder / "data" / f"{s}.jsonl"
+        if not path.exists():
+            continue
+        try:
+            records += load_records(path)
+        except ValueError as exc:  # pydantic ValidationError and JSON errors are ValueErrors
+            print(f"error: {path}: {exc}")
+            return 1
     conversation = [c.id for c in catalogue.conversation_intents()]
     report = check_records(role, records, conversation)
     errors += report.errors
@@ -97,7 +102,10 @@ def train(args: argparse.Namespace) -> int:
     """Runs mia.learning.train, or prints the install hint and returns 2 when it is missing."""
     try:
         train_role = import_module("mia.learning.train").train_role
-    except ImportError:
+    except ModuleNotFoundError as exc:
+        # Only a missing training module or learning-group package; a bug inside it must surface.
+        if exc.name != "mia.learning.train" and (exc.name or "").split(".")[0] not in LEARNING_PKGS:
+            raise
         print(LEARNING_HINT)
         return 2
     card = train_role(skill_dir(args.role), base_model=args.base_model, with_real=args.with_real)

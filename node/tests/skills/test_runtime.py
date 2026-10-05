@@ -87,6 +87,17 @@ def test_valid_card_without_onnx_module_falls_back() -> None:
     assert "mia.skills.onnx" in str(h["error"])
 
 
+def test_health_error_does_not_leak_the_models_path() -> None:
+    write_card(card())
+    pkg = get_settings().MIA_MODELS_DIR / "r" / "v1"
+    (pkg / "card.json").write_text("{bad", encoding="utf-8")
+    (get_settings().MIA_MODELS_DIR / "r" / "ACTIVE").write_text("v1")
+    get_classifier("r")
+    error = str(health()["r"]["error"])
+    assert str(get_settings().MIA_MODELS_DIR) not in error
+    assert error.startswith("ValidationError: ")
+
+
 def test_status_none_and_reset() -> None:
     get_classifier("dispatcher")
     assert health() == {"dispatcher": {"status": "none", "version": None}}

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from mia.learning import catalogue
 from mia.learning.metrics import softmax
 from mia.learning.package import ModelCard, active_version, read_card
+from mia.settings import get_settings
 
 log = logging.getLogger(__name__)
 Band = Literal["high", "medium", "low"]
@@ -101,7 +102,10 @@ _status: dict[str, dict[str, object]] = {}
 
 def _fallback(role: str, version: str | None, exc: Exception) -> Classifier:
     log.warning("role %s model %s unusable, falling back: %s", role, version, exc)
-    _status[role] = {"status": "fallback", "version": version, "error": str(exc)[:200]}
+    # /health is readable by anyone who can reach the node: keep absolute paths out of it.
+    models_dir = str(get_settings().MIA_MODELS_DIR)
+    error = f"{type(exc).__name__}: {str(exc).replace(models_dir, '<models>')}"[:200]
+    _status[role] = {"status": "fallback", "version": version, "error": error}
     return NullClassifier()
 
 

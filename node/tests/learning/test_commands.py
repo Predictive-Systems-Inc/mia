@@ -8,6 +8,7 @@ from mia.cli import main
 from mia.learning import commands
 from mia.learning.package import ModelCard, active_version, read_card, write_card
 from mia.learning.schema import Record, load_records, write_records
+from tests.learning.helpers import card as base_card
 
 ROLE_YAML = """
 id: tr
@@ -126,21 +127,45 @@ def test_split_missing_role_and_missing_reviewed(
     assert "role.yaml not found" in capsys.readouterr().out
 
 
-def test_train_without_learning_group_explains(
+def test_train_surfaces_real_import_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken(exc: Exception):  # type: ignore[no-untyped-def]
+        def raiser(name: str) -> object:
+            raise exc
+
+        return raiser
+
+    monkeypatch.setattr(commands, "import_module", broken(ImportError("bug")))
+    with pytest.raises(ImportError, match="bug"):
+        main(["skills", "train", "dispatcher"])
+    monkeypatch.setattr(commands, "import_module", broken(ModuleNotFoundError("x", name="mia.x")))
+    with pytest.raises(ModuleNotFoundError):
+        main(["skills", "train", "dispatcher"])
+
+
+def test_train_missing_learning_package_gives_the_hint(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def no_torch(name: str) -> object:
-        raise ImportError("torch missing")
+    def raiser(name: str) -> object:
+        raise ModuleNotFoundError("No module named 'torch'", name="torch")
 
-    monkeypatch.setattr(commands, "import_module", no_torch)
+    monkeypatch.setattr(commands, "import_module", raiser)
     assert main(["skills", "train", "dispatcher"]) == 2
     assert capsys.readouterr().out == "install the learning group: uv sync --group learning\n"
 
 
-def card(version: str, passed: bool = True) -> ModelCard:
-    from tests.learning.test_package import card as base
+def test_validate_malformed_jsonl_is_an_error_not_a_traceback(
+    skill: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = skill / "data" / "train.jsonl"
+    path.write_text("{not json\n", encoding="utf-8")
+    assert main(["skills", "validate", "tr"]) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert out[0].startswith(f"error: {path}: ")
+    assert not any(line.startswith("Traceback") for line in out)
 
-    return base(passed=passed, version=version).model_copy(update={"role": "tr"})
+
+def card(version: str, passed: bool = True) -> ModelCard:
+    return base_card(passed=passed, version=version).model_copy(update={"role": "tr"})
 
 
 def test_promote_without_a_package_is_refused(
@@ -178,7 +203,9 @@ def test_promote_activates_signs_and_emits_event(capsys: pytest.CaptureFixture[s
     assert active_version("tr") == "v1" and read_card("tr", "v1").signed_by == "Allan"
     with session_scope() as session:
         events = session.exec(select(Event).where(Event.action == "skill_model.promoted")).all()
-    assert [(e.entity_id, e.actor_id) for e in events] == [("tr@v1", events[0].actor_id)]
+    assert [(e.entity_id, e.actor_type, e.actor_id) for e in events] == [
+        ("tr@v1", "system", "system")
+    ]
     assert events[0].after == {"active": "v1", "signed_by": "Allan"}
 
 
