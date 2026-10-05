@@ -1,0 +1,61 @@
+# Mia Node on one server: the node, Litestream backup, and (optional) a Cloudflare Tunnel.
+# Settings and secrets come from deploy/.env (copy of .env.example, never committed).
+# Install, backup, restore and update: deploy/install.md.
+
+name: mia
+
+services:
+  node:
+    image: ${MIA_IMAGE:-mia-node:local}
+    build:
+      context: ..
+    env_file: .env
+    environment:
+      MIA_DB_PATH: /data/mia.db
+    volumes:
+      - mia-data:/data
+      - mia-backups:/backups
+      - ./litestream.yml:/etc/litestream.yml:ro
+      # Organisation settings and instructions stay editable on the server.
+      - ../node/config/org:/app/node/config/org:ro
+    # Local only: there is no real login yet. Outside traffic arrives through the tunnel.
+    ports:
+      - "127.0.0.1:${MIA_PORT:-8000}:8000"
+    restart: unless-stopped
+    # The image's HEALTHCHECK polls /health; Litestream waits for it.
+
+  # Sidecar from the same image (Litestream is installed in it), so it runs as the same user.
+  litestream:
+    image: ${MIA_IMAGE:-mia-node:local}
+    command: ["litestream", "replicate", "-config", "/etc/litestream.yml"]
+    healthcheck:  # Litestream's metrics server (litestream.yml addr) answers while it replicates
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9090/metrics', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    env_file: .env
+    volumes:
+      - mia-data:/data
+      - mia-backups:/backups
+      - ./litestream.yml:/etc/litestream.yml:ro
+    depends_on:
+      node:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Started only with `docker compose --profile tunnel up -d` (WhatsApp webhooks need it).
+  tunnel:
+    image: cloudflare/cloudflared:2025.9.1
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      node:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: [tunnel]
+
+volumes:
+  mia-data:
+  # Only used by the local file target (LITESTREAM_REPLICA_URL=file:///backups/mia).
+  mia-backups:

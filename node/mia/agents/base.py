@@ -13,10 +13,12 @@ Guarantees for every agent built here:
 
 import asyncio
 import datetime as dt
-from collections.abc import Callable
+import ipaddress
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import httpx
 import yaml
@@ -24,7 +26,9 @@ from pydantic import BaseModel, Field, model_validator
 from pydantic_ai import Agent, RunContext, Tool
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.output import OutputSpec
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
 from sqlmodel import Session
 
 from mia.core import approvals, events
@@ -289,13 +293,31 @@ def task_context(ctx: RunContext[AgentDeps]) -> str:
 def build_model(
     name: str, rules_model: Model, *, transport: httpx.AsyncBaseTransport | None = None
 ) -> Model:
-    """`test` -> the deterministic rules model; any other value -> a gateway route via egress.
+    """`test` -> the deterministic rules model; `local/<model>` -> MIA_LOCAL_URL; any other value
+    -> a gateway route via egress.
 
+    Local models never leave the node, so they skip egress (and work with MIA_EGRESS_LEVEL=none);
+    a MIA_LOCAL_URL that is not loopback or a private address raises instead.
     `transport` replaces the network below the egress layer (tests use a mock transport).
     """
     if name == "test":
         return rules_model
     settings = get_settings()
+    if name.startswith("local/"):
+        if not _is_local(settings.MIA_LOCAL_URL):
+            raise ValueError(f"MIA_LOCAL_URL is not on this node: {settings.MIA_LOCAL_URL}")
+        local = OpenAIProvider(
+            base_url=settings.MIA_LOCAL_URL,
+            api_key="local",
+            http_client=httpx.AsyncClient(transport=transport, timeout=120),
+        )
+        # Ollama's OpenAI endpoint reads reasoning_effort; "none" turns thinking off.
+        thinking = {} if settings.MIA_LOCAL_THINKING else {"reasoning_effort": "none"}
+        return OpenAIChatModel(
+            name.removeprefix("local/"),
+            provider=local,
+            settings=ModelSettings(extra_body=thinking),
+        )
     route = name.removeprefix("gateway/")
     client = httpx.AsyncClient(transport=EgressTransport(transport), timeout=60)
     provider = OpenAIProvider(
@@ -306,15 +328,33 @@ def build_model(
     return OpenAIChatModel(route, provider=provider)
 
 
+def _is_local(url: str) -> bool:
+    """True for localhost, loopback and private-network IP addresses."""
+    # ponytail: hostnames other than localhost are refused (no DNS lookup); use an IP address.
+    host = urlsplit(url).hostname or ""
+    if host == "localhost":
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private
+
+
 def build_agent(
     manifest: Manifest,
     agent_dir: Path,
     bindings: list[ToolBinding],
-    output_type: type[BaseModel],
+    output_type: OutputSpec[Any],
     model: Model,
     org: str,
+    context: Sequence[Callable[[RunContext[AgentDeps]], str]] = (),
 ) -> Agent[AgentDeps, Any]:
-    """Assemble the agent. Raises when bindings and the manifest's tool list differ."""
+    """Assemble the agent. Raises when bindings and the manifest's tool list differ.
+
+    `context` adds agent-specific task-context lines. Every layer goes into ONE system message:
+    strict chat templates (Qwen3.5's official one) reject a second system message.
+    """
     bound = {b.tool_id for b in bindings}
     declared = {t.id for t in manifest.tools}
     if bound != declared:
@@ -325,11 +365,17 @@ def build_agent(
         manifest.roles.agent_role, manifest.roles.grants, manifest.roles.denies
     )
     tools = [to_pydantic_tool(b, manifest.tool(b.tool_id)) for b in bindings]
+    static = load_instructions(manifest, agent_dir, org)
+
+    def instructions(ctx: RunContext[AgentDeps]) -> str:
+        lines = [task_context(ctx), *(f(ctx) for f in context)]
+        return "\n\n".join([static, "\n".join(line for line in lines if line)])
+
     return Agent(
         model,
         output_type=output_type,
         deps_type=AgentDeps,
-        instructions=[load_instructions(manifest, agent_dir, org), task_context],
+        instructions=instructions,
         tools=tools,
         name=manifest.id,
         retries=2,

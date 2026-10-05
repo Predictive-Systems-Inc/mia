@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from mia.api.main import app
+from mia.core.ids import new_id
 from mia.core.models import Approval, Event, Message, Person, Visit
 
 
@@ -162,7 +163,7 @@ def test_ag_ui_endpoint_runs_the_agent(
     client: TestClient, people: dict[str, Person], session: Session
 ) -> None:
     body = {
-        "threadId": "t1",
+        "threadId": new_id(),
         "runId": "r1",
         "state": {},
         "messages": [{"id": "m1", "role": "user", "content": "Olen kipeä huomenna."}],
@@ -233,3 +234,34 @@ def test_run_turn_db_work_is_off_the_event_loop(
     monkeypatch.setattr(store, "insert", spy)
     asyncio.run(run_turn(session, get_agent(), people["Juha"], "Olen kipeä huomenna."))
     assert on_loop and not any(on_loop)
+
+
+def test_reply_blocks_accept_small_model_near_misses() -> None:
+    """Shapes Gemma 4 produced in the evals: class names as tags, missing tags, JSON strings."""
+    from mia.chat.blocks import AgentReply
+
+    reply = AgentReply.model_validate(
+        {
+            "blocks": [
+                {"type": "TextBlock", "text": "Kirjasin poissaolon."},
+                {"text": "Koskeeko se kaikkia käyntejä?"},
+                {"options": ["Kaikki", "Vain aamu"]},
+                {"card": '{"title": "Kalasatama", "fields": [{"label": "Klo", "value": "06:30"}]}'},
+                "plain string",
+            ]
+        }
+    )
+    assert [b.type for b in reply.blocks] == ["text", "text", "quick_replies", "card", "text"]
+    assert reply.blocks[3].title == "Kalasatama"  # type: ignore[union-attr]
+
+
+def test_reply_blocks_still_reject_what_cannot_be_read() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    from mia.chat.blocks import AgentReply
+
+    with pytest.raises(ValidationError):
+        AgentReply.model_validate({"blocks": [{"type": "chart", "data": [1, 2]}]})
+    with pytest.raises(ValidationError):
+        AgentReply.model_validate({"blocks": [{"approval_id": "x"}]})  # missing title, summary

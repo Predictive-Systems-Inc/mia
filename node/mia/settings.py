@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     MIA_MODEL: str = "test"
     MIA_GATEWAY_URL: str = "http://localhost:4000/v1"
     MIA_GATEWAY_KEY: str = ""
+    # OpenAI-compatible server on this machine or network (Ollama) for MIA_MODEL=local/<model>.
+    MIA_LOCAL_URL: str = "http://localhost:11434/v1"
+    # Thinking (reasoning) on local models: off by default because it makes every turn slow on
+    # small hardware; turn on when the evals show it helps a given model.
+    MIA_LOCAL_THINKING: bool = False
     MIA_EGRESS_LEVEL: EgressLevel = "pseudonymised"
     MIA_ORG: str = "demo"
     MIA_TICK_SECONDS: int = 30
@@ -34,7 +39,7 @@ class Settings(BaseSettings):
     MIA_WA_VERIFY_TOKEN: str = ""
     MIA_WA_PHONE_NUMBER_ID: str = ""
     MIA_WA_NUMBER: str = ""
-    MIA_WA_GRAPH_URL: str = "https://graph.facebook.com/v21.0"
+    MIA_WA_GRAPH_URL: str = "https://graph.facebook.com/v26.0"
 
     @property
     def db_url(self) -> str:

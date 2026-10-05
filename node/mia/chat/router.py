@@ -1,35 +1,36 @@
-"""Chat endpoints: POST /chat (JSON), POST /chat/stream (SSE), POST /ag-ui (AG-UI protocol).
+"""Chat endpoints: POST /chat (JSON), POST /chat/stream (SSE), and the AG-UI protocol:
+POST /ag-ui (start a run), POST /ag-ui/connect (catch up), POST /ag-ui/stop (cancel a run).
 
 The actor comes from the X-Mia-Actor header (a person id). This is a temporary stand-in for
 real authentication (Sprint 1); see docs/adr/001-stack.md.
 """
 
-import datetime as dt
+import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
 from typing import Annotated, Any
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from sqlmodel import Session
+from ulid import ULID
 
-from mia.agents.base import AgentDeps
-from mia.agents.dispatcher.agent import MANIFEST, get_agent
+from mia.agents.dispatcher.agent import get_agent
+from mia.chat import runs
 from mia.chat.blocks import ChatReply
 from mia.chat.service import ChatError, run_turn
 from mia.core.db import session_scope
-from mia.core.egress import EgressContext, bind_context
-from mia.core.models import Actor, Branch, Person
-from mia.settings import get_settings
+from mia.core.ids import new_id
+from mia.core.models import Person, Thread
 
 router = APIRouter()
+MAX_TEXT = 4000
 
 
 class ChatRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=4000)
+    text: str = Field(min_length=1, max_length=MAX_TEXT)
     thread_id: str | None = None
     actor_id: str | None = Field(None, description="Person id; the X-Mia-Actor header wins")
 
@@ -100,37 +101,87 @@ async def chat_stream(
     return StreamingResponse(events(), media_type="text/event-stream")
 
 
-@router.post("/ag-ui")
-async def ag_ui(
-    request: Request, session: StreamSession, x_mia_actor: ActorHeader = None
-) -> Response:
-    """AG-UI endpoint for AG-UI clients. The session closes when the stream ends, even when the
-    client disconnects; tool calls and egress commit as they go."""
-    person = resolve_actor(session, x_mia_actor)
-    branch = session.get(Branch, person.branch_id)
-    if branch is None:
-        raise HTTPException(500, "person has no branch")
-    human = Actor.person(person)
-    deps = AgentDeps(
-        session=session,
-        actor=human.as_agent(MANIFEST.roles.agent_role),
-        person=person,
-        branch=branch,
-        organisation_id=branch.organisation_id,
-        today=dt.datetime.now(ZoneInfo(branch.timezone)).date(),
-        lang=person.language,
-        manifest=MANIFEST,
-    )
-    # Set for the rest of this request task (the stream runs after this function returns).
-    bind_context(
-        EgressContext(
-            session=session,
-            actor=deps.actor,
-            organisation_id=branch.organisation_id,
-            agent_id=MANIFEST.id,
-            purpose="chat",
-            level=get_settings().MIA_EGRESS_LEVEL,
-        )
-    )
+class ThreadRef(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
 
-    return await AGUIAdapter.dispatch_request(request, agent=get_agent(), deps=deps)
+    thread_id: str = Field(alias="threadId", min_length=1, max_length=64)
+
+
+def _own_thread(session: Session, person: Person, thread_id: str) -> Thread | None:
+    """The person's thread, or None when no thread has this id. 404 for anyone else's thread."""
+    thread = session.get(Thread, thread_id)
+    if thread is not None and thread.person_id != person.id:
+        raise HTTPException(404, "thread not found")
+    return thread
+
+
+def _stream(chunks: AsyncIterator[str]) -> StreamingResponse:
+    return StreamingResponse(chunks, media_type="text/event-stream")
+
+
+@router.post("/ag-ui")
+async def ag_ui(request: Request, session: DbSession, x_mia_actor: ActorHeader = None) -> Response:
+    """Start an AG-UI run on the person's thread (threadId: an existing thread or a new ULID).
+
+    The run belongs to the server, not the connection: a dropped stream keeps it going and
+    POST /ag-ui/connect rejoins it. 409 when the thread already has a live run.
+    """
+    person = resolve_actor(session, x_mia_actor)
+    if not request.headers.get("content-type", "").startswith("application/json"):
+        raise HTTPException(415, "application/json required")
+    try:
+        run_input = AGUIAdapter.build_run_input(await request.body())
+    except ValidationError as exc:
+        raise HTTPException(422, "invalid AG-UI run input") from exc
+    text = runs.user_text(run_input)
+    if not text or len(text) > MAX_TEXT:
+        raise HTTPException(422, f"a user message of 1 to {MAX_TEXT} characters is required")
+    thread = await asyncio.to_thread(_own_thread, session, person, run_input.thread_id)
+    if thread is None:
+        try:
+            ULID.from_str(run_input.thread_id)
+        except ValueError as exc:
+            raise HTTPException(422, "threadId of a new thread must be a ULID") from exc
+    try:
+        run = runs.start(person.id, run_input, text)
+    except runs.RunBusy as exc:
+        raise HTTPException(409, "thread has a live run") from exc
+    return _stream(runs.follow(run))
+
+
+@router.post("/ag-ui/connect")
+async def ag_ui_connect(
+    session: DbSession, body: ThreadRef, x_mia_actor: ActorHeader = None
+) -> StreamingResponse:
+    """Catch up on a thread after a dropped connection: rejoin its live run, or get the stored
+    messages and blocks as one snapshot run. 404 for unknown threads and other people's."""
+    person = resolve_actor(session, x_mia_actor)
+    run = runs.live(body.thread_id)
+    if run is not None and run.person_id != person.id:
+        raise HTTPException(404, "thread not found")
+    thread = await asyncio.to_thread(_own_thread, session, person, body.thread_id)
+    if run is not None:
+        rows = await asyncio.to_thread(runs.stored_messages, session, body.thread_id)
+        return _stream(runs.rejoin(run, runs.messages_snapshot(runs.rejoin_rows(run, rows))))
+    if thread is None:
+        raise HTTPException(404, "thread not found")
+    events = await asyncio.to_thread(runs.snapshot, session, thread, new_id())
+    frames = [runs.frame(e.model_dump_json(by_alias=True)) for e in events]
+
+    async def replay() -> AsyncIterator[str]:
+        for chunk in frames:
+            yield chunk
+
+    return _stream(replay())
+
+
+@router.post("/ag-ui/stop")
+async def ag_ui_stop(
+    session: DbSession, body: ThreadRef, x_mia_actor: ActorHeader = None
+) -> dict[str, bool]:
+    """Cancel the person's live run on the thread; it ends with RUN_FINISHED. 404 when there is
+    no live run of this person on the thread."""
+    person = resolve_actor(session, x_mia_actor)
+    if not runs.stop(body.thread_id, person.id):
+        raise HTTPException(404, "no live run")
+    return {"stopped": True}

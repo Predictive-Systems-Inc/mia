@@ -377,16 +377,38 @@ def give_up(
     return None
 
 
-def respond(
-    session: Session, person: Person, accept: bool, actor: Actor, now: dt.datetime
-) -> CoverRequest:
-    """The candidate's answer. Accept reassigns the visit; decline moves to the next candidate."""
-    request = session.exec(
+def open_request(session: Session, person: Person) -> CoverRequest | None:
+    """The newest cover request still waiting for this person's answer, if any."""
+    return session.exec(
         select(CoverRequest)
         .where(CoverRequest.candidate_id == person.id)
         .where(CoverRequest.status == "asking")
         .order_by(col(CoverRequest.id).desc())
     ).first()
+
+
+def open_request_line(session: Session, person: Person, tz: str) -> str:
+    """A task-context line naming the cover request waiting for this person, or ''.
+
+    The request reached them as a notification, outside this chat, so the model cannot see it
+    otherwise and would not know that "yes" or "en pysty" answers it.
+    """
+    request = open_request(session, person)
+    visit = session.get(Visit, request.visit_id) if request else None
+    if visit is None:
+        return ""
+    v = _visit_text(session, visit, tz, "en")
+    return (
+        f"Open cover request waiting for this user's answer: {v['location']} {v['date']} "
+        f"at {v['time']}. A yes or no to it is answered with respond_to_cover."
+    )
+
+
+def respond(
+    session: Session, person: Person, accept: bool, actor: Actor, now: dt.datetime
+) -> CoverRequest:
+    """The candidate's answer. Accept reassigns the visit; decline moves to the next candidate."""
+    request = open_request(session, person)
     if request is None:
         raise CoverError("no open cover request for you")
     if not accept:

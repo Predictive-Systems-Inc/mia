@@ -55,7 +55,7 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | --- | --- |
 | `uv run mia migrate` | Create or upgrade the SQLite database (Alembic) |
 | `uv run mia seed` | Load demo data (once, on an empty database) |
-| `uv run mia serve` | FastAPI on port 8000: chat page `/`, `/health`, `/chat`, `/chat/stream`, `/ag-ui`, `/notifications`, `/approvals/{id}/decide`, `/channels/{id}/webhook` |
+| `uv run mia serve` | FastAPI on port 8000: chat page `/`, `/health`, `/chat`, `/chat/stream`, `/ag-ui` (plus `/ag-ui/connect` to catch up and `/ag-ui/stop`), `/notifications`, `/approvals/{id}/decide`, `/channels/{id}/webhook` |
 | `uv run mia chat "..." [--as NAME] [--thread ID]` | One chat turn from the terminal |
 | `uv run mia decide ID approved\|rejected --as NAME` | Decide an approval (stand-in for the inbox) |
 | `uv run mia inbox --as NAME` | Show messages Mia sent to a person |
@@ -64,6 +64,8 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run mia invite NAME [--as SUPERVISOR]` | One-time WhatsApp invite link for a person (needs `MIA_NODE_SECRET`) |
 | `uv run mia channels sim "..." --from NUMBER` | Message Mia as a phone on the simulated channel (try `LINK <code>` first) |
 | `uv run mia geocode` | Geocode home bases and sites without coordinates (needs `MIA_GEOCODER_KEY`) |
+| `uv run mia backup FILE` | Consistent copy of the database to a new file (safe while serving) |
+| `uv run mia verify-db FILE` | Check a restored copy: integrity, events hash chain, row counts |
 | `uv run pytest` | Unit tests |
 | `uv run pytest node/tests/evals -m evals` | Dispatcher evaluation suite (33 scenarios, 5 runs each) |
 | `uv run ruff check . && uv run ruff format --check . && uv run mypy node/mia` | Lint and types |
@@ -85,19 +87,38 @@ uv run mia channels sim "Olen kipeä huomenna." --from 358401234567
 
 For the real WhatsApp number, follow docs/whatsapp-setup.md.
 
+## Installing on a server
+
+Docker Compose runs the node with Litestream backup (and optionally a Cloudflare Tunnel) on one
+server. Install, backups, restore test and updates: deploy/install.md.
+
+```
+cp .env.example deploy/.env      # then edit; secrets stay in this file
+cd deploy && docker compose build && docker compose up -d --wait
+./restore-test.sh                # restores the latest backup and verifies it
+```
+
 ## Using a real model
 
-Set `MIA_MODEL=gateway/<route>`, `MIA_GATEWAY_URL` and `MIA_GATEWAY_KEY` in `.env`. No code
-changes: requests go through the egress component, which pseudonymises person names, writes
-`egress_log` and meters `usage_cloud_requests`. `MIA_EGRESS_LEVEL=none` blocks cloud requests.
-To evaluate a real model: `MIA_EVAL_MODEL=gateway/<route> uv run pytest node/tests/evals -m evals`.
+Two kinds of model, chosen with `MIA_MODEL` in `.env`; no code changes:
+- Cloud: `MIA_MODEL=gateway/<route>` with `MIA_GATEWAY_URL` and `MIA_GATEWAY_KEY` (any
+  OpenAI-compatible endpoint, for example OpenRouter `https://openrouter.ai/api/v1`). Requests go
+  through the egress component, which pseudonymises person names, writes `egress_log` and meters
+  `usage_cloud_requests`. `MIA_EGRESS_LEVEL=none` blocks them.
+- Local: `MIA_MODEL=local/<model>` with `MIA_LOCAL_URL` (default Ollama,
+  `http://localhost:11434/v1`). Nothing leaves the node, so egress is skipped and it works with
+  `MIA_EGRESS_LEVEL=none`. The URL must be localhost or a private IP address.
+
+To evaluate a model: `MIA_EVAL_MODEL=gateway/<route>` or `local/<model>`, then
+`uv run pytest node/tests/evals -m evals`.
 
 ## Documents
 - docs/spec.md: Mia Agent Manifest Specification v0.1
 - docs/plan.md: Phase 1 build plan (Hype Siivous)
 - docs/brief.md: initial build brief (this milestone)
 - docs/layout.md: repository layout
-- docs/adr/: architecture decision records (001 stack, 002 data standard, 003 tool risk and approval, 004 model routing and egress, 005 data standard 1.1 and cover confirmation)
+- docs/adr/: architecture decision records (001 stack, 002 data standard, 003 tool risk and approval, 004 model routing and egress, 005 data standard 1.1 and cover confirmation, 010 install and backup)
+- deploy/install.md: install, backup, restore and update a node
 - docs/questions.md and docs/decisions.md: clarification loop between the coding agent and the product owner
 - docs/ideas.md: ideas outside this milestone's scope
 

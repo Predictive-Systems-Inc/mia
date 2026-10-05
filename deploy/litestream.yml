@@ -1,0 +1,14 @@
+# Litestream: continuous backup of the node database (deploy/install.md, section 5).
+# The target comes from deploy/.env:
+#   LITESTREAM_REPLICA_URL=file:///backups/mia            local volume, for testing only
+#   LITESTREAM_REPLICA_URL=s3://<bucket>/<branch>/mia      S3-compatible storage
+#   LITESTREAM_S3_ENDPOINT=https://...                     empty for AWS; set for others
+#   LITESTREAM_ACCESS_KEY_ID / LITESTREAM_SECRET_ACCESS_KEY read by Litestream directly
+# Metrics on localhost inside the container only; the compose healthcheck reads them.
+addr: 127.0.0.1:9090
+
+dbs:
+  - path: /data/mia.db
+    replica:
+      url: ${LITESTREAM_REPLICA_URL}
+      endpoint: ${LITESTREAM_S3_ENDPOINT}

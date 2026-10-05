@@ -285,3 +285,18 @@ def test_instructor_replacing_themselves_needs_approval(
         local(visit.date - dt.timedelta(days=1), 15),
     )
     assert request.status == "awaiting_approval"
+
+
+def test_open_request_line_tells_the_model_what_a_yes_answers(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    """The ask arrives as a notification; the context line is how a model knows about it."""
+    assert cover.open_request_line(session, people["Mikael"], branch.timezone) == ""
+    visit = kamppi_visit(session, 2)
+    now = local(visit.date - dt.timedelta(days=1), 15)
+    instruct(session, branch, people, visit, "Mikael", [], now)
+    line = cover.open_request_line(session, people["Mikael"], branch.timezone)
+    assert "Kamppi" in line and "09:00" in line and "respond_to_cover" in line
+    assert cover.open_request_line(session, people["Maria"], branch.timezone) == ""
+    cover.respond(session, people["Mikael"], False, Actor.person(people["Mikael"]), now)
+    assert cover.open_request_line(session, people["Mikael"], branch.timezone) == ""
