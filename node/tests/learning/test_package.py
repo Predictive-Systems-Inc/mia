@@ -1,7 +1,6 @@
-from pathlib import Path
+import os
 
 import pytest
-from pydantic import ValidationError
 from sqlmodel import Session, select
 
 from mia.core.models import Actor, Event, Person
@@ -48,12 +47,6 @@ def card(passed: bool = True, version: str = "v1") -> ModelCard:
     )
 
 
-@pytest.fixture(autouse=True)
-def models_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MIA_MODELS_DIR", str(tmp_path / "models"))
-    get_settings.cache_clear()
-
-
 def test_card_round_trip() -> None:
     write_card(card())
     assert read_card("r", "v1") == card()
@@ -82,13 +75,13 @@ def test_promote_missing_card_is_refused(session: Session, people: dict[str, Per
     assert str(err.value) == "r@v9 not found"
 
 
-def test_promote_corrupt_card_raises_and_does_not_activate(
+def test_promote_corrupt_card_is_refused_and_does_not_activate(
     session: Session, people: dict[str, Person]
 ) -> None:
     actor = Actor.person(people["Helena"])
     write_card(card())
     (package_dir("r", "v1") / "card.json").write_text("{not json", encoding="utf-8")
-    with pytest.raises(ValidationError):
+    with pytest.raises(PromotionRefused, match=r"^r@v1 card is unreadable: "):
         promote(session, actor, "r", "v1", signed_by="Allan")
     assert active_version("r") is None
     assert session.exec(select(Event).where(Event.action == "skill_model.promoted")).all() == []
@@ -127,3 +120,26 @@ def test_promote_does_not_emit_when_marker_write_fails(
     with pytest.raises(OSError):
         promote(session, actor, "r", "v1", signed_by="Allan")
     assert session.exec(select(Event).where(Event.action == "skill_model.promoted")).all() == []
+
+
+def test_failed_replace_keeps_old_active_and_leaves_no_temp_file(
+    session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    actor = Actor.person(people["Helena"])
+    write_card(card(version="v1"))
+    write_card(card(version="v2"))
+    promote(session, actor, "r", "v1", signed_by="Allan")
+    real_replace = os.replace
+
+    def fail_on_marker(src: str, dst: object) -> None:
+        if str(dst).endswith("ACTIVE"):
+            raise OSError("boom")
+        real_replace(src, dst)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "replace", fail_on_marker)
+    with pytest.raises(OSError, match="boom"):
+        promote(session, actor, "r", "v2", signed_by="Allan")
+    marker = get_settings().MIA_MODELS_DIR / "r" / "ACTIVE"
+    assert marker.read_text("utf-8") == "v1"
+    assert sorted(p.name for p in marker.parent.iterdir()) == ["ACTIVE", "v1", "v2"]
+    assert len(session.exec(select(Event).where(Event.action == "skill_model.promoted")).all()) == 1

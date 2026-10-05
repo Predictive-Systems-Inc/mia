@@ -1,9 +1,11 @@
 """Model packages on disk and their promotion (spec section 5)."""
 
 import datetime as dt
+import os
+import tempfile
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlmodel import Session
 
 from mia.core import events
@@ -37,6 +39,26 @@ class ModelCard(BaseModel):
     signed_at: str | None = None
 
 
+def _atomic_write(path: Path, text: str) -> None:
+    """Write text so a reader or a crash never sees a partial file (temp file, fsync, replace)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=path.parent, delete=False, prefix=f".{path.name}."
+    ) as tmp:
+        try:
+            tmp.write(text)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        except BaseException:
+            Path(tmp.name).unlink(missing_ok=True)
+            raise
+    try:
+        os.replace(tmp.name, path)
+    except BaseException:
+        Path(tmp.name).unlink(missing_ok=True)
+        raise
+
+
 def package_dir(role: str, version: str) -> Path:
     """Directory holding one version's files."""
     return get_settings().MIA_MODELS_DIR / role / version
@@ -45,8 +67,7 @@ def package_dir(role: str, version: str) -> Path:
 def write_card(card: ModelCard) -> Path:
     """Write card.json for the card's version, creating the directory."""
     path = package_dir(card.role, card.version) / "card.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(card.model_dump_json(indent=2), encoding="utf-8")
+    _atomic_write(path, card.model_dump_json(indent=2))
     return path
 
 
@@ -65,12 +86,17 @@ def active_version(role: str) -> str | None:
 def promote(session: Session, actor: Actor, role: str, version: str, signed_by: str) -> ModelCard:
     """Mark a signed, gate-passing version active; the previous one stays on disk for rollback.
 
-    Files are written first and the event is emitted last, so a failed write emits nothing.
+    Order: signed card first (harmless on a version that is not active), then the ACTIVE marker
+    (the switch itself, atomic), then the event, so a failed write emits nothing. Files cannot
+    join the DB transaction: if the later emit or commit fails, ACTIVE has changed without an
+    event (known gap).
     """
     try:
         card = read_card(role, version)
     except FileNotFoundError as exc:
         raise PromotionRefused(f"{role}@{version} not found") from exc
+    except ValidationError as exc:
+        raise PromotionRefused(f"{role}@{version} card is unreadable: {exc}") from exc
     if not card.gate.passed:
         raise PromotionRefused(f"{role}@{version} failed the gate: {card.gate.failures}")
     if not signed_by.strip():
@@ -79,7 +105,7 @@ def promote(session: Session, actor: Actor, role: str, version: str, signed_by: 
     signed_at = dt.datetime.now(dt.UTC).isoformat()
     card = card.model_copy(update={"signed_by": signed_by, "signed_at": signed_at})
     write_card(card)
-    (get_settings().MIA_MODELS_DIR / role / "ACTIVE").write_text(version, encoding="utf-8")
+    _atomic_write(get_settings().MIA_MODELS_DIR / role / "ACTIVE", version)
     events.emit(
         session,
         "skill_model.promoted",
