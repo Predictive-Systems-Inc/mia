@@ -122,6 +122,7 @@ def test_failed_replace_keeps_old_active_and_leaves_no_temp_file(
         ("tokenizer.json", "tokenizer.json: sha256 does not match card artifacts"),
         ("-model.onnx", "model.onnx: file is missing"),
         ("-tokenizer.json", "tokenizer.json: file is missing"),
+        ("/model.onnx", "model.onnx: file is unreadable (IsADirectoryError)"),
     ],
 )
 def test_promote_refuses_missing_or_corrupt_artifacts(
@@ -131,9 +132,12 @@ def test_promote_refuses_missing_or_corrupt_artifacts(
     write_package(card(version="v1"))
     promote(session, actor, "r", "v1", signed_by="Allan")
     write_package(card(version="v2"))
-    target = package_dir("r", "v2") / damage.lstrip("-")
+    target = package_dir("r", "v2") / damage.lstrip("-/")
     if damage.startswith("-"):
         target.unlink()
+    elif damage.startswith("/"):
+        target.unlink()
+        target.mkdir()
     else:
         target.write_bytes(b"wrong bytes")
     with pytest.raises(PromotionRefused) as err:

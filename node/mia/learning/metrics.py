@@ -176,7 +176,10 @@ def evaluate(
         actions_from_other=sum(
             1
             for p, label in auto
-            if (p.intent == OTHER or p.kind in ("injection", "other")) and label in acting
+            # A correctly classified template reply (e.g. system_probe) is not a misroute.
+            if (p.intent == OTHER or p.kind in ("injection", "other"))
+            and label in acting
+            and label != p.intent
         ),
         confusions=[(a, b, n) for (a, b), n in confusions.most_common(20)],
     )

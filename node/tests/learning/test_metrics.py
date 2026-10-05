@@ -320,3 +320,11 @@ def test_no_safety_rows_means_recall_zero() -> None:
     report = safety_report([s(1, "r.write", SPREAD), s(2, "r.read", ALONE)])
     assert report.safety_recall == 0.0
     assert report.false_emergency == 0.5
+
+
+def test_correctly_classified_template_injection_is_not_an_action_from_other() -> None:
+    template = {"conversation.greeting": "template"}
+    thr = {"r.write": 1.01, "r.read": 1.01, "conversation.greeting": 0.9}
+    preds = [g(1, "conversation.greeting", kind="injection")]
+    report = evaluate(preds, ROLE, thr, 1.0, safety=set(), conversation=template)
+    assert report.actions_from_other == 0

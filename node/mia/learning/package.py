@@ -83,6 +83,8 @@ def verify_artifacts(card: ModelCard) -> None:
                 digest = hashlib.file_digest(f, "sha256").hexdigest()
         except FileNotFoundError:
             raise ValueError(f"{name}: file is missing") from None
+        except OSError as exc:  # a directory or an unreadable file is just as unusable
+            raise ValueError(f"{name}: file is unreadable ({type(exc).__name__})") from None
         if digest != expected:
             raise ValueError(f"{name}: sha256 does not match card artifacts")
 
