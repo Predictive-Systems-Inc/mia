@@ -3,12 +3,14 @@
 Reads the database and writes only to the local learning dir (D18); emits no event."""
 
 import datetime as dt
+import os
+from pathlib import Path
 
 from sqlmodel import Session, col, select
 
 from mia.core.egress import Pseudonymiser
 from mia.core.models import Event, Message
-from mia.learning.schema import OTHER, Record, Review, load_records, write_records
+from mia.learning.schema import OTHER, Record, Review, load_records
 from mia.settings import get_settings
 
 UNDO = ("absence.cancelled", "cover.cancelled")
@@ -52,6 +54,16 @@ def _previous_assistant_text(session: Session, message: Message) -> str:
         .order_by(col(Message.id).desc())
     ).first()
     return previous.text if previous else ""
+
+
+def _append(path: Path, records: list[Record]) -> None:
+    """Appends one JSON line per record (as write_records serialises) and syncs to disk, so
+    existing, possibly reviewed, lines are never rewritten."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write("".join(r.model_dump_json() + "\n" for r in records))
+        f.flush()
+        os.fsync(f.fileno())
 
 
 def harvest(session: Session, role: str, branch_id: str) -> list[Record]:
@@ -102,5 +114,5 @@ def harvest(session: Session, role: str, branch_id: str) -> list[Record]:
             )
         )
     if found:
-        write_records(path, [*existing, *found])
+        _append(path, found)
     return found

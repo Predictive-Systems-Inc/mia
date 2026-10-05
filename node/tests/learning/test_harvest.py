@@ -7,10 +7,10 @@ from sqlmodel import Session, select
 
 from mia.agents.dispatcher.agent import MANIFEST, create_agent
 from mia.chat.service import run_turn
-from mia.core import events
+from mia.core import events, store
 from mia.core.models import Actor, Event, Message, Person
 from mia.learning.harvest import harvest
-from mia.learning.schema import load_records
+from mia.learning.schema import Review, load_records
 from mia.settings import get_settings
 from mia.skills import runtime
 from mia.skills.runtime import Alternative, Classification
@@ -220,3 +220,59 @@ def test_special_category_intents_are_never_written(
     session.commit()
     assert harvest(session, "dispatcher", juha.branch_id) == []
     assert not path().exists()
+
+
+def test_existing_reviewed_lines_are_kept_byte_identical(
+    session: Session, people: dict[str, Person]
+) -> None:
+    juha = people["Juha"]
+    first = ask(session, juha, TEXT)
+    tap(session, juha, first, 0)
+    (rec,) = harvest(session, "dispatcher", juha.branch_id)
+    reviewed = rec.model_copy(update={"review": Review(status="kept", note="ok")})
+    path().write_text(reviewed.model_dump_json() + "\n", encoding="utf-8")
+    before = path().read_bytes()
+    second = ask(session, juha, "toinen viesti", first.thread_id)
+    tap(session, juha, second, 0)
+    (new,) = harvest(session, "dispatcher", juha.branch_id)
+    after = path().read_bytes()
+    assert after.startswith(before)
+    assert after[len(before) :] == (new.model_dump_json() + "\n").encode()
+    assert [r.review.status for r in load_records(path())] == ["kept", "pending"]
+
+
+def test_names_in_the_previous_assistant_message_are_pseudonymised(
+    session: Session, people: dict[str, Person]
+) -> None:
+    juha = people["Juha"]
+    first = ask(session, juha, "moi")
+    store.insert(
+        session,
+        Message(
+            branch_id=juha.branch_id,
+            thread_id=first.thread_id,
+            role="assistant",
+            sender_id="dispatcher",
+            text="Sanna Virtanen hoitaa huomisen",
+        ),
+        agent_for(juha),
+    )
+    session.commit()
+    second = ask(session, juha, TEXT, first.thread_id)
+    tap(session, juha, second, 0)
+    (rec,) = harvest(session, "dispatcher", juha.branch_id)
+    assert rec.context == "Person_2 hoitaa huomisen"
+
+
+@pytest.mark.parametrize("who", ["Sanna", "system"])
+def test_cancel_by_another_or_system_actor_does_not_drop_the_record(
+    session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch, who: str
+) -> None:
+    """Known limit: undo is matched by actor, so these are not seen."""
+    juha = people["Juha"]
+    first = ask(session, juha, TEXT)
+    tap(session, juha, first, 0)
+    clarified = session.exec(select(Event).where(Event.action == "intent.clarified")).one()
+    actor = Actor.system(juha.branch_id) if who == "system" else agent_for(people[who])
+    emit_at(session, monkeypatch, "cover.cancelled", actor, clarified.timestamp)
+    assert len(harvest(session, "dispatcher", juha.branch_id)) == 1
