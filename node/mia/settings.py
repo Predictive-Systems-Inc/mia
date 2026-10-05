@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # Thinking (reasoning) on local models: off by default because it makes every turn slow on
     # small hardware; turn on when the evals show it helps a given model.
     MIA_LOCAL_THINKING: bool = False
+    # Role skill models (docs/superpowers/specs/2026-10-06-skill-models-design.md): built
+    # packages, and harvested learning candidates. Both stay on the node, never in git.
+    MIA_MODELS_DIR: Path = Field(default=Path("data/models"))
+    MIA_LEARNING_DIR: Path = Field(default=Path("data/learning"))
     MIA_EGRESS_LEVEL: EgressLevel = "pseudonymised"
     MIA_ORG: str = "demo"
     MIA_TICK_SECONDS: int = 30
