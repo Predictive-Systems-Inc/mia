@@ -18,6 +18,7 @@ from mia.settings import get_settings
 
 LANGS = ["en", "fi", "fil", "mixed"]
 MAX_LEN = 96
+IGNORE = -100
 
 
 class Heads(nn.Module):  # type: ignore[misc,unused-ignore]  # Any when torch is not installed
@@ -89,20 +90,24 @@ def _predict(
     return out
 
 
+def slot_targets(batch: list[Record], name: str, values: list[str]) -> list[int]:
+    """Class index per record for one slot; -100 (ignored by the loss) when missing or unknown."""
+    return [values.index(v) if (v := r.slots.get(name)) in values else IGNORE for r in batch]
+
+
 def _fit(
     base: str,
-    role: RoleSpec,
+    tok: PreTrainedTokenizerBase,
     labels: list[str],
     slots: dict[str, list[str]],
     train: list[Record],
     dev: list[Record],
     seed: int,
     epochs: int,
-    lr: float,
+    lr: float = 3e-5,
 ) -> tuple[Heads, float]:
     torch.manual_seed(seed)
     rng = random.Random(seed)
-    tok = AutoTokenizer.from_pretrained(base)
     model = Heads(base, len(labels), slots)
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
     steps = max(1, epochs * ((len(train) + 31) // 32))
@@ -110,6 +115,7 @@ def _fit(
         opt, lambda s: min(1.0, (s + 1) / (0.06 * steps)) * max(0.0, 1 - s / steps)
     )
     ce = nn.CrossEntropyLoss(label_smoothing=0.1)
+    slot_ce = nn.CrossEntropyLoss(ignore_index=IGNORE, label_smoothing=0.1)
     best_state, best_nll, patience = None, float("inf"), 0
     for _ in range(epochs):
         model.train()
@@ -122,15 +128,9 @@ def _fit(
                 out[1], torch.tensor([LANGS.index(r.lang) for r in batch])
             )
             for k, (name, values) in enumerate(slots.items()):
-                ys = torch.tensor(
-                    [
-                        values.index(r.slots.get(name, values[0]))
-                        if r.slots.get(name) in values
-                        else 0
-                        for r in batch
-                    ]
-                )
-                loss = loss + 0.2 * ce(out[2 + k], ys)
+                ys = torch.tensor(slot_targets(batch, name, values))
+                if (ys != IGNORE).any():  # mean over zero targets would be NaN
+                    loss = loss + 0.2 * slot_ce(out[2 + k], ys)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
@@ -259,9 +259,7 @@ def train_role(
     labels = role.label_space(conversation)
     slots = _slot_values(role, train)
     tok = AutoTokenizer.from_pretrained(base)
-    runs = [
-        _fit(base, role, labels, slots, train, dev, s, epochs, lr) for s in seeds for lr in (3e-5,)
-    ]
+    runs = [_fit(base, tok, labels, slots, train, dev, s, epochs) for s in seeds]
     model, _ = min(runs, key=lambda x: x[1])
     dev_preds = _predict(model, tok, dev, labels)
     temperature = fit_temperature(dev_preds)
@@ -273,7 +271,7 @@ def train_role(
     curve: dict[int, float] = {}
     for share in (25, 50, 75):
         part = random.Random(0).sample(train, max(1, len(train) * share // 100))
-        m, _ = _fit(base, role, labels, slots, part, dev, seeds[0], max(1, epochs // 2), 3e-5)
+        m, _ = _fit(base, tok, labels, slots, part, dev, seeds[0], max(1, epochs // 2))
         curve[share] = evaluate(
             _predict(m, tok, test, labels), role, thresholds, temperature, safety
         ).accuracy
@@ -283,6 +281,8 @@ def train_role(
         "".join(r.model_dump_json() for r in train + dev + test).encode()
     ).hexdigest()[:16]
     out = get_settings().MIA_MODELS_DIR / role.id / version
+    if out.exists():
+        raise FileExistsError(f"{role.id}@{version} already exists; refusing to overwrite")
     _export(model, tok, out, slots)
     card = ModelCard(
         role=role.id,
