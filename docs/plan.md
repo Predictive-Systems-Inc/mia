@@ -12,7 +12,7 @@ Build the Mia platform structure and one fully configured agent, the dispatcher,
 - Data standard v1.0 and the cleaning template: sites, jobs, visits, checklists, check-in and check-out, photos
 - Authentication, RBAC (pycasbin), approvals service and inbox, append-only events log with hash chain
 - Office web app (React, Vite, static files served by the node): clients, sites, staff, schedule board, supervisor view, approvals, exports
-- Cleaners work over WhatsApp, with no mobile app in Phase 1 (D20): today's visits, site instructions, check-in and check-out by location share, checklists with interactive lists and buttons, photos as media, chat, absences and cover
+- Cleaners work over WhatsApp; the apps are a separate project (D20, D25): today's visits, site instructions, check-in and check-out by location share, checklists with interactive lists and buttons, photos as media, chat, absences and cover
 - Chat: AG-UI endpoint, message model with text, quick replies, card, approval card, form and file blocks; web chat UI for the office
 - Cloud egress policy (`none`, `pseudonymised`) and the gateway client; usage table
 - Dispatcher agent v1 (Pydantic AI): absence reports, replacement suggestions, schedule questions, site instructions, alerts
@@ -42,7 +42,9 @@ Remaining work in this order, because each step unblocks the next:
 1. **Authentication and identity** (Sprint 1 item, moved first): office login, staff phone
    OTP, sessions, and channel identities linked to real accounts. Blocks the pilot with real
    people, WhatsApp in production and A2A.
-2. **Local model to 95%** (D18, D19): Gemma 4 12B on Ollama on an Apple Silicon Mac mini, no
+2. **Local model to 95%** (D18, D19, D26): the full intent list in English, measured on
+   Qwen3.5 9B and Gemma 4 12B; translation (Finnish, Filipino to and from English) as a
+   separate layer measured on its own. Then: Gemma 4 12B on Ollama on an Apple Silicon Mac mini, no
    cloud route for real data. It passes 85% today (Oct 5 evaluation: Sonnet 5.5 100%, Haiku 4.5
    88%, Gemma 4 12B 85%, Qwen3.5 9B on llama.cpp 76%), so before the pilot: the turn cap (D22),
    the reply contract for small models (the model writes text, code builds the blocks), a

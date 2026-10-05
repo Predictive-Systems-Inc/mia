@@ -148,3 +148,14 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
 
 ## D24: The plan lists all necessary work, not an hour budget
 - Decision: hour estimates are not a constraint; docs/plan.md includes all work Phase 1 needs.
+
+## D25: (amends D20) The mobile app is a separate project; Mia focuses on chat
+- Decision: the cleaner and office apps are built as a separate project. This repository
+  focuses on the chat interface: the web chat over AG-UI and messaging channels (WhatsApp).
+  Field work in Phase 1 stays over WhatsApp as in D20.
+
+## D26: Language is a separate layer; the core is measured in English
+- Decision: messages are translated to English before the model and replies translated back,
+  by a separate, measurable translation layer. Intents, tools and evaluations are defined and
+  measured in English first; translation quality is measured on its own. Revisit if the
+  translation layer costs more accuracy than a multilingual model loses.
