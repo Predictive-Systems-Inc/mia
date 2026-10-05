@@ -64,6 +64,8 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run mia invite NAME [--as SUPERVISOR]` | One-time WhatsApp invite link for a person (needs `MIA_NODE_SECRET`) |
 | `uv run mia channels sim "..." --from NUMBER` | Message Mia as a phone on the simulated channel (try `LINK <code>` first) |
 | `uv run mia geocode` | Geocode home bases and sites without coordinates (needs `MIA_GEOCODER_KEY`) |
+| `uv run mia backup FILE` | Consistent copy of the database to a new file (safe while serving) |
+| `uv run mia verify-db FILE` | Check a restored copy: integrity, events hash chain, row counts |
 | `uv run pytest` | Unit tests |
 | `uv run pytest node/tests/evals -m evals` | Dispatcher evaluation suite (33 scenarios, 5 runs each) |
 | `uv run ruff check . && uv run ruff format --check . && uv run mypy node/mia` | Lint and types |
@@ -85,6 +87,17 @@ uv run mia channels sim "Olen kipeä huomenna." --from 358401234567
 
 For the real WhatsApp number, follow docs/whatsapp-setup.md.
 
+## Installing on a server
+
+Docker Compose runs the node with Litestream backup (and optionally a Cloudflare Tunnel) on one
+server. Install, backups, restore test and updates: deploy/install.md.
+
+```
+cp .env.example deploy/.env      # then edit; secrets stay in this file
+cd deploy && docker compose up -d --build --wait
+./restore-test.sh                # restores the latest backup and verifies it
+```
+
 ## Using a real model
 
 Two kinds of model, chosen with `MIA_MODEL` in `.env`; no code changes:
@@ -104,7 +117,8 @@ To evaluate a model: `MIA_EVAL_MODEL=gateway/<route>` or `local/<model>`, then
 - docs/plan.md: Phase 1 build plan (Hype Siivous)
 - docs/brief.md: initial build brief (this milestone)
 - docs/layout.md: repository layout
-- docs/adr/: architecture decision records (001 stack, 002 data standard, 003 tool risk and approval, 004 model routing and egress, 005 data standard 1.1 and cover confirmation)
+- docs/adr/: architecture decision records (001 stack, 002 data standard, 003 tool risk and approval, 004 model routing and egress, 005 data standard 1.1 and cover confirmation, 010 install and backup)
+- deploy/install.md: install, backup, restore and update a node
 - docs/questions.md and docs/decisions.md: clarification loop between the coding agent and the product owner
 - docs/ideas.md: ideas outside this milestone's scope
 
