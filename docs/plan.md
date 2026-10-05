@@ -313,19 +313,27 @@ supervisor handoffs are recorded the same way as negative or corrected labels.
   completed and not undone, and identical or near-identical messages agree.
 - People can only pick what they were shown, so "Something else" answers and handoffs are kept
   and reviewed; they are where new intents and phrasings appear.
-- Before training, the strong reviewer model checks each candidate label and a person (the
-  data owner) approves batches of new examples. Messages are pseudonymised (names, places,
-  numbers replaced) and special category data (health details beyond "sick", ID numbers) is
-  dropped.
+- Before training, a reviewer model checks each candidate label (a local model, or a stronger
+  cloud model if the owner chose cloud) and a person (the data owner) approves batches of new
+  examples. Special category data (health details beyond "sick", ID numbers) is dropped.
 - Users are told in the privacy notice that messages may improve Mia; organisations can switch
   it off.
 
-**Retraining stays on the node.** The small multilingual classifier trains on the Mac mini
-itself, so real messages never leave the branch (D18). A new version replaces the old one only
-if it passes the evaluation suite with no drop in any language and no new permission or
-injection failures; the previous version is kept for rollback, and each version's score is
-logged. Sharing learned patterns across organisations is opt-in and pattern-level only (spec,
-QA); real messages are never pooled.
+**Where training runs is the owner's choice** (organisation setting, D27):
+- **Local (default):** the classifier retrains on the node, so real messages never leave the
+  branch. Works with every egress level, including `none`.
+- **Cloud:** for better review and training (stronger reviewer models, GPUs for larger
+  students). Only when the organisation has agreed to it in its data processing agreement and
+  its egress level allows it. The training set leaves through the egress component (rule 6):
+  names, places, phone numbers, IDs, dates and amounts are replaced by tokens, free text that
+  could still identify someone (incidents, health details, complaints about a named person) is
+  dropped, and the export is logged. This is pseudonymised data, not anonymous data, and is
+  described that way to the client. Processing happens in the EU, nothing is kept after the
+  job, and only the trained model comes back.
+In both cases a new version replaces the old one only if it passes the evaluation suite with no
+drop in any language and no new permission or injection failures; the previous version is kept
+for rollback, and each version's score is logged. Sharing learned patterns across organisations
+is opt-in and pattern-level only (spec, QA); real messages are never pooled.
 
 **What is measured.** Clarification rate (target under 10% per intent and language), how often
 the top option is chosen, how often a choice is later undone, new phrasings learned per month,

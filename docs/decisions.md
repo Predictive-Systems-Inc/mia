@@ -159,3 +159,11 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   by a separate, measurable translation layer. Intents, tools and evaluations are defined and
   measured in English first; translation quality is measured on its own. Revisit if the
   translation layer costs more accuracy than a multilingual model loses.
+
+## D27: (refines D18) Where learning happens is the owner's choice
+- Decision: retraining and label review run on the node by default. An owner may choose cloud
+  training and review (stronger models, GPUs) in the organisation settings, if the data
+  processing agreement covers it and the egress level allows it. The training set then leaves
+  only through the egress component, pseudonymised with stricter scrubbing (identifying free
+  text dropped), processed in the EU, not kept after the job; only the trained model returns.
+  D18 still holds for answering: real messages are handled by the local model.
