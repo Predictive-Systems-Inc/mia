@@ -57,7 +57,8 @@ def licence_verdict(licence: str) -> Verdict:
         # by-nc in any form (underscores, hyphens, URLs, etc.)
         "bync" in compact,
         # Explicit strings that are always "never"
-        key in {
+        key
+        in {
             "non-commercial",
             "noncommercial",
             "(nc)",
