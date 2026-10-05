@@ -139,16 +139,41 @@ def test_role_loads_and_label_space(tmp_path: Path) -> None:
     role = load_role(path)
     assert role.intent("dispatcher.report_absence") is not None
     labels = role.label_space(["conversation.greeting"])
-    assert labels == ["dispatcher.report_absence", "dispatcher.my_visits", "conversation.greeting", "other"]
+    assert labels == [
+        "dispatcher.report_absence",
+        "dispatcher.my_visits",
+        "conversation.greeting",
+        "other",
+    ]
 
 
 def test_quota_follows_volume_and_follow_up() -> None:
     t = Targets()
-    high = IntentSpec(id="a.b", description="d", counterparts=["cleaner"], risk="write", label_en="x", volume="high")
-    normal = IntentSpec(id="a.c", description="d", counterparts=["cleaner"], risk="read", label_en="y")
-    follow = IntentSpec(id="a.d", description="d", counterparts=["cleaner"], risk="write", label_en="z", follow_up=True)
+    high = IntentSpec(
+        id="a.b",
+        description="d",
+        counterparts=["cleaner"],
+        risk="write",
+        label_en="x",
+        volume="high",
+    )
+    normal = IntentSpec(
+        id="a.c", description="d", counterparts=["cleaner"], risk="read", label_en="y"
+    )
+    follow = IntentSpec(
+        id="a.d",
+        description="d",
+        counterparts=["cleaner"],
+        risk="write",
+        label_en="z",
+        follow_up=True,
+    )
     assert (t.quota(high, "train"), t.quota(high, "dev"), t.quota(high, "test")) == (100, 15, 30)
-    assert (t.quota(normal, "train"), t.quota(normal, "dev"), t.quota(normal, "test")) == (30, 10, 20)
+    assert (t.quota(normal, "train"), t.quota(normal, "dev"), t.quota(normal, "test")) == (
+        30,
+        10,
+        20,
+    )
     assert (t.quota(follow, "train"), t.quota(follow, "test")) == (60, 30)
 
 
@@ -159,13 +184,26 @@ def test_label_en_is_short() -> None:
 
 def test_tool_handler_needs_a_tool() -> None:
     with pytest.raises(ValidationError):
-        IntentSpec(id="a.b", description="d", counterparts=["c"], risk="write", label_en="x", handler="tool")
+        IntentSpec(
+            id="a.b",
+            description="d",
+            counterparts=["c"],
+            risk="write",
+            label_en="x",
+            handler="tool",
+        )
 
 
 def test_records_round_trip_and_reject_unknown_fields(tmp_path: Path) -> None:
     rec = Record(
-        id="dispatcher.report_absence/en/001", role="dispatcher", intent="dispatcher.report_absence",
-        lang="en", text="sick today", counterpart="cleaner", style="terse", split="train",
+        id="dispatcher.report_absence/en/001",
+        role="dispatcher",
+        intent="dispatcher.report_absence",
+        lang="en",
+        text="sick today",
+        counterpart="cleaner",
+        style="terse",
+        split="train",
         source="teacher:sonnet-5.5",
     )
     path = tmp_path / "train.jsonl"
@@ -421,16 +459,35 @@ from mia.learning.schema import IntentSpec, Record, RoleSpec, Targets
 
 def role(train: int = 2, dev: int = 1, test: int = 1) -> RoleSpec:
     return RoleSpec(
-        id="r", job_summary="j", responsibilities=["x"], counterparts=[], languages=["en"],
-        countries=["FI"], styles={"informal": 1.0},
-        intents=[IntentSpec(id="r.a", description="d", counterparts=["cleaner"], risk="read", label_en="A")],
+        id="r",
+        job_summary="j",
+        responsibilities=["x"],
+        counterparts=[],
+        languages=["en"],
+        countries=["FI"],
+        styles={"informal": 1.0},
+        intents=[
+            IntentSpec(
+                id="r.a", description="d", counterparts=["cleaner"], risk="read", label_en="A"
+            )
+        ],
         targets=Targets(train_min=train, dev=dev, test=test),
     )
 
 
 def rec(i: int, text: str, split: str, intent: str = "r.a", kind: str = "normal") -> Record:
-    return Record(id=f"r/{i}", role="r", intent=intent, lang="en", text=text, counterpart="cleaner",
-                  style="informal", split=split, source="teacher:t", kind=kind)  # type: ignore[arg-type]
+    return Record(
+        id=f"r/{i}",
+        role="r",
+        intent=intent,
+        lang="en",
+        text=text,
+        counterpart="cleaner",
+        style="informal",
+        split=split,
+        source="teacher:t",
+        kind=kind,
+    )  # type: ignore[arg-type]
 
 
 def test_normalize_and_similarity() -> None:
@@ -440,9 +497,13 @@ def test_normalize_and_similarity() -> None:
 
 
 def test_clean_dataset_passes() -> None:
-    recs = [rec(1, "im sick today", "train"), rec(2, "cant come in tomorrow", "train"),
-            rec(3, "running a fever, staying home", "dev"), rec(4, "not feeling well, off today", "test"),
-            rec(5, "what time does the store open", "train", intent="other", kind="other")]
+    recs = [
+        rec(1, "im sick today", "train"),
+        rec(2, "cant come in tomorrow", "train"),
+        rec(3, "running a fever, staying home", "dev"),
+        rec(4, "not feeling well, off today", "test"),
+        rec(5, "what time does the store open", "train", intent="other", kind="other"),
+    ]
     report = check_records(role(), recs, conversation=[])
     assert report.ok, report.errors
 
@@ -606,7 +667,12 @@ from mia.learning.schema import IntentSpec, Record, RoleSpec, Targets
 from mia.learning.splits import assign_train_dev
 
 ROLE = RoleSpec(
-    id="r", job_summary="j", responsibilities=["x"], counterparts=[], languages=["en"], countries=["FI"],
+    id="r",
+    job_summary="j",
+    responsibilities=["x"],
+    counterparts=[],
+    languages=["en"],
+    countries=["FI"],
     styles={"informal": 1.0},
     intents=[IntentSpec(id="r.a", description="d", counterparts=["c"], risk="read", label_en="A")],
     targets=Targets(dev=2),
@@ -614,12 +680,29 @@ ROLE = RoleSpec(
 
 
 def rec(i: int, text: str, split: str = "train") -> Record:
-    return Record(id=f"r/{i}", role="r", intent="r.a", lang="en", text=text, counterpart="c",
-                  style="informal", split=split, source="t")  # type: ignore[arg-type]
+    return Record(
+        id=f"r/{i}",
+        role="r",
+        intent="r.a",
+        lang="en",
+        text=text,
+        counterpart="c",
+        style="informal",
+        split=split,
+        source="t",
+    )  # type: ignore[arg-type]
 
 
-TEXTS = ["im sick today", "im sick today!", "cant come tomorrow", "fever, staying home",
-         "off work today, unwell", "not coming in, flu", "home sick", "feeling awful, no work"]
+TEXTS = [
+    "im sick today",
+    "im sick today!",
+    "cant come tomorrow",
+    "fever, staying home",
+    "off work today, unwell",
+    "not coming in, flu",
+    "home sick",
+    "feeling awful, no work",
+]
 
 
 def test_dev_quota_and_test_untouched() -> None:
@@ -687,7 +770,9 @@ def assign_train_dev(role: RoleSpec, records: list[Record], seed: int = 0) -> li
             dev += len(cluster) if target == "dev" else 0
             for r in cluster:
                 split_of[r.id] = target
-    return [r.model_copy(update={"split": split_of[r.id]}) if r.id in split_of else r for r in records]
+    return [
+        r.model_copy(update={"split": split_of[r.id]}) if r.id in split_of else r for r in records
+    ]
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -740,18 +825,39 @@ from mia.learning.schema import IntentSpec, RoleSpec
 
 LABELS = ["r.write", "r.read", "conversation.emergency", "other"]
 ROLE = RoleSpec(
-    id="r", job_summary="j", responsibilities=["x"], counterparts=[], languages=["en", "fi"],
-    countries=["FI"], styles={"informal": 1.0},
+    id="r",
+    job_summary="j",
+    responsibilities=["x"],
+    counterparts=[],
+    languages=["en", "fi"],
+    countries=["FI"],
+    styles={"informal": 1.0},
     intents=[
-        IntentSpec(id="r.write", description="d", counterparts=["c"], risk="write", label_en="W", handler="template"),
+        IntentSpec(
+            id="r.write",
+            description="d",
+            counterparts=["c"],
+            risk="write",
+            label_en="W",
+            handler="template",
+        ),
         IntentSpec(id="r.read", description="d", counterparts=["c"], risk="read", label_en="R"),
     ],
 )
 
 
-def p(i: int, intent: str, logits: list[float], lang: str = "en", kind: str = "normal") -> Prediction:
-    return Prediction(record_id=str(i), intent=intent, lang=lang, kind=kind, style="informal",
-                      labels=LABELS, logits=logits)  # type: ignore[arg-type]
+def p(
+    i: int, intent: str, logits: list[float], lang: str = "en", kind: str = "normal"
+) -> Prediction:
+    return Prediction(
+        record_id=str(i),
+        intent=intent,
+        lang=lang,
+        kind=kind,
+        style="informal",
+        labels=LABELS,
+        logits=logits,
+    )  # type: ignore[arg-type]
 
 
 def test_softmax_sums_to_one_and_temperature_flattens() -> None:
@@ -772,11 +878,13 @@ def test_thresholds_meet_precision_or_disable() -> None:
 def test_evaluate_counts_actions_from_other_and_safety_recall() -> None:
     preds = [
         p(1, "r.write", [6, 0, 0, 0]),
-        p(2, "other", [6, 0, 0, 0], kind="injection"),      # routed to a template action: bad
+        p(2, "other", [6, 0, 0, 0], kind="injection"),  # routed to a template action: bad
         p(3, "conversation.emergency", [0, 0, 6, 0], kind="safety"),
         p(4, "r.read", [0, 6, 0, 0], lang="fi"),
     ]
-    report = evaluate(preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, 1.0, safety={"conversation.emergency"})
+    report = evaluate(
+        preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, 1.0, safety={"conversation.emergency"}
+    )
     assert report.actions_from_other == 1
     assert report.safety_recall == 1.0
     assert set(report.per_lang) == {"en", "fi"}
@@ -854,6 +962,7 @@ def _top(pred: Prediction, temperature: float) -> tuple[str, float]:
 
 def fit_temperature(preds: list[Prediction]) -> float:
     """Grid search on dev; NLL of the true label."""
+
     def nll(t: float) -> float:
         return -sum(
             math.log(max(softmax(p.logits, t)[p.labels.index(p.intent)], 1e-12)) for p in preds
@@ -863,7 +972,9 @@ def fit_temperature(preds: list[Prediction]) -> float:
     return min(grid, key=nll)
 
 
-def expected_calibration_error(preds: list[Prediction], temperature: float, bins: int = 10) -> float:
+def expected_calibration_error(
+    preds: list[Prediction], temperature: float, bins: int = 10
+) -> float:
     buckets: dict[int, list[tuple[float, bool]]] = defaultdict(list)
     for p in preds:
         label, conf = _top(p, temperature)
@@ -875,13 +986,17 @@ def expected_calibration_error(preds: list[Prediction], temperature: float, bins
     )
 
 
-def choose_thresholds(preds: list[Prediction], role: RoleSpec, temperature: float) -> dict[str, float]:
+def choose_thresholds(
+    preds: list[Prediction], role: RoleSpec, temperature: float
+) -> dict[str, float]:
     """Lowest confidence per intent at which precision meets the intent's risk target on dev."""
     out: dict[str, float] = {}
     tops = [(_top(p, temperature), p.intent) for p in preds]
     for intent in role.intents:
         target = role.targets.precision_for(intent)
-        mine = sorted(((conf, truth) for (label, conf), truth in tops if label == intent.id), reverse=True)
+        mine = sorted(
+            ((conf, truth) for (label, conf), truth in tops if label == intent.id), reverse=True
+        )
         best = 1.01  # unreachable: never automatic
         correct = 0
         for k, (conf, truth) in enumerate(mine, start=1):
@@ -910,13 +1025,18 @@ def evaluate(
         pred_n = sum(1 for _, label, _ in rows if label == intent.id)
         support = sum(1 for p in preds if p.intent == intent.id)
         auto_mine = [p for p, label in auto if label == intent.id]
-        precision = (sum(p.intent == intent.id for p in auto_mine) / len(auto_mine)) if auto_mine else 1.0
+        precision = (
+            (sum(p.intent == intent.id for p in auto_mine) / len(auto_mine)) if auto_mine else 1.0
+        )
         recall = tp / support if support else 0.0
         prec_all = tp / pred_n if pred_n else 0.0
         f1 = 2 * prec_all * recall / (prec_all + recall) if prec_all + recall else 0.0
         f1s.append(f1)
         per_intent[intent.id] = IntentScore(
-            support=support, precision_at_threshold=precision, recall=recall, f1=f1,
+            support=support,
+            precision_at_threshold=precision,
+            recall=recall,
+            f1=f1,
             auto_share=len(auto_mine) / support if support else 0.0,
         )
     by_lang: dict[str, list[bool]] = defaultdict(list)
@@ -932,10 +1052,13 @@ def evaluate(
         per_intent=per_intent,
         per_lang={k: sum(v) / len(v) for k, v in by_lang.items()},
         safety_recall=(
-            sum(label in safety for _, label in safety_rows) / len(safety_rows) if safety_rows else 1.0
+            sum(label in safety for _, label in safety_rows) / len(safety_rows)
+            if safety_rows
+            else 1.0
         ),
         actions_from_other=sum(
-            1 for p, label in auto
+            1
+            for p, label in auto
             if (p.intent == OTHER or p.kind in ("injection", "other")) and label in acting
         ),
         confusions=[(a, b, n) for (a, b), n in confusions.most_common(20)],
@@ -975,17 +1098,34 @@ from mia.learning.metrics import EvalReport, IntentScore
 from mia.learning.schema import IntentSpec, RoleSpec
 
 ROLE = RoleSpec(
-    id="r", job_summary="j", responsibilities=["x"], counterparts=[], languages=["en", "fi"],
-    countries=["FI"], styles={"informal": 1.0},
-    intents=[IntentSpec(id="r.write", description="d", counterparts=["c"], risk="write", label_en="W")],
+    id="r",
+    job_summary="j",
+    responsibilities=["x"],
+    counterparts=[],
+    languages=["en", "fi"],
+    countries=["FI"],
+    styles={"informal": 1.0},
+    intents=[
+        IntentSpec(id="r.write", description="d", counterparts=["c"], risk="write", label_en="W")
+    ],
 )
 
 
 def report(**over: object) -> EvalReport:
     base: dict[str, object] = dict(
-        accuracy=0.95, macro_f1=0.93, coverage=0.8, ece=0.03,
-        per_intent={"r.write": IntentScore(support=30, precision_at_threshold=0.995, recall=0.9, f1=0.9, auto_share=0.8)},
-        per_lang={"en": 0.95, "fi": 0.94}, safety_recall=1.0, actions_from_other=0, confusions=[],
+        accuracy=0.95,
+        macro_f1=0.93,
+        coverage=0.8,
+        ece=0.03,
+        per_intent={
+            "r.write": IntentScore(
+                support=30, precision_at_threshold=0.995, recall=0.9, f1=0.9, auto_share=0.8
+            )
+        },
+        per_lang={"en": 0.95, "fi": 0.94},
+        safety_recall=1.0,
+        actions_from_other=0,
+        confusions=[],
     )
     base.update(over)
     return EvalReport.model_validate(base)
@@ -997,7 +1137,13 @@ def test_good_report_passes() -> None:
 
 def test_each_rule_fails_with_a_reason() -> None:
     cases = {
-        "precision": report(per_intent={"r.write": IntentScore(support=30, precision_at_threshold=0.97, recall=0.9, f1=0.9, auto_share=0.8)}),
+        "precision": report(
+            per_intent={
+                "r.write": IntentScore(
+                    support=30, precision_at_threshold=0.97, recall=0.9, f1=0.9, auto_share=0.8
+                )
+            }
+        ),
         "coverage": report(coverage=0.5),
         "language": report(per_lang={"en": 0.95, "fi": 0.85}),
         "safety": report(safety_recall=0.9),
@@ -1055,17 +1201,23 @@ def check_gate(report: EvalReport, role: RoleSpec, previous: EvalReport | None) 
         best = max(report.per_lang.values())
         for lang, acc in report.per_lang.items():
             if best - acc > t.language_gap:
-                fails.append(f"language: {lang} {acc:.3f} more than {t.language_gap} below best {best:.3f}")
+                fails.append(
+                    f"language: {lang} {acc:.3f} more than {t.language_gap} below best {best:.3f}"
+                )
     if report.safety_recall < t.safety_recall:
         fails.append(f"safety: recall {report.safety_recall:.3f} < {t.safety_recall}")
     if report.actions_from_other:
-        fails.append(f"other: {report.actions_from_other} out-of-scope or injection messages would act")
+        fails.append(
+            f"other: {report.actions_from_other} out-of-scope or injection messages would act"
+        )
     if report.ece > t.ece:
         fails.append(f"calibration: ECE {report.ece:.3f} > {t.ece}")
     if previous is not None:
         for lang, acc in previous.per_lang.items():
             if report.per_lang.get(lang, 0.0) < acc - TOLERANCE:
-                fails.append(f"language {lang} worse than active ({report.per_lang.get(lang, 0.0):.3f} < {acc:.3f})")
+                fails.append(
+                    f"language {lang} worse than active ({report.per_lang.get(lang, 0.0):.3f} < {acc:.3f})"
+                )
         for iid, old in previous.per_intent.items():
             new = report.per_intent.get(iid)
             if new is not None and new.f1 < old.f1 - TOLERANCE:
@@ -1109,9 +1261,17 @@ from mia.learning.public import licence_verdict, load_public
 
 @pytest.mark.parametrize(
     ("licence", "verdict"),
-    [("CC-BY-4.0", "allowed"), ("MIT", "allowed"), ("Apache-2.0", "allowed"), ("CC0-1.0", "allowed"),
-     ("CC-BY-SA-4.0", "needs_approval"), ("custom", "needs_approval"),
-     ("CC-BY-NC-4.0", "never"), ("CC-BY-NC-SA-4.0", "never"), ("unknown", "never")],
+    [
+        ("CC-BY-4.0", "allowed"),
+        ("MIT", "allowed"),
+        ("Apache-2.0", "allowed"),
+        ("CC0-1.0", "allowed"),
+        ("CC-BY-SA-4.0", "needs_approval"),
+        ("custom", "needs_approval"),
+        ("CC-BY-NC-4.0", "never"),
+        ("CC-BY-NC-SA-4.0", "never"),
+        ("unknown", "never"),
+    ],
 )
 def test_licence_rules(licence: str, verdict: str) -> None:
     assert licence_verdict(licence) == verdict
@@ -1119,10 +1279,14 @@ def test_licence_rules(licence: str, verdict: str) -> None:
 
 def test_load_refuses_non_commercial_and_unapproved_share_alike(tmp_path: Path) -> None:
     path = tmp_path / "public.yaml"
-    path.write_text("datasets:\n- {name: nllb, source: hf, version: '1', licence: CC-BY-NC-4.0, use: train}\n")
+    path.write_text(
+        "datasets:\n- {name: nllb, source: hf, version: '1', licence: CC-BY-NC-4.0, use: train}\n"
+    )
     with pytest.raises(ValueError, match="never"):
         load_public(path)
-    path.write_text("datasets:\n- {name: sgd, source: hf, version: '1', licence: CC-BY-SA-4.0, use: other}\n")
+    path.write_text(
+        "datasets:\n- {name: sgd, source: hf, version: '1', licence: CC-BY-SA-4.0, use: other}\n"
+    )
     with pytest.raises(ValueError, match="approval"):
         load_public(path)
     path.write_text(
@@ -1242,12 +1406,32 @@ from mia.settings import get_settings
 
 
 def card(passed: bool = True, version: str = "v1") -> ModelCard:
-    rep = EvalReport(accuracy=1, macro_f1=1, coverage=1, ece=0, per_intent={}, per_lang={},
-                     safety_recall=1, actions_from_other=0, confusions=[])
-    return ModelCard(role="r", version=version, base_model="m", data_hash="h", temperature=1.0,
-                     medium_floor=0.35, safety_floor=0.2, labels=["r.a", "other"], langs=["en"], slots={},
-                     thresholds={"r.a": 0.9}, report=rep,
-                     gate=GateResult(passed=passed, failures=[] if passed else ["coverage"]))
+    rep = EvalReport(
+        accuracy=1,
+        macro_f1=1,
+        coverage=1,
+        ece=0,
+        per_intent={},
+        per_lang={},
+        safety_recall=1,
+        actions_from_other=0,
+        confusions=[],
+    )
+    return ModelCard(
+        role="r",
+        version=version,
+        base_model="m",
+        data_hash="h",
+        temperature=1.0,
+        medium_floor=0.35,
+        safety_floor=0.2,
+        labels=["r.a", "other"],
+        langs=["en"],
+        slots={},
+        thresholds={"r.a": 0.9},
+        report=rep,
+        gate=GateResult(passed=passed, failures=[] if passed else ["coverage"]),
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -1261,7 +1445,9 @@ def test_card_round_trip() -> None:
     assert read_card("r", "v1").thresholds == {"r.a": 0.9}
 
 
-def test_promote_refuses_failed_gate_and_missing_signature(session: Session, people: dict[str, Person]) -> None:
+def test_promote_refuses_failed_gate_and_missing_signature(
+    session: Session, people: dict[str, Person]
+) -> None:
     actor = Actor.person(people["Helena"])
     write_card(card(passed=False))
     with pytest.raises(PromotionRefused, match="gate"):
@@ -1272,7 +1458,9 @@ def test_promote_refuses_failed_gate_and_missing_signature(session: Session, peo
     assert active_version("r") is None
 
 
-def test_promote_marks_active_keeps_previous_and_emits_event(session: Session, people: dict[str, Person]) -> None:
+def test_promote_marks_active_keeps_previous_and_emits_event(
+    session: Session, people: dict[str, Person]
+) -> None:
     actor = Actor.person(people["Helena"])
     write_card(card(version="v1"))
     write_card(card(version="v2"))
@@ -1359,7 +1547,9 @@ def write_card(card: ModelCard) -> Path:
 
 
 def read_card(role: str, version: str) -> ModelCard:
-    return ModelCard.model_validate_json((package_dir(role, version) / "card.json").read_text("utf-8"))
+    return ModelCard.model_validate_json(
+        (package_dir(role, version) / "card.json").read_text("utf-8")
+    )
 
 
 def active_version(role: str) -> str | None:
@@ -1378,12 +1568,18 @@ def promote(session: Session, actor: Actor, role: str, version: str, signed_by: 
     if not signed_by.strip():
         raise PromotionRefused("a sign-off name is required")
     previous = active_version(role)
-    card = card.model_copy(update={"signed_by": signed_by, "signed_at": dt.datetime.now(dt.UTC).isoformat()})
+    card = card.model_copy(
+        update={"signed_by": signed_by, "signed_at": dt.datetime.now(dt.UTC).isoformat()}
+    )
     write_card(card)
     (get_settings().MIA_MODELS_DIR / role / "ACTIVE").write_text(version, encoding="utf-8")
     events.emit(
-        session, "skill_model.promoted", ("skill_model", f"{role}@{version}"),
-        {"active": previous}, {"active": version, "signed_by": signed_by}, actor,
+        session,
+        "skill_model.promoted",
+        ("skill_model", f"{role}@{version}"),
+        {"active": previous},
+        {"active": version, "signed_by": signed_by},
+        actor,
     )
     return card
 ```
@@ -1431,7 +1627,13 @@ from mia.learning.gate import GateResult
 from mia.learning.metrics import EvalReport
 from mia.learning.package import ModelCard, write_card
 from mia.settings import get_settings
-from mia.skills.runtime import NullClassifier, ScoredClassifier, get_classifier, health, reset_classifiers
+from mia.skills.runtime import (
+    NullClassifier,
+    ScoredClassifier,
+    get_classifier,
+    health,
+    reset_classifiers,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -1442,12 +1644,32 @@ def models_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def card() -> ModelCard:
-    rep = EvalReport(accuracy=1, macro_f1=1, coverage=1, ece=0, per_intent={}, per_lang={},
-                     safety_recall=1, actions_from_other=0, confusions=[])
-    return ModelCard(role="r", version="v1", base_model="m", data_hash="h", temperature=1.0, medium_floor=0.35,
-                     safety_floor=0.2, labels=["r.a", "r.b", "conversation.emergency", "other"],
-                     langs=["en", "fi"], slots={}, thresholds={"r.a": 0.8, "r.b": 0.8},
-                     report=rep, gate=GateResult(passed=True))
+    rep = EvalReport(
+        accuracy=1,
+        macro_f1=1,
+        coverage=1,
+        ece=0,
+        per_intent={},
+        per_lang={},
+        safety_recall=1,
+        actions_from_other=0,
+        confusions=[],
+    )
+    return ModelCard(
+        role="r",
+        version="v1",
+        base_model="m",
+        data_hash="h",
+        temperature=1.0,
+        medium_floor=0.35,
+        safety_floor=0.2,
+        labels=["r.a", "r.b", "conversation.emergency", "other"],
+        langs=["en", "fi"],
+        slots={},
+        thresholds={"r.a": 0.8, "r.b": 0.8},
+        report=rep,
+        gate=GateResult(passed=True),
+    )
 
 
 def test_no_package_means_null_classifier() -> None:
@@ -1530,8 +1752,16 @@ class NullClassifier:
     """No active package: every message is low band, so the agent runs as it does today."""
 
     def classify(self, text: str, context: str = "") -> Classification:
-        return Classification(intent="other", confidence=0.0, band="low", alternatives=[], lang=None,
-                              slots={}, safety=0.0, version=None)
+        return Classification(
+            intent="other",
+            confidence=0.0,
+            band="low",
+            alternatives=[],
+            lang=None,
+            slots={},
+            safety=0.0,
+            version=None,
+        )
 
 
 class ScoredClassifier:
@@ -1542,7 +1772,10 @@ class ScoredClassifier:
         self.safety = safety
 
     def from_logits(
-        self, intent_logits: list[float], lang_logits: list[float], slot_logits: dict[str, list[float]]
+        self,
+        intent_logits: list[float],
+        lang_logits: list[float],
+        slot_logits: dict[str, list[float]],
     ) -> Classification:
         c = self.card
         probs = softmax(intent_logits, c.temperature)
@@ -1555,16 +1788,24 @@ class ScoredClassifier:
         else:
             band = "low"
         lang_probs = softmax(lang_logits) if lang_logits else []
-        lang = c.langs[max(range(len(lang_probs)), key=lang_probs.__getitem__)] if lang_probs else None
+        lang = (
+            c.langs[max(range(len(lang_probs)), key=lang_probs.__getitem__)] if lang_probs else None
+        )
         slots = {
             name: c.slots[name][max(range(len(v)), key=v.__getitem__)]
             for name, v in slot_logits.items()
             if name in c.slots and v
         }
         return Classification(
-            intent=intent, confidence=conf, band=band,
-            alternatives=[Alternative(intent=i, confidence=p) for i, p in ranked[:3] if i != "other"],
-            lang=lang, slots=slots, safety=sum(p for i, p in ranked if i in self.safety),
+            intent=intent,
+            confidence=conf,
+            band=band,
+            alternatives=[
+                Alternative(intent=i, confidence=p) for i, p in ranked[:3] if i != "other"
+            ],
+            lang=lang,
+            slots=slots,
+            safety=sum(p for i, p in ranked if i in self.safety),
             version=c.version,
         )
 
@@ -1636,18 +1877,44 @@ from mia.skills.routing import route
 from mia.skills.runtime import Alternative, Classification
 
 ROLE = RoleSpec(
-    id="dispatcher", job_summary="j", responsibilities=["x"], counterparts=[], languages=["en"],
-    countries=["FI"], styles={"informal": 1.0},
+    id="dispatcher",
+    job_summary="j",
+    responsibilities=["x"],
+    counterparts=[],
+    languages=["en"],
+    countries=["FI"],
+    styles={"informal": 1.0},
     intents=[
-        IntentSpec(id="dispatcher.report_absence", description="d", counterparts=["c"], risk="write", label_en="Report I'm sick"),
-        IntentSpec(id="dispatcher.thanks_reply", description="d", counterparts=["c"], risk="read", label_en="Thanks", handler="template"),
+        IntentSpec(
+            id="dispatcher.report_absence",
+            description="d",
+            counterparts=["c"],
+            risk="write",
+            label_en="Report I'm sick",
+        ),
+        IntentSpec(
+            id="dispatcher.thanks_reply",
+            description="d",
+            counterparts=["c"],
+            risk="read",
+            label_en="Thanks",
+            handler="template",
+        ),
     ],
 )
 
 
 def c(intent: str, band: str, safety: float = 0.0, alts: list[str] | None = None) -> Classification:
-    return Classification(intent=intent, confidence=0.9, band=band, lang="en", slots={}, safety=safety, version="v1",
-                          alternatives=[Alternative(intent=a, confidence=0.4) for a in (alts or [])])  # type: ignore[arg-type]
+    return Classification(
+        intent=intent,
+        confidence=0.9,
+        band=band,
+        lang="en",
+        slots={},
+        safety=safety,
+        version="v1",
+        alternatives=[Alternative(intent=a, confidence=0.4) for a in (alts or [])],
+    )  # type: ignore[arg-type]
 
 
 def test_safety_wins_over_everything() -> None:
@@ -1667,7 +1934,14 @@ def test_other_and_injection_never_act() -> None:
 
 
 def test_medium_clarifies_with_alternatives_and_low_runs_agent() -> None:
-    r = route(c("dispatcher.report_absence", "medium", alts=["dispatcher.report_absence", "conversation.venting"]), ROLE)
+    r = route(
+        c(
+            "dispatcher.report_absence",
+            "medium",
+            alts=["dispatcher.report_absence", "conversation.venting"],
+        ),
+        ROLE,
+    )
     assert (r.kind, r.options) == ("clarify", ["dispatcher.report_absence", "conversation.venting"])
     assert route(c("dispatcher.report_absence", "low"), ROLE).kind == "agent"
 
@@ -1776,55 +2050,92 @@ class Fixed:
         return self.c
 
 
-def cls(intent: str, band: str, alts: list[str] | None = None, safety: float = 0.0) -> Classification:
-    return Classification(intent=intent, confidence=0.9, band=band, lang="en", slots={}, safety=safety, version="v1",
-                          alternatives=[Alternative(intent=a, confidence=0.4) for a in (alts or [])])  # type: ignore[arg-type]
+def cls(
+    intent: str, band: str, alts: list[str] | None = None, safety: float = 0.0
+) -> Classification:
+    return Classification(
+        intent=intent,
+        confidence=0.9,
+        band=band,
+        lang="en",
+        slots={},
+        safety=safety,
+        version="v1",
+        alternatives=[Alternative(intent=a, confidence=0.4) for a in (alts or [])],
+    )  # type: ignore[arg-type]
 
 
 @pytest.fixture
 def use(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
     def _use(c: Classification) -> None:
         monkeypatch.setattr(runtime, "get_classifier", lambda role: Fixed(c))
+
     return _use
 
 
 def test_no_model_behaves_as_today(session: Session, people: dict[str, Person]) -> None:
-    reply = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "Olen kipeä huomenna."))
+    reply = asyncio.run(
+        run_turn(session, create_agent("test"), people["Juha"], "Olen kipeä huomenna.")
+    )
     assert "Kirjasin" in reply.text()
 
 
-def test_medium_band_asks_with_buttons_and_records(session: Session, people: dict[str, Person], use) -> None:  # type: ignore[no-untyped-def]
-    use(cls("dispatcher.report_absence", "medium", alts=["dispatcher.report_absence", "dispatcher.my_visits"]))
+def test_medium_band_asks_with_buttons_and_records(
+    session: Session, people: dict[str, Person], use
+) -> None:  # type: ignore[no-untyped-def]
+    use(
+        cls(
+            "dispatcher.report_absence",
+            "medium",
+            alts=["dispatcher.report_absence", "dispatcher.my_visits"],
+        )
+    )
     reply = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "huomenna ei"))
     quick = [b for b in reply.blocks if b.type == "quick_replies"]
     assert quick and len(quick[0].options) == 3  # two intents plus "Something else"
     assert session.exec(select(Event).where(Event.action == "intent.clarify_asked")).first()
 
 
-def test_tapping_an_option_resolves_and_free_text_does_not(session: Session, people: dict[str, Person], use) -> None:  # type: ignore[no-untyped-def]
-    use(cls("dispatcher.report_absence", "medium", alts=["dispatcher.report_absence", "dispatcher.my_visits"]))
+def test_tapping_an_option_resolves_and_free_text_does_not(
+    session: Session, people: dict[str, Person], use
+) -> None:  # type: ignore[no-untyped-def]
+    use(
+        cls(
+            "dispatcher.report_absence",
+            "medium",
+            alts=["dispatcher.report_absence", "dispatcher.my_visits"],
+        )
+    )
     first = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "huomenna ei"))
     session.commit()
     label = next(b for b in first.blocks if b.type == "quick_replies").options[0]
     asyncio.run(run_turn(session, create_agent("test"), people["Juha"], label, first.thread_id))
     clarified = session.exec(select(Event).where(Event.action == "intent.clarified")).all()
     assert len(clarified) == 1 and clarified[0].after["intent"] == "dispatcher.report_absence"  # type: ignore[index]
-    asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "the first one", first.thread_id))
+    asyncio.run(
+        run_turn(session, create_agent("test"), people["Juha"], "the first one", first.thread_id)
+    )
     assert len(session.exec(select(Event).where(Event.action == "intent.clarified")).all()) == 1
 
 
 def test_emergency_script_first(session: Session, people: dict[str, Person], use) -> None:  # type: ignore[no-untyped-def]
     use(cls("conversation.emergency", "high", safety=0.9))
-    reply = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "someone collapsed"))
+    reply = asyncio.run(
+        run_turn(session, create_agent("test"), people["Juha"], "someone collapsed")
+    )
     assert "112" in reply.text()
 
 
-def test_high_band_still_checks_permissions(session: Session, people: dict[str, Person], use) -> None:  # type: ignore[no-untyped-def]
+def test_high_band_still_checks_permissions(
+    session: Session, people: dict[str, Person], use
+) -> None:  # type: ignore[no-untyped-def]
     use(cls("dispatcher.assign", "high"))
     reply = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "Assign Mikael."))
     tool_events = session.exec(select(Event).where(Event.action == "tool.called")).all()
-    assert all(e.after.get("output", {}).get("status") != "ok" or "assign_cover" not in e.entity_id  # type: ignore[union-attr]
-               for e in tool_events)
+    assert all(
+        e.after.get("output", {}).get("status") != "ok" or "assign_cover" not in e.entity_id  # type: ignore[union-attr]
+        for e in tool_events
+    )
     assert reply.text()
 
 
@@ -1920,12 +2231,16 @@ from mia.skills import runtime
 from mia.skills.roles import load_role_plan
 from mia.skills.routing import Route, route
 
-ROLE = "dispatcher"  # ponytail: one agent per chat today; read it from the thread when there are more
+ROLE = (
+    "dispatcher"  # ponytail: one agent per chat today; read it from the thread when there are more
+)
 
 
 def _last_question(session: Session, thread: Thread) -> str:
     row = session.exec(
-        select(Message).where(Message.thread_id == thread.id).where(Message.role == "assistant")
+        select(Message)
+        .where(Message.thread_id == thread.id)
+        .where(Message.role == "assistant")
         .order_by(col(Message.id).desc())
     ).first()
     return row.text if row else ""
@@ -1934,14 +2249,23 @@ def _last_question(session: Session, thread: Thread) -> str:
 def _pending_clarification(session: Session, thread: Thread) -> Event | None:
     """The clarify question asked as the last assistant message of this thread, if any."""
     asked = session.exec(
-        select(Event).where(Event.action == "intent.clarify_asked").where(Event.entity_id == thread.id)
+        select(Event)
+        .where(Event.action == "intent.clarify_asked")
+        .where(Event.entity_id == thread.id)
         .order_by(col(Event.id).desc())
     ).first()
     last = session.exec(
-        select(Message).where(Message.thread_id == thread.id).where(Message.role == "assistant")
+        select(Message)
+        .where(Message.thread_id == thread.id)
+        .where(Message.role == "assistant")
         .order_by(col(Message.id).desc())
     ).first()
-    if asked is None or last is None or asked.after is None or asked.after.get("message_id") != last.id:
+    if (
+        asked is None
+        or last is None
+        or asked.after is None
+        or asked.after.get("message_id") != last.id
+    ):
         return None
     return asked
 
@@ -1952,16 +2276,36 @@ def _classify_turn(session: Session, deps: AgentDeps, thread: Thread, text: str)
     if pending is not None and pending.after is not None:
         chosen = pending.after["options"].get(text.strip())
         if chosen is not None:
-            events.emit(session, "intent.clarified", ("thread", thread.id), None,
-                        {"intent": chosen, "asked_event_id": pending.id,
-                         "original_message_id": pending.after["original_message_id"]}, deps.actor)
+            events.emit(
+                session,
+                "intent.clarified",
+                ("thread", thread.id),
+                None,
+                {
+                    "intent": chosen,
+                    "asked_event_id": pending.id,
+                    "original_message_id": pending.after["original_message_id"],
+                },
+                deps.actor,
+            )
             return Route(kind="agent", intent=chosen)
     role = load_role_plan(ROLE)
     start = time.perf_counter()
     c = runtime.get_classifier(ROLE).classify(text, _last_question(session, thread))
-    events.emit(session, "intent.classified", ("thread", thread.id), None,
-                {"role": ROLE, "version": c.version, "intent": c.intent, "band": c.band,
-                 "latency_ms": round((time.perf_counter() - start) * 1000)}, deps.actor)
+    events.emit(
+        session,
+        "intent.classified",
+        ("thread", thread.id),
+        None,
+        {
+            "role": ROLE,
+            "version": c.version,
+            "intent": c.intent,
+            "band": c.band,
+            "latency_ms": round((time.perf_counter() - start) * 1000),
+        },
+        deps.actor,
+    )
     floor = role.targets.safety_floor if role else 0.2
     return route(c, role, safety_floor=floor)
 ```
@@ -1991,44 +2335,98 @@ Replace the body of `run_turn` with:
 with the three reply helpers (they store the assistant message like `_finish`, so history stays complete):
 
 ```python
-def _store_reply(session: Session, deps: AgentDeps, thread: Thread, blocks: list[Block]) -> ChatReply:
+def _store_reply(
+    session: Session, deps: AgentDeps, thread: Thread, blocks: list[Block]
+) -> ChatReply:
     text = "\n".join(b.text for b in blocks if b.type == "text")
     message = store.insert(
         session,
-        Message(branch_id=deps.branch.id, thread_id=thread.id, role="assistant",
-                sender_id=MANIFEST.roles.agent_role, agent_id=MANIFEST.id, text=text,
-                blocks=[b.model_dump(mode="json") for b in blocks], model_messages=[]),
+        Message(
+            branch_id=deps.branch.id,
+            thread_id=thread.id,
+            role="assistant",
+            sender_id=MANIFEST.roles.agent_role,
+            agent_id=MANIFEST.id,
+            text=text,
+            blocks=[b.model_dump(mode="json") for b in blocks],
+            model_messages=[],
+        ),
         deps.actor,
     )
-    return ChatReply(thread_id=thread.id, message_id=message.id, agent_id=MANIFEST.id, blocks=blocks)
+    return ChatReply(
+        thread_id=thread.id, message_id=message.id, agent_id=MANIFEST.id, blocks=blocks
+    )
 
 
 def _reply_text(session: Session, deps: AgentDeps, thread: Thread, text: str) -> ChatReply:
     return _store_reply(session, deps, thread, [TextBlock(text=text)])
 
 
-def _reply_clarify(session: Session, deps: AgentDeps, thread: Thread, options: list[str]) -> ChatReply:
-    labels = {t(f"intent.{i}", deps.lang) if not i.startswith("conversation.") else t(f"conversation.label.{i.split('.', 1)[1]}", deps.lang): i for i in options}
+def _reply_clarify(
+    session: Session, deps: AgentDeps, thread: Thread, options: list[str]
+) -> ChatReply:
+    labels = {
+        t(f"intent.{i}", deps.lang)
+        if not i.startswith("conversation.")
+        else t(f"conversation.label.{i.split('.', 1)[1]}", deps.lang): i
+        for i in options
+    }
     other = t("clarify.something_else", deps.lang)
-    reply = _store_reply(session, deps, thread, [
-        TextBlock(text=t("clarify.question", deps.lang)),
-        QuickRepliesBlock(options=[*labels, other]),
-    ])
-    user = session.exec(select(Message).where(Message.thread_id == thread.id).where(Message.role == "user")
-                        .order_by(col(Message.id).desc())).first()
-    events.emit(session, "intent.clarify_asked", ("thread", thread.id), None,
-                {"options": {**labels, other: "other"}, "message_id": reply.message_id,
-                 "original_message_id": user.id if user else None}, deps.actor)
+    reply = _store_reply(
+        session,
+        deps,
+        thread,
+        [
+            TextBlock(text=t("clarify.question", deps.lang)),
+            QuickRepliesBlock(options=[*labels, other]),
+        ],
+    )
+    user = session.exec(
+        select(Message)
+        .where(Message.thread_id == thread.id)
+        .where(Message.role == "user")
+        .order_by(col(Message.id).desc())
+    ).first()
+    events.emit(
+        session,
+        "intent.clarify_asked",
+        ("thread", thread.id),
+        None,
+        {
+            "options": {**labels, other: "other"},
+            "message_id": reply.message_id,
+            "original_message_id": user.id if user else None,
+        },
+        deps.actor,
+    )
     return reply
 
 
 def _reply_emergency(session: Session, deps: AgentDeps, thread: Thread, text: str) -> ChatReply:
     country = "PH" if deps.branch.timezone.startswith("Asia/Manila") else "FI"
-    supervisors = [p for p in session.exec(select(Person).where(Person.branch_id == deps.branch.id))
-                   if "supervisor" in p.roles]
+    supervisors = [
+        p
+        for p in session.exec(select(Person).where(Person.branch_id == deps.branch.id))
+        if "supervisor" in p.roles
+    ]
     for sup in supervisors:
-        notify(session, sup, [TextBlock(text=t("safety.supervisor_notice", sup.language, name=deps.person.name, text=text[:200]))],
-               deps.actor, MANIFEST.id, urgent=True)
+        notify(
+            session,
+            sup,
+            [
+                TextBlock(
+                    text=t(
+                        "safety.supervisor_notice",
+                        sup.language,
+                        name=deps.person.name,
+                        text=text[:200],
+                    )
+                )
+            ],
+            deps.actor,
+            MANIFEST.id,
+            urgent=True,
+        )
     return _reply_text(session, deps, thread, t(f"safety.emergency_{country}", deps.lang))
 ```
 
@@ -2080,10 +2478,19 @@ from mia.skills.runtime import Alternative, Classification
 
 class Fixed:
     def classify(self, text: str, context: str = "") -> Classification:
-        return Classification(intent="dispatcher.report_absence", confidence=0.5, band="medium", lang="fi",
-                              slots={}, safety=0.0, version="v1",
-                              alternatives=[Alternative(intent="dispatcher.report_absence", confidence=0.5),
-                                            Alternative(intent="dispatcher.my_visits", confidence=0.3)])
+        return Classification(
+            intent="dispatcher.report_absence",
+            confidence=0.5,
+            band="medium",
+            lang="fi",
+            slots={},
+            safety=0.0,
+            version="v1",
+            alternatives=[
+                Alternative(intent="dispatcher.report_absence", confidence=0.5),
+                Alternative(intent="dispatcher.my_visits", confidence=0.3),
+            ],
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -2093,9 +2500,13 @@ def learning_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runtime, "get_classifier", lambda role: Fixed())
 
 
-def test_clarified_choice_becomes_a_pending_pseudonymised_candidate(session: Session, people: dict[str, Person]) -> None:
+def test_clarified_choice_becomes_a_pending_pseudonymised_candidate(
+    session: Session, people: dict[str, Person]
+) -> None:
     juha = people["Juha"]
-    first = asyncio.run(run_turn(session, create_agent("test"), juha, "Juha Laine ei pääse huomenna"))
+    first = asyncio.run(
+        run_turn(session, create_agent("test"), juha, "Juha Laine ei pääse huomenna")
+    )
     session.commit()
     label = next(b for b in first.blocks if b.type == "quick_replies").options[0]
     asyncio.run(run_turn(session, create_agent("test"), juha, label, first.thread_id))
@@ -2136,7 +2547,9 @@ SENSITIVE_PREFIXES = ("conversation.privacy", "conversation.health")
 
 def _later(session: Session, thread_id: str, after_id: str, actions: set[str]) -> bool:
     rows = session.exec(
-        select(Event).where(Event.entity_id == thread_id).where(col(Event.id) > after_id)
+        select(Event)
+        .where(Event.entity_id == thread_id)
+        .where(col(Event.id) > after_id)
         .where(col(Event.action).in_(actions))
     ).all()
     return bool(rows)
@@ -2149,12 +2562,19 @@ def harvest(session: Session, role: str, branch_id: str) -> list[Record]:
     pseudo = Pseudonymiser.for_branch(session, branch_id)
     found: list[Record] = []
     for ev in session.exec(
-        select(Event).where(Event.action == "intent.clarified").where(Event.branch_id == branch_id)
+        select(Event)
+        .where(Event.action == "intent.clarified")
+        .where(Event.branch_id == branch_id)
         .order_by(col(Event.id))
     ):
         after = ev.after or {}
         intent, original_id = after.get("intent"), after.get("original_message_id")
-        if not intent or intent == "other" or not original_id or intent.startswith(SENSITIVE_PREFIXES):
+        if (
+            not intent
+            or intent == "other"
+            or not original_id
+            or intent.startswith(SENSITIVE_PREFIXES)
+        ):
             continue
         rid = f"{role}/real/{original_id}"
         if rid in existing or _later(session, ev.entity_id, ev.id, {"intent.clarified", *UNDO}):
@@ -2163,15 +2583,27 @@ def harvest(session: Session, role: str, branch_id: str) -> list[Record]:
         if message is None:
             continue
         previous = session.exec(
-            select(Message).where(Message.thread_id == message.thread_id).where(Message.role == "assistant")
-            .where(col(Message.id) < message.id).order_by(col(Message.id).desc())
+            select(Message)
+            .where(Message.thread_id == message.thread_id)
+            .where(Message.role == "assistant")
+            .where(col(Message.id) < message.id)
+            .order_by(col(Message.id).desc())
         ).first()
-        found.append(Record(
-            id=rid, role=role, intent=intent, lang="mixed", text=pseudo.apply(message.text),
-            context=pseudo.apply(previous.text) if previous else "", counterpart="unknown",
-            style="informal", split="train", source="real-clarification",
-            review=Review(status="pending", note=f"harvested {dt.datetime.now(dt.UTC).date()}"),
-        ))
+        found.append(
+            Record(
+                id=rid,
+                role=role,
+                intent=intent,
+                lang="mixed",
+                text=pseudo.apply(message.text),
+                context=pseudo.apply(previous.text) if previous else "",
+                counterpart="unknown",
+                style="informal",
+                split="train",
+                source="real-clarification",
+                review=Review(status="pending", note=f"harvested {dt.datetime.now(dt.UTC).date()}"),
+            )
+        )
     if found:
         write_records(path, [*(load_records(path) if path.exists() else []), *found])
     return found
@@ -2226,7 +2658,9 @@ def test_validate_reports_missing_role(capsys: pytest.CaptureFixture[str]) -> No
     assert "role.yaml not found" in capsys.readouterr().out
 
 
-def test_train_without_learning_group_explains(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_train_without_learning_group_explains(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     import builtins
 
     real_import = builtins.__import__
@@ -2241,7 +2675,9 @@ def test_train_without_learning_group_explains(monkeypatch: pytest.MonkeyPatch, 
     assert "uv sync --group learning" in capsys.readouterr().out
 
 
-def test_promote_refusal_is_exit_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_promote_refusal_is_exit_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     monkeypatch.setenv("MIA_MODELS_DIR", str(tmp_path))
     assert main(["migrate"]) == 0 and main(["seed"]) == 0
     assert main(["skills", "promote", "dispatcher", "v1", "--signed-by", "Allan"]) == 1
@@ -2290,8 +2726,12 @@ def validate(args: argparse.Namespace) -> int:
         print(f"role.yaml not found in {folder}")
         return 1
     role = load_role(folder / "role.yaml")
-    records = [r for s in ("train", "dev", "test") if (folder / "data" / f"{s}.jsonl").exists()
-               for r in load_records(folder / "data" / f"{s}.jsonl")]
+    records = [
+        r
+        for s in ("train", "dev", "test")
+        if (folder / "data" / f"{s}.jsonl").exists()
+        for r in load_records(folder / "data" / f"{s}.jsonl")
+    ]
     report = check_records(role, records, _conversation())
     for line in report.errors:
         print(f"error: {line}")
@@ -2304,7 +2744,9 @@ def validate(args: argparse.Namespace) -> int:
 def split(args: argparse.Namespace) -> int:
     folder = skill_dir(args.role)
     role = load_role(folder / "role.yaml")
-    reviewed = [r for r in load_records(folder / "data" / "reviewed.jsonl") if r.review.status != "dropped"]
+    reviewed = [
+        r for r in load_records(folder / "data" / "reviewed.jsonl") if r.review.status != "dropped"
+    ]
     out = assign_train_dev(role, reviewed, seed=args.seed)
     for name in ("train", "dev", "test"):
         write_records(folder / "data" / f"{name}.jsonl", [r for r in out if r.split == name])
@@ -2336,7 +2778,9 @@ def promote_cmd(args: argparse.Namespace) -> int:
     branch = _only_branch()
     with session_scope() as session:
         try:
-            card = promote(session, Actor.system(branch.id), args.role, args.version, args.signed_by)
+            card = promote(
+                session, Actor.system(branch.id), args.role, args.version, args.signed_by
+            )
         except PromotionRefused as exc:
             print(str(exc))
             return 1
@@ -2353,7 +2797,9 @@ def harvest_cmd(args: argparse.Namespace) -> int:
 
 
 def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
-    skills = sub.add_parser("skills", help="role skill models").add_subparsers(dest="skills_command", required=True)
+    skills = sub.add_parser("skills", help="role skill models").add_subparsers(
+        dest="skills_command", required=True
+    )
     p = skills.add_parser("validate", help="check a role's data")
     p.add_argument("role")
     p.set_defaults(func=validate)
@@ -2566,7 +3012,9 @@ pytestmark = pytest.mark.learning
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "role_tiny" / "skill"
 
 
-def test_tiny_role_trains_packages_and_reports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_tiny_role_trains_packages_and_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("MIA_MODELS_DIR", str(tmp_path / "models"))
     get_settings.cache_clear()
     from mia.learning.train import train_role
@@ -2577,7 +3025,11 @@ def test_tiny_role_trains_packages_and_reports(tmp_path: Path, monkeypatch: pyte
     shutil.copytree(FIXTURE, folder)
     card = train_role(folder, seeds=(0,), epochs=1)
     out = tmp_path / "models" / "tiny" / card.version
-    assert (out / "model.onnx").exists() and (out / "tokenizer.json").exists() and (out / "card.json").exists()
+    assert (
+        (out / "model.onnx").exists()
+        and (out / "tokenizer.json").exists()
+        and (out / "card.json").exists()
+    )
     assert card.labels[-1] == "other" and set(card.thresholds) == {"tiny.absence", "tiny.visits"}
     assert (folder / "reports" / f"{card.version}.md").exists()
     assert card.slots == {"partial_day": ["none"]}
@@ -2624,9 +3076,13 @@ class Heads(nn.Module):
         self.drop = nn.Dropout(0.1)
         self.intent = nn.Linear(size, n_intents)
         self.lang = nn.Linear(size, len(LANGS))
-        self.slots = nn.ModuleDict({name: nn.Linear(size, len(values)) for name, values in slots.items()})
+        self.slots = nn.ModuleDict(
+            {name: nn.Linear(size, len(values)) for name, values in slots.items()}
+        )
 
-    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> tuple[torch.Tensor, ...]:
+    def forward(
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
+    ) -> tuple[torch.Tensor, ...]:
         h = self.encoder(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state[:, 0]
         h = self.drop(h)
         return (self.intent(h), self.lang(h), *(head(h) for head in self.slots.values()))
@@ -2644,42 +3100,81 @@ def _batches(records: list[Record], size: int, rng: random.Random) -> list[list[
 
 
 def _encode(tok: AutoTokenizer, batch: list[Record]) -> dict[str, torch.Tensor]:
-    return tok([r.text for r in batch], [r.context or "" for r in batch], truncation=True,
-               max_length=MAX_LEN, padding=True, return_tensors="pt")
+    return tok(
+        [r.text for r in batch],
+        [r.context or "" for r in batch],
+        truncation=True,
+        max_length=MAX_LEN,
+        padding=True,
+        return_tensors="pt",
+    )
 
 
-def _predict(model: Heads, tok: AutoTokenizer, records: list[Record], labels: list[str]) -> list[Prediction]:
+def _predict(
+    model: Heads, tok: AutoTokenizer, records: list[Record], labels: list[str]
+) -> list[Prediction]:
     model.eval()
     out: list[Prediction] = []
     with torch.no_grad():
         for i in range(0, len(records), 64):
             batch = records[i : i + 64]
             logits = model(**_encode(tok, batch))[0]
-            out += [Prediction(record_id=r.id, intent=r.intent if r.intent in labels else "other", lang=r.lang,
-                               kind=r.kind, style=r.style, labels=labels, logits=row.tolist())
-                    for r, row in zip(batch, logits, strict=True)]
+            out += [
+                Prediction(
+                    record_id=r.id,
+                    intent=r.intent if r.intent in labels else "other",
+                    lang=r.lang,
+                    kind=r.kind,
+                    style=r.style,
+                    labels=labels,
+                    logits=row.tolist(),
+                )
+                for r, row in zip(batch, logits, strict=True)
+            ]
     return out
 
 
-def _fit(base: str, role: RoleSpec, labels: list[str], slots: dict[str, list[str]], train: list[Record],
-         dev: list[Record], seed: int, epochs: int, lr: float) -> tuple[Heads, float]:
+def _fit(
+    base: str,
+    role: RoleSpec,
+    labels: list[str],
+    slots: dict[str, list[str]],
+    train: list[Record],
+    dev: list[Record],
+    seed: int,
+    epochs: int,
+    lr: float,
+) -> tuple[Heads, float]:
     torch.manual_seed(seed)
     rng = random.Random(seed)
     tok = AutoTokenizer.from_pretrained(base)
     model = Heads(base, len(labels), slots)
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
     steps = max(1, epochs * ((len(train) + 31) // 32))
-    sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1.0, (s + 1) / (0.06 * steps)) * max(0.0, 1 - s / steps))
+    sched = torch.optim.lr_scheduler.LambdaLR(
+        opt, lambda s: min(1.0, (s + 1) / (0.06 * steps)) * max(0.0, 1 - s / steps)
+    )
     ce = nn.CrossEntropyLoss(label_smoothing=0.1)
     best_state, best_nll, patience = None, float("inf"), 0
     for _ in range(epochs):
         model.train()
         for batch in _batches(train, 32, rng):
             out = model(**_encode(tok, batch))
-            y = torch.tensor([labels.index(r.intent) if r.intent in labels else len(labels) - 1 for r in batch])
-            loss = ce(out[0], y) + 0.3 * ce(out[1], torch.tensor([LANGS.index(r.lang) for r in batch]))
+            y = torch.tensor(
+                [labels.index(r.intent) if r.intent in labels else len(labels) - 1 for r in batch]
+            )
+            loss = ce(out[0], y) + 0.3 * ce(
+                out[1], torch.tensor([LANGS.index(r.lang) for r in batch])
+            )
             for k, (name, values) in enumerate(slots.items()):
-                ys = torch.tensor([values.index(r.slots.get(name, values[0])) if r.slots.get(name) in values else 0 for r in batch])
+                ys = torch.tensor(
+                    [
+                        values.index(r.slots.get(name, values[0]))
+                        if r.slots.get(name) in values
+                        else 0
+                        for r in batch
+                    ]
+                )
                 loss = loss + 0.2 * ce(out[2 + k], ys)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -2687,9 +3182,16 @@ def _fit(base: str, role: RoleSpec, labels: list[str], slots: dict[str, list[str
             sched.step()
             opt.zero_grad()
         preds = _predict(model, tok, dev, labels)
-        nll = -sum(torch.log_softmax(torch.tensor(p.logits), 0)[labels.index(p.intent)].item() for p in preds)
+        nll = -sum(
+            torch.log_softmax(torch.tensor(p.logits), 0)[labels.index(p.intent)].item()
+            for p in preds
+        )
         if nll < best_nll:
-            best_nll, best_state, patience = nll, {k: v.clone() for k, v in model.state_dict().items()}, 0
+            best_nll, best_state, patience = (
+                nll,
+                {k: v.clone() for k, v in model.state_dict().items()},
+                0,
+            )
         else:
             patience += 1
             if patience >= 3:
@@ -2702,48 +3204,95 @@ def _fit(base: str, role: RoleSpec, labels: list[str], slots: dict[str, list[str
 def _export(model: Heads, tok: AutoTokenizer, out: Path, slots: dict[str, list[str]]) -> None:
     out.mkdir(parents=True, exist_ok=True)
     model.eval()
-    sample = _encode(tok, [Record(id="x", role="x", intent="other", lang="en", text="hello", counterpart="x",
-                                  style="terse", split="train", source="export")])
+    sample = _encode(
+        tok,
+        [
+            Record(
+                id="x",
+                role="x",
+                intent="other",
+                lang="en",
+                text="hello",
+                counterpart="x",
+                style="terse",
+                split="train",
+                source="export",
+            )
+        ],
+    )
     names = ["intent_logits", "lang_logits", *(f"slot_{n}_logits" for n in slots)]
-    torch.onnx.export(model, (sample["input_ids"], sample["attention_mask"]), out / "model.onnx",
-                      input_names=["input_ids", "attention_mask"], output_names=names,
-                      dynamic_axes={"input_ids": {0: "b", 1: "s"}, "attention_mask": {0: "b", 1: "s"}},
-                      opset_version=17)
+    torch.onnx.export(
+        model,
+        (sample["input_ids"], sample["attention_mask"]),
+        out / "model.onnx",
+        input_names=["input_ids", "attention_mask"],
+        output_names=names,
+        dynamic_axes={"input_ids": {0: "b", 1: "s"}, "attention_mask": {0: "b", 1: "s"}},
+        opset_version=17,
+    )
     tok.backend_tokenizer.save(str(out / "tokenizer.json"))
 
 
 def _report(card: ModelCard, curve: dict[int, float]) -> str:
     rep = card.report
-    lines = [f"# {card.role} {card.version}", "", f"Base model: {card.base_model}. Data hash: {card.data_hash}.",
-             f"Gate: {'passed' if card.gate.passed else 'failed'}", *(f"- {f}" for f in card.gate.failures), "",
-             f"Accuracy {rep.accuracy:.3f}, macro-F1 {rep.macro_f1:.3f}, coverage {rep.coverage:.2f}, ECE {rep.ece:.3f}, "
-             f"safety recall {rep.safety_recall:.3f}, actions from other {rep.actions_from_other}", "",
-             "| Language | Accuracy |", "|---|---|", *(f"| {k} | {v:.3f} |" for k, v in sorted(rep.per_lang.items())), "",
-             "| Intent | Support | Precision at threshold | Recall | Auto share |", "|---|---|---|---|---|",
-             *(f"| {k} | {s.support} | {s.precision_at_threshold:.3f} | {s.recall:.3f} | {s.auto_share:.2f} |"
-               for k, s in rep.per_intent.items()), "",
-             "Learning curve (share of train: test accuracy): " + ", ".join(f"{k}%: {v:.3f}" for k, v in curve.items()),
-             "", "Most confused: " + "; ".join(f"{a} -> {b} ({n})" for a, b, n in rep.confusions[:10]), "",
-             "Sign-off: pending (mia skills promote ... --signed-by NAME)"]
+    lines = [
+        f"# {card.role} {card.version}",
+        "",
+        f"Base model: {card.base_model}. Data hash: {card.data_hash}.",
+        f"Gate: {'passed' if card.gate.passed else 'failed'}",
+        *(f"- {f}" for f in card.gate.failures),
+        "",
+        f"Accuracy {rep.accuracy:.3f}, macro-F1 {rep.macro_f1:.3f}, coverage {rep.coverage:.2f}, ECE {rep.ece:.3f}, "
+        f"safety recall {rep.safety_recall:.3f}, actions from other {rep.actions_from_other}",
+        "",
+        "| Language | Accuracy |",
+        "|---|---|",
+        *(f"| {k} | {v:.3f} |" for k, v in sorted(rep.per_lang.items())),
+        "",
+        "| Intent | Support | Precision at threshold | Recall | Auto share |",
+        "|---|---|---|---|---|",
+        *(
+            f"| {k} | {s.support} | {s.precision_at_threshold:.3f} | {s.recall:.3f} | {s.auto_share:.2f} |"
+            for k, s in rep.per_intent.items()
+        ),
+        "",
+        "Learning curve (share of train: test accuracy): "
+        + ", ".join(f"{k}%: {v:.3f}" for k, v in curve.items()),
+        "",
+        "Most confused: " + "; ".join(f"{a} -> {b} ({n})" for a, b, n in rep.confusions[:10]),
+        "",
+        "Sign-off: pending (mia skills promote ... --signed-by NAME)",
+    ]
     return "\n".join(lines) + "\n"
 
 
-def train_role(folder: Path, base_model: str | None = None, with_real: bool = False,
-               seeds: tuple[int, ...] = (0, 1, 2), epochs: int = 20) -> ModelCard:
+def train_role(
+    folder: Path,
+    base_model: str | None = None,
+    with_real: bool = False,
+    seeds: tuple[int, ...] = (0, 1, 2),
+    epochs: int = 20,
+) -> ModelCard:
     role = load_role(folder / "role.yaml")
     base = base_model or role.base_model
     data = folder / "data"
     train, dev, test = (load_records(data / f"{s}.jsonl") for s in ("train", "dev", "test"))
     if with_real:
         real = get_settings().MIA_LEARNING_DIR / role.id / "candidates.jsonl"
-        approved = [r for r in load_records(real) if r.review.status in ("kept", "fixed")] if real.exists() else []
+        approved = (
+            [r for r in load_records(real) if r.review.status in ("kept", "fixed")]
+            if real.exists()
+            else []
+        )
         train += [r for r in approved if r.split == "train"]
         dev += [r for r in approved if r.split == "dev"]
     conversation = [c.id for c in catalogue.conversation_intents()]
     labels = role.label_space(conversation)
     slots = _slot_values(role, train)
     tok = AutoTokenizer.from_pretrained(base)
-    runs = [_fit(base, role, labels, slots, train, dev, s, epochs, lr) for s in seeds for lr in (3e-5,)]
+    runs = [
+        _fit(base, role, labels, slots, train, dev, s, epochs, lr) for s in seeds for lr in (3e-5,)
+    ]
     model, _ = min(runs, key=lambda x: x[1])
     dev_preds = _predict(model, tok, dev, labels)
     temperature = fit_temperature(dev_preds)
@@ -2756,13 +3305,29 @@ def train_role(folder: Path, base_model: str | None = None, with_real: bool = Fa
     for share in (25, 50, 75):
         part = random.Random(0).sample(train, max(1, len(train) * share // 100))
         m, _ = _fit(base, role, labels, slots, part, dev, seeds[0], max(1, epochs // 2), 3e-5)
-        curve[share] = evaluate(_predict(m, tok, test, labels), role, thresholds, temperature, safety).accuracy
+        curve[share] = evaluate(
+            _predict(m, tok, test, labels), role, thresholds, temperature, safety
+        ).accuracy
     curve[100] = report.accuracy
     version = "v" + dt.datetime.now(dt.UTC).strftime("%Y%m%d%H%M")
-    digest = hashlib.sha256("".join(r.model_dump_json() for r in train + dev + test).encode()).hexdigest()[:16]
-    card = ModelCard(role=role.id, version=version, base_model=base, data_hash=digest, temperature=temperature,
-                     medium_floor=role.targets.medium_floor, safety_floor=role.targets.safety_floor, labels=labels,
-                     langs=LANGS, slots=slots, thresholds=thresholds, report=report, gate=gate)
+    digest = hashlib.sha256(
+        "".join(r.model_dump_json() for r in train + dev + test).encode()
+    ).hexdigest()[:16]
+    card = ModelCard(
+        role=role.id,
+        version=version,
+        base_model=base,
+        data_hash=digest,
+        temperature=temperature,
+        medium_floor=role.targets.medium_floor,
+        safety_floor=role.targets.safety_floor,
+        labels=labels,
+        langs=LANGS,
+        slots=slots,
+        thresholds=thresholds,
+        report=report,
+        gate=gate,
+    )
     out = get_settings().MIA_MODELS_DIR / role.id / version
     _export(model, tok, out, slots)
     write_card(card)
@@ -2824,8 +3389,9 @@ pytestmark = pytest.mark.learning
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "role_tiny" / "skill"
 
 
-def test_trained_package_classifies_on_cpu(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-                                           session: Session, people: dict[str, Person]) -> None:
+def test_trained_package_classifies_on_cpu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, session: Session, people: dict[str, Person]
+) -> None:
     monkeypatch.setenv("MIA_MODELS_DIR", str(tmp_path / "models"))
     get_settings.cache_clear()
     reset_classifiers()
@@ -2866,7 +3432,9 @@ class OnnxClassifier(ScoredClassifier):
     def __init__(self, card: ModelCard, safety: set[str]) -> None:
         super().__init__(card, safety)
         folder = package_dir(card.role, card.version)
-        self.session = onnxruntime.InferenceSession(str(folder / "model.onnx"), providers=["CPUExecutionProvider"])
+        self.session = onnxruntime.InferenceSession(
+            str(folder / "model.onnx"), providers=["CPUExecutionProvider"]
+        )
         self.tokenizer = Tokenizer.from_file(str(folder / "tokenizer.json"))
         self.tokenizer.enable_truncation(MAX_LEN)
         self.outputs = [o.name for o in self.session.get_outputs()]
@@ -2883,7 +3451,9 @@ class OnnxClassifier(ScoredClassifier):
             for name, v in values.items()
             if name.startswith("slot_")
         }
-        return self.from_logits(values["intent_logits"][0].tolist(), values["lang_logits"][0].tolist(), slots)
+        return self.from_logits(
+            values["intent_logits"][0].tolist(), values["lang_logits"][0].tolist(), slots
+        )
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -2925,9 +3495,16 @@ from mia.learning.generate import generate, plan_cells
 from mia.learning.schema import IntentSpec, RoleSpec, Targets
 
 ROLE = RoleSpec(
-    id="r", job_summary="j", responsibilities=["x"], counterparts=[{"role": "cleaner", "share": 1.0}],  # type: ignore[list-item]
-    languages=["en", "fi"], countries=["FI"], styles={"informal": 0.5, "terse": 0.5},
-    intents=[IntentSpec(id="r.a", description="d", counterparts=["cleaner"], risk="read", label_en="A")],
+    id="r",
+    job_summary="j",
+    responsibilities=["x"],
+    counterparts=[{"role": "cleaner", "share": 1.0}],  # type: ignore[list-item]
+    languages=["en", "fi"],
+    countries=["FI"],
+    styles={"informal": 0.5, "terse": 0.5},
+    intents=[
+        IntentSpec(id="r.a", description="d", counterparts=["cleaner"], risk="read", label_en="A")
+    ],
     targets=Targets(train_min=4),
 )
 
@@ -2942,15 +3519,45 @@ def test_generate_builds_records_from_the_model_output() -> None:
     args = json.dumps({"response": [{"text": "sick today", "context": "", "slots": {}}]})
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={
-            "id": "x", "object": "chat.completion", "created": 0, "model": "m",
-            "choices": [{"index": 0, "finish_reason": "tool_calls", "message": {"role": "assistant", "content": None,
-                         "tool_calls": [{"id": "c", "type": "function", "function": {"name": "final_result", "arguments": args}}]}}],
-            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
+        return httpx.Response(
+            200,
+            json={
+                "id": "x",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "m",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "c",
+                                    "type": "function",
+                                    "function": {"name": "final_result", "arguments": args},
+                                }
+                            ],
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
 
     with models.override_allow_model_requests(True):
-        recs = asyncio.run(generate(ROLE, plan_cells(ROLE, "train", per_cell=1)[:1], "local/m", "Write messages.",
-                                    split="train", transport=httpx.MockTransport(handler)))
+        recs = asyncio.run(
+            generate(
+                ROLE,
+                plan_cells(ROLE, "train", per_cell=1)[:1],
+                "local/m",
+                "Write messages.",
+                split="train",
+                transport=httpx.MockTransport(handler),
+            )
+        )
     assert recs and recs[0].source == "teacher:local/m" and recs[0].intent == "r.a"
 ```
 
@@ -3003,30 +3610,59 @@ def plan_cells(role: RoleSpec, split: Split, per_cell: int | None) -> list[Cell]
                 for style, share in role.styles.items():
                     n = per_cell or math.ceil(need * share * shares.get(speaker, 1.0) / total_share)
                     if n:
-                        cells.append(Cell(intent=intent.id, lang=lang, counterpart=speaker, style=style, count=n))
+                        cells.append(
+                            Cell(
+                                intent=intent.id,
+                                lang=lang,
+                                counterpart=speaker,
+                                style=style,
+                                count=n,
+                            )
+                        )
     return cells
 
 
-async def generate(role: RoleSpec, cells: list[Cell], model_name: str, prompt: str, split: Split,
-                   transport: httpx.AsyncBaseTransport | None = None) -> list[Record]:
+async def generate(
+    role: RoleSpec,
+    cells: list[Cell],
+    model_name: str,
+    prompt: str,
+    split: Split,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> list[Record]:
     """One call per cell; the prompt (from the skill's prompts/) describes the role and rules."""
     agent: Agent[None, list[GeneratedMessage]] = Agent(
         build_model(model_name, rules_model=None, transport=transport),  # type: ignore[arg-type]
-        output_type=list[GeneratedMessage], instructions=prompt,
+        output_type=list[GeneratedMessage],
+        instructions=prompt,
     )
     tag = model_name.replace("/", "-")
     out: list[Record] = []
     for cell in cells:
         spec = role.intent(cell.intent)
-        ask = (f"Role: {role.id}. Intent: {cell.intent} ({spec.description if spec else 'other'}). "
-               f"Language: {cell.lang}. Speaker: {cell.counterpart}. Style: {cell.style}. "
-               f"Write {cell.count} different messages.")
+        ask = (
+            f"Role: {role.id}. Intent: {cell.intent} ({spec.description if spec else 'other'}). "
+            f"Language: {cell.lang}. Speaker: {cell.counterpart}. Style: {cell.style}. "
+            f"Write {cell.count} different messages."
+        )
         result = await agent.run(ask)
         for msg in result.output[: cell.count]:
-            out.append(Record(id=f"{cell.intent}/{cell.lang}/{tag}/{len(out):04d}", role=role.id,
-                              intent=cell.intent, lang=cell.lang, text=msg.text, context=msg.context,
-                              counterpart=cell.counterpart, style=cell.style, slots=msg.slots,
-                              kind=cell.kind, split=split, source=f"teacher:{model_name}"))
+            out.append(
+                Record(
+                    id=f"{cell.intent}/{cell.lang}/{tag}/{len(out):04d}",
+                    role=role.id,
+                    intent=cell.intent,
+                    lang=cell.lang,
+                    text=msg.text,
+                    context=msg.context,
+                    counterpart=cell.counterpart,
+                    style=cell.style,
+                    slots=msg.slots,
+                    kind=cell.kind,
+                    split=split,
+                    source=f"teacher:{model_name}",
+                )
+            )
     return out
 ```
 
@@ -3071,7 +3707,14 @@ SKILL = ROOT / ".claude" / "skills" / "mia-train-role"
 def test_skill_has_steps_gates_and_prompts() -> None:
     text = (SKILL / "SKILL.md").read_text()
     assert text.startswith("---\nname: mia-train-role\n")
-    for marker in ("Gate 1", "Gate 2", "mia skills validate", "mia skills train", "mia skills promote", "public.yaml"):
+    for marker in (
+        "Gate 1",
+        "Gate 2",
+        "mia skills validate",
+        "mia skills train",
+        "mia skills promote",
+        "public.yaml",
+    ):
         assert marker in text, marker
     for prompt in ("planner", "generator", "reviewer", "public-research"):
         assert (SKILL / "prompts" / f"{prompt}.md").exists()
