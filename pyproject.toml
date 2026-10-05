@@ -18,6 +18,8 @@ dependencies = [
     "pyyaml>=6.0",
     "httpx>=0.27",
     "tzdata>=2024.1",
+    "onnxruntime>=1.22",
+    "tokenizers>=0.22",
 ]
 
 [project.scripts]
@@ -32,6 +34,12 @@ dev = [
     "types-PyYAML>=6.0",
     "pre-commit>=3.8",
 ]
+learning = [
+    "torch>=2.4",
+    "transformers>=5,<6",
+    "onnx>=1.17",
+    "accelerate>=1.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -42,6 +50,15 @@ packages = ["node/mia"]
 
 [tool.uv]
 default-groups = ["dev"]
+
+# Linux gets CPU-only torch wheels; macOS uses the PyPI wheels.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [tool.ruff]
 line-length = 100
@@ -69,7 +86,7 @@ module = ["mia.core.*", "mia.chat.*", "mia.agents.*"]
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["casbin.*", "ulid.*"]
+module = ["casbin.*", "ulid.*", "onnxruntime", "onnxruntime.*"]
 ignore_missing_imports = true
 
 [tool.pydantic-mypy]
@@ -80,8 +97,11 @@ warn_required_dynamic_aliases = true
 [tool.pytest.ini_options]
 testpaths = ["node/tests"]
 pythonpath = ["node"]
-addopts = "-m 'not evals' --cov=mia.core --cov-report=term-missing:skip-covered --cov-fail-under=80"
-markers = ["evals: agent evaluation scenarios (run with -m evals)"]
+addopts = "-m 'not evals and not learning' --cov=mia.core --cov-report=term-missing:skip-covered --cov-fail-under=80"
+markers = [
+    "evals: agent evaluation scenarios (run with -m evals)",
+    "learning: trains a tiny model (needs uv sync --group learning)",
+]
 filterwarnings = ["ignore::DeprecationWarning:casbin.*"]
 
 [tool.coverage.run]

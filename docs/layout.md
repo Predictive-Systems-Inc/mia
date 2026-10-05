@@ -25,6 +25,9 @@ mia/
         dispatcher/         manifest.yaml, job.md, prompts/, models.py, classifier.py,
                             scoring.py, cover.py (confirmation flow), rules.py, tools.py,
                             agent.py, tests/scenarios.yaml
+        <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
+      learning/             offline pipeline for role skill models (ADR 013)
+      skills/               classifier runtime and per-turn routing (ADR 013)
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls),
                             runs.py (live AG-UI runs: reconnect, catch-up, stop)
       channels/             messaging channels (ADR 007): base.py (adapter protocol), registry.py,

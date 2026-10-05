@@ -179,3 +179,18 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
 - Decision C: when a person taps a "Did you mean" option, the agent runs on the original
   message (found through original_message_id) with the chosen intent as a hint, not on the
   button label. A chosen template conversation intent gets its template reply instead.
+
+## D29: Role skill models and their dependencies
+- Decision: build docs/superpowers/specs/2026-10-06-skill-models-design.md; onnxruntime and
+  tokenizers become node dependencies and training libraries an optional `learning` group
+  (ADR 013).
+- Approval: the dependency approval required by CLAUDE.md was given on 2026-10-06 by the Fable
+  decision agent on the owner's behalf (the owner asked for Fable to decide while asleep).
+- Reasons: onnxruntime (MIT) runs the role classifier on the node CPU in about 20 ms; tokenizers
+  (Apache 2.0) is the encoder's tokenizer at inference without PyTorch on the node; group
+  `learning` is torch (BSD), transformers (Apache 2.0), onnx (Apache 2.0) and accelerate
+  (Apache 2.0) for training and ONNX export, installed only where training runs.
+- Approved with six changes: transformers>=5,<6; onnxruntime>=1.22 and tokenizers>=0.22; mypy
+  ignore_missing_imports for onnxruntime; an architecture test that mia/skills never imports
+  huggingface_hub, and HF_HUB_OFFLINE=1 by default at node startup; a sha256 field on ModelCard
+  artifacts (lands in Tasks 14 and 15); a uv index so torch uses CPU wheels on Linux.

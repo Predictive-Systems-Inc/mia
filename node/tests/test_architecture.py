@@ -76,3 +76,36 @@ def test_channel_adapters_reach_http_only_through_channel_transport() -> None:
         text = p.read_text()
         if "httpx.AsyncClient(" in text:
             assert "transport=ChannelTransport(" in text, p
+
+
+def test_skills_runtime_never_imports_huggingface_hub() -> None:
+    """The node runtime reads local model files only; nothing under mia/skills may fetch from HF."""
+    import ast
+
+    offenders = []
+    for p in (MIA / "skills").rglob("*.py"):
+        for node in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            else:
+                continue
+            if any(n.split(".")[0] == "huggingface_hub" for n in names):
+                offenders.append(f"{p.relative_to(MIA)}:{node.lineno}")
+    assert offenders == []
+
+
+def test_importing_the_app_sets_hf_hub_offline_when_unset() -> None:
+    """Importing the node app defaults HF_HUB_OFFLINE to 1, and an explicit value is kept."""
+    import os
+    import subprocess
+    import sys
+
+    code = "import os, mia.api.main; print(os.environ.get('HF_HUB_OFFLINE'))"
+    env = {k: v for k, v in os.environ.items() if k != "HF_HUB_OFFLINE"}
+    run = lambda e: subprocess.run(
+        [sys.executable, "-c", code], env=e, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    assert run(env) == "1"
+    assert run({**env, "HF_HUB_OFFLINE": "0"}) == "0"
