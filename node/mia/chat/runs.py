@@ -58,6 +58,12 @@ log = logging.getLogger(__name__)
 
 BLOCKS_EVENT = "mia.blocks"
 OUTPUT_TOOL = "final_result"  # Pydantic AI's default output tool name
+TEXT_EVENTS = {
+    EventType.TEXT_MESSAGE_START,
+    EventType.TEXT_MESSAGE_CONTENT,
+    EventType.TEXT_MESSAGE_END,
+    EventType.TEXT_MESSAGE_CHUNK,
+}
 
 
 class RunBusy(Exception):
@@ -194,6 +200,7 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
     session = Session(get_engine(), expire_on_commit=False)
     last = ""  # type of the last event pushed
     hidden: set[str] = set()  # tool call ids of the output tool
+    replying = False  # True once on_complete sends the checked reply
     lang = "en"
     try:
         person = await asyncio.to_thread(session.get, Person, run.person_id)
@@ -213,8 +220,10 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
         adapter = AGUIAdapter(agent=agent, run_input=clean)
 
         async def on_complete(result: AgentRunResult[AgentReply]) -> AsyncIterator[BaseEvent]:
+            nonlocal replying
             reply = await asyncio.to_thread(_finish, session, deps, thread, result)
             await asyncio.to_thread(session.commit)
+            replying = True
             for event in _reply_events(reply):
                 yield event
 
@@ -234,6 +243,10 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
                 if isinstance(event, ToolCallStartEvent) and event.tool_call_name == OUTPUT_TOOL:
                     hidden.add(event.tool_call_id)
                 if getattr(event, "tool_call_id", None) in hidden:
+                    continue
+                # A plain-text answer (text_reply fallback) streams as model text; the client
+                # gets only the checked, stored reply that on_complete sends.
+                if event.type in TEXT_EVENTS and not replying:
                     continue
                 if isinstance(event, RunErrorEvent):
                     log.error("AG-UI run %s failed: %s", run.run_id, event.message)

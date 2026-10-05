@@ -445,3 +445,36 @@ def test_rejoin_snapshot_leaves_out_the_runs_own_reply(
     snapshot_ids = [m["id"] for m in events[1]["messages"]]
     assert snapshot_ids == [old.id, question.id]
     assert next(e for e in events if e.get("messageId") == reply.id)["type"] == "TEXT_MESSAGE_START"
+
+
+def test_a_plain_text_answer_reaches_the_client_once(
+    client: TestClient, people: dict[str, Person], session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A small model may answer in plain text instead of the reply tool (text_reply fallback).
+    Its raw streamed text is not sent; only the checked, stored reply is, exactly once."""
+    from pydantic_ai import TextOutput
+    from pydantic_ai.messages import TextPart
+
+    from mia.agents.dispatcher.agent import text_reply
+
+    def answer(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart("Kirjasin poissaolon.")])
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        yield "Kirjasin "
+        yield "poissaolon."
+
+    agent = Agent(
+        FunctionModel(answer, stream_function=stream),
+        deps_type=AgentDeps,
+        output_type=[AgentReply, TextOutput(text_reply)],
+    )
+    monkeypatch.setattr(runs, "get_agent", lambda: agent)
+    payload = body("Olen kipeä huomenna.")
+    events = parse(post(client, "/ag-ui", people["Juha"], payload).text)
+    assert_well_formed(events)
+    (assistant,) = [m for m in stored(session, payload["threadId"]) if m.role == "assistant"]
+    starts = [e for e in events if e["type"] == "TEXT_MESSAGE_START"]
+    assert [s["messageId"] for s in starts] == [assistant.id]
+    text = "".join(e["delta"] for e in events if e["type"] == "TEXT_MESSAGE_CONTENT")
+    assert text == "Kirjasin poissaolon." == assistant.text
