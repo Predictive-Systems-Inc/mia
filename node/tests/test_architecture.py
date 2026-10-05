@@ -3,6 +3,8 @@
 import re
 from pathlib import Path
 
+import pytest
+
 MIA = Path(__file__).resolve().parent.parent / "mia"
 
 
@@ -96,16 +98,31 @@ def test_skills_runtime_never_imports_huggingface_hub() -> None:
     assert offenders == []
 
 
-def test_importing_the_app_sets_hf_hub_offline_when_unset() -> None:
-    """Importing the node app defaults HF_HUB_OFFLINE to 1, and an explicit value is kept."""
+def test_serve_defaults_hf_hub_offline_and_keeps_an_explicit_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`mia serve` defaults HF_HUB_OFFLINE to 1 before uvicorn starts; an explicit value wins."""
+    import argparse
     import os
-    import subprocess
-    import sys
 
-    code = "import os, mia.api.main; print(os.environ.get('HF_HUB_OFFLINE'))"
-    env = {k: v for k, v in os.environ.items() if k != "HF_HUB_OFFLINE"}
-    run = lambda e: subprocess.run(
-        [sys.executable, "-c", code], env=e, capture_output=True, text=True, check=True
-    ).stdout.strip()
-    assert run(env) == "1"
-    assert run({**env, "HF_HUB_OFFLINE": "0"}) == "0"
+    import uvicorn
+
+    from mia import cli
+
+    seen: list[str | None] = []
+    monkeypatch.setattr(
+        uvicorn, "run", lambda *a, **k: seen.append(os.environ.get("HF_HUB_OFFLINE"))
+    )
+    args = argparse.Namespace(host="127.0.0.1", port=1, reload=False)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "x")  # so teardown removes what serve sets
+    monkeypatch.delenv("HF_HUB_OFFLINE")
+    cli.serve(args)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "0")
+    cli.serve(args)
+    assert seen == ["1", "0"]
+
+
+def test_dockerfile_sets_hf_hub_offline() -> None:
+    """The node image runs offline for Hugging Face by default."""
+    dockerfile = (MIA.parent.parent / "Dockerfile").read_text()
+    assert "HF_HUB_OFFLINE=1" in dockerfile

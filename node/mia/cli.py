@@ -3,6 +3,7 @@ invite, channels, backup, verify-db."""
 
 import argparse
 import asyncio
+import os
 
 from alembic.config import Config
 from sqlmodel import Session, col, select
@@ -45,6 +46,8 @@ def seed(_args: argparse.Namespace) -> int:
 def serve(args: argparse.Namespace) -> int:
     import uvicorn
 
+    # The node never downloads models (ADR 013); training processes do not go through serve.
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
     uvicorn.run("mia.api.main:app", host=args.host, port=args.port, reload=args.reload)
     return 0
 

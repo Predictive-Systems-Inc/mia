@@ -194,3 +194,4 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   ignore_missing_imports for onnxruntime; an architecture test that mia/skills never imports
   huggingface_hub, and HF_HUB_OFFLINE=1 by default at node startup; a sha256 field on ModelCard
   artifacts (lands in Tasks 14 and 15); a uv index so torch uses CPU wheels on Linux.
+- Footprint: installing tokenizers pulls huggingface-hub (with hf-xet, fsspec, tqdm, typer, rich) into the node install, and onnxruntime adds numpy and protobuf; the architecture test and HF_HUB_OFFLINE keep the node from fetching.

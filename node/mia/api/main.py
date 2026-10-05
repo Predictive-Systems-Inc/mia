@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import datetime as dt
 import logging
-import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Literal
@@ -29,9 +28,6 @@ from mia.core.events import verify_chain
 from mia.core.models import Actor, ChannelOutbox, Message, Person, Thread
 from mia.settings import get_settings
 from mia.skills import runtime
-
-# The node never downloads models: base models are provisioned, not fetched (ADR 013).
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 log = logging.getLogger(__name__)

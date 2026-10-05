@@ -13,6 +13,7 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never \
     PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
+    HF_HUB_OFFLINE=1 \
     PYDANTIC_AI_NO_BANNER=1 \
     MIA_DB_PATH=/data/mia.db
 

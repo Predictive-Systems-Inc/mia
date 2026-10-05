@@ -15,11 +15,12 @@ intent classifier built by the /mia-train-role Claude Code skill and the `mia sk
   nodes whose owner chose local retraining under D27).
 - Built packages and harvested candidates live under MIA_MODELS_DIR and MIA_LEARNING_DIR on the
   node, never in git.
-- The node never downloads models: HF_HUB_OFFLINE defaults to 1 at startup and nothing under
+- The node never downloads models: HF_HUB_OFFLINE is 1 in the Docker image and defaults to 1 in `mia serve` and nothing under
   node/mia/skills imports huggingface_hub (tests/test_architecture.py).
 - torch installs CPU wheels on Linux through a pinned uv index; macOS uses the PyPI wheels.
 
 ## Consequences
+- Installing tokenizers pulls huggingface-hub (with hf-xet, fsspec, tqdm, typer, rich) into the node install, and onnxruntime adds numpy and protobuf; the architecture test and HF_HUB_OFFLINE keep the node from fetching.
 - A role without a promoted package behaves as before (null classifier).
 - High-band tool intents run the agent with the intent as context in this version; direct slot
   to tool argument mapping is a later improvement (spec section 7 updated).
