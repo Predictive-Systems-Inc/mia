@@ -99,13 +99,15 @@ class ScoredClassifier:
 _status: dict[str, dict[str, object]] = {}
 
 
+def _fallback(role: str, version: str | None, exc: Exception) -> Classifier:
+    log.warning("role %s model %s unusable, falling back: %s", role, version, exc)
+    _status[role] = {"status": "fallback", "version": version, "error": str(exc)[:200]}
+    return NullClassifier()
+
+
 @lru_cache
-def get_classifier(role: str) -> Classifier:
-    """Cached classifier for a role; NullClassifier (with a warning) when none or unusable."""
-    version = active_version(role)
-    if version is None:
-        _status[role] = {"status": "none", "version": None}
-        return NullClassifier()
+def _load(role: str, version: str) -> Classifier:
+    """Load one version once; a broken package yields a cached NullClassifier (and a warning)."""
     try:
         card = read_card(role, version)
         # Task 15 adds this module; until then the import fails and we fall back.
@@ -113,18 +115,31 @@ def get_classifier(role: str) -> Classifier:
             OnnxClassifier,
         )
 
-        classifier: Classifier = OnnxClassifier(card, safety=catalogue.safety_ids())
+        return OnnxClassifier(card, safety=catalogue.safety_ids())  # type: ignore[no-any-return]
     except Exception as exc:  # noqa: BLE001 - any broken package falls back, never breaks chat
-        log.warning("role %s model %s unusable, falling back: %s", role, version, exc)
-        _status[role] = {"status": "fallback", "version": version, "error": str(exc)[:200]}
+        return _fallback(role, version, exc)
+
+
+def get_classifier(role: str) -> Classifier:
+    """Classifier for the role's current ACTIVE version, read on every call so a promotion made
+    by another process takes effect; loaded once per (role, version). NullClassifier (with a
+    warning) when there is no active version or the marker or package is unusable."""
+    try:
+        version = active_version(role)
+    except Exception as exc:  # noqa: BLE001 - a broken ACTIVE marker must not break chat
+        return _fallback(role, None, exc)
+    if version is None:
+        _status[role] = {"status": "none", "version": None}
         return NullClassifier()
-    _status[role] = {"status": "active", "version": version}
+    classifier = _load(role, version)
+    if not isinstance(classifier, NullClassifier):
+        _status[role] = {"status": "active", "version": version}
     return classifier
 
 
 def reset_classifiers() -> None:
     """Drop cached classifiers and status so the next call reloads from disk."""
-    get_classifier.cache_clear()
+    _load.cache_clear()
     _status.clear()
 
 

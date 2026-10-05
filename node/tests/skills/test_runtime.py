@@ -1,4 +1,7 @@
 # node/tests/skills/test_runtime.py
+import sys
+from types import SimpleNamespace
+
 import pytest
 
 from mia.learning.gate import GateResult
@@ -121,3 +124,48 @@ def test_safety_sums_probability_of_safety_intents() -> None:
     sc = ScoredClassifier(card(), safety={"conversation.emergency", "r.b"})
     c = sc.from_logits([0, 0, 0, 0], [], {})
     assert c.safety == pytest.approx(0.5)
+
+
+class _Stub(ScoredClassifier):
+    pass
+
+
+def test_active_switch_is_picked_up_without_reset(monkeypatch: pytest.MonkeyPatch) -> None:
+    import mia.skills.runtime as rt
+
+    loads: list[str] = []
+
+    def fake_read(role: str, version: str) -> ModelCard:
+        loads.append(version)
+        return card(version=version)
+
+    monkeypatch.setattr(rt, "read_card", fake_read)
+    monkeypatch.setitem(
+        sys.modules,
+        "mia.skills.onnx",
+        SimpleNamespace(OnnxClassifier=_Stub),
+    )
+    root = get_settings().MIA_MODELS_DIR / "r"
+    root.mkdir(parents=True)
+    (root / "ACTIVE").write_text("v1")
+    first = get_classifier("r")
+    assert isinstance(first, _Stub) and first.card.version == "v1"
+    assert get_classifier("r") is first and loads == ["v1"]
+    (root / "ACTIVE").write_text("v2")
+    second = get_classifier("r")
+    assert isinstance(second, _Stub) and second.card.version == "v2"
+    assert health()["r"] == {"status": "active", "version": "v2"}
+    (root / "ACTIVE").write_text("")
+    assert isinstance(get_classifier("r"), NullClassifier)
+    assert health()["r"] == {"status": "none", "version": None}
+
+
+def test_broken_active_marker_falls_back() -> None:
+    root = get_settings().MIA_MODELS_DIR / "r"
+    (root / "ACTIVE").mkdir(parents=True)
+    assert isinstance(get_classifier("r"), NullClassifier)
+    assert health()["r"]["status"] == "fallback"
+    (root / "ACTIVE").rmdir()
+    (root / "ACTIVE").write_bytes(b"\xff\xfe")
+    assert isinstance(get_classifier("r"), NullClassifier)
+    assert health()["r"]["status"] == "fallback"
