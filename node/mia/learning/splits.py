@@ -7,15 +7,36 @@ from mia.learning.checks import LEAK, similarity
 from mia.learning.schema import Record, RoleSpec
 
 
+class _UnionFind:
+    """Union-find for transitive closure of similarity relation."""
+
+    def __init__(self, n: int) -> None:
+        self.parent = list(range(n))
+
+    def find(self, x: int) -> int:
+        if self.parent[x] != x:
+            self.parent[x] = self.find(self.parent[x])
+        return self.parent[x]
+
+    def union(self, x: int, y: int) -> None:
+        px, py = self.find(x), self.find(y)
+        if px != py:
+            self.parent[px] = py
+
+
 def _clusters(records: list[Record]) -> list[list[Record]]:
-    clusters: list[list[Record]] = []
-    for r in records:
-        home = next((c for c in clusters if similarity(c[0].text, r.text) >= LEAK), None)
-        if home is None:
-            clusters.append([r])
-        else:
-            home.append(r)
-    return clusters
+    """Group records into transitive similarity clusters (connected components over LEAK)."""
+    if not records:
+        return []
+    uf = _UnionFind(len(records))
+    for i, r_i in enumerate(records):
+        for j in range(i + 1, len(records)):
+            if similarity(r_i.text, records[j].text) >= LEAK:
+                uf.union(i, j)
+    clusters_dict: dict[int, list[Record]] = defaultdict(list)
+    for i, r in enumerate(records):
+        clusters_dict[uf.find(i)].append(r)
+    return list(clusters_dict.values())
 
 
 def assign_train_dev(role: RoleSpec, records: list[Record], seed: int = 0) -> list[Record]:
@@ -28,13 +49,17 @@ def assign_train_dev(role: RoleSpec, records: list[Record], seed: int = 0) -> li
     split_of: dict[str, str] = {}
     for (intent_id, _lang), bucket in sorted(buckets.items()):
         spec = role.intent(intent_id)
-        need = role.targets.quota(spec, "dev") if spec else max(1, len(bucket) // 6)
+        if not spec:
+            raise ValueError(f"unknown intent {intent_id}")
+        need = role.targets.quota(spec, "dev")
         clusters = _clusters(sorted(bucket, key=lambda r: r.id))
         rng.shuffle(clusters)
-        dev = 0
+        dev_normal = 0
         for cluster in clusters:
-            target = "dev" if dev < need else "train"
-            dev += len(cluster) if target == "dev" else 0
+            normal_count = sum(1 for r in cluster if r.kind == "normal")
+            target = "dev" if dev_normal < need else "train"
+            if target == "dev":
+                dev_normal += normal_count
             for r in cluster:
                 split_of[r.id] = target
     return [
