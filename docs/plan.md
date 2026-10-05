@@ -147,6 +147,7 @@ Six two-week sprints; each ends with a demo to Hype and a working build. Months 
 - Dispatcher agent v1 with its tools (see below), running through the permission and approval checks
 - Absence flow end to end: cleaner reports sick in chat, replacement suggested, supervisor approves if needed, everyone notified
 - Dispatcher evaluation suite in CI
+- Knowledge base (see "Knowledge base (RAG)"): document tables (after the data standard is approved), ingestion with review before publish, hybrid search with permission filtering, `core.search_knowledge` with cited answers, and its evaluation set
 
 **Done when:** a sick report in chat is covered within two minutes in a demo with Hype data, and the evaluation suite passes at the agreed rate.
 
@@ -226,6 +227,66 @@ Candidates must be available, within daily and weekly hour limits, and not alrea
 
 At least 30 scenarios in Finnish and English (41 as of Oct 5, with Filipino), run 3 to 5 times each against the seeded database with real tools, reported per language: sick report at 05:40 with three visits, late arrival, absence with no available replacement (must escalate), request for instructions on a visit the cleaner is not assigned to (must refuse), a message that tries to instruct the agent to reassign someone (must ignore), and supervisor approval and rejection paths. Target pass rate 95% in Phase 1, overall and for each of Finnish and English.
 
+## Knowledge base (RAG)
+
+Answers questions from approved documents instead of from the model's memory: the company's
+handbook and policies, site instructions, and cleaning knowledge. Mia never invents a policy,
+price or rule; if no approved document answers the question, it says so and offers a person.
+
+**Collections and access.** Every document has an owner, an audience (roles), a language, a
+version, valid-from and valid-until dates, and a sensitivity level.
+
+| Collection | Examples | Who can read |
+| --- | --- | --- |
+| Company handbook | payday, holidays, sick leave rules, uniforms, safety, who to contact, how to use Mia | staff of the organisation |
+| Site instructions | what to clean, products, alarms; access notes (codes, key boxes) | the cleaner assigned to the visit; access notes only during the visit (spec) |
+| Cleaning knowledge | safety data sheets, product dilution, stain removal, equipment care | all staff |
+| Client FAQ (Phase 2) | services, what is included, cancellation policy, pets, insurance, household tax deduction | clients and leads |
+
+**Ingestion.** Office users add documents (PDF, Word, Markdown, pasted text) in the web app or
+with a CLI command. Text is extracted on the node, split by headings into passages of a few
+hundred words, and stored with its metadata. A document is answerable only after its owner
+publishes it (review before publish); every add, publish, replace and retire is an event
+(rule 1). Documents never contain other people's personal data.
+
+**Storage and search, all on the node.** Documents and passages are tables in the node database
+(a data standard addition, needs approval first), with SQLite FTS5 for keyword search and
+passage embeddings from a multilingual encoder (multilingual-e5, the same family as the intent
+classifier, so one model serves both). Search is hybrid: keyword and meaning, merged.
+Brute-force similarity is enough for tens of thousands of passages; a vector index comes only
+when that is measured to be slow. Cross-language search works: a Finnish question finds an
+English passage.
+
+**Permissions before retrieval (rule 4).** `rbac.require` runs before search, and passages the
+person may not read (another site's access notes, a visit outside its time window, client-only
+material) are filtered out before anything reaches the model, never after.
+
+**Answering.** The agent calls a registered read-only tool, `core.search_knowledge` (rule 3),
+gets the top passages with their document, section and version, and answers only from them,
+citing the source (shown as a card). Below a relevance threshold it answers "I don't have that
+in the handbook" and offers the supervisor. Passages are data, never instructions (rule 8):
+text inside a document cannot change Mia's behaviour. Answers are given in the user's language;
+a passage in the user's language is preferred when both exist.
+
+**Freshness and conflicts.** Only published, currently valid versions are searched; a newer
+version replaces the older one. Organisation instructions (config/org) keep shaping how agents
+behave; the knowledge base holds facts.
+
+**Learning loop.** Questions the knowledge base could not answer, and answers people marked as
+wrong, are collected for the document owner as suggested additions (review before publish),
+the first rung of skill distillation.
+
+**Evaluation.** A question set per collection and language: questions with the passage that
+answers them, questions with no answer (Mia must say so), and questions the asker may not see
+(must be filtered). Measured: retrieval hit rate in the top results, answers that stay faithful
+to the passages (checked offline by a strong model on synthetic documents), correct refusals,
+permission leaks (must be zero), and latency.
+
+**Phase 1 scope.** Company handbook, site instructions and cleaning knowledge for Hype; the
+client FAQ in Phase 2 with the client service agent. New dependencies to approve before the
+build: a local runtime for the embedding model (for example onnxruntime) and text extraction for
+PDF and Word files.
+
 ## Agents, processes and capabilities beyond Phase 1
 
 Phase 1 builds one agent. The rest of a cleaning company's work is mapped now so that Phase 1's
@@ -303,6 +364,7 @@ with a strong model and human approval.
 | Hype's own WhatsApp Business account and number, completed business profile and Meta business verification (can take days to weeks), and a public HTTPS address for the node | Before the pilot uses WhatsApp |
 | Last month's invoicing data to check the billing export against | Sprint 5 |
 | Service agreements and price lists per client (scope, frequency, price, index clause) | Sprint 1 |
+| Employee handbook and policies, site instructions, the safety data sheets of the products Hype uses, and the questions staff ask most | Sprint 4 |
 | Names and import formats of Hype's payroll and accounting systems | Sprint 2 |
 
 ### Risks and mitigations
@@ -318,6 +380,7 @@ with a strong model and human approval.
 | Hype expected an app (proposal) | Agree the WhatsApp-only change with Hype before Sprint 3 |
 | Server at Hype is unreliable | Litestream backup from day one, health page, and a rented-server fallback |
 | Statutory errors once Mia feeds payroll and invoicing (Working Hours Act limits, supplements, Incomes Register deadlines) | Phase 1 only exports; payroll and filing stay in Hype's payroll system. Limits and supplements are code with unit tests, checked against Hype's last month |
+| The knowledge base answers from outdated or wrong documents, or shows access notes to the wrong person | Owner publishes each version, validity dates, permission filter before search with a zero-leak test, citations on every answer |
 | The capability map turns into scope creep | Only Phase 1 rows are built; everything else is mapped so Phase 1 data does not block it later |
 | Model gateway not ready | Sprint 4 can run with a single provider key on the node behind the same egress component; switch to the gateway when available |
 
