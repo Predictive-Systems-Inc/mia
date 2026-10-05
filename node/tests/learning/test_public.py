@@ -8,20 +8,54 @@ from mia.learning.public import licence_verdict, load_public
 @pytest.mark.parametrize(
     ("licence", "verdict"),
     [
+        # ========== ALLOWED: Permissive licences ==========
         ("CC-BY-4.0", "allowed"),
+        ("CC BY 4.0", "allowed"),
+        ("CC BY-4.0", "allowed"),
+        ("CC-BY-3.0", "allowed"),
+        ("CC BY 3.0", "allowed"),
         ("MIT", "allowed"),
         ("Apache-2.0", "allowed"),
+        ("Apache 2.0", "allowed"),
+        ("Apache License 2.0", "allowed"),
         ("CC0-1.0", "allowed"),
+        ("CC0", "allowed"),
+        ("BSD-2-Clause", "allowed"),
+        ("BSD 2-Clause", "allowed"),
+        ("BSD-3-Clause", "allowed"),
+        ("BSD 3-Clause", "allowed"),
+        ("MPL-2.0", "allowed"),
+        # ========== NEEDS_APPROVAL: Share-alike/copyleft/custom ==========
         ("CC-BY-SA-4.0", "needs_approval"),
+        ("GPL-3.0", "needs_approval"),
+        ("ODbL", "needs_approval"),
         ("custom", "needs_approval"),
+        # ========== NEVER: Non-commercial variants ==========
         ("CC-BY-NC-4.0", "never"),
+        ("CC-BY-NC-ND-4.0", "never"),
         ("CC-BY-NC-SA-4.0", "never"),
-        ("unknown", "never"),
-        # Non-commercial variants (robust handling)
+        ("CC BY-NC", "never"),
         ("cc by-nc 4.0", "never"),
         ("CC BY NC SA", "never"),
         ("cc-by-nc-4.0", "never"),
-        # Empty or whitespace
+        ("Non-commercial", "never"),
+        ("NonCommercial", "never"),
+        ("noncommercial", "never"),
+        ("cc_by_nc_4.0", "never"),
+        ("CC-BY-NC4.0", "never"),
+        ("(NC)", "never"),
+        ("CC-BY-NC,research", "never"),
+        ("https://creativecommons.org/licenses/by-nc/4.0/", "never"),
+        # ========== NEVER: Other unrecognised/restricted ==========
+        ("unknown", "never"),
+        ("unknown license", "never"),
+        ("proprietary", "never"),
+        ("other", "never"),
+        ("n/a", "never"),
+        ("none", "never"),
+        ("unspecified", "never"),
+        ("tbd", "never"),
+        # ========== NEVER: Empty/whitespace ==========
         ("", "never"),
         ("   ", "never"),
     ],
@@ -93,3 +127,31 @@ def test_load_with_multiple_datasets_and_mixed_verdicts(tmp_path: Path) -> None:
     assert spec.datasets[0].name == "mit_data"
     assert spec.datasets[1].name == "custom_data"
     assert spec.datasets[1].approved_by == "Bob"
+
+
+def test_nc_licence_with_approved_by_still_raises(tmp_path: Path) -> None:
+    """NC licence is never allowed even with approval."""
+    path = tmp_path / "public.yaml"
+    path.write_text(
+        "datasets:\n"
+        "- {name: nllb, source: hf, version: '1', licence: CC-BY-NC-4.0, use: train, approved_by: Admin}\n"
+    )
+    with pytest.raises(ValueError, match="never"):
+        load_public(path)
+
+
+def test_blank_approved_by_raises_approval_error(tmp_path: Path) -> None:
+    """Blank/whitespace approved_by is treated as missing for needs_approval."""
+    path = tmp_path / "public.yaml"
+    path.write_text(
+        "datasets:\n"
+        "- {name: sgd, source: hf, version: '1', licence: CC-BY-SA-4.0, use: other, approved_by: ''}\n"
+    )
+    with pytest.raises(ValueError, match="approval"):
+        load_public(path)
+    path.write_text(
+        "datasets:\n"
+        "- {name: sgd, source: hf, version: '1', licence: CC-BY-SA-4.0, use: other, approved_by: '   '}\n"
+    )
+    with pytest.raises(ValueError, match="approval"):
+        load_public(path)
