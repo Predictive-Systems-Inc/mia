@@ -2,17 +2,16 @@
 
 import asyncio
 import json
+from collections.abc import Callable
+from datetime import datetime
 
 from fastapi.testclient import TestClient
 from sqlmodel import Session, col, select
 
-from mia.agents.dispatcher import cover
 from mia.api.main import app
 from mia.channels import linking, outbox
 from mia.channels.simulator import SimAdapter
-from mia.core import orgconfig
 from mia.core import people as people_service
-from mia.core.db import utcnow
 from mia.core.events import verify_chain
 from mia.core.models import Actor, Branch, ChannelOutbox, Message, Person, Visit
 from tests.channels.conftest import LinkFn
@@ -43,7 +42,12 @@ def sent_to(sim: SimAdapter, address: str) -> list[dict[str, object]]:
 
 
 def test_whole_demo_over_a_channel(
-    session: Session, branch: Branch, people: dict[str, Person], sim: SimAdapter, link: LinkFn
+    session: Session,
+    branch: Branch,
+    people: dict[str, Person],
+    sim: SimAdapter,
+    link: LinkFn,
+    daytime: Callable[[], datetime],
 ) -> None:
     client = TestClient(app)
     sanna, juha, mikael = people["Sanna"], people["Juha"], people["Mikael"]
@@ -66,12 +70,12 @@ def test_whole_demo_over_a_channel(
 
     # Mikael is linked but has not written for weeks; Sanna wrote recently.
     link(mikael, "358400000003")
-    link(sanna, "358400000004", last_inbound_at=utcnow())
+    link(sanna, "358400000004", last_inbound_at=daytime())
 
     # Sanna, in the app, finds cover and assigns Mikael: his ask goes out as a template.
     reply = say(client, sanna, "Who can cover Kalasatama tomorrow at 6:30?")
     say(client, sanna, "Assign Mikael.", reply["thread_id"])
-    asyncio.run(outbox.send_due(utcnow()))
+    asyncio.run(outbox.send_due(daytime()))
     (ask,) = sent_to(sim, "358400000003")
     assert ask["kind"] == "template" and ask["name"] == "mia_cover_request"
 
@@ -82,9 +86,7 @@ def test_whole_demo_over_a_channel(
     assert [b["kind"] for b in sent_to(sim, "358400000003")] == ["template", "text"]
 
     # Sanna is told on her channel, and every proactive channel message has its app copy.
-    # Her notice is not urgent, so during quiet hours it waits: flush when they end, so the
-    # test passes at any time of day.
-    asyncio.run(outbox.send_due(cover.quiet_end_after(utcnow(), branch.timezone, orgconfig.load())))
+    asyncio.run(outbox.send_due(daytime()))
     assert any("Mikael" in str(b.get("text")) for b in sent_to(sim, "358400000004"))
     for row in session.exec(
         select(ChannelOutbox).where(col(ChannelOutbox.person_id).in_([mikael.id, sanna.id]))

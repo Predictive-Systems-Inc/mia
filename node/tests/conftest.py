@@ -3,9 +3,12 @@
 No network and no API keys: MIA_MODEL=test everywhere, and egress tests use mock transports.
 """
 
+import importlib
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import Engine
@@ -112,3 +115,34 @@ def test_model_agent():  # type: ignore[no-untyped-def]
         TestModel(call_tools=[], custom_output_args={"blocks": [{"type": "text", "text": "hei"}]}),
         "demo",
     )
+
+
+CLOCK_USERS = (
+    "mia.core.db",
+    "mia.core.approvals",
+    "mia.agents.dispatcher.tools",
+    "mia.api.main",
+    "mia.channels.outbox",
+    "mia.channels.service",
+    "mia.channels.linking",
+    "mia.channels.inbound",
+)
+
+
+@pytest.fixture
+def daytime(monkeypatch: pytest.MonkeyPatch) -> Callable[[], datetime]:
+    """Run the clock from noon in Helsinki today, so quiet hours (21:00 to 06:00) never hold a
+    message and a test does not depend on when it runs. Same date, so seeded visits line up."""
+    start = datetime.now(UTC)
+    noon = (
+        datetime.now(ZoneInfo("Europe/Helsinki"))
+        .replace(hour=12, minute=0, second=0, microsecond=0)
+        .astimezone(UTC)
+    )
+
+    def now() -> datetime:
+        return noon + (datetime.now(UTC) - start)
+
+    for name in CLOCK_USERS:
+        monkeypatch.setattr(importlib.import_module(name), "utcnow", now)
+    return now
