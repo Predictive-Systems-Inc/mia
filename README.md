@@ -94,7 +94,7 @@ server. Install, backups, restore test and updates: deploy/install.md.
 
 ```
 cp .env.example deploy/.env      # then edit; secrets stay in this file
-cd deploy && docker compose up -d --build --wait
+cd deploy && docker compose build && docker compose up -d --wait
 ./restore-test.sh                # restores the latest backup and verifies it
 ```
 

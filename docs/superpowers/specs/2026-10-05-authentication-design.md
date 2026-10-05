@@ -182,12 +182,13 @@ One FastAPI dependency replaces `resolve_actor` and `ActorHeader`:
 
 ```python
 class AuthContext(BaseModel):
-    actor: Actor            # principal (+ on_behalf_of), branch_id
-    person: Person | None   # the human, reloaded from the database on every request
-    method: str             # password_totp, passkey, phone_otp, device, wa_link, client, dev
-    aal: str                # channel, aal1, aal2, client
+    actor: Actor  # principal (+ on_behalf_of), branch_id
+    person: Person | None  # the human, reloaded from the database on every request
+    method: str  # password_totp, passkey, phone_otp, device, wa_link, client, dev
+    aal: str  # channel, aal1, aal2, client
     session_id: str | None
-    channel: str            # "app" for app sessions; decides app_only approvals
+    channel: str  # "app" for app sessions; decides app_only approvals
+
 
 CurrentAuth = Annotated[AuthContext, Depends(current_auth)]
 ```
