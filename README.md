@@ -66,6 +66,7 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run mia geocode` | Geocode home bases and sites without coordinates (needs `MIA_GEOCODER_KEY`) |
 | `uv run mia backup FILE` | Consistent copy of the database to a new file (safe while serving) |
 | `uv run mia verify-db FILE` | Check a restored copy: integrity, events hash chain, row counts |
+| `uv run mia skills generate ROLE --model ROUTE --split train\|test` | Teacher-model generation per coverage cell (role skill models) |
 | `uv run pytest` | Unit tests |
 | `uv run pytest node/tests/evals -m evals` | Dispatcher evaluation suite (33 scenarios, 5 runs each) |
 | `uv run ruff check . && uv run ruff format --check . && uv run mypy node/mia` | Lint and types |
@@ -73,6 +74,22 @@ uv run mia chat "Show me Maria's visits." --as Juha
 
 The actor for HTTP calls is the `X-Mia-Actor: <person id>` header. There is no real login yet;
 do not expose a node built from this milestone to a network.
+
+## Role skill models
+
+Each agent role can have its own multilingual intent classifier (docs/superpowers/specs/2026-10-06-skill-models-design.md).
+In Claude Code run `/mia-train-role <role>`; it plans the role, researches public data, generates and reviews
+messages, then runs:
+
+    uv run mia skills validate <role>    # data checks
+    uv run mia skills split <role>       # train and dev from reviewed.jsonl
+    uv sync --group learning && uv run mia skills train <role>   # train, calibrate, evaluate, package
+    uv run mia skills promote <role> <version> --signed-by "Name"
+    uv run mia skills harvest <role>     # on the node: clarification choices to candidates
+    uv run mia skills generate <role> --model ROUTE --split train|test   # teacher generation
+
+Harvested candidates stay in `MIA_LEARNING_DIR/<role>/candidates.jsonl` on the node. If a stale
+Hugging Face token gives 401 errors when training, set `HF_HUB_DISABLE_IMPLICIT_TOKEN=1`.
 
 ## Messaging channels
 

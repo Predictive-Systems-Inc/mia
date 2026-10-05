@@ -166,7 +166,12 @@ previous version for rollback; emits an event.
 Turns clarification, correction, undo and handoff events into candidate records (section 8).
 
 ### Runtime: `mia.skills.runtime`
-- Loads each role's active package at startup and runs it on the CPU with onnxruntime.
+- Runs each role's active package on the CPU with onnxruntime. It reads ACTIVE on each call and
+  caches the loaded classifier per (role, version), so a promotion from the CLI takes effect
+  without a restart.
+- The model card records the sha256 of model.onnx and tokenizer.json; both are verified before
+  load (D29). The node never fetches models: HF_HUB_OFFLINE=1 is set in the image and in
+  `mia serve`.
 - `classify(role, text, context) -> Classification(intent, confidence, band, alternatives,
   lang, slots)`, a Pydantic model; band is high, medium or low from the per-intent thresholds.
 - No active package: every message is band low and the agent behaves as it does today.
@@ -228,9 +233,10 @@ updated from that log.
 2. `classify` with Mia's last question as context; conversation and role intents share one
    label space.
 3. By band:
-   - high, intent with a tool handler: code runs the handler through the registered tools with
-     `rbac.require`, approvals and events; slots from the classifier, dates from code parsers,
-     names from matching; the reply from i18n templates or the LLM wording the tool result;
+   - high, intent with a tool handler: the agent runs with the intent as context and acts only
+     through its registered tools (`rbac.require`, approvals, events); direct slot-to-argument
+     mapping (slots from the classifier, dates from code parsers, names from matching) is a
+     later improvement;
    - high, template intent: a fixed i18n reply, no model call;
    - high, intent that needs judgement (open questions, knowledge-base answers): the LLM agent
      runs with the intent as context (replacing today's regex hint);
@@ -238,6 +244,16 @@ updated from that log.
      person's language, plus "Something else"; the choice is recorded;
    - low or `other`: the LLM agent as today, or a request to rephrase, then a handoff.
 4. Reply in the detected language.
+
+Rules fixed during the build (D28):
+- With no usable classifier intent (no package, low band, `other`) the dispatcher keeps the regex
+  hint, including its injection line; a confident classifier intent replaces the hint.
+- Web chat (AG-UI) and channels share one classify-and-route step.
+- A tapped "Did you mean" option runs the agent on the original message with the chosen intent,
+  not on the button label.
+- `other` and intents whose handling is decline_redirect (for example prompt injection) route to
+  the agent with no intent at every band and are never clarify options.
+- `conversation.*` ids resolve against the shared catalogue only; a role cannot shadow them.
 
 Each role.yaml intent declares its handler: `tool` (with argument mapping), `template` or
 `agent`. A2A: the role's intents are the AgentSkills on its Agent Card (ADR 008), and incoming
@@ -251,8 +267,10 @@ clarification rate.
    events with the classification and the choice.
 2. Harvest (`mia skills harvest`, nightly): candidate records with `source:
    real-clarification`, `review: pending`; kept only if the task completed and was not undone
-   and similar messages agree; pseudonymised; special category data dropped; stored in the node
-   database, never in git.
+   and similar messages agree; pseudonymised; special category data dropped; stored in
+   MIA_LEARNING_DIR/<role>/candidates.jsonl on the node (append-only, not a database table, so
+   no data standard change), reviewed in place locally, never in git and never sent off the
+   node (D18).
 3. Review: a reviewer model (local, or cloud if the owner opted in, D27) checks candidates; the
    data owner approves batches (office web app, a CLI listing until then).
 4. Retrain: `mia skills train <role> --with-real`; approved real records go to train and dev

@@ -159,6 +159,8 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   by a separate, measurable translation layer. Intents, tools and evaluations are defined and
   measured in English first; translation quality is measured on its own. Revisit if the
   translation layer costs more accuracy than a multilingual model loses.
+- Note (role skill models): understanding uses the multilingual encoder; translation applies
+  only to free-text replies, pending the bake-off.
 
 ## D27: (refines D18) Where learning happens is the owner's choice
 - Decision: retraining and label review run on the node by default. An owner may choose cloud
