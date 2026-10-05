@@ -18,7 +18,7 @@ Then list what is missing per intent: situations, counterparts, phrasings, style
 languages, so the missing cells can be generated and reviewed.
 
 Harvested real candidates (source real-clarification) are reviewed only by a local model or a
-person, never a cloud model. Only person names are pseudonymised; phone numbers, customer names
+person, never a cloud model, in place in MIA_LEARNING_DIR/<role>/candidates.jsonl (never in git or reviewed.jsonl). Only person names are pseudonymised; phone numbers, customer names
 and addresses pass through, so flag them. Health details can sit inside a non-health intent;
 flag them. A candidate already written is not retracted by a later correction or undo; check.
 

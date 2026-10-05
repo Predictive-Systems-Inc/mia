@@ -43,7 +43,10 @@ follow-up intents. The generator prompt is prompts/generator.md (the command rea
   exists the command writes data/generated-<split>-<UTC timestamp>.jsonl instead and prints the
   path, so existing (reviewed) data is never overwritten. Read each printed path.
 - Ids are `<intent>/<lang>/<model>/<index>`. Rerunning the same teacher model produces the same
-  ids again, so when merging dedupe by id (keep the first, or the reviewed one).
+  ids again, so when merging dedupe by id (see the tie-break in step 5).
+- A second `--split test` run writes data/generated-test-<UTC timestamp>.jsonl. `validate` and
+  `train` ignore that file, so after review merge it into data/test.jsonl with the same dedupe
+  rule as step 5.
 
 ## 5. Review
 Use prompts/reviewer.md with a stronger model than the generators. For every record in
@@ -52,7 +55,9 @@ naturalness, slots; set review.status (kept, fixed, dropped) and a note. The rev
 the generated train files; the test file (data/test.jsonl) is checked the same way in place.
 
 Merge into reviewed.jsonl: concatenate every reviewed generated file (plus reviewed top-ups and
-approved public records), dedupe by id, and write one record per line. Records marked dropped
+approved public records), dedupe by id, and write one record per line. Tie-break for a repeated
+id: prefer the record whose review.status is not pending; if both are reviewed, keep the later
+reviewed one. Records marked dropped
 stay in reviewed.jsonl for audit; `split` excludes them. Do not edit train.jsonl or dev.jsonl by
 hand, they are rewritten by `split`.
 
@@ -62,8 +67,14 @@ and `uv run mia skills validate <role>` until there are no errors. Write review.
 coverage notes and the validator's warnings with your judgement on each.
 
 Harvested real candidates (`mia skills harvest <role>`, self-learning) follow extra rules:
-- Real data never leaves the node (D18). Review candidates locally, never send them to a cloud
-  teacher or reviewer model, and never write them to git.
+- Harvest appends to MIA_LEARNING_DIR/<role>/candidates.jsonl (default data/learning/<role>/),
+  outside git and outside skill/. Candidates are reviewed in place, locally, by a person: for
+  each set review.status to `kept`, `fixed` or `dropped` (`pending` is the unreviewed state) and
+  `split` to `train` or `dev`. `train --with-real` reads only records with status kept or fixed
+  and adds them to train or dev by their split. Never merge candidates into reviewed.jsonl or
+  any git-tracked file. Then train with `uv run mia skills train <role> --with-real`.
+- Real data never leaves the node (D18). Never send candidates to a cloud teacher or reviewer
+  model, and never write them to git.
 - Only person names are pseudonymised. Phone numbers, customer names and addresses pass
   through, so a person must check each candidate and scrub or drop it.
 - Health details can appear inside a non-health intent. Drop or scrub them.
