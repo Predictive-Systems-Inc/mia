@@ -116,6 +116,7 @@ Six two-week sprints; each ends with a demo to Hype and a working build. Months 
 - RBAC: standard roles, Casbin model and policies, permission check middleware
 - Office web app: login, and create, edit and list screens for clients, sites, staff and jobs
 - CSV import for clients, sites and staff with column mapping and preview
+- Master data owners: who may create or change clients, sites, staff, service agreements and price lists, and which changes need approval (a price or a site's access notes are not free text anyone can edit). Service agreements (scope, frequency, price per visit or m2, index clause) are a data standard addition and need approval first.
 
 **Done when:** Hype's clients, sites and staff are imported, and an admin and a supervisor can log in with the right rights.
 
@@ -125,6 +126,7 @@ Six two-week sprints; each ends with a demo to Hype and a working build. Months 
 - Schedule board by cleaner and by site, drag and drop, week view
 - Supervisor view: unfilled visits, late check-ins, open problems
 - Approvals service and inbox (record, approver roles, expiry, escalation, no self-approval, PIN for money and external types)
+- Time and attendance chain: check-in and check-out produce timesheets; corrections and supervisor approval with separation of duties (whoever enters time does not approve it). Approved timesheets are the only source for the payroll export.
 
 **Done when:** a full week for Hype is planned in the app and a supervisor approves a change from the inbox.
 
@@ -150,7 +152,8 @@ Six two-week sprints; each ends with a demo to Hype and a working build. Months 
 ### Sprint 5: alerts, billing export and rollout (70 h, month 3)
 
 - Alerts: unfilled visits, late check-ins, missing check-outs, overtime risk
-- Billing summary export: completed visits and extras per client per month (CSV)
+- Billing summary export: completed visits and extras per client per month (CSV); extras count only when approved (by the client where the agreement requires it)
+- Payroll export from approved timesheets in the format of Hype's payroll or accounting system. Mia does not run payroll or report to the Incomes Register (tulorekisteri) itself in Phase 1; the payroll system does.
 - Backups verified with a restore test; install guide; update procedure
 - Whole Hype team onboarded; two weeks of supported use; fixes from feedback
 
@@ -186,7 +189,14 @@ The one fully configured agent in Phase 1, built with Pydantic AI on the manifes
 | Ask site instructions | Cleaner | Instructions for a visit they are assigned to (access notes only during the visit) |
 | Find cover for a visit | Supervisor | Ranked replacement candidates |
 | Approve or reject a suggestion | Supervisor | Assignment updated, people notified |
+| Accept or decline a cover request | Cleaner | Visit reassigned, or the next candidate asked (built, D10) |
+| Change or end an absence ("back tomorrow", "only the morning") | Cleaner | Absence updated, cover requests adjusted |
+| Running late to a visit, with ETA | Cleaner | Supervisor told; client told only with approval |
+| Can't get in (keys, alarm, locked) | Cleaner | Organisation instructions shown, supervisor alerted |
+| Set availability or ask for time off | Cleaner | Availability updated; time off waits for supervisor approval |
 | Anything else | Anyone | Polite redirect or handoff to a supervisor |
+
+Started by events, not by a message: a missed check-in, a declined or unanswered cover request, a visit still unfilled close to its start. These are alerts (Sprint 5) that open a task for the dispatcher.
 
 ### Tools
 
@@ -226,6 +236,56 @@ Candidates must be available, within daily and weekly hour limits, and not alrea
 
 At least 30 scenarios in Finnish and English (41 as of Oct 5, with Filipino), run 3 to 5 times each against the seeded database with real tools, reported per language: sick report at 05:40 with three visits, late arrival, absence with no available replacement (must escalate), request for instructions on a visit the cleaner is not assigned to (must refuse), a message that tries to instruct the agent to reassign someone (must ignore), and supervisor approval and rejection paths. Target pass rate 95% in Phase 1, overall and for each of Finnish and English.
 
+## Agents, processes and capabilities beyond Phase 1
+
+Phase 1 builds one agent. The rest of a cleaning company's work is mapped now so that Phase 1's
+data and hand-offs do not have to be redone. The full list lives in docs/capabilities.md (to be
+written): process, capability, intents, owning agent, trigger, system of record, risk and
+sensitivity, approval and separation of duties, legal effect, country variant, phase.
+
+**Agents are hired roles that mirror the client's departments** (spec: job description, own
+role, approvers, onboarding, per-agent price). A small company hires a few and adds more as it
+grows, the way it hires people. Planned roster:
+
+| Agent (role) | Department | Main capabilities | Phase |
+| --- | --- | --- | --- |
+| Dispatcher | Operations | Absences, cover, schedule questions, field exceptions | 1 |
+| Client service | Customer service | Bookings, changes, complaints, re-cleans, client notices (approval) | 2 |
+| Sales | Sales | Leads, site surveys, quotes (code calculates), contracts, renewals and index increases | 2 |
+| HR and payroll administrator | HR | Onboarding documents, time off, timesheet approval support, payroll export, offboarding | 2 |
+| Bookkeeper | Finance | Invoicing, reminders, credit notes, supplier invoices, VAT and contribution reports via the accounting system | 2 to 3 |
+| Purchaser | Operations | Supplies, equipment, suppliers and subcontractors | 3 |
+| Recruiter | HR | Job ads, screening, interviews, offers | 3 |
+| Marketing assistant | Sales | Posts, campaigns, reviews (drafts only, approval to publish) | 3 |
+| QA (built in) | All | Watches every process end to end | platform |
+
+**Processes run across agents** and each has a named process owner (a person in the client's
+organisation) and an end-to-end test: Lead-to-Contract, Contract-to-Service, Service-to-Cash,
+Hire-to-Retire, Procure-to-Pay, Record-to-Report. Agents hand work to each other as A2A tasks
+(ADR 008) or events, never by writing each other's tables.
+
+**Triggers:** a message from a person, an event (missed check-in, invoice received), or a schedule
+(month-end invoicing, payroll cut-off, certificate expiry, contract renewal).
+
+**Every capability declares how it is handled:** system of record (Mia, or an integrated system
+such as the accounting or payroll system; Mia does not rebuild a general ledger), data owner,
+validations in code (rule 7), approval and separation-of-duties pairs, sensitivity (special
+category data such as health or ID documents never goes to a cloud model, even pseudonymised),
+legal effect (terminations, contract changes and statutory filings are decided by a person; the
+agent drafts), how it is reversed (credit note, reassignment; events are append-only), who is
+notified and how fast, and the country variant.
+
+**Country rules to design for:** Finland: Working Hours Act, Annual Holidays Act, the cleaning
+sector collective agreement, tax cards, Incomes Register within five days of payment, occupational
+health care, Contractor's Liability Act checks for subcontractors, Finvoice e-invoicing, household
+tax deduction details. Philippines: BIR invoices, SSS, PhilHealth and Pag-IBIG, 13th-month pay,
+DOLE rules on hours, rest days, holidays and night differential, Data Privacy Act.
+
+**Local models:** the high-volume, language-heavy entry intents (absence, running late, can't get
+in, supplies low, book or cancel, cover answers, schedule questions) are the first candidates for
+distilled local classifiers. Rare, high-risk capabilities (payroll, terminations, contracts) stay
+with a strong model and human approval.
+
 ## Definition of done, inputs and risks
 
 ### Definition of done (Phase 1 release)
@@ -250,6 +310,8 @@ At least 30 scenarios in Finnish and English (41 as of Oct 5, with Filipino), ru
 | Organisation instructions for the dispatcher (contacts, quiet hours, escalation) | Sprint 4 |
 | Hype's own WhatsApp Business account and number, completed business profile and Meta business verification (can take days to weeks), and a public HTTPS address for the node | Before the pilot uses WhatsApp |
 | Last month's invoicing data to check the billing export against | Sprint 5 |
+| Service agreements and price lists per client (scope, frequency, price, index clause) | Sprint 1 |
+| Names and import formats of Hype's payroll and accounting systems | Sprint 2 |
 
 ### Risks and mitigations
 
@@ -262,6 +324,8 @@ At least 30 scenarios in Finnish and English (41 as of Oct 5, with Filipino), ru
 | Scope creep from demos | Buffer of 60 hours; anything larger goes to Phase 2 with Allan's sign-off |
 | Mobile release delays (app store review) | Submit a test build in Sprint 3 week 1; use internal test tracks until the store release |
 | Server at Hype is unreliable | Litestream backup from day one, health page, and a rented-server fallback |
+| Statutory errors once Mia feeds payroll and invoicing (Working Hours Act limits, supplements, Incomes Register deadlines) | Phase 1 only exports; payroll and filing stay in Hype's payroll system. Limits and supplements are code with unit tests, checked against Hype's last month |
+| The capability map turns into scope creep | Only Phase 1 rows are built; everything else is mapped so Phase 1 data does not block it later |
 | Model gateway not ready | Sprint 4 can run with a single provider key on the node behind the same egress component; switch to the gateway when available |
 
 ### Weekly rhythm
