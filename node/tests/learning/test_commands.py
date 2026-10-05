@@ -65,7 +65,7 @@ def test_validate_reports_errors_and_exit_1(
     out = capsys.readouterr().out.splitlines()
     assert "error: unknown intent tr.zzz in tr/1" in out
     assert "error: tr.a/en train 0 < 1" in out
-    assert out[-1] == "1 records, 5 errors, 3 warnings"
+    assert out[-1] == "1 records, 5 errors, 4 warnings"
 
 
 def test_validate_clean_data_exit_0(skill: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -80,7 +80,7 @@ def test_validate_clean_data_exit_0(skill: Path, capsys: pytest.CaptureFixture[s
     assert main(["skills", "validate", "tr"]) == 0
     out = capsys.readouterr().out.splitlines()
     assert not [line for line in out if line.startswith("error")]
-    assert out[-1] == "4 records, 0 errors, 3 warnings"
+    assert out[-1] == "4 records, 0 errors, 4 warnings"
 
 
 def test_validate_rejects_a_bad_public_yaml(

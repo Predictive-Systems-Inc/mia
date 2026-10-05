@@ -89,5 +89,7 @@ def _check_mix(records: list[Record], report: CheckReport) -> None:
         report.warnings.append(f"other and injection {share_other:.0%} outside 5 to 12%")
     if kinds["injection"] / total < 0.01:
         report.warnings.append("injection attempts under 1%")
+    if not kinds["safety"]:
+        report.warnings.append("no safety records")
     if not any(r.intent == OTHER for r in records):
         report.errors.append("no records labelled other")

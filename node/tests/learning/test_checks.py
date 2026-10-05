@@ -77,3 +77,52 @@ def test_duplicate_ids_are_an_error() -> None:
     recs = [rec(1, "im sick today", "train"), rec(1, "cant come", "train")]
     report = check_records(role(train=1, dev=0, test=0), recs, conversation=[])
     assert any("duplicate id r/1" in e for e in report.errors)
+
+
+def test_unknown_negative_of_is_an_error() -> None:
+    r = rec(1, "im sick today", "train").model_copy(update={"negative_of": "r.zzz"})
+    report = check_records(role(train=1, dev=0, test=0), [r], conversation=[])
+    assert "unknown negative_of r.zzz in r/1" in report.errors
+
+
+def test_language_mismatch_is_a_warning() -> None:
+    r = rec(1, "olen sairas tänään enkä pääse huomenna", "train")
+    report = check_records(role(train=1, dev=0, test=0), [r], conversation=[])
+    assert f"r/1 may not be en: {r.text!r}" in report.warnings
+    assert not [e for e in report.errors if "r/1" in e]
+
+
+def mix(negative: int, other: int, injection: int, safety: int = 1, total: int = 100) -> list[str]:
+    """Warnings for a dataset of `total` records with the given kind counts (rest normal)."""
+    kinds = ["negative"] * negative + ["other"] * other + ["injection"] * injection
+    kinds += ["safety"] * safety
+    kinds += ["normal"] * (total - len(kinds))
+    recs = [
+        rec(i, f"m{i}", "train", intent="other" if k in ("other", "injection") else "r.a", kind=k)
+        for i, k in enumerate(kinds)
+    ]
+    return check_records(role(train=0, dev=0, test=0), recs, conversation=[]).warnings
+
+
+def test_mix_at_each_boundary_gives_no_warning() -> None:
+    assert mix(negative=15, other=4, injection=1) == []  # other and injection 5%
+    assert mix(negative=15, other=11, injection=1) == []  # other and injection 12%
+
+
+def test_mix_just_past_each_boundary_warns() -> None:
+    assert mix(negative=14, other=6, injection=1) == ["hard negatives 14% < 15%"]
+    assert mix(negative=15, other=3, injection=1) == ["other and injection 4% outside 5 to 12%"]
+    assert mix(negative=15, other=12, injection=1) == ["other and injection 13% outside 5 to 12%"]
+    # injection 1/101, just under 1%
+    assert mix(negative=16, other=6, injection=1, total=101) == ["injection attempts under 1%"]
+    assert mix(negative=15, other=6, injection=0) == ["injection attempts under 1%"]
+
+
+def test_no_safety_records_warns() -> None:
+    assert mix(negative=15, other=6, injection=1, safety=0) == ["no safety records"]
+
+
+def test_no_other_records_is_an_error() -> None:
+    recs = [rec(1, "im sick today", "train")]
+    report = check_records(role(train=1, dev=0, test=0), recs, conversation=[])
+    assert report.errors == ["no records labelled other"]
