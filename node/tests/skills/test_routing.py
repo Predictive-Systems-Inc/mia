@@ -94,13 +94,26 @@ def test_medium_clarifies_with_alternatives() -> None:
 
 
 def test_medium_excludes_other_and_caps_at_three() -> None:
-    alts = ["a", "other", "b", "c", "d", "e"]
-    assert route(c("a", "medium", alts=alts), ROLE).options == ["a", "b", "c"]
+    alts = [
+        "dispatcher.report_absence",
+        "other",
+        "conversation.greeting",
+        "conversation.venting",
+        "dispatcher.thanks_reply",
+    ]
+    assert route(c("a", "medium", alts=alts), ROLE).options == [
+        "dispatcher.report_absence",
+        "conversation.greeting",
+        "conversation.venting",
+    ]
 
 
 def test_medium_with_no_usable_alternatives_runs_agent() -> None:
     assert route(c("a", "medium", alts=["other"]), ROLE) == Route(kind="agent")
     assert route(c("a", "medium"), ROLE) == Route(kind="agent")
+    assert route(c("a", "medium", alts=["conversation.prompt_injection"]), ROLE) == Route(
+        kind="agent"
+    )
 
 
 def test_low_runs_agent_without_intent() -> None:
@@ -109,4 +122,58 @@ def test_low_runs_agent_without_intent() -> None:
 
 def test_no_role_plan_means_agent() -> None:
     assert route(c("dispatcher.report_absence", "high"), None) == Route(kind="agent")
-    assert route(c("conversation.greeting", "medium", alts=["a"]), None) == Route(kind="agent")
+    assert route(
+        c("conversation.greeting", "medium", alts=["dispatcher.report_absence"]), None
+    ) == Route(kind="agent")
+
+
+def test_injection_never_acts_at_any_band() -> None:
+    for band in ("high", "medium", "low"):
+        assert route(c("conversation.prompt_injection", band), ROLE) == Route(kind="agent")
+        assert route(c("conversation.legal_advice", band), ROLE) == Route(kind="agent")
+
+
+def test_role_cannot_shadow_conversation_ids() -> None:
+    shadow = ROLE.model_copy(
+        update={
+            "intents": [
+                IntentSpec(
+                    id=i,
+                    description="d",
+                    counterparts=["c"],
+                    risk="read",
+                    label_en="x",
+                    handler="template",
+                )
+                for i in (
+                    "conversation.prompt_injection",
+                    "conversation.venting",
+                    "conversation.request_human",
+                )
+            ]
+        }
+    )
+    assert route(c("conversation.prompt_injection", "high"), shadow) == Route(kind="agent")
+    assert route(c("conversation.venting", "high"), shadow) == Route(
+        kind="agent", intent="conversation.venting"
+    )
+    assert route(c("conversation.request_human", "high"), shadow) == Route(
+        kind="agent", intent="conversation.request_human"
+    )
+    assert route(c("conversation.greeting", "high"), shadow).kind == "template"
+
+
+def test_medium_options_drop_injection_handoff_emergency_and_unknown() -> None:
+    alts = [
+        "conversation.prompt_injection",
+        "conversation.request_human",
+        "conversation.emergency",
+        "conversation.no_such_intent",
+        "dispatcher.no_such_intent",
+        "conversation.thanks",
+        "dispatcher.thanks_reply",
+    ]
+    assert route(c("x", "medium", alts=alts), ROLE).options == [
+        "conversation.thanks",
+        "dispatcher.thanks_reply",
+    ]
