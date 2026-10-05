@@ -1,6 +1,7 @@
 """Model packages on disk and their promotion (spec section 5)."""
 
 import datetime as dt
+import hashlib
 import os
 import tempfile
 from pathlib import Path
@@ -16,7 +17,8 @@ from mia.settings import get_settings
 
 
 class PromotionRefused(Exception):
-    """The version cannot become active (gate failed, no sign-off, or missing)."""
+    """The version cannot become active (gate failed, no sign-off, missing, or files that do
+    not match the card)."""
 
 
 class ModelCard(BaseModel):
@@ -65,6 +67,26 @@ def package_dir(role: str, version: str) -> Path:
     return get_settings().MIA_MODELS_DIR / role / version
 
 
+ARTIFACTS = ("model.onnx", "tokenizer.json")
+
+
+def verify_artifacts(card: ModelCard) -> None:
+    """Returns only when every runtime file exists and matches the card's sha256; otherwise
+    raises ValueError naming the first bad file."""
+    folder = package_dir(card.role, card.version)
+    for name in ARTIFACTS:
+        expected = card.artifacts.get(name)
+        if expected is None:
+            raise ValueError(f"{name}: no sha256 in card artifacts")
+        try:
+            with (folder / name).open("rb") as f:
+                digest = hashlib.file_digest(f, "sha256").hexdigest()
+        except FileNotFoundError:
+            raise ValueError(f"{name}: file is missing") from None
+        if digest != expected:
+            raise ValueError(f"{name}: sha256 does not match card artifacts")
+
+
 def write_card(card: ModelCard) -> Path:
     """Write card.json for the card's version, creating the directory."""
     path = package_dir(card.role, card.version) / "card.json"
@@ -102,6 +124,10 @@ def promote(session: Session, actor: Actor, role: str, version: str, signed_by: 
         raise PromotionRefused(f"{role}@{version} failed the gate: {card.gate.failures}")
     if not signed_by.strip():
         raise PromotionRefused("a sign-off name is required")
+    try:
+        verify_artifacts(card)
+    except ValueError as exc:
+        raise PromotionRefused(f"{role}@{version} cannot be loaded: {exc}") from exc
     previous = active_version(role)
     signed_at = dt.datetime.now(dt.UTC).isoformat()
     card = card.model_copy(update={"signed_by": signed_by, "signed_at": signed_at})

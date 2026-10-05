@@ -9,6 +9,7 @@ from mia.learning import commands
 from mia.learning.package import ModelCard, active_version, read_card, write_card
 from mia.learning.schema import Record, load_records, write_records
 from tests.learning.helpers import card as base_card
+from tests.learning.helpers import write_package
 
 ROLE_YAML = """
 id: tr
@@ -196,7 +197,7 @@ def test_promote_activates_signs_and_emits_event(capsys: pytest.CaptureFixture[s
     from mia.core.models import Event
 
     assert main(["migrate"]) == 0 and main(["seed"]) == 0
-    write_card(card("v1"))
+    write_package(card("v1"))
     capsys.readouterr()
     assert main(["skills", "promote", "tr", "v1", "--signed-by", "Allan"]) == 0
     assert capsys.readouterr().out == "tr@v1 is active (signed by Allan)\n"

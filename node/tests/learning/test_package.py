@@ -6,6 +6,7 @@ from sqlmodel import Session, select
 from mia.core.models import Actor, Event, Person
 from mia.learning.package import (
     PromotionRefused,
+    _atomic_write,
     active_version,
     package_dir,
     promote,
@@ -13,7 +14,7 @@ from mia.learning.package import (
     write_card,
 )
 from mia.settings import get_settings
-from tests.learning.helpers import card
+from tests.learning.helpers import card, write_package
 
 
 def test_card_round_trip() -> None:
@@ -67,8 +68,8 @@ def test_promote_marks_active_keeps_previous_and_emits_event(
     session: Session, people: dict[str, Person]
 ) -> None:
     actor = Actor.person(people["Helena"])
-    write_card(card(version="v1"))
-    write_card(card(version="v2"))
+    write_package(card(version="v1"))
+    write_package(card(version="v2"))
     promote(session, actor, "r", "v1", signed_by="Allan")
     promote(session, actor, "r", "v2", signed_by="Allan")
     assert active_version("r") == "v2"
@@ -84,7 +85,7 @@ def test_promote_does_not_emit_when_marker_write_fails(
     session: Session, people: dict[str, Person]
 ) -> None:
     actor = Actor.person(people["Helena"])
-    write_card(card())
+    write_package(card())
     (get_settings().MIA_MODELS_DIR / "r" / "ACTIVE").mkdir()  # a directory: write_text fails
     with pytest.raises(OSError):
         promote(session, actor, "r", "v1", signed_by="Allan")
@@ -95,8 +96,8 @@ def test_failed_replace_keeps_old_active_and_leaves_no_temp_file(
     session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     actor = Actor.person(people["Helena"])
-    write_card(card(version="v1"))
-    write_card(card(version="v2"))
+    write_package(card(version="v1"))
+    write_package(card(version="v2"))
     promote(session, actor, "r", "v1", signed_by="Allan")
     real_replace = os.replace
 
@@ -112,3 +113,56 @@ def test_failed_replace_keeps_old_active_and_leaves_no_temp_file(
     assert marker.read_text("utf-8") == "v1"
     assert sorted(p.name for p in marker.parent.iterdir()) == ["ACTIVE", "v1", "v2"]
     assert len(session.exec(select(Event).where(Event.action == "skill_model.promoted")).all()) == 1
+
+
+@pytest.mark.parametrize(
+    ("damage", "reason"),
+    [
+        ("model.onnx", "model.onnx: sha256 does not match card artifacts"),
+        ("tokenizer.json", "tokenizer.json: sha256 does not match card artifacts"),
+        ("-model.onnx", "model.onnx: file is missing"),
+        ("-tokenizer.json", "tokenizer.json: file is missing"),
+    ],
+)
+def test_promote_refuses_missing_or_corrupt_artifacts(
+    session: Session, people: dict[str, Person], damage: str, reason: str
+) -> None:
+    actor = Actor.person(people["Helena"])
+    write_package(card(version="v1"))
+    promote(session, actor, "r", "v1", signed_by="Allan")
+    write_package(card(version="v2"))
+    target = package_dir("r", "v2") / damage.lstrip("-")
+    if damage.startswith("-"):
+        target.unlink()
+    else:
+        target.write_bytes(b"wrong bytes")
+    with pytest.raises(PromotionRefused) as err:
+        promote(session, actor, "r", "v2", signed_by="Allan")
+    assert str(err.value) == f"r@v2 cannot be loaded: {reason}"
+    assert active_version("r") == "v1"
+    assert read_card("r", "v2").signed_by is None  # refused before any write
+    assert len(session.exec(select(Event).where(Event.action == "skill_model.promoted")).all()) == 1
+
+
+def test_promote_refuses_a_card_without_digests(
+    session: Session, people: dict[str, Person]
+) -> None:
+    write_card(card())
+    with pytest.raises(PromotionRefused) as err:
+        promote(session, Actor.person(people["Helena"]), "r", "v1", signed_by="Allan")
+    assert str(err.value) == "r@v1 cannot be loaded: model.onnx: no sha256 in card artifacts"
+    assert active_version("r") is None
+
+
+def test_atomic_write_removes_the_temp_file_when_the_write_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    folder = get_settings().MIA_MODELS_DIR / "r"
+
+    def fail(fd: int) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "fsync", fail)
+    with pytest.raises(OSError, match="disk full"):
+        _atomic_write(folder / "ACTIVE", "v1")
+    assert list(folder.iterdir()) == []

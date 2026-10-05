@@ -1,31 +1,22 @@
 """Run a promoted package on the CPU (onnxruntime); about 20 ms per message."""
 
-import hashlib
-
 import numpy as np
 import onnxruntime
 from tokenizers import Tokenizer
 
-from mia.learning.package import ModelCard, package_dir
+from mia.learning.package import ModelCard, package_dir, verify_artifacts
 from mia.skills.runtime import Classification, ScoredClassifier
-
-FILES = ("model.onnx", "tokenizer.json")
 
 
 class OnnxClassifier(ScoredClassifier):
     """Classifier over a package whose model and tokenizer match the card's sha256 digests."""
 
     def __init__(self, card: ModelCard, safety: set[str]) -> None:
-        """Raises ValueError naming the file when a digest is missing or differs, before any
-        model is loaded."""
+        """Raises ValueError naming the file when a file or digest is missing or differs, before
+        any model is loaded."""
         super().__init__(card, safety)
+        verify_artifacts(card)
         folder = package_dir(card.role, card.version)
-        for name in FILES:
-            expected = card.artifacts.get(name)
-            if expected is None:
-                raise ValueError(f"{name}: no sha256 in card artifacts")
-            if hashlib.sha256((folder / name).read_bytes()).hexdigest() != expected:
-                raise ValueError(f"{name}: sha256 does not match card artifacts")
         self.session = onnxruntime.InferenceSession(
             str(folder / "model.onnx"), providers=["CPUExecutionProvider"]
         )
