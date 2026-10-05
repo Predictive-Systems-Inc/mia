@@ -28,8 +28,11 @@ services:
   litestream:
     image: ${MIA_IMAGE:-mia-node:local}
     command: ["litestream", "replicate", "-config", "/etc/litestream.yml"]
-    healthcheck:
-      disable: true
+    healthcheck:  # Litestream's metrics server (litestream.yml addr) answers while it replicates
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9090/metrics', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     env_file: .env
     volumes:
       - mia-data:/data
