@@ -93,7 +93,9 @@ def choose_thresholds(
         correct = 0
         for k, (conf, truth) in enumerate(mine, start=1):
             correct += truth == intent.id
-            if correct / k >= target:
+            # Only accept threshold at end of group of equal confidences
+            is_end_of_group = k == len(mine) or mine[k][0] != conf
+            if correct / k >= target and is_end_of_group:
                 best = conf
         out[intent.id] = best
     return out
@@ -136,9 +138,13 @@ def evaluate(
         by_lang[p.lang].append(label == p.intent)
     safety_rows = [(p, label) for p, label, _ in rows if p.intent in safety]
     confusions = Counter((p.intent, label) for p, label, _ in rows if label != p.intent)
+    # Macro F1: average only intents with support > 0
+    f1s_nonzero = [
+        per_intent[intent.id].f1 for intent in role.intents if per_intent[intent.id].support > 0
+    ]
     return EvalReport(
         accuracy=sum(label == p.intent for p, label, _ in rows) / (len(rows) or 1),
-        macro_f1=sum(f1s) / (len(f1s) or 1),
+        macro_f1=sum(f1s_nonzero) / (len(f1s_nonzero) or 1),
         coverage=len(auto) / (len(rows) or 1),
         ece=expected_calibration_error(preds, temperature),
         per_intent=per_intent,

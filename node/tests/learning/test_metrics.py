@@ -82,3 +82,84 @@ def test_calibration_helpers_run() -> None:
     t = fit_temperature(preds)
     assert 0.5 <= t <= 5.0
     assert 0.0 <= expected_calibration_error(preds, t) <= 1.0
+
+
+def test_thresholds_rejects_ties_with_mixed_correctness() -> None:
+    """Tied confidences with mixed correctness must not all be accepted."""
+    # Two predictions at same confidence, different correctness
+    preds = [
+        p(1, "r.write", [1.0, 0.0, 0.0, 0.0]),  # correct for r.write
+        p(
+            2, "r.read", [1.0, 0.0, 0.0, 0.0]
+        ),  # wrong for r.write (pred says r.write but true is r.read)
+    ]
+    thr = choose_thresholds(preds, ROLE, 1.0)
+    # With 99% precision target for write, we can't accept both at the tie
+    assert thr["r.write"] > 1.0  # unreachable when all predictions have same confidence
+
+    # Stricter case: require accepting only when precision can be met
+    preds2 = [
+        p(1, "r.write", [2.0, 0.0, 0.0, 0.0]),  # correct
+        p(2, "r.write", [2.0, 0.0, 0.0, 0.0]),  # correct
+        p(3, "r.read", [1.0, 0.0, 0.0, 0.0]),  # wrong
+    ]
+    thr2 = choose_thresholds(preds2, ROLE, 1.0)
+    # With tie handling, threshold must be chosen carefully
+    above = [x for x in preds2 if softmax(x.logits)[0] >= thr2["r.write"]]
+    if above:
+        # If any are accepted, all must be correct (99% precision)
+        precision = sum(1 for x in above if x.intent == "r.write") / len(above)
+        assert precision >= 0.99  # precision_write target
+
+
+def test_macro_f1_excludes_zero_support_intents() -> None:
+    """Intents with zero support in test set should not count in macro F1."""
+    # Only r.write in predictions, r.read has zero support
+    preds = [p(i, "r.write", [5, 0, 0, 0]) for i in range(5)]
+    report = evaluate(preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, 1.0, safety=set())
+    # F1 for r.write should be 1.0, r.read should not affect macro average
+    assert report.per_intent["r.write"].support == 5
+    assert report.per_intent["r.read"].support == 0
+    # macro_f1 should be just r.write's F1 (1.0), not average of all intents
+    assert report.macro_f1 == 1.0
+
+
+def test_pinned_values_for_ece_per_lang_precision_coverage() -> None:
+    """Verify specific metrics on a deterministic test case."""
+    # Tiny case: 2 predictions, both correct on r.write at same logit
+    preds = [
+        p(1, "r.write", [2.0, 0.0, 0.0, 0.0], lang="en"),
+        p(2, "r.write", [2.0, 0.0, 0.0, 0.0], lang="fi"),
+    ]
+    t = 1.0  # temperature
+    # Softmax of [2.0, 0, 0, 0]: exp(2)/(exp(2)+3*exp(0)) = 1/(1+3*e^-2) ≈ 0.711
+    # ECE: both in bin 7 with accuracy 100%, confidence ~71.1%
+    # ECE = (2/2) * |0.711 - 1.0| ≈ 0.289
+    report = evaluate(preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, t, safety=set())
+    ece = expected_calibration_error(preds, t, bins=10)
+    assert 0.28 < ece < 0.30  # hand-computed range
+
+    # Per-lang: both correct (en: 1.0, fi: 1.0)
+    assert report.per_lang["en"] == 1.0
+    assert report.per_lang["fi"] == 1.0
+
+    # Precision at threshold 0.5: both above, both correct -> 1.0
+    assert report.per_intent["r.write"].precision_at_threshold == 1.0
+
+    # Coverage: both above threshold -> 1.0
+    assert report.coverage == 1.0
+
+    # Auto share for r.write: 2/2 = 1.0
+    assert report.per_intent["r.write"].auto_share == 1.0
+
+
+def test_actions_from_other_zero_when_injection_below_threshold() -> None:
+    """Injection kind predictions below threshold should not count in actions_from_other."""
+    preds = [
+        p(1, "other", [0.3, 0.0, 0.0, 0.0], kind="injection"),  # below threshold
+        p(2, "other", [6.0, 0.0, 0.0, 0.0], kind="injection"),  # above threshold -> acts
+    ]
+    # Threshold 0.5 means first won't be auto-routed, second will be
+    report = evaluate(preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, 1.0, safety=set())
+    # Only p(2) is auto and kind="injection": should count
+    assert report.actions_from_other == 1
