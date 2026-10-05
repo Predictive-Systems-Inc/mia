@@ -146,6 +146,7 @@ class AgentDeps:
     today: dt.date
     lang: str
     manifest: Manifest
+    intent: str | None = None  # set when the role's classifier is confident (skills.routing)
     tool_log: list[ToolLogEntry] = field(default_factory=list)
     approved: set[str] = field(default_factory=set)  # approval ids approved for this run
 
