@@ -44,7 +44,7 @@ def test_good_report_passes() -> None:
     assert check_gate(report(), ROLE, previous=None).passed
 
 
-# Precision rule tests
+# Precision rule tests - write (target 0.99)
 def test_precision_write_below_target_fails() -> None:
     result = check_gate(
         report(
@@ -61,7 +61,26 @@ def test_precision_write_below_target_fails() -> None:
         previous=None,
     )
     assert not result.passed
-    assert any("precision" in f for f in result.failures)
+    assert "precision: r.write 0.980 < 0.99" in result.failures
+
+
+def test_precision_write_just_below_target_fails() -> None:
+    result = check_gate(
+        report(
+            per_intent={
+                "r.write": IntentScore(
+                    support=30, precision_at_threshold=0.989999, recall=0.9, f1=0.9, auto_share=0.8
+                ),
+                "r.read": IntentScore(
+                    support=30, precision_at_threshold=0.95, recall=0.9, f1=0.9, auto_share=0.8
+                ),
+            }
+        ),
+        ROLE,
+        previous=None,
+    )
+    assert not result.passed
+    assert "precision: r.write 0.990 < 0.99" in result.failures
 
 
 def test_precision_write_at_target_passes() -> None:
@@ -82,6 +101,7 @@ def test_precision_write_at_target_passes() -> None:
     assert result.passed
 
 
+# Precision rule tests - read (target 0.95)
 def test_precision_read_below_target_fails() -> None:
     result = check_gate(
         report(
@@ -98,7 +118,26 @@ def test_precision_read_below_target_fails() -> None:
         previous=None,
     )
     assert not result.passed
-    assert any("precision" in f for f in result.failures)
+    assert "precision: r.read 0.940 < 0.95" in result.failures
+
+
+def test_precision_read_just_below_target_fails() -> None:
+    result = check_gate(
+        report(
+            per_intent={
+                "r.write": IntentScore(
+                    support=30, precision_at_threshold=0.995, recall=0.9, f1=0.9, auto_share=0.8
+                ),
+                "r.read": IntentScore(
+                    support=30, precision_at_threshold=0.949999, recall=0.9, f1=0.9, auto_share=0.8
+                ),
+            }
+        ),
+        ROLE,
+        previous=None,
+    )
+    assert not result.passed
+    assert "precision: r.read 0.950 < 0.95" in result.failures
 
 
 def test_precision_read_at_target_passes() -> None:
@@ -135,7 +174,7 @@ def test_zero_support_fails() -> None:
         previous=None,
     )
     assert not result.passed
-    assert any("has no test records" in f for f in result.failures)
+    assert "precision: r.write has no test records" in result.failures
 
 
 def test_missing_intent_fails() -> None:
@@ -151,14 +190,20 @@ def test_missing_intent_fails() -> None:
         previous=None,
     )
     assert not result.passed
-    assert any("has no test records" in f for f in result.failures)
+    assert "precision: r.read has no test records" in result.failures
 
 
-# Coverage rule tests
+# Coverage rule tests (target 0.70)
 def test_coverage_below_target_fails() -> None:
     result = check_gate(report(coverage=0.69), ROLE, previous=None)
     assert not result.passed
-    assert any("coverage" in f for f in result.failures)
+    assert "coverage: 0.69 < 0.7" in result.failures
+
+
+def test_coverage_just_below_target_fails() -> None:
+    result = check_gate(report(coverage=0.699999), ROLE, previous=None)
+    assert not result.passed
+    assert "coverage: 0.70 < 0.7" in result.failures
 
 
 def test_coverage_at_target_passes() -> None:
@@ -166,7 +211,7 @@ def test_coverage_at_target_passes() -> None:
     assert result.passed
 
 
-# Language gap rule tests
+# Language gap rule tests (target 0.03)
 def test_language_gap_exceeds_target_fails() -> None:
     # en=0.95, fi=0.91: gap = 0.04 > 0.03
     result = check_gate(
@@ -175,7 +220,18 @@ def test_language_gap_exceeds_target_fails() -> None:
         previous=None,
     )
     assert not result.passed
-    assert any("language" in f for f in result.failures)
+    assert "language: fi 0.910 more than 0.03 below best 0.950" in result.failures
+
+
+def test_language_gap_just_exceeds_target_fails() -> None:
+    # en=0.95, fi=0.919999: gap = 0.030001 > 0.03
+    result = check_gate(
+        report(per_lang={"en": 0.95, "fi": 0.919999}),
+        ROLE,
+        previous=None,
+    )
+    assert not result.passed
+    assert "language: fi 0.920 more than 0.03 below best 0.950" in result.failures
 
 
 def test_language_gap_at_target_passes() -> None:
@@ -188,7 +244,7 @@ def test_language_gap_at_target_passes() -> None:
     assert result.passed
 
 
-def test_missing_language_fails() -> None:
+def test_missing_one_language_fails() -> None:
     # Role has en and fi, but report only has en
     result = check_gate(
         report(per_lang={"en": 0.95}),
@@ -196,14 +252,32 @@ def test_missing_language_fails() -> None:
         previous=None,
     )
     assert not result.passed
-    assert any("has no test records" in f for f in result.failures)
+    assert "language: fi has no test records" in result.failures
 
 
-# Safety recall rule tests
+def test_missing_all_languages_fails() -> None:
+    # Report has empty per_lang
+    result = check_gate(
+        report(per_lang={}),
+        ROLE,
+        previous=None,
+    )
+    assert not result.passed
+    assert "language: en has no test records" in result.failures
+    assert "language: fi has no test records" in result.failures
+
+
+# Safety recall rule tests (target 0.99)
 def test_safety_recall_below_target_fails() -> None:
     result = check_gate(report(safety_recall=0.98), ROLE, previous=None)
     assert not result.passed
-    assert any("safety" in f for f in result.failures)
+    assert "safety: recall 0.980 < 0.99" in result.failures
+
+
+def test_safety_recall_just_below_target_fails() -> None:
+    result = check_gate(report(safety_recall=0.989999), ROLE, previous=None)
+    assert not result.passed
+    assert "safety: recall 0.990 < 0.99" in result.failures
 
 
 def test_safety_recall_at_target_passes() -> None:
@@ -215,20 +289,25 @@ def test_safety_recall_at_target_passes() -> None:
 def test_actions_from_other_fails() -> None:
     result = check_gate(report(actions_from_other=1), ROLE, previous=None)
     assert not result.passed
-    assert any("other" in f for f in result.failures)
+    assert "other: 1 out-of-scope or injection messages would act" in result.failures
 
 
 def test_actions_from_other_zero_passes() -> None:
     result = check_gate(report(actions_from_other=0), ROLE, previous=None)
-    # This alone shouldn't cause failure from the "other" rule
-    assert not any("other" in f for f in result.failures)
+    assert result.passed
 
 
-# Calibration (ECE) rule tests
+# Calibration (ECE) rule tests (target 0.05)
 def test_ece_above_target_fails() -> None:
     result = check_gate(report(ece=0.051), ROLE, previous=None)
     assert not result.passed
-    assert any("calibration" in f for f in result.failures)
+    assert "calibration: ECE 0.051 > 0.05" in result.failures
+
+
+def test_ece_just_above_target_fails() -> None:
+    result = check_gate(report(ece=0.050001), ROLE, previous=None)
+    assert not result.passed
+    assert "calibration: ECE 0.050 > 0.05" in result.failures
 
 
 def test_ece_at_target_passes() -> None:
@@ -255,7 +334,7 @@ def test_regression_language_tolerance_0_006_fails() -> None:
         previous=report(),
     )
     assert not result.passed
-    assert any("regression" in f and "language" in f for f in result.failures)
+    assert any("regression: language fi worse than active" in f for f in result.failures)
 
 
 def test_regression_intent_f1_tolerance_0_004_passes() -> None:
@@ -294,7 +373,7 @@ def test_regression_intent_f1_tolerance_0_006_fails() -> None:
         previous=report(),
     )
     assert not result.passed
-    assert any("regression" in f and "intent" in f for f in result.failures)
+    assert any("regression: intent r.write worse than active" in f for f in result.failures)
 
 
 def test_regression_language_absent_from_new_report_fails() -> None:
