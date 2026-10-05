@@ -259,7 +259,8 @@ grows, the way it hires people. Planned roster:
 | Marketing assistant | Sales | Posts, campaigns, reviews (drafts only, approval to publish) | 3 |
 | QA (built in) | All | Watches every process end to end | platform |
 
-**Processes run across agents** and each has a named process owner (a person in the client's
+**Processes are how workflows are designed and tested, never agents themselves.** They run
+across agents, and each has a named process owner (a person in the client's
 organisation) and an end-to-end test: Lead-to-Contract, Contract-to-Service, Service-to-Cash,
 Hire-to-Retire, Procure-to-Pay, Record-to-Report. Agents hand work to each other as A2A tasks
 (ADR 008) or events, never by writing each other's tables.

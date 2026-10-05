@@ -99,3 +99,10 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
 - Decision: chat thread ids stay ULIDs (rule 10), also when an AG-UI client starts a thread with
   its own threadId. AG-UI's threadId is an opaque string, so Mia's apps send a ULID; other ids
   are rejected. No external-id column and no data standard change.
+
+## D16: Agents are human roles; processes are for design and testing
+- Decision: every agent is a hired role that mirrors a human job in the client's departments
+  (dispatcher, client service, bookkeeper, recruiter and so on), with a job description, its own
+  RBAC role and approvers. End-to-end processes (Lead-to-Contract, Contract-to-Service,
+  Service-to-Cash, Hire-to-Retire, Procure-to-Pay, Record-to-Report) are how workflows are
+  designed and tested across those agents; a process is never an agent. See docs/plan.md.
