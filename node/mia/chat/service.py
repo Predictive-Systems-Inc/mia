@@ -83,23 +83,29 @@ def check_blocks(session: Session, deps: AgentDeps, blocks: list[Block]) -> list
 
 
 def _prepare(
-    session: Session, person: Person, text: str, thread_id: str | None
+    session: Session, person: Person, text: str, thread_id: str | None, *, create: bool = False
 ) -> tuple[Thread, list[ModelMessage], AgentDeps, EgressContext]:
-    """Store the user message and commit it; build the run's deps and egress context."""
+    """Store the user message and commit it; build the run's deps and egress context.
+
+    With create=True an unknown thread_id starts a new thread with that id (AG-UI clients name
+    their threads); a thread of another person is never continued.
+    """
     branch = session.get(Branch, person.branch_id)
     if branch is None:
         raise ChatError("person has no branch")
     human = Actor.person(person)
-    if thread_id:
-        thread = session.get(Thread, thread_id)
-        if thread is None or thread.person_id != person.id:
+    thread = session.get(Thread, thread_id) if thread_id else None
+    if thread is not None and thread.person_id != person.id:
+        raise ChatError("thread not found")
+    if thread is None:
+        if thread_id and not create:
             raise ChatError("thread not found")
-    else:
-        thread = store.insert(
-            session,
-            Thread(branch_id=branch.id, person_id=person.id, agent_id=MANIFEST.id, title=text[:60]),
-            human,
+        new = Thread(
+            branch_id=branch.id, person_id=person.id, agent_id=MANIFEST.id, title=text[:60]
         )
+        if thread_id:
+            new.id = thread_id
+        thread = store.insert(session, new, human)
     past = history(session, thread)
     store.insert(
         session,
