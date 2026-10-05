@@ -287,6 +287,50 @@ client FAQ in Phase 2 with the client service agent. New dependencies to approve
 build: a local runtime for the embedding model (for example onnxruntime) and text extraction for
 PDF and Word files.
 
+## Self-learning from clarifications
+
+When Mia is not sure what a message means, it asks instead of guessing, and the person's answer
+becomes a labelled example for the next version of the intent classifier.
+
+**In the conversation.** The intent classifier returns its top intents with calibrated
+confidence (high, medium, low):
+- high: code acts;
+- medium: Mia asks "Did you mean:" with the two or three most likely intents as buttons plus
+  "Something else" (WhatsApp allows 3 reply buttons, or a list of up to 10). Option labels come
+  from the intent catalogue as i18n strings in the person's language, never written by a model;
+- low or "Something else": Mia asks the person to say it in other words, then hands over to a
+  supervisor if it is still unclear. It asks once, never in a loop.
+Writes still go through their normal confirmation and approval: choosing "Report I'm sick" leads
+to the usual absence flow, so a wrong click cannot change data on its own.
+
+**What is recorded.** An event per clarification with the message, its language, the options
+shown with their scores, the choice, the classifier version, and the outcome: whether the
+person finished the task, undid it or corrected it ("no, I meant"). Corrections, undos and
+supervisor handoffs are recorded the same way as negative or corrected labels.
+
+**Turning choices into training data, with care.**
+- A choice is a weak label. It becomes training data only when the task it started was
+  completed and not undone, and identical or near-identical messages agree.
+- People can only pick what they were shown, so "Something else" answers and handoffs are kept
+  and reviewed; they are where new intents and phrasings appear.
+- Before training, the strong reviewer model checks each candidate label and a person (the
+  data owner) approves batches of new examples. Messages are pseudonymised (names, places,
+  numbers replaced) and special category data (health details beyond "sick", ID numbers) is
+  dropped.
+- Users are told in the privacy notice that messages may improve Mia; organisations can switch
+  it off.
+
+**Retraining stays on the node.** The small multilingual classifier trains on the Mac mini
+itself, so real messages never leave the branch (D18). A new version replaces the old one only
+if it passes the evaluation suite with no drop in any language and no new permission or
+injection failures; the previous version is kept for rollback, and each version's score is
+logged. Sharing learned patterns across organisations is opt-in and pattern-level only (spec,
+QA); real messages are never pooled.
+
+**What is measured.** Clarification rate (target under 10% per intent and language), how often
+the top option is chosen, how often a choice is later undone, new phrasings learned per month,
+and accuracy before and after each retrain.
+
 ## Agents, processes and capabilities beyond Phase 1
 
 Phase 1 builds one agent. The rest of a cleaning company's work is mapped now so that Phase 1's
