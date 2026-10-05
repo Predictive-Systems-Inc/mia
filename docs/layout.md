@@ -40,7 +40,7 @@ mia/
                             ollama/ (Modelfiles for local models, ADR 004)
     tests/                  unit tests; evals/ (marker `evals`)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas,
-                            research/ (studies of outside code, such as copilotkit-practices.md)
+                            research/ (research notes and dated evaluation reports, ADR 012)
 ```
 
 Files beyond the brief's layout, and why, are listed in docs/adr/001-stack.md, 005 and 010.

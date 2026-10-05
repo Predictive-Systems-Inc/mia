@@ -81,11 +81,70 @@ Format for each entry:
   channel, so history and approvals stay in one place; the app shows the whole conversation.
 - Blocking: no
 
-## Q10: AG-UI thread ids
+## Q10: Data standard 1.3 for authentication
+- Where: docs/superpowers/specs/2026-10-05-authentication-design.md, section 12; ADR 011
+- Question: authentication needs credentials, devices, sessions and clients tables, and one-time
+  codes and attempt counts for logins. May the data standard add auth_credentials,
+  auth_devices, auth_sessions and auth_clients, and rename channel_link_codes to auth_codes and
+  channel_link_attempts to auth_attempts (one table for every one-time code and every attempt)?
+- Assumed answer: yes, as proposed in section 12. person gets no new field: phone numbers stay
+  in channel_identities and the login email lives on the password credential.
+- Blocking: yes (changes the data standard; nothing is built until approved)
+
+## Q11: No email delivery for password resets
+- Where: design section 9; spec, Authentication (email plus password)
+- Question: email is the office login, but the node has no email service. Should the node send
+  reset emails (a new external service), or do resets go through people and channels it has?
+- Assumed answer: no email in Phase 1. An admin or owner resets a user and hands over a one-time
+  enrolment link (on screen or to the person's linked WhatsApp); a locked-out owner uses
+  `mia auth reset` on the node host; MFA users also get ten recovery codes.
+- Blocking: no
+
+## Q12: on_behalf_of from outside agents over A2A
+- Where: design section 6; ADR 008 (Mia actor extension)
+- Question: an outside agent may claim it acts for a person. Is that claim used for RBAC?
+- Assumed answer: no. Outside clients act only as themselves with their registered roles; the
+  claim is written to the event as claimed_on_behalf_of. Agents on the same node pass the real
+  actor in process. Trusted delegation (for example node to node in one organisation) is a
+  later decision.
+- Blocking: no (changes a security rule only if the answer is yes)
+
+## Q13: One PIN as the step-up for risky approvals
+- Where: design section 8; spec, Approvals and Voice rules; plan, Sprint 2
+- Question: should office users with TOTP or a passkey use that factor for the step-up instead
+  of a PIN?
+- Assumed answer: one 6-digit PIN for everyone, re-entered within 5 minutes before deciding a
+  money, external or delete approval, on an aal2 session. The same PIN serves voice later.
+- Blocking: no
+
+## Q14: Staff login codes through WhatsApp, no SMS provider yet
+- Where: design sections 4.4 and 13; spec, Authentication (phone number with one-time code)
+- Question: the spec says a one-time code to the phone; it does not say SMS. Can the code go
+  through the WhatsApp channel (a Meta authentication template) to the person's linked number?
+- Assumed answer: yes. No SMS provider until a pilot user has no WhatsApp; then an SMS channel
+  adapter (46elks first for Finland), which is a new external service needing approval.
+- Blocking: no
+
+## Q15: Dependencies for authentication
+- Where: design section 13
+- Question: stdlib scrypt or argon2-cffi for passwords; passkeys now or later?
+- Assumed answer: stdlib only for the first build (scrypt, secrets, hmac for TOTP and HKDF, no
+  JWT). Passkeys come as a later step with `webauthn` (py_webauthn, BSD-3), after approval.
+- Blocking: no for the first build; yes for passkeys
+
+## Q16: Supervisor MFA and session lifetimes
+- Where: design sections 4.1 and 5; spec, Authentication (MFA for owner, admin, accountant)
+- Question: should supervisors need MFA too, and are the session lifetimes right?
+- Assumed answer: MFA offered but not required for supervisors, as the spec says. Access tokens
+  15 minutes; office refresh 12 hours idle and 7 days absolute; staff on a bound device 30 days
+  idle and 90 days absolute.
+
+## Q17: AG-UI thread ids
 - Where: spec, Chat ("the AG-UI stream reconnects and resumes"); rule 10 (IDs are ULIDs)
 - Question: AG-UI clients name the thread (`threadId`), and stock clients such as CopilotKit use
   UUIDs. Should Mia accept any client-chosen id?
 - Assumed answer: no. A new thread's `threadId` must be a ULID (422 otherwise) and becomes the
   chat_threads id; an existing thread must belong to the acting person (404 otherwise). Mia's own
   apps generate ULIDs. Mapping outside ids would need a column on chat_threads (data standard).
+- Answered: D15 (thread ids stay ULIDs).
 - Blocking: no

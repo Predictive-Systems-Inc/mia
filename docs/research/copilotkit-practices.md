@@ -59,7 +59,7 @@ connection cancelled the run. There was no way to reconnect.
   from the client, wrapped in `<user_message>` (rule 8). Client `messages` history, `tools`,
   `state`, `context` and `resume` are dropped, so a client can neither forge turns nor declare
   tools the manifest does not list (rule 3). A new thread's `threadId` must be a ULID; another
-  person's thread is a 404 (docs/questions.md Q10).
+  person's thread is a 404 (docs/questions.md Q17, answered by D15).
 
 ### 3. One run per thread, and stop (adopted)
 
