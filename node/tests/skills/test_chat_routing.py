@@ -1,13 +1,17 @@
 import asyncio
 
 import pytest
+from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart, ToolReturnPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlmodel import Session, select
 
-from mia.agents.base import AgentDeps
-from mia.agents.dispatcher.agent import create_agent
+from mia.agents.base import AgentDeps, build_agent
+from mia.agents.dispatcher.agent import AGENT_DIR, MANIFEST, create_agent
+from mia.agents.dispatcher.tools import BINDINGS
 from mia.chat import service
-from mia.chat.service import run_turn
-from mia.core.models import Event, Message, Person
+from mia.chat.blocks import AgentReply
+from mia.chat.service import run_turn, wrap_user_text
+from mia.core.models import Event, Message, Organisation, Person
 from mia.i18n import STRINGS
 from mia.learning import catalogue
 from mia.skills import runtime
@@ -54,7 +58,9 @@ def test_no_model_behaves_as_today(session: Session, people: dict[str, Person]) 
     reply = asyncio.run(
         run_turn(session, create_agent("test"), people["Juha"], "Olen kipeä huomenna.")
     )
-    assert "Kirjasin" in reply.text()
+    lines = reply.text().splitlines()
+    assert lines[0] == "Kirjasin poissaolosi (6.10.). Nämä käynnit ovat vaarassa:"
+    assert lines[-2:] == [STRINGS["fi"]["absence.scope_question"], "  [Kaikki] [Vain aamu]"]
     assert events_of(session, "intent.clarify_asked") == []
     assert [e.after["version"] for e in events_of(session, "intent.classified")] == [None]  # type: ignore[index]
 
@@ -213,14 +219,26 @@ def test_high_band_passes_the_intent_to_the_agent(
 def test_high_band_still_checks_permissions(
     session: Session, people: dict[str, Person], use
 ) -> None:  # type: ignore[no-untyped-def]
+    """A confident assign intent is only a hint: the tool call still goes through rbac."""
     use(cls("dispatcher.assign", "high"))
-    reply = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "Assign Mikael."))
-    tool_events = session.exec(select(Event).where(Event.action == "tool.called")).all()
-    assert all(
-        e.after.get("output", {}).get("status") != "ok" or "assign_cover" not in e.entity_id  # type: ignore[union-attr]
-        for e in tool_events
-    )
-    assert reply.text()
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if any(isinstance(p, ToolReturnPart) for m in messages for p in m.parts):
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        info.output_tools[0].name, {"blocks": [{"type": "text", "text": "ok"}]}
+                    )
+                ]
+            )
+        args = {"visit_id": "any", "candidate_name": "Mikael"}
+        return ModelResponse(parts=[ToolCallPart("assign_cover", args)])
+
+    agent = build_agent(MANIFEST, AGENT_DIR, BINDINGS, AgentReply, FunctionModel(model), "demo")
+    asyncio.run(run_turn(session, agent, people["Juha"], "Assign Mikael."))
+    [called] = events_of(session, "tool.called")
+    assert called.entity_id == "dispatcher.assign_cover"
+    assert called.after["output"]["status"] == "denied"  # type: ignore[index]
 
 
 def test_classification_event_has_no_text(session: Session, people: dict[str, Person], use) -> None:  # type: ignore[no-untyped-def]
@@ -235,3 +253,90 @@ def test_classification_event_has_no_text(session: Session, people: dict[str, Pe
         "conversation.greeting",
         "high",
     )
+
+
+def spy_agent(monkeypatch: pytest.MonkeyPatch) -> tuple[object, list[tuple[str, str | None]]]:
+    """A test agent that records (prompt, deps.intent) of every run."""
+    agent = create_agent("test")
+    original = agent.run
+    seen: list[tuple[str, str | None]] = []
+
+    async def run(prompt, *, deps, **kw):  # type: ignore[no-untyped-def]
+        seen.append((prompt, deps.intent))
+        return await original(prompt, deps=deps, **kw)
+
+    monkeypatch.setattr(agent, "run", run)
+    return agent, seen
+
+
+def test_tapped_option_runs_the_agent_on_the_original_text(
+    session: Session, people: dict[str, Person], use, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    use(cls("dispatcher.report_absence", "medium", alts=["dispatcher.my_visits"]))
+    agent, seen = spy_agent(monkeypatch)
+    first = asyncio.run(run_turn(session, agent, people["Juha"], "huomenna ei"))  # type: ignore[arg-type]
+    session.commit()
+    original = session.exec(select(Message).where(Message.role == "user")).one()
+    assert seen == []  # the question was asked without the agent
+    asyncio.run(run_turn(session, agent, people["Juha"], "Näytä käyntini", first.thread_id))  # type: ignore[arg-type]
+    [(prompt, intent)] = seen
+    assert prompt == wrap_user_text("huomenna ei", people["Juha"])
+    assert intent == "dispatcher.my_visits"
+    [clarified] = events_of(session, "intent.clarified")
+    assert clarified.after["original_message_id"] == original.id  # type: ignore[index]
+    [asked] = events_of(session, "intent.clarify_asked")
+    assert asked.after["original_message_id"] == original.id  # type: ignore[index]
+
+
+def test_tapped_template_option_replies_with_the_template(
+    session: Session, people: dict[str, Person], use, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    use(cls("dispatcher.report_absence", "medium", alts=["conversation.help"]))
+    agent, seen = spy_agent(monkeypatch)
+    first = asyncio.run(run_turn(session, agent, people["Juha"], "hmm"))  # type: ignore[arg-type]
+    session.commit()
+    reply = asyncio.run(run_turn(session, agent, people["Juha"], "Apua", first.thread_id))  # type: ignore[arg-type]
+    assert reply.text() == STRINGS["fi"]["conversation.help"]
+    assert seen == []
+
+
+def test_a_stale_question_is_not_resolved(session: Session, people: dict[str, Person], use) -> None:  # type: ignore[no-untyped-def]
+    use(cls("dispatcher.report_absence", "medium", alts=["dispatcher.my_visits"]))
+    first = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "hmm"))
+    session.commit()
+    use(cls("conversation.thanks", "high"))
+    asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "kiitos", first.thread_id))
+    session.commit()
+    asyncio.run(
+        run_turn(session, create_agent("test"), people["Juha"], "Näytä käyntini", first.thread_id)
+    )
+    assert events_of(session, "intent.clarified") == []
+
+
+def test_a_template_without_text_goes_to_the_agent(
+    session: Session, people: dict[str, Person], use, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    use(cls("conversation.thanks", "high"))
+    monkeypatch.delitem(STRINGS["en"], "conversation.thanks")
+    agent, seen = spy_agent(monkeypatch)
+    asyncio.run(run_turn(session, agent, people["Juha"], "kiitos"))  # type: ignore[arg-type]
+    assert seen == [(wrap_user_text("kiitos", people["Juha"]), "conversation.thanks")]
+
+
+@pytest.mark.parametrize(
+    ("country", "expected"),
+    [("PH", "safety.emergency_PH"), ("FI", "safety.emergency_FI"), ("SE", "safety.emergency_FI")],
+)
+def test_emergency_script_follows_the_organisation_country(
+    session: Session,
+    people: dict[str, Person],
+    use,
+    country: str,
+    expected: str,  # type: ignore[no-untyped-def]
+) -> None:
+    org = session.exec(select(Organisation)).one()
+    org.country = country
+    session.commit()
+    use(cls("conversation.emergency", "high", safety=0.9))
+    reply = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "help"))
+    assert reply.text() == STRINGS["fi"][expected]

@@ -167,3 +167,15 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   only through the egress component, pseudonymised with stricter scrubbing (identifying free
   text dropped), processed in the EU, not kept after the job; only the trained model returns.
   D18 still holds for answering: real messages are handled by the local model.
+
+## D28: Role classifier in chat: regex fallback, one routing step, original text on clarify
+- Decision A: the dispatcher keeps the regex classifier's hint (including the injection line)
+  as a fallback whenever the role model gives no confident intent (no package, low band, other).
+  A confident role-model intent replaces the regex hint; an injection is flagged as data in both
+  cases.
+- Decision B: the web chat over AG-UI and the /chat endpoint share one classify-and-route step.
+  For emergency, template and "Did you mean" routes the AG-UI run sends the reply as one
+  assistant text message (options as text lines) and finishes without running the agent.
+- Decision C: when a person taps a "Did you mean" option, the agent runs on the original
+  message (found through original_message_id) with the chosen intent as a hint, not on the
+  button label. A chosen template conversation intent gets its template reply instead.

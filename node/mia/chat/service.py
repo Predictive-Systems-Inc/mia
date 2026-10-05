@@ -9,6 +9,7 @@ import asyncio
 import datetime as dt
 import html
 import time
+from functools import cache
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -31,9 +32,10 @@ from mia.chat.blocks import (
 from mia.chat.channels import notify
 from mia.core import events, store
 from mia.core.egress import EgressContext, egress_context
-from mia.core.models import Actor, Approval, Branch, Event, Message, Person, Thread
+from mia.core.models import Actor, Approval, Branch, Event, Message, Organisation, Person, Thread
 from mia.i18n import t
 from mia.i18n.strings import STRINGS
+from mia.learning import catalogue
 from mia.settings import get_settings
 from mia.skills import runtime
 from mia.skills.roles import load_role_plan
@@ -202,9 +204,20 @@ def _pending_clarification(session: Session, thread: Thread) -> Event | None:
     return asked
 
 
-def _classify_turn(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Route:
-    """Route one turn. An exact option label answers a pending question; any other text is
-    classified. Commits its events, so no write lock is held while the model runs."""
+@cache
+def _template_conversation_ids() -> frozenset[str]:
+    return frozenset(c.id for c in catalogue.conversation_intents() if c.handling == "template")
+
+
+def _classify_turn(
+    session: Session, deps: AgentDeps, thread: Thread, text: str
+) -> tuple[Route, str]:
+    """Route one turn; returns the route and the text the agent should read.
+
+    An exact option label answers a pending question: the agent then reads the ORIGINAL message
+    (not the label) with the chosen intent, or a template reply is sent for a template intent.
+    Any other text is classified. Commits its events, so no write lock is held while the
+    model runs."""
     pending = _pending_clarification(session, thread)
     options = (pending.after or {}).get("options") or {} if pending else {}
     chosen = options.get(text.strip())
@@ -223,8 +236,12 @@ def _classify_turn(session: Session, deps: AgentDeps, thread: Thread, text: str)
         )
         session.commit()
         if chosen == "other":
-            return Route(kind="clarify")  # nothing fitted: ask to rephrase
-        return Route(kind="agent", intent=chosen)
+            return Route(kind="clarify"), text  # nothing fitted: ask to rephrase
+        original = session.get(Message, pending.after["original_message_id"])
+        original_text = original.text if original is not None else text
+        if chosen in _template_conversation_ids():
+            return Route(kind="template", intent=chosen), original_text
+        return Route(kind="agent", intent=chosen), original_text
     role = load_role_plan(ROLE)
     last = _latest_message(session, thread, "assistant")
     start = time.perf_counter()
@@ -245,7 +262,7 @@ def _classify_turn(session: Session, deps: AgentDeps, thread: Thread, text: str)
         deps.actor,
     )
     session.commit()
-    return route(c, role, safety_floor=role.targets.safety_floor if role else 0.2)
+    return route(c, role, safety_floor=role.targets.safety_floor if role else 0.2), text
 
 
 def _template_key(intent: str) -> str:
@@ -341,12 +358,45 @@ def _reply_clarify(
 
 def _reply_emergency(session: Session, deps: AgentDeps, thread: Thread, text: str) -> ChatReply:
     """Safety script first; every supervisor of the branch is told, urgently."""
-    country = "PH" if deps.branch.timezone.startswith("Asia/Manila") else "FI"
+    org = session.get(Organisation, deps.organisation_id)
+    guess = "PH" if deps.branch.timezone.startswith("Asia/Manila") else "FI"
+    country = org.country.upper() if org is not None else guess
+    if f"safety.emergency_{country}" not in STRINGS["en"]:
+        country = "FI"
     people = session.exec(select(Person).where(Person.branch_id == deps.branch.id)).all()
     for sup in (p for p in people if "supervisor" in p.roles):
         notice = t("safety.supervisor_notice", sup.language, name=deps.person.name, text=text[:200])
         notify(session, sup, [TextBlock(text=notice)], deps.actor, MANIFEST.id, urgent=True)
     return _reply_text(session, deps, thread, t(f"safety.emergency_{country}", deps.lang))
+
+
+def _template_text(decided: Route, lang: str) -> str | None:
+    """The reply text of a template route, or None when it has no text (the agent answers)."""
+    if decided.kind != "template" or not decided.intent:
+        return None
+    key = _template_key(decided.intent)
+    return t(key, lang) if key in STRINGS["en"] else None
+
+
+def resolve_turn(
+    session: Session, deps: AgentDeps, thread: Thread, text: str
+) -> tuple[ChatReply | None, str]:
+    """Classify and route one turn (shared by run_turn and the AG-UI run).
+
+    Returns (reply, ""), already stored (the caller commits), for the emergency script, a
+    template reply or a "Did you mean" question; or (None, text_for_the_agent) with deps.intent
+    set when the agent should answer.
+    """
+    decided, agent_text = _classify_turn(session, deps, thread, text)
+    if decided.kind == "emergency":
+        return _reply_emergency(session, deps, thread, text), ""
+    if decided.kind == "clarify":
+        return _reply_clarify(session, deps, thread, decided.options), ""
+    template = _template_text(decided, deps.lang)
+    if template is not None:
+        return _reply_text(session, deps, thread, template), ""
+    deps.intent = decided.intent
+    return None, agent_text
 
 
 async def run_turn(
@@ -358,23 +408,18 @@ async def run_turn(
 ) -> ChatReply:
     """One user message in, one structured reply out.
 
-        Commits the user message before the model runs, so no write lock is held while waiting on
-        the network; tool calls and egress commit their own writes. The caller commits the reply.
-        Each turn is classified first and goes to the emergency script, a template reply, a Did you
+    Commits the user message before the model runs, so no write lock is held while waiting on
+    the network; tool calls and egress commit their own writes. The caller commits the reply.
+    Each turn is classified first and goes to the emergency script, a template reply, a Did you
     mean question or the agent. Database and classifier work run in worker threads (rule 12);
     only the agent run stays on the loop.
     """
     thread, past, deps, ctx = await asyncio.to_thread(_prepare, session, person, text, thread_id)
-    decided = await asyncio.to_thread(_classify_turn, session, deps, thread, text)
-    if decided.kind == "emergency":
-        return await asyncio.to_thread(_reply_emergency, session, deps, thread, text)
-    if decided.kind == "clarify":
-        return await asyncio.to_thread(_reply_clarify, session, deps, thread, decided.options)
-    if decided.kind == "template" and decided.intent:
-        key = _template_key(decided.intent)
-        if key in STRINGS["en"]:  # a template intent without text goes to the agent instead
-            return await asyncio.to_thread(_reply_text, session, deps, thread, t(key, deps.lang))
-    deps.intent = decided.intent
+    reply, agent_text = await asyncio.to_thread(resolve_turn, session, deps, thread, text)
+    if reply is not None:
+        return reply
     with egress_context(ctx):
-        result = await agent.run(wrap_user_text(text, person), deps=deps, message_history=past)
+        result = await agent.run(
+            wrap_user_text(agent_text, person), deps=deps, message_history=past
+        )
     return await asyncio.to_thread(_finish, session, deps, thread, result)

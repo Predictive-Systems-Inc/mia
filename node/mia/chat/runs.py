@@ -47,7 +47,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.dispatcher.agent import get_agent
 from mia.chat.blocks import AgentReply, ApprovalCardBlock, ChatReply
-from mia.chat.service import _finish, _prepare, wrap_user_text
+from mia.chat.service import _finish, _prepare, resolve_turn, wrap_user_text
 from mia.core.db import get_engine
 from mia.core.egress import egress_context
 from mia.core.ids import new_id
@@ -191,6 +191,18 @@ def _reply_events(reply: ChatReply) -> list[BaseEvent]:
     return events
 
 
+def _plain_reply_events(reply: ChatReply) -> list[BaseEvent]:
+    """A reply the agent did not write, as one text message (quick-reply options as lines)."""
+    lines = [b.text for b in reply.blocks if b.type == "text"]
+    lines += [f"- {o}" for b in reply.blocks if b.type == "quick_replies" for o in b.options]
+    return [
+        TextMessageStartEvent(message_id=reply.message_id, role="assistant"),
+        TextMessageContentEvent(message_id=reply.message_id, delta="\n".join(lines)),
+        TextMessageEndEvent(message_id=reply.message_id),
+        CustomEvent(name=BLOCKS_EVENT, value=reply.model_dump(mode="json")),
+    ]
+
+
 def _error(code: str, lang: str) -> RunErrorEvent:
     return RunErrorEvent(message=t("chat.error", lang), code=code)
 
@@ -211,6 +223,15 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
             _prepare, session, person, text, run.thread_id, create=True
         )
         lang = deps.lang
+        reply, agent_text = await asyncio.to_thread(resolve_turn, session, deps, thread, text)
+        if reply is not None:  # emergency, template or question: the agent does not run
+            await asyncio.to_thread(session.commit)
+            await run.push(RunStartedEvent(thread_id=run.thread_id, run_id=run.run_id))
+            last = EventType.RUN_STARTED
+            for event in _plain_reply_events(reply):
+                await run.push(event)
+            await run.push(RunFinishedEvent(thread_id=run.thread_id, run_id=run.run_id))
+            return
         # The wrapped text is the run's user prompt, so new_messages() (and the stored turn)
         # include it, as in chat.service.run_turn. run_input only supplies thread and run ids.
         clean = run_input.model_copy(
@@ -229,7 +250,7 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
 
         async def native() -> AsyncIterator[Any]:
             async with agent.run_stream_events(
-                wrap_user_text(text, person),
+                wrap_user_text(agent_text, person),
                 message_history=past,
                 deps=deps,
                 cancellation_token=run.token,

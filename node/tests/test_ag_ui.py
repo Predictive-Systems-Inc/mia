@@ -34,6 +34,7 @@ from mia.chat.service import wrap_user_text
 from mia.core import approvals, store
 from mia.core.ids import new_id
 from mia.core.models import Actor, Message, Person, Thread
+from mia.i18n.strings import STRINGS
 
 Ev = dict[str, Any]
 
@@ -478,3 +479,77 @@ def test_a_plain_text_answer_reaches_the_client_once(
     assert [s["messageId"] for s in starts] == [assistant.id]
     text = "".join(e["delta"] for e in events if e["type"] == "TEXT_MESSAGE_CONTENT")
     assert text == "Kirjasin poissaolon." == assistant.text
+
+
+def test_emergency_streamed_run_never_calls_the_agent(
+    client: TestClient,
+    people: dict[str, Person],
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A safety classification answers with the script as one text message and no tool or model."""
+    from mia.skills import runtime
+    from mia.skills.runtime import Classification
+
+    c = Classification(
+        intent="conversation.emergency",
+        confidence=0.9,
+        band="high",
+        alternatives=[],
+        lang="en",
+        slots={},
+        safety=0.9,
+        version="v1",
+    )
+    fixed = type("Fixed", (), {"classify": lambda self, text, context="": c})()
+    monkeypatch.setattr(runtime, "get_classifier", lambda role: fixed)
+    called: list[str] = []
+
+    def never(_messages: list[ModelMessage], _info: AgentInfo) -> Any:
+        called.append("model")
+        raise AssertionError("the agent must not run")
+
+    agent = Agent(FunctionModel(never), deps_type=AgentDeps, output_type=AgentReply)
+    monkeypatch.setattr(runs, "get_agent", lambda: agent)
+    payload = body("someone collapsed")
+    events = parse(post(client, "/ag-ui", people["Juha"], payload).text)
+    assert_well_formed(events)
+    assert called == []
+    assert [e["type"] for e in events] == [
+        "RUN_STARTED",
+        "TEXT_MESSAGE_START",
+        "TEXT_MESSAGE_CONTENT",
+        "TEXT_MESSAGE_END",
+        "CUSTOM",
+        "RUN_FINISHED",
+    ]
+    assert events[2]["delta"] == STRINGS["fi"]["safety.emergency_FI"]
+    assert not [e for e in events if e["type"].startswith("TOOL_CALL")]
+    assert [m.role for m in sorted(stored(session, payload["threadId"]), key=lambda m: m.id)] == [
+        "user",
+        "assistant",
+    ]
+
+
+def test_clarify_streamed_run_lists_the_options_as_text(
+    client: TestClient, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mia.skills import runtime
+    from mia.skills.runtime import Alternative, Classification
+
+    c = Classification(
+        intent="dispatcher.report_absence",
+        confidence=0.5,
+        band="medium",
+        alternatives=[Alternative(intent="dispatcher.my_visits", confidence=0.4)],
+        lang="en",
+        slots={},
+        safety=0.0,
+        version="v1",
+    )
+    fixed = type("Fixed", (), {"classify": lambda self, text, context="": c})()
+    monkeypatch.setattr(runtime, "get_classifier", lambda role: fixed)
+    events = parse(post(client, "/ag-ui", people["Juha"], body("hmm")).text)
+    assert_well_formed(events)
+    delta = next(e for e in events if e["type"] == "TEXT_MESSAGE_CONTENT")["delta"]
+    assert delta == "Tarkoititko:\n- Näytä käyntini\n- Jotain muuta"
