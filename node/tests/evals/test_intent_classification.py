@@ -1,10 +1,11 @@
 """English intent classification eval: understanding only, no tools (D26).
 
 A small agent reads one message and the sender's role and returns one intent id from
-docs/capabilities.md (message-triggered rows) or `other`, with a confidence. Run with:
+intents_catalogue.yaml (message-triggered rows) or `other`, with a confidence. Run with:
   MIA_EVAL_MODEL=local/gemma4-mia uv run pytest node/tests/evals/test_intent_classification.py -m evals -s
 MIA_EVAL_MODEL=test runs the dispatcher's rules classifier as a baseline (it knows six intents).
 MIA_EVAL_INTENT_SPLIT=all uses every message (default: the held-out `test` split);
+MIA_EVAL_INTENT_LANG picks the language of intents.jsonl (default en);
 MIA_EVAL_REPORT=<path> also writes the report and every prediction as JSON.
 """
 
@@ -52,7 +53,7 @@ class IntentChoice(BaseModel):
 def instructions(catalogue: dict[str, CatalogueIntent]) -> str:
     """The classifier's system prompt: the task, the safety rule and the intent list."""
     lines = [
-        f"- {i.id}: {i.meaning} (sent by: {', '.join(sorted(i.roles))})"
+        f"- {i.id}: {i.description} (sent by: {', '.join(sorted(i.roles))})"
         for i in catalogue.values()
         if i.by_message
     ]
@@ -100,7 +101,8 @@ def test_intent_classification() -> None:
     assert MODEL
     catalogue = load_catalogue()
     split = os.environ.get("MIA_EVAL_INTENT_SPLIT", "test")
-    examples = [e for e in load_dataset() if split == "all" or e.split == split]
+    lang = os.environ.get("MIA_EVAL_INTENT_LANG", "en")
+    examples = [e for e in load_dataset(lang=lang) if split == "all" or e.split == split]
     model = build_model(MODEL, FunctionModel(rules_baseline))
     agent = Agent(model, output_type=IntentChoice, instructions=instructions(catalogue))
     results = asyncio.run(_classify_all(agent, examples))
@@ -116,6 +118,12 @@ def test_intent_classification() -> None:
             }
             for r in results
         ]
-        payload = {"model": MODEL, "split": split, "report": rep, "predictions": predictions}
+        payload = {
+            "model": MODEL,
+            "split": split,
+            "lang": lang,
+            "report": rep,
+            "predictions": predictions,
+        }
         Path(path).write_text(json.dumps(payload, indent=1, ensure_ascii=False), encoding="utf-8")
     assert rep["n"] == len(examples) > 0

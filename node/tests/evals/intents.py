@@ -1,22 +1,26 @@
-"""Intent catalogue, English intent dataset and classification metrics (pure: no model).
+"""Intent catalogue, intent dataset and classification metrics (pure: no model).
 
-The catalogue is docs/capabilities.md (one table row per intent); the dataset is intents_en.yaml
-beside this file. Unit tested in tests/test_intent_metrics.py; used by the classification eval.
+docs/capabilities.md is written by people; intents_catalogue.yaml beside this file is generated
+from it (`uv run python -m tests.evals.intents` from node/) and is what generators, trainers and
+the eval read. intents.jsonl holds one record per utterance (all languages, `lang` tells which).
+Unit tested in tests/test_intent_metrics.py; used by test_intent_classification.py.
 """
 
+import json
 import re
 import statistics
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-REPO = Path(__file__).resolve().parents[3]
-CATALOGUE_PATH = REPO / "docs" / "capabilities.md"
-DATASET_PATH = Path(__file__).with_name("intents_en.yaml")
+HERE = Path(__file__).resolve().parent
+CAPABILITIES_MD = HERE.parents[2] / "docs" / "capabilities.md"
+CATALOGUE_PATH = HERE / "intents_catalogue.yaml"
+DATASET_PATH = HERE / "intents.jsonl"
 OTHER = "other"
 ROLE_CODES = {
     "C": "cleaner",
@@ -28,19 +32,35 @@ ROLE_CODES = {
     "AP": "applicant",
 }
 ROLES = frozenset(ROLE_CODES.values())
+PROCESSES = {
+    "L2C": "Lead-to-Contract",
+    "C2S": "Contract-to-Service",
+    "S2C": "Service-to-Cash",
+    "H2R": "Hire-to-Retire",
+    "P2P": "Procure-to-Pay",
+    "R2R": "Record-to-Report",
+    "Plat": "platform",
+}
+STYLES = frozenset({"formal", "informal", "typo", "indirect", "terse", "mixed"})
 ROW = re.compile(r"^\| ([a-z_]+\.[a-z_]+) \|")
 
 
 class CatalogueIntent(BaseModel):
     id: str
-    meaning: str
-    roles: frozenset[str]
-    triggers: frozenset[str]
+    agent: str
+    process: str
+    label_en: str | None  # button label for clarifying questions (message intents, max 20)
+    description: str
+    roles: list[str]
+    triggers: list[str]
+    risk: str
+    sensitivity: str
+    approval: str
+    legal_effect: bool
+    system_of_record: str
+    country: str
+    phase: int
     built: str
-
-    @property
-    def agent(self) -> str:
-        return agent_of(self.id)
 
     @property
     def by_message(self) -> bool:
@@ -48,12 +68,16 @@ class CatalogueIntent(BaseModel):
 
 
 class Example(BaseModel):
+    id: str  # <intent>/<lang>/<number>, stable once published
     intent: str
-    role: str
+    lang: Literal["en", "fi", "fil", "mixed"]
     text: str
-    split: str = "train"
-    near: str | None = None  # a hard negative: sounds like `near`, labelled with its true intent
-    kind: str | None = None  # "injection" for injection attempts (labelled other)
+    role: str
+    style: str
+    slots: dict[str, Any] = Field(default_factory=dict)
+    negative_of: str | None = None  # hard negative: looks like this intent, labelled with its own
+    split: Literal["train", "test"] = "train"
+    kind: Literal["injection"] | None = None  # injection attempts (labelled other)
 
 
 @dataclass
@@ -73,40 +97,78 @@ def agent_of(intent: str) -> str:
     return intent.split(".", 1)[0] if "." in intent else intent
 
 
-def _roles(who: str) -> frozenset[str]:
+def _roles(who: str) -> list[str]:
     if who.strip() == "all":
-        return ROLES
+        return sorted(ROLES)
     if who.strip() == "-":
-        return frozenset()
-    return frozenset(ROLE_CODES[code.strip()] for code in who.split(","))
+        return []
+    return [ROLE_CODES[code.strip()] for code in who.split(",")]
 
 
-def load_catalogue(path: Path = CATALOGUE_PATH) -> dict[str, CatalogueIntent]:
-    """Every intent row of the catalogue, by id. Raises on a duplicate id or a short row."""
-    out: dict[str, CatalogueIntent] = {}
+def parse_capabilities(path: Path = CAPABILITIES_MD) -> list[CatalogueIntent]:
+    """Every intent row of docs/capabilities.md in order. Raises on a duplicate or short row."""
+    out: list[CatalogueIntent] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if not ROW.match(line):
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) != 13:
-            raise ValueError(f"catalogue row needs 13 cells: {line}")
-        intent_id, meaning, who, trig = cells[:4]
-        if intent_id in out:
-            raise ValueError(f"duplicate intent {intent_id}")
-        out[intent_id] = CatalogueIntent(
-            id=intent_id,
-            meaning=meaning,
-            roles=_roles(who),
-            triggers=frozenset(t.strip() for t in trig.split(",")),
-            built=cells[11],
+        if len(cells) != 14:
+            raise ValueError(f"catalogue row needs 14 cells: {line}")
+        iid, label, meaning, who, trig, risk, sens, approval, legal, sor, ctry, ph, built, proc = (
+            cells
+        )
+        if any(i.id == iid for i in out):
+            raise ValueError(f"duplicate intent {iid}")
+        out.append(
+            CatalogueIntent(
+                id=iid,
+                agent=agent_of(iid),
+                process=PROCESSES[proc],
+                label_en=None if label == "-" else label,
+                description=meaning,
+                roles=_roles(who),
+                triggers=[t.strip() for t in trig.split(",")],
+                risk=risk,
+                sensitivity=sens,
+                approval=approval,
+                legal_effect=legal == "y",
+                system_of_record=sor,
+                country=ctry,
+                phase=int(ph),
+                built=built,
+            )
         )
     return out
 
 
-def load_dataset(path: Path = DATASET_PATH) -> list[Example]:
-    """All examples, flattened from {intent: [ {role, text, ...}, ... ]}."""
-    raw: dict[str, list[dict[str, Any]]] = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return [Example(intent=intent, **row) for intent, rows in raw.items() for row in rows]
+def catalogue_yaml(intents: list[CatalogueIntent]) -> str:
+    """The machine-readable catalogue file, generated from docs/capabilities.md."""
+    head = (
+        "# Generated from docs/capabilities.md; do not edit. Regenerate from node/ with:\n"
+        "#   uv run python -m tests.evals.intents\n"
+        "# Labels are these ids plus `other` (out of scope, injection attempts). Role codes, risk,\n"
+        "# sensitivity and process are explained in the legend of docs/capabilities.md.\n"
+    )
+    body = yaml.safe_dump(
+        {"intents": [i.model_dump() for i in intents]},
+        sort_keys=False,
+        allow_unicode=True,
+        width=100,
+    )
+    return head + body
+
+
+def load_catalogue(path: Path = CATALOGUE_PATH) -> dict[str, CatalogueIntent]:
+    """The catalogue by id."""
+    rows = yaml.safe_load(path.read_text(encoding="utf-8"))["intents"]
+    return {row["id"]: CatalogueIntent(**row) for row in rows}
+
+
+def load_dataset(path: Path = DATASET_PATH, lang: str | None = None) -> list[Example]:
+    """All records of the JSONL dataset (one utterance per line), optionally one language."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    rows = [Example(**json.loads(line)) for line in lines if line.strip()]
+    return [r for r in rows if lang is None or r.lang == lang]
 
 
 def _rate(good: int, total: int) -> float:
@@ -158,7 +220,7 @@ def report(
     per_intent = _tally(results, lambda r: r.example.intent)
     weakest = sorted(per_intent.items(), key=lambda kv: (kv[1]["accuracy"], -kv[1]["n"]))
     seconds = [r.seconds for r in results] or [0.0]
-    hard = [r for r in results if r.example.near]
+    hard = [r for r in results if r.example.negative_of]
     injections = [r for r in results if r.example.kind == "injection"]
     return {
         "n": n,
@@ -227,3 +289,7 @@ def format_report(rep: dict[str, Any], model: str) -> str:
         "weakest intents: " + "; ".join(f"{k} {c}/{n}" for k, c, n in rep["weakest_intents"]),
     ]
     return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    CATALOGUE_PATH.write_text(catalogue_yaml(parse_capabilities()), encoding="utf-8")
