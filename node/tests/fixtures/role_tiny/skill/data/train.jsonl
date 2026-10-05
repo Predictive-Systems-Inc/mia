@@ -34,3 +34,6 @@
 {"id": "tiny/train/34", "role": "tiny", "intent": "other", "lang": "en", "text": "ok", "counterpart": "cleaner", "style": "terse", "split": "train", "source": "fixture", "kind": "other"}
 {"id": "tiny/train/35", "role": "tiny", "intent": "other", "lang": "fi", "text": "kiitos", "counterpart": "cleaner", "style": "terse", "split": "train", "source": "fixture", "kind": "other"}
 {"id": "tiny/train/36", "role": "tiny", "intent": "other", "lang": "fi", "text": "hyvää päivää", "counterpart": "cleaner", "style": "terse", "split": "train", "source": "fixture", "kind": "other"}
+{"id": "tiny/train/greeting1", "role": "tiny", "intent": "conversation.greeting", "lang": "en", "text": "hello there", "counterpart": "cleaner", "style": "terse", "split": "train", "source": "fixture"}
+{"id": "tiny/train/greeting2", "role": "tiny", "intent": "conversation.greeting", "lang": "fi", "text": "moi moi", "counterpart": "cleaner", "style": "terse", "split": "train", "source": "fixture"}
+{"id": "tiny/train/greeting3", "role": "tiny", "intent": "conversation.greeting", "lang": "en", "text": "good morning", "counterpart": "cleaner", "style": "terse", "split": "train", "source": "fixture"}

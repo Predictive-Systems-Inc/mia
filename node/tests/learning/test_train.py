@@ -35,7 +35,8 @@ def test_tiny_role_trains_packages_and_reports(
         and (out / "tokenizer.json").exists()
         and (out / "card.json").exists()
     )
-    assert card.labels[-1] == "other" and set(card.thresholds) == {"tiny.absence", "tiny.visits"}
+    assert card.labels[-1] == "other" and set(card.thresholds) == set(card.labels) - {"other"}
+    assert "conversation.greeting" in card.thresholds
     assert (folder / "reports" / f"{card.version}.md").exists()
     assert card.slots == {"partial_day": ["morning", "none"]}
     assert set(card.artifacts) == {"model.onnx", "tokenizer.json"}

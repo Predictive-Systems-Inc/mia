@@ -78,26 +78,35 @@ def expected_calibration_error(
     )
 
 
+def _targets(role: RoleSpec, conversation: dict[str, str]) -> dict[str, float]:
+    """Precision target per label except `other`: role intents by risk; conversation intents
+    with template handling act (precision_write), the rest only read (precision_read)."""
+    t = role.targets
+    out = {i.id: t.precision_for(i) for i in role.intents}
+    for cid, handling in conversation.items():
+        out[cid] = t.precision_write if handling == "template" else t.precision_read
+    return out
+
+
 def choose_thresholds(
-    preds: list[Prediction], role: RoleSpec, temperature: float
+    preds: list[Prediction], role: RoleSpec, temperature: float, conversation: dict[str, str]
 ) -> dict[str, float]:
-    """Lowest confidence per intent at which precision meets the intent's risk target on dev."""
+    """Lowest confidence per label (role and conversation intents, never `other`) at which
+    precision meets the label's target on dev; 1.01 (never automatic) when none does.
+    `conversation` maps catalogue id to handling."""
     out: dict[str, float] = {}
     tops = [(_top(p, temperature), p.intent) for p in preds]
-    for intent in role.intents:
-        target = role.targets.precision_for(intent)
-        mine = sorted(
-            ((conf, truth) for (label, conf), truth in tops if label == intent.id), reverse=True
-        )
+    for label, target in _targets(role, conversation).items():
+        mine = sorted(((conf, truth) for (top, conf), truth in tops if top == label), reverse=True)
         best = 1.01  # unreachable: never automatic
         correct = 0
         for k, (conf, truth) in enumerate(mine, start=1):
-            correct += truth == intent.id
+            correct += truth == label
             # Only accept threshold at end of group of equal confidences
             is_end_of_group = k == len(mine) or mine[k][0] != conf
             if correct / k >= target and is_end_of_group:
                 best = conf
-        out[intent.id] = best
+        out[label] = best
     return out
 
 
@@ -107,9 +116,13 @@ def evaluate(
     thresholds: dict[str, float],
     temperature: float,
     safety: set[str],
+    conversation: dict[str, str],
 ) -> EvalReport:
-    """Score the test split once (gate metrics plus confusions)."""
-    acting = {i.id for i in role.intents if i.acts}
+    """Score the test split once (gate metrics plus confusions). Template conversation intents
+    act like role intents that act (`conversation` maps catalogue id to handling)."""
+    acting = {i.id for i in role.intents if i.acts} | {
+        cid for cid, handling in conversation.items() if handling == "template"
+    }
     rows = [(p, *_top(p, temperature)) for p in preds]
     auto = [(p, label) for p, label, conf in rows if conf >= thresholds.get(label, 1.01)]
     per_intent: dict[str, IntentScore] = {}

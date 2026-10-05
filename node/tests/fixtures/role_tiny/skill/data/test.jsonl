@@ -10,3 +10,5 @@
 {"id": "tiny/test/10", "role": "tiny", "intent": "tiny.visits", "lang": "fi", "text": "lähetä mulle työvuorolista", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture"}
 {"id": "tiny/test/11", "role": "tiny", "intent": "tiny.visits", "lang": "fi", "text": "onko maanantaina vuoroja", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture"}
 {"id": "tiny/test/12", "role": "tiny", "intent": "tiny.visits", "lang": "fi", "text": "tämän päivän työlista", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture"}
+{"id": "tiny/test/greeting1", "role": "tiny", "intent": "conversation.greeting", "lang": "en", "text": "hey hello", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture"}
+{"id": "tiny/test/greeting2", "role": "tiny", "intent": "conversation.greeting", "lang": "fi", "text": "terve", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture"}

@@ -11,6 +11,7 @@ from mia.learning.metrics import (
 from mia.learning.schema import IntentSpec, RoleSpec
 
 LABELS = ["r.write", "r.read", "conversation.emergency", "other"]
+CONV = {"conversation.emergency": "emergency"}
 ROLE = RoleSpec(
     id="r",
     job_summary="j",
@@ -55,11 +56,11 @@ def test_softmax_sums_to_one_and_temperature_flattens() -> None:
 
 def test_thresholds_meet_precision_or_disable() -> None:
     preds = [p(i, "r.write", [5, 0, 0, 0]) for i in range(20)] + [p(30, "r.read", [3, 0, 0, 0])]
-    thr = choose_thresholds(preds, ROLE, temperature=1.0)
+    thr = choose_thresholds(preds, ROLE, 1.0, CONV)
     above = [x for x in preds if softmax(x.logits)[0] >= thr["r.write"]]
     assert all(x.intent == "r.write" for x in above)
     only_wrong = [p(i, "r.read", [5, 0, 0, 0]) for i in range(5)]
-    assert choose_thresholds(only_wrong, ROLE, 1.0)["r.write"] > 1.0
+    assert choose_thresholds(only_wrong, ROLE, 1.0, CONV)["r.write"] > 1.0
 
 
 def test_evaluate_counts_actions_from_other_and_safety_recall() -> None:
@@ -70,7 +71,12 @@ def test_evaluate_counts_actions_from_other_and_safety_recall() -> None:
         p(4, "r.read", [0, 6, 0, 0], lang="fi"),
     ]
     report = evaluate(
-        preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, 1.0, safety={"conversation.emergency"}
+        preds,
+        ROLE,
+        {"r.write": 0.5, "r.read": 0.5},
+        1.0,
+        safety={"conversation.emergency"},
+        conversation=CONV,
     )
     assert report.actions_from_other == 1
     assert report.safety_recall == 1.0
@@ -93,7 +99,7 @@ def test_thresholds_rejects_ties_with_mixed_correctness() -> None:
             2, "r.read", [1.0, 0.0, 0.0, 0.0]
         ),  # wrong for r.write (pred says r.write but true is r.read)
     ]
-    thr = choose_thresholds(preds, ROLE, 1.0)
+    thr = choose_thresholds(preds, ROLE, 1.0, CONV)
     # With 99% precision target for write, we can't accept both at the tie
     assert thr["r.write"] > 1.0  # unreachable when all predictions have same confidence
 
@@ -103,7 +109,7 @@ def test_thresholds_rejects_ties_with_mixed_correctness() -> None:
         p(2, "r.write", [2.0, 0.0, 0.0, 0.0]),  # correct
         p(3, "r.read", [1.0, 0.0, 0.0, 0.0]),  # wrong
     ]
-    thr2 = choose_thresholds(preds2, ROLE, 1.0)
+    thr2 = choose_thresholds(preds2, ROLE, 1.0, CONV)
     # With tie handling, threshold must be chosen carefully
     above = [x for x in preds2 if softmax(x.logits)[0] >= thr2["r.write"]]
     if above:
@@ -116,7 +122,9 @@ def test_macro_f1_excludes_zero_support_intents() -> None:
     """Intents with zero support in test set should not count in macro F1."""
     # Only r.write in predictions, r.read has zero support
     preds = [p(i, "r.write", [5, 0, 0, 0]) for i in range(5)]
-    report = evaluate(preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, 1.0, safety=set())
+    report = evaluate(
+        preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, 1.0, safety=set(), conversation=CONV
+    )
     # F1 for r.write should be 1.0, r.read should not affect macro average
     assert report.per_intent["r.write"].support == 5
     assert report.per_intent["r.read"].support == 0
@@ -138,7 +146,9 @@ def test_pinned_values_for_ece_per_lang_precision_coverage() -> None:
     # ECE = (2/2) * |conf - 1.0|
     expected_ece = 1.0 * abs(expected_conf - 1.0)
 
-    report = evaluate(preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, t, safety=set())
+    report = evaluate(
+        preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, t, safety=set(), conversation=CONV
+    )
     ece = expected_calibration_error(preds, t, bins=10)
     assert math.isclose(ece, expected_ece, rel_tol=1e-9)
 
@@ -164,7 +174,9 @@ def test_precision_at_threshold_below_one() -> None:
         p(2, "r.write", [5.0, 0.0, 0.0, 0.0]),  # correct
         p(3, "r.read", [5.0, 0.0, 0.0, 0.0]),  # wrong (pred says r.write, true is r.read)
     ]
-    report = evaluate(preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, 1.0, safety=set())
+    report = evaluate(
+        preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, 1.0, safety=set(), conversation=CONV
+    )
     # All 3 are above threshold 0.5, so precision_at_threshold = 2/3
     assert report.per_intent["r.write"].precision_at_threshold == 2.0 / 3.0
 
@@ -175,7 +187,9 @@ def test_actions_from_other_zero_when_injection_below_threshold() -> None:
         p(1, "other", [0.3, 0.0, 0.0, 0.0], kind="injection"),  # below threshold
     ]
     # Threshold 0.5 means it won't be auto-routed
-    report = evaluate(preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, 1.0, safety=set())
+    report = evaluate(
+        preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, 1.0, safety=set(), conversation=CONV
+    )
     # Below threshold injection should not count
     assert report.actions_from_other == 0
 
@@ -186,6 +200,56 @@ def test_actions_from_other_counts_injection_above_threshold() -> None:
         p(1, "other", [6.0, 0.0, 0.0, 0.0], kind="injection"),  # above threshold, routed to r.write
     ]
     # Threshold 0.5 means it will be auto-routed to r.write (acting intent)
-    report = evaluate(preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, 1.0, safety=set())
+    report = evaluate(
+        preds, ROLE, {"r.write": 0.5, "r.read": 0.5}, 1.0, safety=set(), conversation=CONV
+    )
     # Above-threshold injection should count as actions_from_other
     assert report.actions_from_other == 1
+
+
+GREET_LABELS = ["r.write", "r.read", "conversation.greeting", "other"]
+AT_09 = [0.0, 0.0, math.log(27.0), 0.0]  # greeting top at exactly 27 / 30 = 0.9
+
+
+def g(i: int, intent: str, kind: str = "normal") -> Prediction:
+    return Prediction(
+        record_id=str(i),
+        intent=intent,
+        lang="en",
+        kind=kind,
+        style="informal",
+        labels=GREET_LABELS,
+        logits=AT_09,
+    )
+
+
+def test_template_conversation_intent_gets_threshold_and_counts_as_action() -> None:
+    conf = softmax(AT_09)[2]
+    assert math.isclose(conf, 0.9)
+    template = {"conversation.greeting": "template"}
+    thr = choose_thresholds([g(1, "conversation.greeting")], ROLE, 1.0, template)
+    assert thr == {"r.write": 1.01, "r.read": 1.01, "conversation.greeting": conf}
+    preds = [g(1, "conversation.greeting"), g(2, "other", kind="injection")]
+    report = evaluate(preds, ROLE, thr, 1.0, safety=set(), conversation=template)
+    assert report.coverage == 1.0
+    assert report.actions_from_other == 1
+    brief = {"conversation.greeting": "model_brief"}
+    assert evaluate(preds, ROLE, thr, 1.0, safety=set(), conversation=brief).actions_from_other == 0
+
+
+def test_conversation_precision_target_follows_handling() -> None:
+    """19 of 20 right is precision 0.95: enough to read (0.95), not to act (0.99)."""
+    dev = [g(i, "conversation.greeting") for i in range(19)] + [g(19, "other")]
+    conf = softmax(AT_09)[2]
+    read = choose_thresholds(dev, ROLE, 1.0, {"conversation.greeting": "model_brief"})
+    act = choose_thresholds(dev, ROLE, 1.0, {"conversation.greeting": "template"})
+    assert read["conversation.greeting"] == conf
+    assert act["conversation.greeting"] == 1.01
+    just_below = dev[:18] + [g(18, "other"), g(19, "other")]  # 18 / 20 = 0.90 < 0.95
+    assert (
+        choose_thresholds(just_below, ROLE, 1.0, {"conversation.greeting": "kb_company"})[
+            "conversation.greeting"
+        ]
+        == 1.01
+    )
+    assert "other" not in read

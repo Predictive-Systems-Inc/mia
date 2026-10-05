@@ -255,17 +255,19 @@ def train_role(
         )
         train += [r for r in approved if r.split == "train"]
         dev += [r for r in approved if r.split == "dev"]
-    conversation = [c.id for c in catalogue.conversation_intents()]
-    labels = role.label_space(conversation)
+    conversation = {c.id: c.handling for c in catalogue.conversation_intents()}
+    labels = role.label_space(list(conversation))
     slots = _slot_values(role, train)
     tok = AutoTokenizer.from_pretrained(base)
     runs = [_fit(base, tok, labels, slots, train, dev, s, epochs) for s in seeds]
     model, _ = min(runs, key=lambda x: x[1])
     dev_preds = _predict(model, tok, dev, labels)
     temperature = fit_temperature(dev_preds)
-    thresholds = choose_thresholds(dev_preds, role, temperature)
+    thresholds = choose_thresholds(dev_preds, role, temperature, conversation)
     safety = catalogue.safety_ids()
-    report = evaluate(_predict(model, tok, test, labels), role, thresholds, temperature, safety)
+    report = evaluate(
+        _predict(model, tok, test, labels), role, thresholds, temperature, safety, conversation
+    )
     previous = active_version(role.id)
     gate = check_gate(report, role, read_card(role.id, previous).report if previous else None)
     curve: dict[int, float] = {}
@@ -273,7 +275,7 @@ def train_role(
         part = random.Random(0).sample(train, max(1, len(train) * share // 100))
         m, _ = _fit(base, tok, labels, slots, part, dev, seeds[0], max(1, epochs // 2))
         curve[share] = evaluate(
-            _predict(m, tok, test, labels), role, thresholds, temperature, safety
+            _predict(m, tok, test, labels), role, thresholds, temperature, safety, conversation
         ).accuracy
     curve[100] = report.accuracy
     version = "v" + dt.datetime.now(dt.UTC).strftime("%Y%m%d%H%M")
