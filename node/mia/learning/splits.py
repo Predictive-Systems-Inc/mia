@@ -25,7 +25,11 @@ class _UnionFind:
 
 
 def _clusters(records: list[Record]) -> list[list[Record]]:
-    """Group records into transitive similarity clusters (connected components over LEAK)."""
+    """Group records into transitive similarity clusters (connected components over LEAK).
+
+    # ponytail: pairwise O(n^2) per bucket, union-find O(n log n).
+    # Upgrade to batch union (DSU with range queries) if bucket sizes exceed ~1000.
+    """
     if not records:
         return []
     uf = _UnionFind(len(records))
