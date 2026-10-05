@@ -4,6 +4,8 @@ Every command returns an exit code: 0 ok, 1 a reported error, 2 a missing option
 """
 
 import argparse
+import asyncio
+import datetime as dt
 from importlib import import_module
 from pathlib import Path
 
@@ -11,17 +13,31 @@ from pydantic import ValidationError
 from sqlmodel import select
 
 from mia.core.db import session_scope
+from mia.core.egress import EgressContext, egress_context
 from mia.core.models import Actor, Branch
 from mia.learning import catalogue
 from mia.learning.checks import check_records
+from mia.learning.generate import Cell, generate, plan_cells
 from mia.learning.harvest import harvest
 from mia.learning.package import PromotionRefused, promote
 from mia.learning.public import load_public
-from mia.learning.schema import Record, RoleSpec, load_records, load_role, write_records
+from mia.learning.schema import (
+    OTHER,
+    Record,
+    RoleSpec,
+    Split,
+    load_records,
+    load_role,
+    write_records,
+)
 from mia.learning.splits import assign_train_dev
+from mia.settings import get_settings
 
 AGENTS = Path(__file__).resolve().parent.parent / "agents"
 LEARNING_PKGS = {"torch", "transformers", "accelerate", "onnx"}
+GENERATOR_PROMPT = (
+    Path(__file__).resolve().parents[3] / ".claude/skills/mia-train-role/prompts/generator.md"
+)
 LEARNING_HINT = "install the learning group: uv sync --group learning"
 
 
@@ -152,6 +168,91 @@ def harvest_cmd(args: argparse.Namespace) -> int:
     return 0
 
 
+def _filter_cells(role: RoleSpec, cells: list[Cell], only: str) -> list[Cell] | None:
+    """Cells matching --only (intent ids and language codes); None after printing a bad value."""
+    langs = {v for v in only.split(",") if v in role.languages}
+    intents = {v for v in only.split(",") if v and v not in langs}
+    unknown = intents - {i.id for i in role.intents} - {OTHER}
+    if unknown or not (langs or intents):
+        print(f"--only: unknown value(s) {sorted(unknown) or [only]}; use intent ids or languages")
+        return None
+    return [
+        c for c in cells if (not intents or c.intent in intents) and (not langs or c.lang in langs)
+    ]
+
+
+def _output_path(folder: Path, split_name: str) -> Path:
+    """The canonical file, or a timestamped sibling when it exists (reviewed data is kept)."""
+    data = folder / "data"
+    canonical = data / ("test.jsonl" if split_name == "test" else "generated.jsonl")
+    if not canonical.exists():
+        return canonical
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    return data / f"generated-{split_name}-{stamp}.jsonl"
+
+
+def _run_teacher(
+    role: RoleSpec,
+    cells: list[Cell],
+    model: str,
+    prompt: str,
+    split_name: Split,
+    drops: dict[str, int],
+) -> list[Record] | None:
+    """Runs the teacher; local routes need no egress context, others log through egress."""
+
+    def run() -> list[Record]:
+        return asyncio.run(generate(role, cells, model, prompt, split=split_name, drops=drops))
+
+    if model.startswith("local/"):
+        return run()
+    with session_scope() as session:
+        branches = session.exec(select(Branch)).all()
+        if len(branches) != 1:
+            print(f"the database has {len(branches)} branches; run `mia seed` or fix the data")
+            return None
+        ctx = EgressContext(
+            session=session,
+            actor=Actor.system(branches[0].id),
+            organisation_id=branches[0].organisation_id,
+            agent_id="learning.generate",
+            purpose="skill-generation",
+            level=get_settings().MIA_EGRESS_LEVEL,
+        )
+        with egress_context(ctx):
+            return run()
+
+
+def generate_cmd(args: argparse.Namespace) -> int:
+    """Teacher generation for a role; 1 with a message on any error, never a traceback."""
+    role = _role_spec(args.role)
+    if role is None:
+        return 1
+    prompt_path = Path(args.prompt) if args.prompt else GENERATOR_PROMPT
+    if not prompt_path.exists():
+        print(f"generator prompt not found: {prompt_path}")
+        return 1
+    planned = plan_cells(role, args.split, args.per_cell)
+    cells = _filter_cells(role, planned, args.only) if args.only else planned
+    if cells is None:
+        return 1
+    drops: dict[str, int] = {}
+    try:
+        records = _run_teacher(
+            role, cells, args.model, prompt_path.read_text(encoding="utf-8"), args.split, drops
+        )
+    except Exception as exc:  # noqa: BLE001  model, route and network failures all end here
+        print(f"generation failed: {type(exc).__name__}: {exc}")
+        return 1
+    if records is None:
+        return 1
+    path = _output_path(skill_dir(args.role), args.split)
+    write_records(path, records)
+    dropped = ", ".join(f"{n} {why}" for why, n in sorted(drops.items())) or "none"
+    print(f"{len(records)} records in {len(cells)} cells written to {path}; dropped: {dropped}")
+    return 0
+
+
 def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
     skills = sub.add_parser("skills", help="role skill models").add_subparsers(
         dest="skills_command", required=True
@@ -176,3 +277,11 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p = skills.add_parser("harvest", help="collect clarification choices as candidates")
     p.add_argument("role")
     p.set_defaults(func=harvest_cmd)
+    p = skills.add_parser("generate", help="teacher-model synthetic data per coverage cell")
+    p.add_argument("role")
+    p.add_argument("--model", required=True, help="local/<model> or a gateway route")
+    p.add_argument("--split", choices=["train", "test"], default="train")
+    p.add_argument("--per-cell", type=int, default=None)
+    p.add_argument("--only", default=None, help="comma list of intent ids and languages")
+    p.add_argument("--prompt", default=None, help="generator prompt file")
+    p.set_defaults(func=generate_cmd)
