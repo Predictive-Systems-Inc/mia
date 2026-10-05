@@ -24,7 +24,7 @@ mia/
       agents/               base.py (manifest, guard, model factory)
         dispatcher/         manifest.yaml, job.md, prompts/, models.py, classifier.py,
                             scoring.py, cover.py (confirmation flow), rules.py, tools.py,
-                            agent.py, tests/scenarios.yaml
+                            agent.py, tests/scenarios.yaml (and scenarios_en.yaml)
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls),
                             runs.py (live AG-UI runs: reconnect, catch-up, stop)
       channels/             messaging channels (ADR 007): base.py (adapter protocol), registry.py,
@@ -38,8 +38,9 @@ mia/
     migrations/             alembic.ini, env.py, versions/
     config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ (instructions, settings.yaml),
                             ollama/ (Modelfiles for local models, ADR 004)
-    tests/                  unit tests; evals/ (marker `evals`)
-  docs/                     spec, plan, brief, ADRs, questions, decisions, ideas,
+    tests/                  unit tests; evals/ (marker `evals`; intents_en.yaml and intents.py
+                            for intent classification)
+  docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,
                             research/ (research notes and dated evaluation reports, ADR 012)
 ```
 
