@@ -113,7 +113,7 @@ def licence_verdict(licence: str) -> Verdict:
         "bsd3clause",
         "mpl20",
     }
-    if compact in allowed_compact:
+    if compact.replace(".", "") in allowed_compact:  # cc_by_4.0 -> ccby40
         return "allowed"
 
     # ==================== NEEDS_APPROVAL: Share-alike/copyleft/custom ====================

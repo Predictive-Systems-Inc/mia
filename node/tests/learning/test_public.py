@@ -55,6 +55,12 @@ from mia.learning.public import licence_verdict, load_public
         ("none", "never"),
         ("unspecified", "never"),
         ("tbd", "never"),
+        # ========== Compact spellings and one unrecognised licence ==========
+        ("cc_by_4.0", "allowed"),
+        ("CC_BY_3.0", "allowed"),
+        ("cc0_1.0", "allowed"),
+        ("apache_2.0", "allowed"),
+        ("wtfpl", "never"),
         # ========== NEVER: Empty/whitespace ==========
         ("", "never"),
         ("   ", "never"),
