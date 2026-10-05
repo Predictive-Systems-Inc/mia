@@ -7,6 +7,7 @@ import pytest
 from pydantic_ai import models
 
 from mia.cli import main
+from mia.core.egress import EgressBlocked, current_context
 from mia.learning import commands
 from mia.learning.generate import Cell, generate, plan_cells
 from mia.learning.schema import IntentSpec, Record, RoleSpec, Targets, load_records
@@ -260,3 +261,25 @@ def test_command_missing_prompt_and_model_failure(
     assert main(["skills", "generate", "tr", "--model", "local/m"]) == 1
     assert capsys.readouterr().out == "generation failed: RuntimeError: route down\n"
     assert not (skill / "data" / "generated.jsonl").exists()
+
+
+def test_gateway_route_runs_in_an_egress_context_and_local_does_not(
+    skill: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, str | None] = {}
+
+    async def spy(
+        role: RoleSpec, cells: list[Cell], model: str, prompt: str, **kw: object
+    ) -> list[Record]:
+        try:
+            ctx = current_context()
+            seen[model] = f"{ctx.agent_id}/{ctx.purpose}/{ctx.actor.principal.type}"
+        except EgressBlocked:
+            seen[model] = None
+        return []
+
+    monkeypatch.setattr(commands, "generate", spy)
+    assert main(["migrate"]) == 0 and main(["seed"]) == 0
+    assert main(["skills", "generate", "tr", "--model", "gateway/x", "--only", "tr.a,fi"]) == 0
+    assert main(["skills", "generate", "tr", "--model", "local/m", "--only", "tr.a,fi"]) == 0
+    assert seen == {"gateway/x": "learning.generate/skill-generation/system", "local/m": None}

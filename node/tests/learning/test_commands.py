@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -235,3 +236,37 @@ def test_health_includes_skills(branch: object, monkeypatch: pytest.MonkeyPatch)
     status = {"dispatcher": {"status": "active", "version": "v7"}}
     monkeypatch.setattr(runtime, "_status", status)
     assert TestClient(app).get("/health").json()["skills"] == status
+
+
+def test_invalid_role_yaml_is_reported_not_raised(
+    skill: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (skill / "role.yaml").write_text("id: tr\n", encoding="utf-8")
+    assert main(["skills", "validate", "tr"]) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "role.yaml is invalid: 7 validation errors for RoleSpec"
+    assert out[1] == "job_summary"
+
+
+def test_train_prints_the_gate_result(
+    skill: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls: list[tuple[Path, str | None, bool]] = []
+
+    def train_role(folder: Path, base_model: str | None, with_real: bool) -> ModelCard:
+        calls.append((folder, base_model, with_real))
+        return card("v7", passed=False)
+
+    monkeypatch.setattr(
+        commands, "import_module", lambda name: SimpleNamespace(train_role=train_role)
+    )
+    assert main(["skills", "train", "tr", "--base-model", "b", "--with-real"]) == 0
+    assert capsys.readouterr().out == "tr@v7: gate failed\n  coverage\n"
+    assert calls == [(skill, "b", True)]
+    monkeypatch.setattr(
+        commands,
+        "import_module",
+        lambda name: SimpleNamespace(train_role=lambda *a, **k: card("v8")),
+    )
+    assert main(["skills", "train", "tr"]) == 0
+    assert capsys.readouterr().out == "tr@v8: gate passed\n"

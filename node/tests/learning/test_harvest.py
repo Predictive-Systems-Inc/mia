@@ -276,3 +276,25 @@ def test_cancel_by_another_or_system_actor_does_not_drop_the_record(
     actor = Actor.system(juha.branch_id) if who == "system" else agent_for(people[who])
     emit_at(session, monkeypatch, "cover.cancelled", actor, clarified.timestamp)
     assert len(harvest(session, "dispatcher", juha.branch_id)) == 1
+
+
+def test_clarification_of_a_missing_message_is_skipped(
+    session: Session, people: dict[str, Person]
+) -> None:
+    juha = people["Juha"]
+    first = ask(session, juha, TEXT)
+    events.emit(
+        session,
+        "intent.clarified",
+        ("thread", first.thread_id),
+        None,
+        {
+            "intent": "dispatcher.report_absence",
+            "asked_event_id": "x",
+            "original_message_id": "01NOSUCHMESSAGE0000000000",
+        },
+        agent_for(juha),
+    )
+    session.commit()
+    assert harvest(session, "dispatcher", juha.branch_id) == []
+    assert not path().exists()
