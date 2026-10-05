@@ -1,8 +1,7 @@
 # 011: Authentication and identity on the node
 
 ## Status
-Proposed (draft, not approved). Design: docs/superpowers/specs/2026-10-05-authentication-design.md.
-Open questions Q10 to Q16. Q10 (data standard 1.3) blocks the build.
+Accepted (decision D17, answers to Q10 to Q16).
 
 ## Context
 The actor still comes from the unverified X-Mia-Actor header (architecture rule 4). The node is

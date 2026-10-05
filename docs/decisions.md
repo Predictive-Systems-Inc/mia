@@ -106,3 +106,45 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   RBAC role and approvers. End-to-end processes (Lead-to-Contract, Contract-to-Service,
   Service-to-Cash, Hire-to-Retire, Procure-to-Pay, Record-to-Report) are how workflows are
   designed and tested across those agents; a process is never an agent. See docs/plan.md.
+
+## D17: (answers Q10 to Q16) Authentication as designed
+- Decision: accept docs/superpowers/specs/2026-10-05-authentication-design.md and ADR 011:
+  data standard 1.3 adds auth_credentials, auth_devices, auth_sessions and auth_clients and
+  renames channel_link_codes and channel_link_attempts to auth_codes and auth_attempts (Q10);
+  no email in Phase 1, admin resets and `mia auth reset` for a locked-out owner (Q11); A2A clients
+  act only as themselves, a claimed on_behalf_of is logged, not used (Q12); one 6-digit PIN as the
+  step-up for money, external and delete approvals (Q13); staff codes over WhatsApp, no SMS
+  provider until needed (Q14); standard library only, webauthn later for passkeys (Q15); MFA
+  required for owner, admin and accountant and offered to supervisors, office sessions 12 h idle
+  and 7 days at most, staff 30 days idle and 90 days at most (Q16).
+
+## D18: Phase 1 runs a local model only
+- Decision: real Hype data is handled by Gemma 4 12B on Ollama on the node; no cloud model route
+  for real data in Phase 1. Cloud models are used for development and as the distillation
+  teacher, with synthetic or demo data only. The pilot starts when the evaluation suite passes
+  its target with the local model (85% on Oct 5; target 95%).
+
+## D19: Node hardware for Hype
+- Decision: an Apple Silicon Mac mini with 24 GB or more of unified memory, on site.
+
+## D20: No cleaner mobile app in Phase 1
+- Decision: cleaners work over WhatsApp: chat, absences, cover, check-in and check-out by
+  location share, checklists with interactive lists and buttons, photos as media messages. The
+  office uses the web app. Changes the proposal (an app was promised); agree it with Hype first.
+
+## D21: Service agreements in the data standard
+- Decision: add service agreements in Sprint 1 (client, sites, scope, frequency, price per visit
+  or per square metre, index clause, start and end, versions), linked to the jobs and visits they
+  generate. Master data with an owner; changes need approval.
+
+## D22: A turn stops after 8 model calls
+- Decision: a chat turn may make at most 8 model requests. On the cap the user gets a short
+  translated reply that a supervisor will follow up, and the event is logged.
+
+## D23: Restore tests are recorded; the tunnel exposes only webhooks before login
+- Decision: `mia restore-test --record` writes each restore test as an event through a service
+  function. Until authentication is built, the Cloudflare Tunnel publishes only the channel
+  webhook paths.
+
+## D24: The plan lists all necessary work, not an hour budget
+- Decision: hour estimates are not a constraint; docs/plan.md includes all work Phase 1 needs.

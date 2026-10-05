@@ -4,7 +4,7 @@ Sep 30, 2026 · @Allan Tan
 
 ## Goal and scope
 
-Build the Mia platform structure and one fully configured agent, the dispatcher, and put it into daily use at Hype Siivous within 3 months (about 450 hours).
+Build the Mia platform structure and one fully configured agent, the dispatcher, and put it into daily use at Hype Siivous within 3 months. The plan lists all the work that is needed; hour estimates are not a constraint (D24).
 
 **In scope (Phase 1)**
 
@@ -12,8 +12,8 @@ Build the Mia platform structure and one fully configured agent, the dispatcher,
 - Data standard v1.0 and the cleaning template: sites, jobs, visits, checklists, check-in and check-out, photos
 - Authentication, RBAC (pycasbin), approvals service and inbox, append-only events log with hash chain
 - Office web app (React, Vite, static files served by the node): clients, sites, staff, schedule board, supervisor view, approvals, exports
-- Cleaner mobile app (Expo): today's visits, instructions, check-in and check-out, checklists with photos, chat, offline queue
-- Chat: AG-UI endpoint, message model with text, quick replies, card, approval card, form and file blocks; web and mobile chat UI
+- Cleaners work over WhatsApp, with no mobile app in Phase 1 (D20): today's visits, site instructions, check-in and check-out by location share, checklists with interactive lists and buttons, photos as media, chat, absences and cover
+- Chat: AG-UI endpoint, message model with text, quick replies, card, approval card, form and file blocks; web chat UI for the office
 - Cloud egress policy (`none`, `pseudonymised`) and the gateway client; usage table
 - Dispatcher agent v1 (Pydantic AI): absence reports, replacement suggestions, schedule questions, site instructions, alerts
 - Billing summary export (CSV) in code
@@ -27,7 +27,7 @@ Build the Mia platform structure and one fully configured agent, the dispatcher,
 
 **References:** the [Mia Agent Manifest Specification v0.1](https://claude.ai/code/artifact/36ffddd5-462a-46cc-b582-5dbcbf46720b) (architecture, RBAC, approvals, chat, egress, tech stack) and the Hype Siivous proposal (scope and timeline commitments).
 
-**Team and budget:** one senior full-stack developer (Python and TypeScript) at about 150 hours a month, with Allan as product owner and reviewer. Hours below total 450 including a 60-hour buffer.
+**Team:** one senior full-stack developer (Python and TypeScript), with Allan as product owner and reviewer. Hour estimates are not used as a limit; the plan includes all necessary work (D24).
 
 ## Status and revised order (Oct 5, 2026)
 
@@ -35,29 +35,28 @@ Built so far, ahead of the sprint order below: the initial build (docs/brief.md)
 events, RBAC and approvals records, chat with blocks and AG-UI, the dispatcher with instructed
 cover and the confirmation flow (D1, D6 to D11), channel adapters with WhatsApp (D13), local
 and cloud model routes with the evaluation suite. Not built: real authentication (the actor
-still comes from the unverified X-Mia-Actor header), the office web app, the cleaner mobile
-app, Huey workers, Docker Compose and Litestream.
+still comes from the unverified X-Mia-Actor header), the office web app, Huey workers, Docker Compose and Litestream.
 
 Remaining work in this order, because each step unblocks the next:
 
 1. **Authentication and identity** (Sprint 1 item, moved first): office login, staff phone
    OTP, sessions, and channel identities linked to real accounts. Blocks the pilot with real
    people, WhatsApp in production and A2A.
-2. **Production model route**: the EU gateway (or the organisation's own key) behind egress,
-   and a model chosen by the evaluation suite. Evaluation on Oct 5 (41 scenarios, 3 runs):
-   Claude Sonnet 5.5 100%, Claude Haiku 4.5 87%, Qwen3.5 27B 86%, Qwen3.5 9B on llama.cpp 77%
-   (Ollama 64%). Real staff data must not go to a model route without the EU, no-retention
-   terms (spec, egress).
+2. **Local model to 95%** (D18, D19): Gemma 4 12B on Ollama on an Apple Silicon Mac mini, no
+   cloud route for real data. It passes 85% today (Oct 5 evaluation: Sonnet 5.5 100%, Haiku 4.5
+   88%, Gemma 4 12B 85%, Qwen3.5 9B on llama.cpp 76%), so before the pilot: the turn cap (D22),
+   the reply contract for small models (the model writes text, code builds the blocks), a
+   parallel intent by language suite, and a distilled intent classifier where Gemma is weak.
+   Cloud models are used only for development and as the distillation teacher, with synthetic
+   or demo data.
 3. **Install and backup** (Sprint 0 items still open): Docker Compose, Litestream, health page,
    install guide; needed before anything runs at Hype.
 4. **Scheduling and approvals inbox** (Sprint 2), then the **office web app** screens it needs.
-5. **Cleaner mobile app** (Sprint 3): scope to confirm with Hype, since WhatsApp now covers
-   chat, absence reports and cover requests; check-in, checklists and photos still need the
-   app unless done over WhatsApp.
+5. **Field work over WhatsApp** (Sprint 3, D20): check-in and check-out, checklists and photos
+   over WhatsApp; no mobile app. Needs Hype's agreement, since the proposal promised an app.
 6. **Alerts, billing export, rollout** (Sprint 5).
 
-The hours below are the original estimate; the channel work (D13) was not in it, so the buffer
-is partly used. Re-estimate the remaining sprints at the next planning meeting.
+Sprint numbers keep their order and milestones; hour figures are removed (D24).
 
 ## Repository structure and conventions
 
@@ -78,7 +77,6 @@ mia/
     tests/
   apps/
     web/             React + Vite, built to node/static
-    mobile/          Expo
     shared/          generated API types, chat block components
   deploy/            docker-compose.yml, litestream.yml, install.md
   docs/              spec links, ADRs (architecture decision records)
@@ -99,7 +97,7 @@ mia/
 
 Six two-week sprints; each ends with a demo to Hype and a working build. Months in brackets match the proposal milestones.
 
-### Sprint 0: foundations (20 h, weeks 1 to 2 alongside Sprint 1)
+### Sprint 0: foundations (weeks 1 to 2 alongside Sprint 1)
 
 - Monorepo, GitHub Actions, `uv`, Ruff, mypy, pytest
 - Docker Compose for the node (API, worker, static files), Litestream config
@@ -108,11 +106,11 @@ Six two-week sprints; each ends with a demo to Hype and a working build. Months 
 
 **Done when:** `docker compose up` starts an empty node with a health page and a passing CI pipeline.
 
-### Sprint 1: core data and access (70 h, month 1)
+### Sprint 1: core data and access (month 1)
 
 - Data standard v1.0 tables: organisation, branch, person, client, location, job, visit, approval, thread, message, event
 - Events service: append-only, hash chain, `actor` and `on_behalf_of` on every event
-- Auth: email plus password or passkey for office users with MFA, phone OTP with device binding for staff, sessions and refresh tokens
+- Auth (D17, ADR 011): email, password and TOTP for office users (MFA required for owner, admin and accountant), sessions and refresh tokens, PIN step-up for risky approvals; staff are identified by their linked WhatsApp number, with a WhatsApp login code only if they open the web app
 - RBAC: standard roles, Casbin model and policies, permission check middleware
 - Office web app: login, and create, edit and list screens for clients, sites, staff and jobs
 - CSV import for clients, sites and staff with column mapping and preview
@@ -120,7 +118,7 @@ Six two-week sprints; each ends with a demo to Hype and a working build. Months 
 
 **Done when:** Hype's clients, sites and staff are imported, and an admin and a supervisor can log in with the right rights.
 
-### Sprint 2: scheduling and approvals (75 h, month 1 to 2)
+### Sprint 2: scheduling and approvals (month 1 to 2)
 
 - Visit generation from jobs (recurrence rules), assignment, availability and skills, working-hour limits
 - Schedule board by cleaner and by site, drag and drop, week view
@@ -130,16 +128,17 @@ Six two-week sprints; each ends with a demo to Hype and a working build. Months 
 
 **Done when:** a full week for Hype is planned in the app and a supervisor approves a change from the inbox.
 
-### Sprint 3: cleaner mobile app (75 h, month 2)
+### Sprint 3: field work over WhatsApp (month 2)
 
-- Expo app: phone OTP login, today's visits and route, site instructions (access notes shown only during the visit)
-- Geofenced check-in and check-out, photo capture and upload, checklist completion, problem reports
-- Offline queue for check-ins, checklist results and photos; push notifications without personal data
-- Finnish and English
+- Check-in and check-out by WhatsApp location share, matched to the site's geofence in code; a check-in outside the fence is flagged, not rejected
+- Today's visits and route, site instructions (access notes only during the visit, never in a message that stays on the phone longer than needed)
+- Checklists as WhatsApp interactive lists and reply buttons; photos and problem reports as media messages stored on the node
+- Quiet hours and templates for messages outside the 24-hour window (ADR 007); everything also visible in the office web app
+- Finnish and English; Filipino measured for later clients
 
-**Done when:** one supervisor and a first group of cleaners use the app for a full week (proposal month 2 milestone).
+**Done when:** one supervisor and a first group of cleaners work a full week over WhatsApp (proposal month 2 milestone, changed from an app with Hype's agreement).
 
-### Sprint 4: chat and the dispatcher agent (80 h, month 2 to 3)
+### Sprint 4: chat and the dispatcher agent (month 2 to 3)
 
 - Chat message model and blocks; AG-UI endpoint on FastAPI; chat UI on web and mobile with streaming and reconnect
 - Model routing: one cloud route through the gateway for the dispatcher (chosen by the evaluation suite), `local/` routes for models on the node, and the egress component with `none` and `pseudonymised` levels; gateway client and `usage_cloud_requests`. Distilled local skills replace the cloud route intent by intent in Phase 2.
@@ -149,7 +148,7 @@ Six two-week sprints; each ends with a demo to Hype and a working build. Months 
 
 **Done when:** a sick report in chat is covered within two minutes in a demo with Hype data, and the evaluation suite passes at the agreed rate.
 
-### Sprint 5: alerts, billing export and rollout (70 h, month 3)
+### Sprint 5: alerts, billing export and rollout (month 3)
 
 - Alerts: unfilled visits, late check-ins, missing check-outs, overtime risk
 - Billing summary export: completed visits and extras per client per month (CSV); extras count only when approved (by the client where the agreement requires it)
@@ -159,20 +158,9 @@ Six two-week sprints; each ends with a demo to Hype and a working build. Months 
 
 **Done when:** Hype runs a full month in the app, the billing summary is exported, and the Phase 1 release is accepted (proposal month 3 milestone).
 
-### Buffer (60 h)
+### Rollout support
 
-Reserved for feedback from demos, Finnish-language edge cases and rollout support. Not planned in advance.
-
-| Sprint | Hours |
-| --- | --- |
-| 0 Foundations | 20 |
-| 1 Core data and access | 70 |
-| 2 Scheduling and approvals | 75 |
-| 3 Cleaner mobile app | 75 |
-| 4 Chat and dispatcher | 80 |
-| 5 Alerts, export, rollout | 70 |
-| Buffer | 60 |
-| **Total** | **450** |
+Feedback from demos, Finnish-language edge cases and rollout support, as needed.
 
 ## Dispatcher agent v1
 
@@ -223,7 +211,7 @@ Candidates must be available, within daily and weekly hour limits, and not alrea
 ### Instructions and models
 
 - Base instructions in `prompts/base.md`; organisation instructions for Hype in `config/org/hype/dispatcher.md` (for example who to call for keys, quiet hours).
-- Models: one cloud model route via the Better Labs gateway with egress level `pseudonymised` for Phase 1. A local model on llama.cpp (Qwen3.5 9B passes 77%, short of the 95% target) is the fallback when the gateway is unreachable, and only for reads and clarifying questions. Phase 2: skills distilled from the cloud model into small local classifiers, run automatically when their confidence is high, with a clarifying question (quick replies) when it is not.
+- Models: Gemma 4 12B on Ollama on the node only (D18); nothing goes to a cloud model with real data. Turns stop after 8 model calls with a polite translated fallback (D22). Where Gemma is weak (mostly format errors and extra tool calls), skills distilled from a cloud teacher (Sonnet 5.5, 100% on the suite) into small local classifiers run when their confidence is high, with a clarifying question (quick replies) when it is not.
 - Languages: Finnish and English in and out; Filipino is measured in the evaluation suite for later Philippine clients.
 
 ### Data requirements and onboarding
@@ -307,7 +295,8 @@ with a strong model and human approval.
 | Cleaner skills and weekly availability | Sprint 2 |
 | Checklist templates per site type | Sprint 3 |
 | A supervisor and a first group of cleaners as pilot users, with phones | Sprint 3 |
-| A server or mini PC on site, or a rented server, with the owner present at install | Sprint 3 |
+| An Apple Silicon Mac mini (24 GB or more) on site, with the owner present at install (D19) | Sprint 3 |
+| Agreement to WhatsApp-only field work instead of a mobile app (D20) | Before Sprint 3 |
 | Organisation instructions for the dispatcher (contacts, quiet hours, escalation) | Sprint 4 |
 | Hype's own WhatsApp Business account and number, completed business profile and Meta business verification (can take days to weeks), and a public HTTPS address for the node | Before the pilot uses WhatsApp |
 | Last month's invoicing data to check the billing export against | Sprint 5 |
@@ -318,12 +307,13 @@ with a strong model and human approval.
 
 | Risk | Mitigation |
 | --- | --- |
-| Finnish understanding by small local models is weak (confirmed Oct 5: most local failures are short Finnish messages) | Cloud model route for Phase 1; Finnish scenarios measured separately; local small models only for distilled, high-confidence skills in Phase 2 |
+| The local model (Gemma 4 12B, 85% today) does not reach 95% before the pilot | Turn cap, reply contract for small models, parallel intent by language suite, distilled classifier where Gemma is weak; the pilot starts only when the suite passes |
+| Gemma is slow (about 10 s per turn on an M5 Pro) | Mac mini with 24 GB or more; shorter replies; test the QAT checkpoint and MTP speculative decoding |
 | Meta approval for Hype's WhatsApp (business verification, display name, message templates) is slow | Start the Meta setup in Sprint 1; the in-app chat works without it |
-| No EU model route with no-retention terms when the pilot starts | Gateway work is step 2 of the revised order; until then pilot data stays on the node (local route or egress level `none`) |
-| Cleaners do not adopt the app | Minimal-tap flows, voice notes, Finnish and English, supervisor onboarding in Sprint 3, feedback loop every two weeks |
-| Scope creep from demos | Buffer of 60 hours; anything larger goes to Phase 2 with Allan's sign-off |
-| Mobile release delays (app store review) | Submit a test build in Sprint 3 week 1; use internal test tracks until the store release |
+| Check-in over WhatsApp is weaker than an app (no geofence trigger, no offline queue) | Location share matched to the site in code, flagged when outside; supervisor view of missing check-ins; revisit an app in Phase 2 if needed |
+| Cleaners do not adopt the WhatsApp flows | Minimal-tap buttons and lists, Finnish and English, supervisor onboarding in Sprint 3, feedback loop every two weeks |
+| Scope creep from demos | Anything beyond the plan goes to Phase 2 with Allan's sign-off |
+| Hype expected an app (proposal) | Agree the WhatsApp-only change with Hype before Sprint 3 |
 | Server at Hype is unreliable | Litestream backup from day one, health page, and a rented-server fallback |
 | Statutory errors once Mia feeds payroll and invoicing (Working Hours Act limits, supplements, Incomes Register deadlines) | Phase 1 only exports; payroll and filing stay in Hype's payroll system. Limits and supplements are code with unit tests, checked against Hype's last month |
 | The capability map turns into scope creep | Only Phase 1 rows are built; everything else is mapped so Phase 1 data does not block it later |

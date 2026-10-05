@@ -90,6 +90,7 @@ Format for each entry:
 - Assumed answer: yes, as proposed in section 12. person gets no new field: phone numbers stay
   in channel_identities and the login email lives on the password credential.
 - Blocking: yes (changes the data standard; nothing is built until approved)
+- Answered: D17.
 
 ## Q11: No email delivery for password resets
 - Where: design section 9; spec, Authentication (email plus password)
@@ -99,6 +100,7 @@ Format for each entry:
   enrolment link (on screen or to the person's linked WhatsApp); a locked-out owner uses
   `mia auth reset` on the node host; MFA users also get ten recovery codes.
 - Blocking: no
+- Answered: D17.
 
 ## Q12: on_behalf_of from outside agents over A2A
 - Where: design section 6; ADR 008 (Mia actor extension)
@@ -108,6 +110,7 @@ Format for each entry:
   actor in process. Trusted delegation (for example node to node in one organisation) is a
   later decision.
 - Blocking: no (changes a security rule only if the answer is yes)
+- Answered: D17.
 
 ## Q13: One PIN as the step-up for risky approvals
 - Where: design section 8; spec, Approvals and Voice rules; plan, Sprint 2
@@ -116,6 +119,7 @@ Format for each entry:
 - Assumed answer: one 6-digit PIN for everyone, re-entered within 5 minutes before deciding a
   money, external or delete approval, on an aal2 session. The same PIN serves voice later.
 - Blocking: no
+- Answered: D17.
 
 ## Q14: Staff login codes through WhatsApp, no SMS provider yet
 - Where: design sections 4.4 and 13; spec, Authentication (phone number with one-time code)
@@ -124,6 +128,7 @@ Format for each entry:
 - Assumed answer: yes. No SMS provider until a pilot user has no WhatsApp; then an SMS channel
   adapter (46elks first for Finland), which is a new external service needing approval.
 - Blocking: no
+- Answered: D17.
 
 ## Q15: Dependencies for authentication
 - Where: design section 13
@@ -131,6 +136,7 @@ Format for each entry:
 - Assumed answer: stdlib only for the first build (scrypt, secrets, hmac for TOTP and HKDF, no
   JWT). Passkeys come as a later step with `webauthn` (py_webauthn, BSD-3), after approval.
 - Blocking: no for the first build; yes for passkeys
+- Answered: D17.
 
 ## Q16: Supervisor MFA and session lifetimes
 - Where: design sections 4.1 and 5; spec, Authentication (MFA for owner, admin, accountant)
@@ -138,6 +144,7 @@ Format for each entry:
 - Assumed answer: MFA offered but not required for supervisors, as the spec says. Access tokens
   15 minutes; office refresh 12 hours idle and 7 days absolute; staff on a bound device 30 days
   idle and 90 days absolute.
+- Answered: D17.
 
 ## Q17: AG-UI thread ids
 - Where: spec, Chat ("the AG-UI stream reconnects and resumes"); rule 10 (IDs are ULIDs)
