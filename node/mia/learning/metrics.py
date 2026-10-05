@@ -113,7 +113,6 @@ def evaluate(
     rows = [(p, *_top(p, temperature)) for p in preds]
     auto = [(p, label) for p, label, conf in rows if conf >= thresholds.get(label, 1.01)]
     per_intent: dict[str, IntentScore] = {}
-    f1s = []
     for intent in role.intents:
         tp = sum(1 for p, label, _ in rows if label == intent.id and p.intent == intent.id)
         pred_n = sum(1 for _, label, _ in rows if label == intent.id)
@@ -125,7 +124,6 @@ def evaluate(
         recall = tp / support if support else 0.0
         prec_all = tp / pred_n if pred_n else 0.0
         f1 = 2 * prec_all * recall / (prec_all + recall) if prec_all + recall else 0.0
-        f1s.append(f1)
         per_intent[intent.id] = IntentScore(
             support=support,
             precision_at_threshold=precision,
