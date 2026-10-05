@@ -1,6 +1,7 @@
 .DS_Store
 .env
 data/
+!node/tests/fixtures/**/data/
 *.db
 *.db-wal
 *.db-shm

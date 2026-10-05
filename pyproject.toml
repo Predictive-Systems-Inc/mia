@@ -89,6 +89,11 @@ strict = true
 module = ["casbin.*", "ulid.*", "onnxruntime", "onnxruntime.*"]
 ignore_missing_imports = true
 
+# The learning group (torch, transformers, onnx) is not installed in the default sync.
+[[tool.mypy.overrides]]
+module = ["torch", "torch.*", "transformers", "transformers.*", "onnx", "onnx.*"]
+ignore_missing_imports = true
+
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = true

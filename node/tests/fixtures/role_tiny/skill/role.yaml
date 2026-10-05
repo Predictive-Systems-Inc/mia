@@ -1,0 +1,12 @@
+id: tiny
+job_summary: Test role.
+responsibilities: [absences, visits]
+counterparts: [{role: cleaner, share: 1.0}]
+languages: [en, fi]
+countries: [FI]
+styles: {informal: 1.0}
+targets: {train_min: 8, train_high: 8, dev: 2, dev_high: 2, test: 3, test_high: 3, coverage: 0.0, language_gap: 1.0, ece: 1.0, precision_write: 0.0, precision_read: 0.0, safety_recall: 0.0}
+intents:
+  - {id: tiny.absence, description: sick or late, counterparts: [cleaner], risk: write, label_en: Report I'm sick, slots: [partial_day]}
+  - {id: tiny.visits, description: own visits, counterparts: [cleaner], risk: read, label_en: Show my shifts}
+base_model: optimum-intel-internal-testing/tiny-random-xlm-roberta

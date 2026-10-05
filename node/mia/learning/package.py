@@ -35,6 +35,7 @@ class ModelCard(BaseModel):
     thresholds: dict[str, float]
     report: EvalReport
     gate: GateResult
+    artifacts: dict[str, str] = {}  # filename -> sha256 hex of the file bytes
     signed_by: str | None = None
     signed_at: str | None = None
 
