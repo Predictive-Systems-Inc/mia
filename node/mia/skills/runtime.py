@@ -97,6 +97,9 @@ class ScoredClassifier:
         )
 
 
+# ponytail: _status and the lru_cache in _load are not thread-safe. Two threads may load the
+# same version twice (harmless: same files, one result kept) and the last status write wins.
+# Add a lock if loading ever becomes expensive enough to matter.
 _status: dict[str, dict[str, object]] = {}
 
 

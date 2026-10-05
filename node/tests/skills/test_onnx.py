@@ -85,6 +85,8 @@ def test_trained_package_classifies_on_cpu_with_pair_encoding(
 
     tok = AutoTokenizer.from_pretrained(card.base_model)
     hf = tok([text], [""], truncation=True, max_length=96, padding=True, return_tensors="np")
+    assert clf.tokenizer.truncation is not None
+    assert clf.tokenizer.truncation["max_length"] == 96
     enc = clf.tokenizer.encode(text, "")
     assert enc.ids == hf["input_ids"][0].tolist()
     assert enc.ids != clf.tokenizer.encode(text).ids

@@ -191,6 +191,8 @@ def _export(
     backend = getattr(tok, "backend_tokenizer", None)  # fast (tokenizers) backend only
     if backend is None:
         raise ValueError("base model has no fast tokenizer; tokenizer.json cannot be exported")
+    # The runtime encodes with tokenizer.json alone: pin truncation as training used it.
+    backend.enable_truncation(max_length=MAX_LEN)
     backend.save(str(out / "tokenizer.json"))
     if (out / "model.onnx").stat().st_size > 50_000_000:
         from onnxruntime.quantization import QuantType, quantize_dynamic

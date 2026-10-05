@@ -20,7 +20,7 @@ class OnnxClassifier(ScoredClassifier):
         self.session = onnxruntime.InferenceSession(
             str(folder / "model.onnx"), providers=["CPUExecutionProvider"]
         )
-        # Truncation (max 96) and padding come from tokenizer.json, as exported by training.
+        # Truncation (max 96, pinned at export) and padding come from tokenizer.json.
         self.tokenizer = Tokenizer.from_file(str(folder / "tokenizer.json"))
         self.outputs = [o.name for o in self.session.get_outputs()]
 
