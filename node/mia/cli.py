@@ -413,6 +413,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lang", default="fi", choices=["fi", "en"])
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=person_add)
+    from mia.learning.commands import register as register_skills
+
+    register_skills(sub)
     return parser
 
 

@@ -27,6 +27,7 @@ from mia.core.db import session_scope, utcnow
 from mia.core.events import verify_chain
 from mia.core.models import Actor, ChannelOutbox, Message, Person, Thread
 from mia.settings import get_settings
+from mia.skills import runtime
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 log = logging.getLogger(__name__)
@@ -82,6 +83,7 @@ def health(session: DbSession) -> dict[str, object]:
         "model": get_settings().MIA_MODEL,
         "events_chain": verify_chain(session),
         "channels": channel_health(session),
+        "skills": runtime.health(),
     }
 
 
