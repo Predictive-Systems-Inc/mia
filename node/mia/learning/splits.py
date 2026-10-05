@@ -24,12 +24,10 @@ class _UnionFind:
             self.parent[px] = py
 
 
+# ponytail: pairwise O(n^2) per bucket. Upgrade to batch union (DSU with
+# normalized-text MinHash/LSH) if buckets exceed a few thousand records.
 def _clusters(records: list[Record]) -> list[list[Record]]:
-    """Group records into transitive similarity clusters (connected components over LEAK).
-
-    # ponytail: pairwise O(n^2) per bucket, union-find O(n log n).
-    # Upgrade to batch union (DSU with range queries) if bucket sizes exceed ~1000.
-    """
+    """Group records into transitive similarity clusters (connected components over LEAK)."""
     if not records:
         return []
     uf = _UnionFind(len(records))

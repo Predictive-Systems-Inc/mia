@@ -74,35 +74,58 @@ def test_paraphrases_stay_together_and_result_is_stable() -> None:
     assert s["im sick today"] == s["im sick today!"]
 
 
-def test_clusters_are_transitive() -> None:
-    """Union-find (not greedy) ensures pairwise similarity creates connected components.
+def test_clusters_are_transitive(monkeypatch) -> None:
+    """Union-find (not greedy) ensures transitive closure in similarity graphs.
 
-    This test uses the proven paraphrase pairs from TEXTS that have >= 0.85 similarity.
-    Union-find correctly groups them; old greedy code also passes this, but
-    the implementation is required for correctness with more complex graphs.
+    Creates an artificial similarity graph where:
+    - a~b (sim=1.0)
+    - b~c (sim=1.0)
+    - a!~c (sim=0.0)
+
+    Old greedy code processes [a, c, b] (sorted by id) and creates [[a,b], [c]].
+    New union-find code correctly groups all three: [[a,b,c]].
     """
-    # Use TEXTS[0:2] which are known paraphrases (sim >= 0.85)
+
+    # Monkeypatch similarity to control the graph structure
+    def fake_similarity(text_a: str, text_b: str) -> float:
+        # Pairs that match: (a,b) and (b,c) both have sim=1.0
+        # Pair that doesn't: (a,c) has sim=0.0
+        pair = tuple(sorted([text_a, text_b]))
+        if pair in [("a", "b"), ("b", "c")]:
+            return 1.0
+        return 0.0
+
+    monkeypatch.setattr("mia.learning.splits.similarity", fake_similarity)
+
+    # Create records: a, c, b (sorted by id so a is first, c second, b third)
     recs = [
-        rec(0, TEXTS[0]),  # "im sick today"
-        rec(1, TEXTS[1]),  # "im sick today!"
-        rec(2, TEXTS[2]),  # "cant come tomorrow"
-        rec(3, TEXTS[3]),  # "fever, staying home"
-        rec(4, TEXTS[4]),
-        rec(5, TEXTS[5]),
-        rec(6, TEXTS[6]),
-        rec(7, TEXTS[7]),
+        rec(1, "a"),  # r/1
+        rec(2, "c"),  # r/2
+        rec(3, "b"),  # r/3
+        rec(10, TEXTS[0]),  # unrelated records to set up dev quota
+        rec(11, TEXTS[1]),
+        rec(12, TEXTS[2]),
     ]
 
-    sim_01 = similarity(recs[0].text, recs[1].text)
-    assert sim_01 >= 0.85, f"rec(0,1) TEXTS[0:2] should be >= 0.85, got {sim_01}"
+    # Direct test of _clusters: old code creates 2 clusters, new code creates 1
+    from mia.learning.splits import _clusters
 
+    clusters = _clusters(recs[:3])  # [a, c, b] in sorted order
+    cluster_ids = [[r.id for r in c] for c in clusters]
+    # With union-find, all three should be in one cluster
+    assert len(clusters) == 1, (
+        f"union-find should create 1 cluster, got {len(clusters)}: {cluster_ids}"
+    )
+    assert {r.id for r in clusters[0]} == {"r/1", "r/2", "r/3"}, (
+        f"cluster should contain all three records, got {cluster_ids}"
+    )
+
+    # Test via assign_train_dev: a, b, c should stay together across seeds
     for seed in [1, 42]:
         out = assign_train_dev(ROLE, recs, seed=seed)
         splits = {r.id: r.split for r in out}
-        # Union-find ensures paraphrases (similar texts) stay together
-        # This is critical for more complex paraphrase graphs where greedy fails
-        assert splits["r/0"] == splits["r/1"], (
-            f"seed {seed}: rec 0,1 paraphrases should be same split"
+        assert splits["r/1"] == splits["r/2"] == splits["r/3"], (
+            f"seed {seed}: a, b, c should be in same split (transitive), got {splits}"
         )
 
 
