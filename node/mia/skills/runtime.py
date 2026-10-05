@@ -114,12 +114,9 @@ def _load(role: str, version: str) -> Classifier:
     """Load one version once; a broken package yields a cached NullClassifier (and a warning)."""
     try:
         card = read_card(role, version)
-        # Task 15 adds this module; until then the import fails and we fall back.
-        from mia.skills.onnx import (  # type: ignore[import-not-found,import-untyped,unused-ignore]
-            OnnxClassifier,
-        )
+        from mia.skills.onnx import OnnxClassifier
 
-        return OnnxClassifier(card, safety=catalogue.safety_ids())  # type: ignore[no-any-return]
+        return OnnxClassifier(card, safety=catalogue.safety_ids())
     except Exception as exc:  # noqa: BLE001 - any broken package falls back, never breaks chat
         return _fallback(role, version, exc)
 

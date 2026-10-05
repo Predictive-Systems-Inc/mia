@@ -78,13 +78,13 @@ def test_bands_from_card() -> None:
     assert alarm.safety >= 0.2
 
 
-def test_valid_card_without_onnx_module_falls_back() -> None:
+def test_card_without_artifact_digests_falls_back() -> None:
     write_card(card())
     (get_settings().MIA_MODELS_DIR / "r" / "ACTIVE").write_text("v1")
     assert isinstance(get_classifier("r"), NullClassifier)
     h = health()["r"]
     assert (h["status"], h["version"]) == ("fallback", "v1")
-    assert "mia.skills.onnx" in str(h["error"])
+    assert h["error"] == "ValueError: model.onnx: no sha256 in card artifacts"
 
 
 def test_health_error_does_not_leak_the_models_path() -> None:
