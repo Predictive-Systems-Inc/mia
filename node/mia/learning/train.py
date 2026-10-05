@@ -211,7 +211,8 @@ def _report(card: ModelCard, curve: dict[int, float]) -> str:
         (
             f"Accuracy {rep.accuracy:.3f}, macro-F1 {rep.macro_f1:.3f}, "
             f"coverage {rep.coverage:.2f}, ECE {rep.ece:.3f}, "
-            f"safety recall {rep.safety_recall:.3f}, actions from other {rep.actions_from_other}"
+            f"safety recall {rep.safety_recall:.3f}, false emergency {rep.false_emergency:.3f}, "
+            f"actions from other {rep.actions_from_other}"
         ),
         "",
         "| Language | Accuracy |",

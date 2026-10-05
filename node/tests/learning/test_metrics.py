@@ -1,6 +1,7 @@
 import math
 
 from mia.learning.metrics import (
+    EvalReport,
     Prediction,
     choose_thresholds,
     evaluate,
@@ -8,7 +9,7 @@ from mia.learning.metrics import (
     fit_temperature,
     softmax,
 )
-from mia.learning.schema import IntentSpec, RoleSpec
+from mia.learning.schema import IntentSpec, RoleSpec, Targets
 
 LABELS = ["r.write", "r.read", "conversation.emergency", "other"]
 CONV = {"conversation.emergency": "emergency"}
@@ -80,6 +81,7 @@ def test_evaluate_counts_actions_from_other_and_safety_recall() -> None:
     )
     assert report.actions_from_other == 1
     assert report.safety_recall == 1.0
+    assert report.false_emergency == 0.0
     assert set(report.per_lang) == {"en", "fi"}
 
 
@@ -253,3 +255,68 @@ def test_conversation_precision_target_follows_handling() -> None:
         == 1.01
     )
     assert "other" not in read
+
+
+SAFETY = {"conversation.emergency", "conversation.chemical_exposure"}
+SAFE_LABELS = [
+    "r.write",
+    "r.read",
+    "conversation.greeting",
+    "conversation.thanks",
+    "conversation.emergency",
+    "conversation.chemical_exposure",
+    "other",
+]
+# Two safety labels at 0.12 each under a 0.3 role argmax: mass 0.24.
+SPREAD = [math.log(x) for x in (0.3, 0.115, 0.115, 0.115, 0.12, 0.12, 0.115)]
+# One safety label as argmax at 0.19, the other near zero: mass 0.19.
+ALONE = [math.log(x) for x in (0.162, 0.162, 0.162, 0.162, 0.19, 1e-30, 0.162)]
+
+
+def s(i: int, intent: str, logits: list[float]) -> Prediction:
+    return Prediction(
+        record_id=str(i),
+        intent=intent,
+        lang="en",
+        kind="safety" if intent in SAFETY else "normal",
+        style="informal",
+        labels=SAFE_LABELS,
+        logits=logits,
+    )
+
+
+def floor_role(floor: float) -> RoleSpec:
+    return ROLE.model_copy(update={"targets": Targets(safety_floor=floor)})
+
+
+def safety_report(preds: list[Prediction], floor: float = 0.2) -> EvalReport:
+    return evaluate(preds, floor_role(floor), {}, 1.0, SAFETY, conversation={})
+
+
+def test_safety_recall_uses_safety_mass_against_the_floor() -> None:
+    assert softmax(SPREAD)[0] == max(softmax(SPREAD))
+    assert softmax(ALONE)[4] == max(softmax(ALONE))
+    preds = [
+        s(1, "conversation.emergency", SPREAD),  # mass 0.24 >= 0.2: recalled
+        s(2, "conversation.chemical_exposure", ALONE),  # mass 0.19 < 0.2: missed
+        s(3, "r.write", SPREAD),  # false emergency
+        s(4, "r.read", ALONE),
+        s(5, "other", ALONE),
+    ]
+    report = safety_report(preds)
+    assert report.safety_recall == 0.5
+    assert report.false_emergency == 1 / 3
+
+
+def test_safety_floor_boundary() -> None:
+    probs = softmax(SPREAD)
+    mass = probs[4] + probs[5]
+    row = [s(1, "conversation.emergency", SPREAD)]
+    assert safety_report(row, floor=mass).safety_recall == 1.0
+    assert safety_report(row, floor=mass + 1e-6).safety_recall == 0.0
+
+
+def test_no_safety_rows_means_recall_zero() -> None:
+    report = safety_report([s(1, "r.write", SPREAD), s(2, "r.read", ALONE)])
+    assert report.safety_recall == 0.0
+    assert report.false_emergency == 0.5

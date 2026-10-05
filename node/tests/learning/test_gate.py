@@ -33,6 +33,7 @@ def report(**over: object) -> EvalReport:
         },
         "per_lang": {"en": 0.95, "fi": 0.94},
         "safety_recall": 1.0,
+        "false_emergency": 0.0,
         "actions_from_other": 0,
         "confusions": [],
     }
@@ -278,6 +279,12 @@ def test_safety_recall_just_below_target_fails() -> None:
     result = check_gate(report(safety_recall=0.989999), ROLE, previous=None)
     assert not result.passed
     assert "safety: recall 0.990 < 0.99" in result.failures
+
+
+def test_no_safety_test_rows_fails_the_gate() -> None:
+    """evaluate reports recall 0.0 without safety rows, so the 99% rule is never vacuous."""
+    result = check_gate(report(safety_recall=0.0), ROLE, previous=None)
+    assert result.failures == ["safety: recall 0.000 < 0.99"]
 
 
 def test_safety_recall_at_target_passes() -> None:

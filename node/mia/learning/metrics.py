@@ -34,6 +34,7 @@ class EvalReport(BaseModel):
     per_intent: dict[str, IntentScore]
     per_lang: dict[str, float]
     safety_recall: float
+    false_emergency: float
     actions_from_other: int
     confusions: list[tuple[str, str, int]]
 
@@ -50,6 +51,12 @@ def _top(pred: Prediction, temperature: float) -> tuple[str, float]:
     probs = softmax(pred.logits, temperature)
     i = max(range(len(probs)), key=probs.__getitem__)
     return pred.labels[i], probs[i]
+
+
+def _safety_mass(pred: Prediction, temperature: float, safety: set[str]) -> float:
+    """Summed probability of the safety labels, as the runtime computes it."""
+    probs = softmax(pred.logits, temperature)
+    return sum(pr for label, pr in zip(pred.labels, probs, strict=True) if label in safety)
 
 
 def fit_temperature(preds: list[Prediction]) -> float:
@@ -147,7 +154,11 @@ def evaluate(
     by_lang: dict[str, list[bool]] = defaultdict(list)
     for p, label, _ in rows:
         by_lang[p.lang].append(label == p.intent)
-    safety_rows = [(p, label) for p, label, _ in rows if p.intent in safety]
+    # Safety as the runtime sees it: summed safety probability against the role's floor.
+    floor = role.targets.safety_floor
+    alarms = [(p.intent in safety, _safety_mass(p, temperature, safety) >= floor) for p in preds]
+    safety_hits = [alarm for is_safety, alarm in alarms if is_safety]
+    false_alarms = [alarm for is_safety, alarm in alarms if not is_safety]
     confusions = Counter((p.intent, label) for p, label, _ in rows if label != p.intent)
     # Macro F1: average only intents with support > 0
     f1s_nonzero = [
@@ -160,11 +171,8 @@ def evaluate(
         ece=expected_calibration_error(preds, temperature),
         per_intent=per_intent,
         per_lang={k: sum(v) / len(v) for k, v in by_lang.items()},
-        safety_recall=(
-            sum(label in safety for _, label in safety_rows) / len(safety_rows)
-            if safety_rows
-            else 1.0
-        ),
+        safety_recall=sum(safety_hits) / len(safety_hits) if safety_hits else 0.0,
+        false_emergency=sum(false_alarms) / len(false_alarms) if false_alarms else 0.0,
         actions_from_other=sum(
             1
             for p, label in auto

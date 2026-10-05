@@ -14,6 +14,7 @@ def card(passed: bool = True, version: str = "v1") -> ModelCard:
         per_intent={},
         per_lang={},
         safety_recall=1,
+        false_emergency=0,
         actions_from_other=0,
         confusions=[],
     )
