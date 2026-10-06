@@ -360,7 +360,13 @@ grows, the way it hires people. Planned roster:
 | Purchaser | Operations | Supplies, equipment, suppliers and subcontractors | 3 |
 | Recruiter | HR | Job ads, screening, interviews, offers | 3 |
 | Marketing assistant | Sales | Posts, campaigns, reviews (drafts only, approval to publish) | 3 |
+| Site manager | Operations | Supports site quality, safety and compliance work (inspections, injuries, hazards, data breaches); the human supervisor decides | 2 to 3 |
+| Admin | Office | Master data, users and access, account linking, branch settings, management reports | 1 to 3 |
 | QA (built in) | All | Watches every process end to end | platform |
+
+There is no chat role (D30): generic conversation (greetings, help, a person instead of the bot,
+language, privacy questions) is handled by Mia itself for every role through the shared
+conversation catalogue, node/mia/learning/catalogue/conversation.yaml.
 
 **Processes are how workflows are designed and tested, never agents themselves.** They run
 across agents, and each has a named process owner (a person in the client's

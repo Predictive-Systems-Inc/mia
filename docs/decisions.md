@@ -197,3 +197,20 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   huggingface_hub, and HF_HUB_OFFLINE=1 by default at node startup; a sha256 field on ModelCard
   artifacts (lands in Tasks 14 and 15); a uv index so torch uses CPU wheels on Linux.
 - Footprint: installing tokenizers pulls huggingface-hub (with hf-xet, fsspec, tqdm, typer, rich) into the node install, and onnxruntime adds numpy and protobuf; the architecture test and HF_HUB_OFFLINE keep the node from fetching.
+
+## D30: (answers Q18) Roles site_manager and admin; no chat role
+- Decision: two roles join the roster. `site_manager` (Site manager) supports site quality,
+  safety and compliance work and keeps the human supervisor in charge of decisions; it is not
+  the human role `supervisor` (S), which stays as is. `admin` (Admin) owns master data, users and
+  access, administration and management reporting. The proposed ids quality.* and office.*
+  become site_manager.* and admin.*.
+- No chat role: generic conversation is handled by Mia itself for every role through the shared
+  conversation catalogue (node/mia/learning/catalogue/conversation.yaml), which every role
+  inherits. The chat.* intents map as: greeting, thanks, help and change_language keep their
+  names under conversation.*; talk_to_human -> conversation.request_human; cancel ->
+  conversation.undo; clarify -> conversation.confusion; request_status ->
+  conversation.are_you_there; app_feedback -> conversation.feedback_about_mia;
+  privacy_question -> conversation.privacy_what_do_you_know; who_am_i and link_account ->
+  admin.who_am_i and admin.link_account (account and access).
+- Consequences: docs/capabilities.md lists no chat area; intents.jsonl is relabelled; the
+  classification eval accepts conversation.* ids as labels beside the catalogue ids and `other`.

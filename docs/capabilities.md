@@ -29,10 +29,14 @@ node/tests/evals/intents.jsonl. Keep one row per intent and the column order bel
 | Built | yes if Mia handles it today, part if partly, no |
 | Proc | L2C Lead-to-Contract, C2S Contract-to-Service, S2C Service-to-Cash, H2R Hire-to-Retire, P2P Procure-to-Pay, R2R Record-to-Report, Plat (platform, no business process) |
 
-Roles marked "proposed" are not yet in the roster of docs/plan.md (see docs/questions.md Q18):
-quality (quality, safety and compliance coordinator) and office (office manager: master data,
-administration, management reporting). `chat` is the platform's cross-cutting layer, not a
-hired role.
+Two roles were added to the roster of docs/plan.md by D30 (docs/questions.md Q18): site_manager
+(site manager: supports site quality, safety and compliance work and keeps the human supervisor
+in charge of decisions; not the human role S) and admin (master data, users and access,
+administration, management reporting). There is no chat role: generic conversation (greetings,
+thanks, help, a person instead of the bot, language, undo, confusion, feedback on Mia, privacy
+questions) is handled by Mia itself for every role through the shared conversation catalogue,
+node/mia/learning/catalogue/conversation.yaml, and is not listed here. Its ids
+(`conversation.*`) are valid labels in intents.jsonl beside the ids below.
 
 Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher/classifier.py,
 `IntentName`), small talk answered without tools, and WhatsApp account linking by code
@@ -243,70 +247,55 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | purchaser.order_subcontract | Hire subcontractor | Order a job from a subcontractor (windows, carpets) | O | msg | money | n | owner | y | Mia | both | 3 | no | P2P |
 | purchaser.compare_suppliers | Compare suppliers | Find a better price or another supplier for an item | O | msg | read | n | - | n | Mia | both | 3 | no | P2P |
 
-## Quality (proposed: quality, safety and compliance coordinator)
+## Site manager: site quality, safety and compliance (supports the supervisor)
 
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| quality.emergency | Emergency | Someone is in danger or there is an emergency on site now | C | msg | write | p | - | n | Mia | both | 2 | no | C2S |
-| quality.report_injury | I got hurt | Staff member was injured or had an accident at work | C, S | msg | write | sc | - | y | Mia | both | 2 | no | C2S |
-| quality.report_damage | I broke something | Staff member damaged or broke something at a site | C | msg | write | n | owner (insurance) | y | Mia | both | 2 | no | C2S |
-| quality.report_hazard | Report a hazard | Unsafe condition or near miss (needles, slippery floor, aggressive person, faulty wiring) | C | msg | write | n | - | n | Mia | both | 2 | no | C2S |
-| quality.chemical_safety | Chemical safety | Chemical question, safety data sheet, spill or exposure | C | msg | read | n | - | n | Mia | both | 2 | no | C2S |
-| quality.work_instructions | How to clean this | How to clean something, which method or product to use | C | msg | read | n | - | n | Mia | both | 2 | no | C2S |
-| quality.site_inspection | Site inspection | Supervisor records a quality inspection of a site (INSTA 800) | S | msg | write | p | - | n | Mia | both | 2 | no | C2S |
-| quality.schedule_inspections | - | Plan quality inspections across sites | - | sched | write | n | - | n | Mia | both | 3 | no | C2S |
-| quality.complaint_follow_up | - | Corrective action after a client complaint | - | event | write | p | supervisor | n | Mia | both | 2 | no | C2S |
-| quality.quality_scores | Quality scores | Quality scores and complaints per site, cleaner or period | S, O | msg | read | p | - | n | Mia | both | 3 | no | C2S |
-| quality.company_permits_due | - | Company insurance, permits and registrations due for renewal (business permit, BIR, trade register) | - | sched | write | n | owner | y | Mia | both | 3 | no | R2R |
-| quality.privacy_request | My data | Data subject request: see, correct or delete my data (GDPR; Data Privacy Act) | C, CL, L, AP | msg | delete | p | admin | y | Mia | both | 2 | no | Plat |
-| quality.data_breach | Data leak | Possible data breach (lost phone, codes sent to the wrong person) | C, S, O | msg | write | p | owner (72 h notice to authority) | y | Mia | both | 2 | no | Plat |
-| quality.audit_trail | Who changed what | Who changed what and when (event log) | O | msg | read | p | - | n | Mia | both | 2 | no | Plat |
+| site_manager.emergency | Emergency | Someone is in danger or there is an emergency on site now | C | msg | write | p | - | n | Mia | both | 2 | no | C2S |
+| site_manager.report_injury | I got hurt | Staff member was injured or had an accident at work | C, S | msg | write | sc | - | y | Mia | both | 2 | no | C2S |
+| site_manager.report_damage | I broke something | Staff member damaged or broke something at a site | C | msg | write | n | owner (insurance) | y | Mia | both | 2 | no | C2S |
+| site_manager.report_hazard | Report a hazard | Unsafe condition or near miss (needles, slippery floor, aggressive person, faulty wiring) | C | msg | write | n | - | n | Mia | both | 2 | no | C2S |
+| site_manager.chemical_safety | Chemical safety | Chemical question, safety data sheet, spill or exposure | C | msg | read | n | - | n | Mia | both | 2 | no | C2S |
+| site_manager.work_instructions | How to clean this | How to clean something, which method or product to use | C | msg | read | n | - | n | Mia | both | 2 | no | C2S |
+| site_manager.site_inspection | Site inspection | Supervisor records a quality inspection of a site (INSTA 800) | S | msg | write | p | - | n | Mia | both | 2 | no | C2S |
+| site_manager.schedule_inspections | - | Plan quality inspections across sites | - | sched | write | n | - | n | Mia | both | 3 | no | C2S |
+| site_manager.complaint_follow_up | - | Corrective action after a client complaint | - | event | write | p | supervisor | n | Mia | both | 2 | no | C2S |
+| site_manager.quality_scores | Quality scores | Quality scores and complaints per site, cleaner or period | S, O | msg | read | p | - | n | Mia | both | 3 | no | C2S |
+| site_manager.company_permits_due | - | Company insurance, permits and registrations due for renewal (business permit, BIR, trade register) | - | sched | write | n | owner | y | Mia | both | 3 | no | R2R |
+| site_manager.privacy_request | My data | Data subject request: see, correct or delete my data (GDPR; Data Privacy Act) | C, CL, L, AP | msg | delete | p | admin | y | Mia | both | 2 | no | Plat |
+| site_manager.data_breach | Data leak | Possible data breach (lost phone, codes sent to the wrong person) | C, S, O | msg | write | p | owner (72 h notice to authority) | y | Mia | both | 2 | no | Plat |
+| site_manager.audit_trail | Who changed what | Who changed what and when (event log) | O | msg | read | p | - | n | Mia | both | 2 | no | Plat |
 
-## Office (proposed: office manager): master data, administration, management reporting
-
-| Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| office.add_client | Add a client | Create a new client record | O | msg | write | p | - | n | Mia | both | 2 | no | L2C |
-| office.update_client | Edit a client | Change a client's master data | O | msg | write | p | - | n | Mia | both | 2 | no | L2C |
-| office.add_site | Add a site | Add a site or location to a client | O | msg | write | n | - | n | Mia | both | 2 | no | C2S |
-| office.update_site | Edit a site | Change a site's details (address, area, access, checklist) | O, S | msg | write | p | - | n | Mia | both | 2 | no | C2S |
-| office.add_employee | Add an employee | Create an employee record | O | msg | write | p | - | n | Mia | both | 2 | no | H2R |
-| office.update_employee | Edit an employee | Change an employee's role, contract hours, work limits or skills | O | msg | write | p | owner | n | Mia | both | 2 | no | H2R |
-| office.archive_record | Archive a record | Archive or delete a client, site or employee record | O | msg | delete | p | admin | n | Mia | both | 2 | no | R2R |
-| office.price_list | Change prices | Change service prices in the price list | O | msg | money | n | owner | n | Mia | both | 2 | no | L2C |
-| office.invite_user | Invite to Mia | Give someone access to Mia | O | msg | write | p | - | n | Mia | both | 1 | no | Plat |
-| office.change_role | Change access | Change what someone may do in Mia (role, permissions) | O | msg | write | p | owner; SoD: not own role | n | Mia | both | 1 | no | Plat |
-| office.remove_access | Remove access | Remove someone's access to Mia | O | msg | write | p | - | n | Mia | both | 1 | no | Plat |
-| office.reset_login | Can't log in | Locked out, forgot PIN or password, new phone | C, S, O | msg | write | p | admin | n | Mia | both | 1 | no | Plat |
-| office.pending_approvals | My approvals | Show approvals waiting for me (decided in the app, never by the agent) | O | msg | read | n | - | n | Mia | both | 1 | part | Plat |
-| office.agent_settings | Agent settings | Change an agent's organisation instructions or settings | O | msg | write | n | owner | n | Mia | both | 2 | no | Plat |
-| office.branch_settings | Branch settings | Branch settings: opening hours, public holidays, time zone | O | msg | write | n | owner | n | Mia | both | 2 | no | Plat |
-| office.system_status | Is Mia OK | Is Mia working, are backups and channels OK | O | msg | read | n | - | n | Mia | both | 1 | part | Plat |
-| office.operations_report | Operations report | Visits done, hours, absences, cover for a period | O | msg | read | p | - | n | Mia | both | 2 | no | R2R |
-| office.absence_report | Absence report | Sickness absence rate and patterns | O | msg | read | sc | - | n | Mia | both | 2 | no | R2R |
-| office.profitability_report | Profit report | Margin per client, site or service | O | msg | read | n | - | n | Acct | both | 3 | no | R2R |
-| office.revenue_report | Revenue report | Sales and revenue for a period, compared | O, A | msg | read | n | - | n | Acct | both | 3 | no | R2R |
-| office.headcount_report | Staff report | Staff numbers, hires, leavers, turnover | O | msg | read | p | - | n | Mia | both | 3 | no | R2R |
-| office.weekly_summary | - | Weekly summary to the owner | - | sched | read | p | - | n | Mia | both | 2 | no | R2R |
-| office.export_data | Export to Excel | Export a list or report to a spreadsheet | O | msg | read | p | - | n | Mia | both | 2 | no | R2R |
-| office.staffing_forecast | Staffing forecast | How many staff hours next month needs | O | msg | read | n | - | n | Mia | both | 3 | no | R2R |
-
-## Chat (platform, cross-cutting)
+## Admin: master data, users and access, administration, management reporting
 
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| chat.greeting | Say hello | Hello, good morning, small talk opener | all | msg | read | n | - | n | Mia | both | 1 | part | Plat |
-| chat.thanks | Thanks | Thanks, ok great, acknowledgement that closes a topic | all | msg | read | n | - | n | Mia | both | 1 | part | Plat |
-| chat.help | What can you do | What can you do, how does this work | all | msg | read | n | - | n | Mia | both | 1 | no | Plat |
-| chat.talk_to_human | Talk to a person | Wants a person (supervisor, office, manager) instead of the bot | all | msg | write | n | - | n | Mia | both | 1 | no | Plat |
-| chat.change_language | Change language | Asks Mia to use another language | all | msg | write | n | - | n | Mia | both | 1 | no | Plat |
-| chat.cancel | Never mind | Stop, never mind, undo what was just asked | all | msg | write | n | - | n | Mia | both | 1 | no | Plat |
-| chat.clarify | I don't understand | Did not understand Mia's last message, asks to repeat or explain | all | msg | read | n | - | n | Mia | both | 1 | no | Plat |
-| chat.request_status | My earlier request | Did you get my message, what happened to what I asked | all | msg | read | n | - | n | Mia | both | 2 | no | Plat |
-| chat.app_feedback | Feedback on Mia | Feedback or complaint about Mia itself | all | msg | write | n | - | n | Mia | both | 2 | no | Plat |
-| chat.privacy_question | Privacy | What happens to my data, who can see my messages | all | msg | read | n | - | n | Mia | both | 1 | no | Plat |
-| chat.who_am_i | My account | Which account or role am I using | all | msg | read | p | - | n | Mia | both | 1 | no | Plat |
-| chat.link_account | Link WhatsApp | Link this WhatsApp number with a code or invite | C, S, O | msg | write | p | - | n | Mia | both | 1 | yes | Plat |
+| admin.add_client | Add a client | Create a new client record | O | msg | write | p | - | n | Mia | both | 2 | no | L2C |
+| admin.update_client | Edit a client | Change a client's master data | O | msg | write | p | - | n | Mia | both | 2 | no | L2C |
+| admin.add_site | Add a site | Add a site or location to a client | O | msg | write | n | - | n | Mia | both | 2 | no | C2S |
+| admin.update_site | Edit a site | Change a site's details (address, area, access, checklist) | O, S | msg | write | p | - | n | Mia | both | 2 | no | C2S |
+| admin.add_employee | Add an employee | Create an employee record | O | msg | write | p | - | n | Mia | both | 2 | no | H2R |
+| admin.update_employee | Edit an employee | Change an employee's role, contract hours, work limits or skills | O | msg | write | p | owner | n | Mia | both | 2 | no | H2R |
+| admin.archive_record | Archive a record | Archive or delete a client, site or employee record | O | msg | delete | p | admin | n | Mia | both | 2 | no | R2R |
+| admin.price_list | Change prices | Change service prices in the price list | O | msg | money | n | owner | n | Mia | both | 2 | no | L2C |
+| admin.invite_user | Invite to Mia | Give someone access to Mia | O | msg | write | p | - | n | Mia | both | 1 | no | Plat |
+| admin.change_role | Change access | Change what someone may do in Mia (role, permissions) | O | msg | write | p | owner; SoD: not own role | n | Mia | both | 1 | no | Plat |
+| admin.remove_access | Remove access | Remove someone's access to Mia | O | msg | write | p | - | n | Mia | both | 1 | no | Plat |
+| admin.reset_login | Can't log in | Locked out, forgot PIN or password, new phone | C, S, O | msg | write | p | admin | n | Mia | both | 1 | no | Plat |
+| admin.pending_approvals | My approvals | Show approvals waiting for me (decided in the app, never by the agent) | O | msg | read | n | - | n | Mia | both | 1 | part | Plat |
+| admin.agent_settings | Agent settings | Change an agent's organisation instructions or settings | O | msg | write | n | owner | n | Mia | both | 2 | no | Plat |
+| admin.branch_settings | Branch settings | Branch settings: opening hours, public holidays, time zone | O | msg | write | n | owner | n | Mia | both | 2 | no | Plat |
+| admin.system_status | Is Mia OK | Is Mia working, are backups and channels OK | O | msg | read | n | - | n | Mia | both | 1 | part | Plat |
+| admin.operations_report | Operations report | Visits done, hours, absences, cover for a period | O | msg | read | p | - | n | Mia | both | 2 | no | R2R |
+| admin.absence_report | Absence report | Sickness absence rate and patterns | O | msg | read | sc | - | n | Mia | both | 2 | no | R2R |
+| admin.profitability_report | Profit report | Margin per client, site or service | O | msg | read | n | - | n | Acct | both | 3 | no | R2R |
+| admin.revenue_report | Revenue report | Sales and revenue for a period, compared | O, A | msg | read | n | - | n | Acct | both | 3 | no | R2R |
+| admin.headcount_report | Staff report | Staff numbers, hires, leavers, turnover | O | msg | read | p | - | n | Mia | both | 3 | no | R2R |
+| admin.weekly_summary | - | Weekly summary to the owner | - | sched | read | p | - | n | Mia | both | 2 | no | R2R |
+| admin.export_data | Export to Excel | Export a list or report to a spreadsheet | O | msg | read | p | - | n | Mia | both | 2 | no | R2R |
+| admin.staffing_forecast | Staffing forecast | How many staff hours next month needs | O | msg | read | n | - | n | Mia | both | 3 | no | R2R |
+| admin.who_am_i | My account | Which account or role am I using | all | msg | read | p | - | n | Mia | both | 1 | no | Plat |
+| admin.link_account | Link WhatsApp | Link this WhatsApp number with a code or invite | C, S, O | msg | write | p | - | n | Mia | both | 1 | yes | Plat |
 
 ## Summary
 
@@ -320,10 +309,9 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | hr | 30 | 25 | 0 |
 | bookkeeper | 22 | 16 | 0 |
 | purchaser | 17 | 13 | 0 |
-| quality | 14 | 11 | 0 |
-| office | 24 | 23 | 0 (2 part) |
-| chat | 12 | 12 | 1 (2 part) |
-| total | 215 | 184 | 7 |
+| site_manager | 14 | 11 | 0 |
+| admin | 26 | 25 | 1 (2 part) |
+| total | 205 | 174 | 7 |
 
 Every intent also has a hand-off rule when the sender may not use it (for example a cleaner
 asking `dispatcher.find_cover` is answered with "permission denied" by the tool, rule 4); the

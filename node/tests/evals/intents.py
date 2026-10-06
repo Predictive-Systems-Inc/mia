@@ -17,11 +17,15 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field
 
+from mia.learning.catalogue import conversation_intents
+
 HERE = Path(__file__).resolve().parent
 CAPABILITIES_MD = HERE.parents[2] / "docs" / "capabilities.md"
 CATALOGUE_PATH = HERE / "intents_catalogue.yaml"
 DATASET_PATH = HERE / "intents.jsonl"
 OTHER = "other"
+# Shared conversation intents (D30): valid labels beside the catalogue ids and `other`.
+CONVERSATION = {c.id: c for c in conversation_intents()}
 ROLE_CODES = {
     "C": "cleaner",
     "S": "supervisor",
@@ -146,7 +150,8 @@ def catalogue_yaml(intents: list[CatalogueIntent]) -> str:
     head = (
         "# Generated from docs/capabilities.md; do not edit. Regenerate from node/ with:\n"
         "#   uv run python -m tests.evals.intents\n"
-        "# Labels are these ids plus `other` (out of scope, injection attempts). Role codes, risk,\n"
+        "# Labels are these ids, the conversation ids of mia/learning/catalogue/conversation.yaml\n"
+        "# (D30) and `other` (out of scope, injection attempts). Role codes, risk,\n"
         "# sensitivity and process are explained in the legend of docs/capabilities.md.\n"
     )
     body = yaml.safe_dump(
@@ -211,7 +216,8 @@ def report(
 ) -> dict[str, Any]:
     """Accuracy overall, per area, per role, macro-F1, top confusions, latency and calibration.
 
-    `invalid` counts predictions that are neither a catalogue id nor `other` (always wrong).
+    `invalid` counts predictions that are neither a catalogue id, a conversation id nor `other`
+    (always wrong).
     """
     n = len(results)
     pairs = [(r.example.intent, r.predicted) for r in results]
@@ -227,7 +233,9 @@ def report(
         "accuracy": _rate(sum(r.correct for r in results), n),
         "area_accuracy": _rate(sum(agent_of(g) == agent_of(p) for g, p in pairs), n),
         "macro_f1": macro_f1(pairs),
-        "invalid": sum(1 for _, p in pairs if p != OTHER and p not in catalogue),
+        "invalid": sum(
+            1 for _, p in pairs if p != OTHER and p not in catalogue and p not in CONVERSATION
+        ),
         "by_area": _tally(results, lambda r: agent_of(r.example.intent)),
         "by_role": _tally(results, lambda r: r.example.role),
         "hard_negatives": {

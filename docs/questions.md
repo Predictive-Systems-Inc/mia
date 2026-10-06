@@ -164,4 +164,6 @@ Format for each entry:
   `office` (office manager: master data, administration, management reporting), plus `chat`
   for platform-wide intents (greeting, help, talk to a person) that belong to no hired role.
   The QA platform agent keeps watching processes; it does not take site inspections.
+- Answered: D30 (`quality` is renamed `site_manager` and `office` is renamed `admin`; no chat
+  role, generic conversation is the shared conversation catalogue).
 - Blocking: no

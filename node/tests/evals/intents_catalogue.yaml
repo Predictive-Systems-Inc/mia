@@ -1,6 +1,7 @@
 # Generated from docs/capabilities.md; do not edit. Regenerate from node/ with:
 #   uv run python -m tests.evals.intents
-# Labels are these ids plus `other` (out of scope, injection attempts). Role codes, risk,
+# Labels are these ids, the conversation ids of mia/learning/catalogue/conversation.yaml
+# (D30) and `other` (out of scope, injection attempts). Role codes, risk,
 # sensitivity and process are explained in the legend of docs/capabilities.md.
 intents:
 - id: dispatcher.report_absence
@@ -2821,8 +2822,8 @@ intents:
   country: both
   phase: 3
   built: 'no'
-- id: quality.emergency
-  agent: quality
+- id: site_manager.emergency
+  agent: site_manager
   process: Contract-to-Service
   label_en: Emergency
   description: Someone is in danger or there is an emergency on site now
@@ -2838,8 +2839,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: quality.report_injury
-  agent: quality
+- id: site_manager.report_injury
+  agent: site_manager
   process: Contract-to-Service
   label_en: I got hurt
   description: Staff member was injured or had an accident at work
@@ -2856,8 +2857,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: quality.report_damage
-  agent: quality
+- id: site_manager.report_damage
+  agent: site_manager
   process: Contract-to-Service
   label_en: I broke something
   description: Staff member damaged or broke something at a site
@@ -2873,8 +2874,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: quality.report_hazard
-  agent: quality
+- id: site_manager.report_hazard
+  agent: site_manager
   process: Contract-to-Service
   label_en: Report a hazard
   description: Unsafe condition or near miss (needles, slippery floor, aggressive person, faulty wiring)
@@ -2890,8 +2891,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: quality.chemical_safety
-  agent: quality
+- id: site_manager.chemical_safety
+  agent: site_manager
   process: Contract-to-Service
   label_en: Chemical safety
   description: Chemical question, safety data sheet, spill or exposure
@@ -2907,8 +2908,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: quality.work_instructions
-  agent: quality
+- id: site_manager.work_instructions
+  agent: site_manager
   process: Contract-to-Service
   label_en: How to clean this
   description: How to clean something, which method or product to use
@@ -2924,8 +2925,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: quality.site_inspection
-  agent: quality
+- id: site_manager.site_inspection
+  agent: site_manager
   process: Contract-to-Service
   label_en: Site inspection
   description: Supervisor records a quality inspection of a site (INSTA 800)
@@ -2941,8 +2942,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: quality.schedule_inspections
-  agent: quality
+- id: site_manager.schedule_inspections
+  agent: site_manager
   process: Contract-to-Service
   label_en: null
   description: Plan quality inspections across sites
@@ -2957,8 +2958,8 @@ intents:
   country: both
   phase: 3
   built: 'no'
-- id: quality.complaint_follow_up
-  agent: quality
+- id: site_manager.complaint_follow_up
+  agent: site_manager
   process: Contract-to-Service
   label_en: null
   description: Corrective action after a client complaint
@@ -2973,8 +2974,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: quality.quality_scores
-  agent: quality
+- id: site_manager.quality_scores
+  agent: site_manager
   process: Contract-to-Service
   label_en: Quality scores
   description: Quality scores and complaints per site, cleaner or period
@@ -2991,8 +2992,8 @@ intents:
   country: both
   phase: 3
   built: 'no'
-- id: quality.company_permits_due
-  agent: quality
+- id: site_manager.company_permits_due
+  agent: site_manager
   process: Record-to-Report
   label_en: null
   description: Company insurance, permits and registrations due for renewal (business permit, BIR, trade
@@ -3008,8 +3009,8 @@ intents:
   country: both
   phase: 3
   built: 'no'
-- id: quality.privacy_request
-  agent: quality
+- id: site_manager.privacy_request
+  agent: site_manager
   process: platform
   label_en: My data
   description: 'Data subject request: see, correct or delete my data (GDPR; Data Privacy Act)'
@@ -3028,8 +3029,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: quality.data_breach
-  agent: quality
+- id: site_manager.data_breach
+  agent: site_manager
   process: platform
   label_en: Data leak
   description: Possible data breach (lost phone, codes sent to the wrong person)
@@ -3047,8 +3048,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: quality.audit_trail
-  agent: quality
+- id: site_manager.audit_trail
+  agent: site_manager
   process: platform
   label_en: Who changed what
   description: Who changed what and when (event log)
@@ -3064,8 +3065,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.add_client
-  agent: office
+- id: admin.add_client
+  agent: admin
   process: Lead-to-Contract
   label_en: Add a client
   description: Create a new client record
@@ -3081,8 +3082,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.update_client
-  agent: office
+- id: admin.update_client
+  agent: admin
   process: Lead-to-Contract
   label_en: Edit a client
   description: Change a client's master data
@@ -3098,8 +3099,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.add_site
-  agent: office
+- id: admin.add_site
+  agent: admin
   process: Contract-to-Service
   label_en: Add a site
   description: Add a site or location to a client
@@ -3115,8 +3116,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.update_site
-  agent: office
+- id: admin.update_site
+  agent: admin
   process: Contract-to-Service
   label_en: Edit a site
   description: Change a site's details (address, area, access, checklist)
@@ -3133,8 +3134,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.add_employee
-  agent: office
+- id: admin.add_employee
+  agent: admin
   process: Hire-to-Retire
   label_en: Add an employee
   description: Create an employee record
@@ -3150,8 +3151,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.update_employee
-  agent: office
+- id: admin.update_employee
+  agent: admin
   process: Hire-to-Retire
   label_en: Edit an employee
   description: Change an employee's role, contract hours, work limits or skills
@@ -3167,8 +3168,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.archive_record
-  agent: office
+- id: admin.archive_record
+  agent: admin
   process: Record-to-Report
   label_en: Archive a record
   description: Archive or delete a client, site or employee record
@@ -3184,8 +3185,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.price_list
-  agent: office
+- id: admin.price_list
+  agent: admin
   process: Lead-to-Contract
   label_en: Change prices
   description: Change service prices in the price list
@@ -3201,8 +3202,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.invite_user
-  agent: office
+- id: admin.invite_user
+  agent: admin
   process: platform
   label_en: Invite to Mia
   description: Give someone access to Mia
@@ -3218,8 +3219,8 @@ intents:
   country: both
   phase: 1
   built: 'no'
-- id: office.change_role
-  agent: office
+- id: admin.change_role
+  agent: admin
   process: platform
   label_en: Change access
   description: Change what someone may do in Mia (role, permissions)
@@ -3235,8 +3236,8 @@ intents:
   country: both
   phase: 1
   built: 'no'
-- id: office.remove_access
-  agent: office
+- id: admin.remove_access
+  agent: admin
   process: platform
   label_en: Remove access
   description: Remove someone's access to Mia
@@ -3252,8 +3253,8 @@ intents:
   country: both
   phase: 1
   built: 'no'
-- id: office.reset_login
-  agent: office
+- id: admin.reset_login
+  agent: admin
   process: platform
   label_en: Can't log in
   description: Locked out, forgot PIN or password, new phone
@@ -3271,8 +3272,8 @@ intents:
   country: both
   phase: 1
   built: 'no'
-- id: office.pending_approvals
-  agent: office
+- id: admin.pending_approvals
+  agent: admin
   process: platform
   label_en: My approvals
   description: Show approvals waiting for me (decided in the app, never by the agent)
@@ -3288,8 +3289,8 @@ intents:
   country: both
   phase: 1
   built: part
-- id: office.agent_settings
-  agent: office
+- id: admin.agent_settings
+  agent: admin
   process: platform
   label_en: Agent settings
   description: Change an agent's organisation instructions or settings
@@ -3305,8 +3306,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.branch_settings
-  agent: office
+- id: admin.branch_settings
+  agent: admin
   process: platform
   label_en: Branch settings
   description: 'Branch settings: opening hours, public holidays, time zone'
@@ -3322,8 +3323,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.system_status
-  agent: office
+- id: admin.system_status
+  agent: admin
   process: platform
   label_en: Is Mia OK
   description: Is Mia working, are backups and channels OK
@@ -3339,8 +3340,8 @@ intents:
   country: both
   phase: 1
   built: part
-- id: office.operations_report
-  agent: office
+- id: admin.operations_report
+  agent: admin
   process: Record-to-Report
   label_en: Operations report
   description: Visits done, hours, absences, cover for a period
@@ -3356,8 +3357,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.absence_report
-  agent: office
+- id: admin.absence_report
+  agent: admin
   process: Record-to-Report
   label_en: Absence report
   description: Sickness absence rate and patterns
@@ -3373,8 +3374,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.profitability_report
-  agent: office
+- id: admin.profitability_report
+  agent: admin
   process: Record-to-Report
   label_en: Profit report
   description: Margin per client, site or service
@@ -3390,8 +3391,8 @@ intents:
   country: both
   phase: 3
   built: 'no'
-- id: office.revenue_report
-  agent: office
+- id: admin.revenue_report
+  agent: admin
   process: Record-to-Report
   label_en: Revenue report
   description: Sales and revenue for a period, compared
@@ -3408,8 +3409,8 @@ intents:
   country: both
   phase: 3
   built: 'no'
-- id: office.headcount_report
-  agent: office
+- id: admin.headcount_report
+  agent: admin
   process: Record-to-Report
   label_en: Staff report
   description: Staff numbers, hires, leavers, turnover
@@ -3425,8 +3426,8 @@ intents:
   country: both
   phase: 3
   built: 'no'
-- id: office.weekly_summary
-  agent: office
+- id: admin.weekly_summary
+  agent: admin
   process: Record-to-Report
   label_en: null
   description: Weekly summary to the owner
@@ -3441,8 +3442,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.export_data
-  agent: office
+- id: admin.export_data
+  agent: admin
   process: Record-to-Report
   label_en: Export to Excel
   description: Export a list or report to a spreadsheet
@@ -3458,8 +3459,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: office.staffing_forecast
-  agent: office
+- id: admin.staffing_forecast
+  agent: admin
   process: Record-to-Report
   label_en: Staffing forecast
   description: How many staff hours next month needs
@@ -3475,238 +3476,8 @@ intents:
   country: both
   phase: 3
   built: 'no'
-- id: chat.greeting
-  agent: chat
-  process: platform
-  label_en: Say hello
-  description: Hello, good morning, small talk opener
-  roles:
-  - accountant
-  - applicant
-  - cleaner
-  - client
-  - lead
-  - office
-  - supervisor
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 1
-  built: part
-- id: chat.thanks
-  agent: chat
-  process: platform
-  label_en: Thanks
-  description: Thanks, ok great, acknowledgement that closes a topic
-  roles:
-  - accountant
-  - applicant
-  - cleaner
-  - client
-  - lead
-  - office
-  - supervisor
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 1
-  built: part
-- id: chat.help
-  agent: chat
-  process: platform
-  label_en: What can you do
-  description: What can you do, how does this work
-  roles:
-  - accountant
-  - applicant
-  - cleaner
-  - client
-  - lead
-  - office
-  - supervisor
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 1
-  built: 'no'
-- id: chat.talk_to_human
-  agent: chat
-  process: platform
-  label_en: Talk to a person
-  description: Wants a person (supervisor, office, manager) instead of the bot
-  roles:
-  - accountant
-  - applicant
-  - cleaner
-  - client
-  - lead
-  - office
-  - supervisor
-  triggers:
-  - msg
-  risk: write
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 1
-  built: 'no'
-- id: chat.change_language
-  agent: chat
-  process: platform
-  label_en: Change language
-  description: Asks Mia to use another language
-  roles:
-  - accountant
-  - applicant
-  - cleaner
-  - client
-  - lead
-  - office
-  - supervisor
-  triggers:
-  - msg
-  risk: write
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 1
-  built: 'no'
-- id: chat.cancel
-  agent: chat
-  process: platform
-  label_en: Never mind
-  description: Stop, never mind, undo what was just asked
-  roles:
-  - accountant
-  - applicant
-  - cleaner
-  - client
-  - lead
-  - office
-  - supervisor
-  triggers:
-  - msg
-  risk: write
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 1
-  built: 'no'
-- id: chat.clarify
-  agent: chat
-  process: platform
-  label_en: I don't understand
-  description: Did not understand Mia's last message, asks to repeat or explain
-  roles:
-  - accountant
-  - applicant
-  - cleaner
-  - client
-  - lead
-  - office
-  - supervisor
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 1
-  built: 'no'
-- id: chat.request_status
-  agent: chat
-  process: platform
-  label_en: My earlier request
-  description: Did you get my message, what happened to what I asked
-  roles:
-  - accountant
-  - applicant
-  - cleaner
-  - client
-  - lead
-  - office
-  - supervisor
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
-- id: chat.app_feedback
-  agent: chat
-  process: platform
-  label_en: Feedback on Mia
-  description: Feedback or complaint about Mia itself
-  roles:
-  - accountant
-  - applicant
-  - cleaner
-  - client
-  - lead
-  - office
-  - supervisor
-  triggers:
-  - msg
-  risk: write
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
-- id: chat.privacy_question
-  agent: chat
-  process: platform
-  label_en: Privacy
-  description: What happens to my data, who can see my messages
-  roles:
-  - accountant
-  - applicant
-  - cleaner
-  - client
-  - lead
-  - office
-  - supervisor
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 1
-  built: 'no'
-- id: chat.who_am_i
-  agent: chat
+- id: admin.who_am_i
+  agent: admin
   process: platform
   label_en: My account
   description: Which account or role am I using
@@ -3728,8 +3499,8 @@ intents:
   country: both
   phase: 1
   built: 'no'
-- id: chat.link_account
-  agent: chat
+- id: admin.link_account
+  agent: admin
   process: platform
   label_en: Link WhatsApp
   description: Link this WhatsApp number with a code or invite

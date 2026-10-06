@@ -1,7 +1,8 @@
 """English intent classification eval: understanding only, no tools (D26).
 
 A small agent reads one message and the sender's role and returns one intent id from
-intents_catalogue.yaml (message-triggered rows) or `other`, with a confidence. Run with:
+intents_catalogue.yaml (message-triggered rows), a shared conversation intent (D30) or `other`,
+with a confidence. Run with:
   MIA_EVAL_MODEL=local/gemma4-mia uv run pytest node/tests/evals/test_intent_classification.py -m evals -s
 MIA_EVAL_MODEL=test runs the dispatcher's rules classifier as a baseline (it knows six intents).
 MIA_EVAL_INTENT_SPLIT=all uses every message (default: the held-out `test` split);
@@ -28,6 +29,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from mia.agents.base import build_model
 from mia.agents.dispatcher.classifier import classify
 from tests.evals.intents import (
+    CONVERSATION,
     OTHER,
     CatalogueIntent,
     Example,
@@ -56,6 +58,15 @@ def instructions(catalogue: dict[str, CatalogueIntent]) -> str:
         f"- {i.id}: {i.description} (sent by: {', '.join(sorted(i.roles))})"
         for i in catalogue.values()
         if i.by_message
+    ]
+    # ponytail: only the conversation intents the dataset labels (the old chat area, D30); the
+    # rest of conversation.yaml (out of scope, injection, emoji) overlaps `other` until the
+    # dataset is relabelled, so offering them would score right answers as wrong.
+    used = {e.intent for e in load_dataset()}
+    lines += [
+        f"- {c.id}: {c.description} (sent by: anyone)"
+        for c in CONVERSATION.values()
+        if c.id in used
     ]
     return (
         "You route messages sent to Mia, the assistant of a cleaning company. Read one message"

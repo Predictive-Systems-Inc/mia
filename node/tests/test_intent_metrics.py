@@ -9,6 +9,7 @@ from mia.agents.dispatcher.agent import AGENT_DIR
 from mia.agents.dispatcher.classifier import IntentName
 from tests.evals.intents import (
     CATALOGUE_PATH,
+    CONVERSATION,
     OTHER,
     ROLES,
     STYLES,
@@ -52,6 +53,7 @@ def test_report() -> None:
     assert rep["n"] == 4 and rep["accuracy"] == 0.5
     assert rep["area_accuracy"] == 0.75  # absence_scope is still the dispatcher
     assert rep["invalid"] == 1
+    assert report([_result("hr.payslip", "conversation.greeting")], CATALOGUE)["invalid"] == 0
     assert rep["by_area"]["dispatcher"] == {"n": 2, "correct": 1, "accuracy": 0.5}
     assert rep["by_role"]["office"]["correct"] == 1
     assert rep["confusions"][0][2] == 1 and len(rep["confusions"]) == 2
@@ -86,12 +88,13 @@ def test_every_message_intent_has_15_messages_and_a_stratified_test_split() -> N
 
 
 def test_examples_are_consistent_with_the_catalogue() -> None:
+    labels = CATALOGUE.keys() | CONVERSATION.keys() | {OTHER}
     for e in DATASET:
-        assert e.intent == OTHER or CATALOGUE[e.intent].by_message, e
+        assert e.intent in CONVERSATION or e.intent == OTHER or CATALOGUE[e.intent].by_message, e
         assert e.id.startswith(f"{e.intent}/{e.lang}/"), e
         assert e.role in ROLES and e.style in STYLES, e
-        assert e.intent == OTHER or e.role in CATALOGUE[e.intent].roles, e
-        assert e.negative_of is None or e.negative_of in CATALOGUE or e.negative_of == OTHER, e
+        assert e.intent not in CATALOGUE or e.role in CATALOGUE[e.intent].roles, e
+        assert e.negative_of is None or e.negative_of in labels, e
         assert e.negative_of != e.intent, e
     assert len({e.id for e in DATASET}) == len(DATASET)
     assert sum(e.kind == "injection" for e in DATASET) >= 30

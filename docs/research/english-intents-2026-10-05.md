@@ -8,6 +8,11 @@ Two measurements, both local, English only, one model at a time on an Apple M5 P
    held-out `test` split of node/tests/evals/intents.jsonl (1086 of 3643 English utterances; 184
    message-triggered intents of docs/capabilities.md plus `other`). The model gets the sender's
    role and the message and returns one intent id and a confidence.
+
+Ids are shown with the role names of D30 (office became admin, quality became site_manager).
+The `chat` area was measured before D30; its intents now belong to the shared conversation
+catalogue (conversation.*) and to admin (who_am_i, link_account), so the chat rows below are
+the old labels.
 2. **Dispatcher agentic suite, English only**: node/mia/agents/dispatcher/tests/scenarios_en.yaml
    (the 41 scenarios of the mixed suite, every Finnish and Filipino message replaced by an
    English one), `MIA_EVAL_RUNS=3`, real tools, permissions and approvals.
@@ -50,8 +55,8 @@ catalogue the deterministic classifier does not cover, not a fair comparison.
 | hr | 142 | **90.8%** | 87.3% |
 | bookkeeper | 98 | **92.9%** | 88.8% |
 | purchaser | 74 | **90.5%** | 85.1% |
-| quality | 63 | **87.3%** | 85.7% |
-| office | 116 | **93.1%** | 91.4% |
+| site_manager | 63 | **87.3%** | 85.7% |
+| admin | 116 | **93.1%** | 91.4% |
 | chat | 75 | **96.0%** | 86.7% |
 | other | 31 | 80.7% | **83.9%** |
 
@@ -83,17 +88,17 @@ for both; typos barely matter.
 
 ### Most frequent confusions (gold -> predicted)
 
-Gemma: other -> chat.greeting x4 ("lol", "🙏🙏🙏"); recruiter.publish_job_ad ->
-marketing.publish_post x3; quality.data_breach -> dispatcher.lost_key x3; dispatcher.cover_reply
--> dispatcher.report_absence x2; client_service.visit_status -> client_service.complaint x2;
-hr.offboard_employee -> office.archive_record x2; office.reset_login ->
-dispatcher.cannot_access_site x2 ("locked out").
+Gemma: other -> chat.greeting x4 ("lol", "🙏🙏🙏"); recruiter.publish_job_ad -> marketing.publish_post
+x3; site_manager.data_breach -> dispatcher.lost_key x3; dispatcher.cover_reply ->
+dispatcher.report_absence x2; client_service.visit_status -> client_service.complaint x2;
+hr.offboard_employee -> admin.archive_record x2; admin.reset_login -> dispatcher.cannot_access_site
+x2 ("locked out").
 
-Qwen: dispatcher.add_visit -> office.add_visit x4 (an id that does not exist);
+Qwen: dispatcher.add_visit -> admin.add_visit x4 (an id that does not exist);
 client_service.cancel_booking -> client_service.pause_service x4; dispatcher.report_absence ->
 hr.request_time_off x3; client_service.book_cleaning -> client_service.change_booking x3;
-quality.audit_trail -> office.audit_trail x2 and chat.privacy_question ->
-quality.privacy_question x2 (invented ids again); dispatcher.absence_scope -> other x2.
+site_manager.audit_trail -> admin.audit_trail x2 and chat.privacy_question ->
+site_manager.privacy_question x2 (invented ids again); dispatcher.absence_scope -> other x2.
 
 ### Weakest intents (held-out)
 
@@ -101,12 +106,12 @@ quality.privacy_question x2 (invented ids again); dispatcher.absence_scope -> ot
 | --- | --- |
 | hr.offboard_employee 2/5 | chat.privacy_question 1/5 |
 | purchaser.order_subcontract 2/5 | dispatcher.add_visit 1/5 |
-| quality.data_breach 2/5 | hr.offboard_employee 2/5 |
+| site_manager.data_breach 2/5 | hr.offboard_employee 2/5 |
 | recruiter.interview_notes 2/5 | hr.performance_review 2/5 |
-| recruiter.publish_job_ad 2/5 | quality.audit_trail 2/5 |
+| recruiter.publish_job_ad 2/5 | site_manager.audit_trail 2/5 |
 | dispatcher.cover_reply 5/8 | recruiter.interview_notes 2/5 |
 | dispatcher.absence_scope 6/8 | dispatcher.report_absence 5/11 |
-| office.reset_login 3/5 | dispatcher.absence_scope 4/8 |
+| admin.reset_login 3/5 | dispatcher.absence_scope 4/8 |
 | dispatcher.checklist 3/5 | client_service.book_cleaning 4/9 |
 | hr.performance_review 3/5 | client_service.cancel_booking 5/9 |
 
@@ -170,7 +175,7 @@ Filipino messages (63% and 62%). In English only, the order flips for the agenti
 82.9%, Gemma 69.9%) while Gemma stays ahead on pure understanding (91.9% against 87.1%). So:
 
 - **Understanding:** Gemma is the stronger English reader, by about 5 points overall and 12 on
-  the dispatcher's own intents; Qwen invents plausible ids (office.add_visit) and confuses
+  the dispatcher's own intents; Qwen invents plausible ids (admin.add_visit) and confuses
   report_absence with request_time_off.
 - **Acting:** Qwen on llama.cpp is the more reliable tool caller and twice as fast; Gemma's
   agentic misses are output-format failures, which a constrained output (grammar or JSON schema on
@@ -184,8 +189,8 @@ Filipino messages (63% and 62%). In English only, the order flips for the agenti
 2. **Weak intents** for both: bare answers that depend on Mia's last question (absence_scope,
    cover_reply, assign), indirect complaints and status questions (visit_status vs complaint),
    neighbours across agents (recruiter.publish_job_ad vs marketing.publish_post, hr.offboard vs
-   office.archive_record, office.reset_login vs dispatcher.cannot_access_site, quality.data_breach
-   vs dispatcher.lost_key), and cancel_booking vs pause_service. Several are label or catalogue
+   admin.archive_record, admin.reset_login vs dispatcher.cannot_access_site,
+   site_manager.data_breach vs dispatcher.lost_key), and cancel_booking vs pause_service. Several are label or catalogue
    questions as much as model errors; review those intents' descriptions and add a `context` field
    to the dataset for the follow-up answers.
 3. **For the translation layer (D26):** English understanding of the local models is good (92% on
