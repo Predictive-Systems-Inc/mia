@@ -342,9 +342,9 @@ and accuracy before and after each retrain.
 ## Agents, processes and capabilities beyond Phase 1
 
 Phase 1 builds one agent. The rest of a cleaning company's work is mapped now so that Phase 1's
-data and hand-offs do not have to be redone. The full list lives in docs/capabilities.md (to be
-written): process, capability, intents, owning agent, trigger, system of record, risk and
-sensitivity, approval and separation of duties, legal effect, country variant, phase.
+data and hand-offs do not have to be redone. The full list lives in docs/capabilities.md:
+process, capability, intents, owning agent, trigger, system of record, risk and sensitivity,
+approval and separation of duties, legal effect, country variant, phase.
 
 **Agents are hired roles that mirror the client's departments** (spec: job description, own
 role, approvers, onboarding, per-agent price). A small company hires a few and adds more as it

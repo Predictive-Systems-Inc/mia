@@ -42,6 +42,7 @@ def test_possessives() -> None:
     assert classify("Show me Maria's visits.", TODAY).person_hint == "Maria"
     assert classify("Näytä Marian käynnit", TODAY).person_hint == "Marian"
     assert classify("Näytä minun käynnit", TODAY).person_hint is None
+    assert classify("What's my schedule this week?", TODAY).person_hint is None
 
 
 def test_late_is_a_morning_absence() -> None:

@@ -211,7 +211,7 @@ def classify(text: str, today: dt.date, default_lang: str = "en") -> Intent:
         person = None
         if (m := POSSESSIVE_EN.search(text)) or (m := POSSESSIVE_FI.search(text)):
             person = m[1]
-        if person and person.lower() in ("my", "minun", "mina", "minu"):
+        if person and person.lower() in ("my", "minun", "mina", "minu", *STOP_WORDS):
             person = None
         return Intent(name="my_visits", lang=lang, date=parse_date(text, today), person_hint=person)
     return Intent(name="other", lang=lang)

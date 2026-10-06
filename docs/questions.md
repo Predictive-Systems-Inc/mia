@@ -155,3 +155,13 @@ Format for each entry:
   apps generate ULIDs. Mapping outside ids would need a column on chat_threads (data standard).
 - Answered: D15 (thread ids stay ULIDs).
 - Blocking: no
+
+## Q18: Roles for quality, master data and reporting in the capability catalogue
+- Where: docs/plan.md roster ("Agents, processes and capabilities beyond Phase 1"); docs/capabilities.md
+- Question: the roster has no role for site quality, safety and compliance work, or for master
+  data, user administration and management reports. Which agent owns them?
+- Assumed answer: two proposed roles, `quality` (quality, safety and compliance coordinator) and
+  `office` (office manager: master data, administration, management reporting), plus `chat`
+  for platform-wide intents (greeting, help, talk to a person) that belong to no hired role.
+  The QA platform agent keeps watching processes; it does not take site inspections.
+- Blocking: no

@@ -1,7 +1,7 @@
 """Dispatcher evaluation suite (run with: uv run pytest node/tests/evals -m evals).
 
-Each scenario in agents/dispatcher/tests/scenarios.yaml runs RUNS times on a fresh copy of the
-seeded demo database. Tool calls (names, order, statuses, inputs) are asserted exactly; the
+Each scenario in agents/dispatcher/tests/scenarios.yaml (or the suite named by MIA_EVAL_SUITE,
+such as tests/scenarios_en.yaml) runs RUNS times on a fresh copy of the seeded demo database. Tool calls (names, order, statuses, inputs) are asserted exactly; the
 suite passes when the pass rate over all runs meets the manifest's tests.min_pass_rate.
 By default the agent runs on the deterministic rules FunctionModel; set MIA_EVAL_MODEL to a
 gateway route to evaluate a real model through the egress layer.
@@ -33,9 +33,9 @@ RUNS = int(os.environ.get("MIA_EVAL_RUNS", "5"))
 # A real model is the point of MIA_EVAL_MODEL; conftest blocks model requests otherwise.
 if os.environ.get("MIA_EVAL_MODEL"):
     models.ALLOW_MODEL_REQUESTS = True
-SCENARIOS: list[dict[str, Any]] = yaml.safe_load(
-    (AGENT_DIR / MANIFEST.tests["suite"]).read_text(encoding="utf-8")
-)
+# MIA_EVAL_SUITE picks another suite in the agent folder (tests/scenarios_en.yaml: English only).
+SUITE = os.environ.get("MIA_EVAL_SUITE") or MANIFEST.tests["suite"]
+SCENARIOS: list[dict[str, Any]] = yaml.safe_load((AGENT_DIR / SUITE).read_text(encoding="utf-8"))
 TOOL_PREFIX = MANIFEST.id + "."
 
 
@@ -159,7 +159,8 @@ def test_dispatcher_pass_rate(template_db: Path, tmp_path: Path) -> None:
         for sid, runs in results.items()
     ]
     print(
-        f"\ndispatcher evals: {passed}/{total} runs passed ({rate:.1%}), model={os.environ.get('MIA_EVAL_MODEL', 'test')}"
+        f"\ndispatcher evals: {passed}/{total} runs passed ({rate:.1%}), suite={SUITE},"
+        f" model={os.environ.get('MIA_EVAL_MODEL', 'test')}"
     )
     by_lang: dict[str, list[int]] = {}
     for sid, runs in results.items():

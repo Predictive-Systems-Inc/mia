@@ -68,7 +68,8 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run mia verify-db FILE` | Check a restored copy: integrity, events hash chain, row counts |
 | `uv run mia skills generate ROLE --model ROUTE --split train\|test` | Teacher-model generation per coverage cell (role skill models) |
 | `uv run pytest` | Unit tests |
-| `uv run pytest node/tests/evals -m evals` | Dispatcher evaluation suite (33 scenarios, 5 runs each) |
+| `uv run pytest node/tests/evals -m evals` | Dispatcher evaluation suite (41 scenarios, 5 runs each; `MIA_EVAL_SUITE=tests/scenarios_en.yaml` for English only) |
+| `MIA_EVAL_MODEL=local/<model> uv run pytest node/tests/evals/test_intent_classification.py -m evals -s` | English intent classification over docs/capabilities.md (held-out split; `MIA_EVAL_INTENT_SPLIT=all`, `MIA_EVAL_REPORT=file.json`) |
 | `uv run ruff check . && uv run ruff format --check . && uv run mypy node/mia` | Lint and types |
 | `uv run pre-commit install` | Run ruff, mypy and detect-secrets on every commit |
 

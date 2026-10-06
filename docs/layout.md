@@ -24,7 +24,7 @@ mia/
       agents/               base.py (manifest, guard, model factory)
         dispatcher/         manifest.yaml, job.md, prompts/, models.py, classifier.py,
                             scoring.py, cover.py (confirmation flow), rules.py, tools.py,
-                            agent.py, tests/scenarios.yaml
+                            agent.py, tests/scenarios.yaml (and scenarios_en.yaml)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
       learning/             offline pipeline for role skill models (ADR 013)
       skills/               classifier runtime and per-turn routing (ADR 013)
@@ -41,8 +41,9 @@ mia/
     migrations/             alembic.ini, env.py, versions/
     config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ (instructions, settings.yaml),
                             ollama/ (Modelfiles for local models, ADR 004)
-    tests/                  unit tests; evals/ (marker `evals`)
-  docs/                     spec, plan, brief, ADRs, questions, decisions, ideas,
+    tests/                  unit tests; evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
+                            and intents.py for intent classification)
+  docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,
                             research/ (research notes and dated evaluation reports, ADR 012)
 ```
 
