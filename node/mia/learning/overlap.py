@@ -30,6 +30,7 @@ class Thresholds(BaseModel):
 
 
 _DEFAULTS = Thresholds()
+MAX_PARAPHRASES = 200
 
 
 class Pair(BaseModel):
@@ -71,7 +72,8 @@ class Candidate(BaseModel):
 class OverlapReport(BaseModel):
     close_pairs: list[Pair] = []
     suspects: list[Suspect] = []
-    paraphrases: list[Paraphrase] = []
+    paraphrases: list[Paraphrase] = []  # at most MAX_PARAPHRASES, most similar first
+    paraphrase_total: int = 0
     clusters: dict[str, list[SubCluster]] = {}
     candidates: list[Candidate] = []
 
@@ -85,10 +87,8 @@ def _groups(idx: list[int], emb: np.ndarray, th: Thresholds) -> list[list[int]]:
     """Sub-clusters of one intent, largest first; small ones join the largest."""
     uf = _UnionFind(len(idx))
     sims = emb[idx] @ emb[idx].T
-    for i in range(len(idx)):
-        for j in range(i + 1, len(idx)):
-            if sims[i, j] >= th.cluster:
-                uf.union(i, j)
+    for i, j in np.argwhere(np.triu(sims >= th.cluster, 1)):
+        uf.union(int(i), int(j))
     by_root: dict[int, list[int]] = defaultdict(list)
     for i, item in enumerate(idx):
         by_root[uf.find(i)].append(item)
@@ -130,9 +130,10 @@ def analyse(items: list[Item], emb: np.ndarray, th: Thresholds = _DEFAULTS) -> O
             break
         row = sims[i].copy()
         row[i] = -np.inf
-        near = [items[j].intent for j in np.argsort(row)[::-1][:k]]
-        label, count = Counter(near).most_common(1)[0]
-        if label != it.intent and count / k >= th.suspect_share:
+        top = np.sort(np.argpartition(row, -k)[-k:])
+        counts = Counter(items[j].intent for j in top)
+        label, count = counts.most_common(1)[0]
+        if count > counts[it.intent] and count / k >= th.suspect_share:
             rep.suspects.append(
                 Suspect(
                     id=it.id,
@@ -142,21 +143,23 @@ def analyse(items: list[Item], emb: np.ndarray, th: Thresholds = _DEFAULTS) -> O
                     share=round(count / k, 3),
                 )
             )
-    for i in range(len(items)):
-        for j in range(i + 1, len(items)):
-            if items[i].intent != items[j].intent and sims[i, j] >= th.paraphrase:
-                (a_int, a_id), (b_int, b_id) = sorted(
-                    [(items[i].intent, items[i].id), (items[j].intent, items[j].id)]
-                )
-                rep.paraphrases.append(
-                    Paraphrase(
-                        a_id=a_id,
-                        a_intent=a_int,
-                        b_id=b_id,
-                        b_intent=b_int,
-                        similarity=round(float(sims[i, j]), 3),
-                    )
-                )
+    lab = np.array([it.intent for it in items])
+    found = np.argwhere(np.triu(sims >= th.paraphrase, 1) & (lab[:, None] != lab[None, :]))
+    rep.paraphrase_total = len(found)
+    ordered = sorted(found.tolist(), key=lambda ij: -sims[ij[0], ij[1]])[:MAX_PARAPHRASES]
+    for i, j in ordered:
+        (a_int, a_id), (b_int, b_id) = sorted(
+            [(items[i].intent, items[i].id), (items[j].intent, items[j].id)]
+        )
+        rep.paraphrases.append(
+            Paraphrase(
+                a_id=a_id,
+                a_intent=a_int,
+                b_id=b_id,
+                b_intent=b_int,
+                similarity=round(float(sims[i, j]), 3),
+            )
+        )
     for n in names:
         groups = _groups(by_intent[n], emb, th)
         subs: list[SubCluster] = []
@@ -231,7 +234,9 @@ def render(report: OverlapReport) -> str:
         "|---|---|---|---|",
     ]
     out += [f"| {s.id} | {s.intent} | {s.neighbours_label} | {s.share} |" for s in report.suspects]
-    out += ["", "## Paraphrases across intents", "", "| a | b | similarity |", "|---|---|---|"]
+    out += ["", "## Paraphrases across intents", ""]
+    out += [f"Showing {len(report.paraphrases)} of {report.paraphrase_total}.", ""]
+    out += ["| a | b | similarity |", "|---|---|---|"]
     out += [
         f"| {p.a_id} ({p.a_intent}) | {p.b_id} ({p.b_intent}) | {p.similarity} |"
         for p in report.paraphrases

@@ -121,3 +121,70 @@ def test_render_lists_every_section() -> None:
     ):
         assert heading in text
     assert "| m | merge | x, y |" in text
+
+
+def test_dense_intent_does_not_recurse_and_is_one_group() -> None:
+    n = 1500
+    emb = unit(*[[1, i * 1e-6, 0] for i in range(n)])
+    rep = analyse(items(*["a"] * n), emb, TH)
+    assert [s.size for s in rep.clusters["a"]] == [n]
+
+
+def test_suspect_tie_between_own_and_other_label_is_not_flagged() -> None:
+    # arc at 0, 10, 20, 30 degrees; every record has one a and one b among its 2 neighbours
+    angles = np.radians([0, 10, 20, 30])
+    emb = unit(*[[float(np.cos(t)), float(np.sin(t)), 0.0] for t in angles])
+    its = items("a", "a", "b", "b")
+    assert analyse(its, emb, TH.model_copy(update={"suspect_share": 0.5})).suspects == []
+
+
+def test_close_pair_and_paraphrase_thresholds_are_inclusive() -> None:
+    th = TH.model_copy(update={"close_pair": 0.0, "paraphrase": 0.0})
+    at = analyse(items("a", "b"), unit([1, 0], [0, 1]), th)  # cosine exactly 0.0
+    assert len(at.close_pairs) == 1 and len(at.paraphrases) == 1
+    past = analyse(items("a", "b"), unit([1, 0], [-0.01, 1]), th)  # cosine just below 0.0
+    assert past.close_pairs == [] and past.paraphrases == []
+
+
+def test_small_groups_fold_into_the_main_group() -> None:
+    emb = unit([1, 0], [1, 0.01], [1, 0.02], [0, 1])
+    th = TH.model_copy(update={"min_cluster": 3})
+    assert [s.size for s in analyse(items("a", "a", "a", "a"), emb, th).clusters["a"]] == [4]
+    th1 = TH.model_copy(update={"min_cluster": 1})
+    assert [s.size for s in analyse(items("a", "a", "a", "a"), emb, th1).clusters["a"]] == [3, 1]
+
+
+def test_no_narrow_when_the_other_intent_is_wider() -> None:
+    # w has two close groups (tight overall); n is wide and sits on one of them
+    w = [[1, 0.01, 0], [1, 0.02, 0], [0.866, 0.5, 0], [0.866, 0.51, 0]]
+    n = [[1, 0.5, 0], [1, -0.5, 0], [1, 0, 0.5], [1, 0, -0.5]]
+    th = TH.model_copy(update={"cluster": 0.99})
+    rep = analyse(items(*["w"] * 4, *["n"] * 4), unit(*w, *n), th)
+    assert [len(rep.clusters["w"]), len(rep.clusters["n"])] == [2, 1]
+    assert rep.candidates == []  # one hit: neither merge nor narrow
+
+
+def test_split_is_skipped_when_a_sub_cluster_overlaps_another_intent() -> None:
+    # same data as the narrow case; groups are far enough to split if that branch were reached
+    its = items("w", "w", "w", "w", "n", "n")
+    emb = unit([1, 0, 0], [1, 0.05, 0], [0.6, 0.8, 0], [0.62, 0.78, 0], [1, 0.01, 0], [1, 0.02, 0])
+    th = TH.model_copy(update={"split": 0.9})
+    assert [(c.intent, c.kind) for c in analyse(its, emb, th).candidates] == [("w", "narrow")]
+
+
+def test_merge_when_two_sub_clusters_overlap_the_same_intent() -> None:
+    a, b = np.radians(20), np.radians(-20)
+    m = [[np.cos(a), np.sin(a), 0], [np.cos(a), np.sin(a) + 0.01, 0]]
+    m += [[np.cos(b), np.sin(b), 0], [np.cos(b), np.sin(b) - 0.01, 0]]
+    th = TH.model_copy(update={"cluster": 0.99})
+    rep = analyse(items(*["m"] * 4, "x", "x"), unit(*m, [1, 0, 0], [1, 0.001, 0]), th)
+    assert [(c.intent, c.kind, c.others) for c in rep.candidates] == [("m", "merge", ["x"])]
+
+
+def test_paraphrases_are_sorted_and_capped_with_total_shown() -> None:
+    n = 201
+    # n records of a and n of b, all identical in pairs: n * n cross pairs
+    emb = unit(*[[1, 0, 0]] * (2 * n))
+    rep = analyse(items(*["a"] * n, *["b"] * n), emb, TH)
+    assert rep.paraphrase_total == n * n and len(rep.paraphrases) == 200
+    assert "Showing 200 of 40401." in render(rep)

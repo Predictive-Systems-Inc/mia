@@ -14,9 +14,10 @@ class _UnionFind:
         self.parent = list(range(n))
 
     def find(self, x: int) -> int:
-        if self.parent[x] != x:
-            self.parent[x] = self.find(self.parent[x])
-        return self.parent[x]
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]  # path halving, no recursion
+            x = self.parent[x]
+        return x
 
     def union(self, x: int, y: int) -> None:
         px, py = self.find(x), self.find(y)
