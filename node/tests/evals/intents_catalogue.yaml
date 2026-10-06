@@ -199,7 +199,8 @@ intents:
   agent: dispatcher
   process: Contract-to-Service
   label_en: Can't get in
-  description: Cleaner is at the site but cannot get in (locked, no key, wrong code, alarm)
+  description: Cleaner is at a site and cannot get in physically (locked door, no key, wrong door code,
+    alarm). Logging in to Mia is admin.reset_login
   roles:
   - cleaner
   triggers:
@@ -496,7 +497,8 @@ intents:
   agent: dispatcher
   process: Contract-to-Service
   label_en: Lost a key
-  description: A key, card or remote for a client site is lost
+  description: A physical key, card or remote for a client site is lost. A lost phone, codes or documents
+    with data is site_manager.data_breach
   roles:
   - cleaner
   - supervisor
@@ -532,7 +534,8 @@ intents:
   agent: dispatcher
   process: Contract-to-Service
   label_en: How to get there
-  description: How to get to a site, parking, public transport
+  description: How to get to a company site or visit, parking, public transport there. Directions anywhere
+    else are conversation.oos_directions_transport
   roles:
   - cleaner
   triggers:
@@ -647,23 +650,6 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: client_service.change_access
-  agent: client_service
-  process: Contract-to-Service
-  label_en: New access details
-  description: Client gives new access details (door code, key, alarm, opening hours)
-  roles:
-  - client
-  triggers:
-  - msg
-  risk: write
-  sensitivity: p
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
 - id: client_service.add_extra_task
   agent: client_service
   process: Service-to-Cash
@@ -732,23 +718,6 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: client_service.damage_claim
-  agent: client_service
-  process: Contract-to-Service
-  label_en: Report damage
-  description: Client says the cleaner damaged or broke something and wants compensation
-  roles:
-  - client
-  triggers:
-  - msg
-  risk: money
-  sensitivity: p
-  approval: owner
-  legal_effect: true
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
 - id: client_service.missing_item
   agent: client_service
   process: Contract-to-Service
@@ -761,58 +730,6 @@ intents:
   risk: write
   sensitivity: p
   approval: owner informed
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
-- id: client_service.compliment
-  agent: client_service
-  process: Contract-to-Service
-  label_en: Give feedback
-  description: Client gives positive feedback about a visit or cleaner
-  roles:
-  - client
-  triggers:
-  - msg
-  risk: write
-  sensitivity: p
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
-- id: client_service.service_faq
-  agent: client_service
-  process: Contract-to-Service
-  label_en: Ask about service
-  description: General question about the service (products used, insurance, pets, what is included)
-  roles:
-  - client
-  - lead
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
-- id: client_service.update_contact
-  agent: client_service
-  process: Contract-to-Service
-  label_en: Update my contact
-  description: Client changes contact person, phone or email
-  roles:
-  - client
-  triggers:
-  - msg
-  risk: write
-  sensitivity: p
-  approval: '-'
   legal_effect: false
   system_of_record: Mia
   country: both
@@ -895,24 +812,6 @@ intents:
   - msg
   risk: write
   sensitivity: p
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
-- id: sales.price_question
-  agent: sales
-  process: Lead-to-Contract
-  label_en: Ask about prices
-  description: Quick question about rates or price list, no quote yet
-  roles:
-  - lead
-  - client
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
   approval: '-'
   legal_effect: false
   system_of_record: Mia
@@ -1191,24 +1090,6 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: sales.household_deduction
-  agent: sales
-  process: Lead-to-Contract
-  label_en: Tax credit question
-  description: Question about the household tax credit for cleaning (kotitalousvähennys)
-  roles:
-  - lead
-  - client
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: FI
-  phase: 2
-  built: 'no'
 - id: sales.tender
   agent: sales
   process: Lead-to-Contract
@@ -1247,7 +1128,8 @@ intents:
   agent: marketing
   process: Lead-to-Contract
   label_en: Publish a post
-  description: Publish an approved post
+  description: Publish an approved marketing post (offers, news, before and after photos). A job vacancy
+    is recruiter.publish_job_ad
   roles:
   - office
   triggers:
@@ -1417,7 +1299,7 @@ intents:
   agent: recruiter
   process: Hire-to-Retire
   label_en: Publish a job ad
-  description: Publish a job ad on job boards
+  description: Publish a job vacancy (ad or hiring post) on job boards, the website or social media
   roles:
   - office
   triggers:
@@ -1434,30 +1316,14 @@ intents:
   agent: recruiter
   process: Hire-to-Retire
   label_en: Apply for a job
-  description: Someone wants to apply for a job or sends a CV
+  description: 'Someone applies for a job: says they want to apply, sends a CV or application. Questions
+    about working here are conversation.kb_jobs'
   roles:
   - applicant
   triggers:
   - msg
   risk: write
   sensitivity: p
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 3
-  built: 'no'
-- id: recruiter.job_question
-  agent: recruiter
-  process: Hire-to-Retire
-  label_en: Ask about the job
-  description: Applicant asks about pay, hours, location or requirements of a job
-  roles:
-  - applicant
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
   approval: '-'
   legal_effect: false
   system_of_record: Mia
@@ -1755,7 +1621,8 @@ intents:
   agent: hr
   process: Hire-to-Retire
   label_en: Sick note
-  description: Send or ask about a sick note or medical certificate
+  description: Send a sick note or medical certificate, or ask about one already sent. Rules on certificates
+    are conversation.kb_sick_leave_rules
   roles:
   - cleaner
   triggers:
@@ -1847,23 +1714,6 @@ intents:
   - msg
   risk: read
   sensitivity: p
-  approval: '-'
-  legal_effect: false
-  system_of_record: Payroll
-  country: both
-  phase: 2
-  built: 'no'
-- id: hr.payday
-  agent: hr
-  process: Hire-to-Retire
-  label_en: When is payday
-  description: When is payday
-  roles:
-  - cleaner
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
   approval: '-'
   legal_effect: false
   system_of_record: Payroll
@@ -1968,23 +1818,6 @@ intents:
   country: FI
   phase: 2
   built: 'no'
-- id: hr.employment_terms
-  agent: hr
-  process: Hire-to-Retire
-  label_en: Pay and work rules
-  description: Question on pay rates, supplements, holiday pay or the collective agreement
-  roles:
-  - cleaner
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
 - id: hr.employment_certificate
   agent: hr
   process: Hire-to-Retire
@@ -2057,7 +1890,8 @@ intents:
   agent: hr
   process: Hire-to-Retire
   label_en: Offboard someone
-  description: 'Offboarding: keys back, access removed, final pay'
+  description: Run the whole leaver process for a named person (keys back, access removed, final pay,
+    exit checklist). Only the record is admin.archive_record; only Mia access is admin.remove_access
   roles:
   - office
   triggers:
@@ -2066,23 +1900,6 @@ intents:
   sensitivity: p
   approval: owner
   legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
-- id: hr.grievance
-  agent: hr
-  process: Hire-to-Retire
-  label_en: Private complaint
-  description: Confidential complaint about a colleague or supervisor, harassment
-  roles:
-  - cleaner
-  triggers:
-  - msg
-  risk: write
-  sensitivity: sc
-  approval: owner only
-  legal_effect: true
   system_of_record: Mia
   country: both
   phase: 2
@@ -2125,9 +1942,11 @@ intents:
   agent: hr
   process: Hire-to-Retire
   label_en: Training
-  description: Sign up for or ask about training (induction, hygiene passport, safety card)
+  description: Enrol someone in training or check who needs it (induction, hygiene passport, safety card).
+    Questions about courses are conversation.kb_training
   roles:
   - cleaner
+  - supervisor
   - office
   triggers:
   - msg
@@ -2325,23 +2144,6 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: bookkeeper.billing_details
-  agent: bookkeeper
-  process: Service-to-Cash
-  label_en: Billing details
-  description: Client changes billing address, e-invoice address, VAT or TIN details
-  roles:
-  - client
-  triggers:
-  - msg
-  risk: write
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Acct
-  country: both
-  phase: 2
-  built: 'no'
 - id: bookkeeper.receivables
   agent: bookkeeper
   process: Service-to-Cash
@@ -2364,7 +2166,8 @@ intents:
   agent: bookkeeper
   process: Procure-to-Pay
   label_en: Claim an expense
-  description: Employee claims back money spent for work (receipt)
+  description: Employee claims back a specific amount spent for work (receipt). Questions about the rules
+    are conversation.kb_expenses_travel
   roles:
   - cleaner
   triggers:
@@ -2381,7 +2184,8 @@ intents:
   agent: bookkeeper
   process: Procure-to-Pay
   label_en: Claim mileage
-  description: Employee claims kilometre allowance for driving their own car
+  description: Employee claims kilometres driven with their own vehicle. Questions about rates and rules
+    are conversation.kb_expenses_travel
   roles:
   - cleaner
   triggers:
@@ -2658,7 +2462,8 @@ intents:
   agent: purchaser
   process: Procure-to-Pay
   label_en: Equipment broken
-  description: Equipment is broken or not working (vacuum, scrubber, ladder)
+  description: Equipment is broken or not working (vacuum, scrubber, trolley) and is not dangerous now.
+    Equipment that is dangerous now (sparks, smoke, hot water leak, unsafe ladder) is conversation.hazard_report
   roles:
   - cleaner
   - supervisor
@@ -2826,10 +2631,11 @@ intents:
   agent: site_manager
   process: Contract-to-Service
   label_en: I got hurt
-  description: Staff member was injured or had an accident at work
+  description: A supervisor or the office reports that a staff member was injured at work (accident record,
+    insurance). The injured person's own message is conversation.injury_minor or conversation.emergency
   roles:
-  - cleaner
   - supervisor
+  - office
   triggers:
   - msg
   risk: write
@@ -2844,32 +2650,17 @@ intents:
   agent: site_manager
   process: Contract-to-Service
   label_en: I broke something
-  description: Staff member damaged or broke something at a site
+  description: Property at a site was damaged or broken, reported by the staff member or claimed by the
+    client (compensation follows). General insurance questions are conversation.kb_insurance_damages
   roles:
   - cleaner
+  - client
   triggers:
   - msg
   risk: write
   sensitivity: n
   approval: owner (insurance)
   legal_effect: true
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
-- id: site_manager.chemical_safety
-  agent: site_manager
-  process: Contract-to-Service
-  label_en: Chemical safety
-  description: Chemical question, safety data sheet, spill or exposure
-  roles:
-  - cleaner
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
   system_of_record: Mia
   country: both
   phase: 2
@@ -2962,7 +2753,8 @@ intents:
   agent: site_manager
   process: platform
   label_en: Data leak
-  description: Possible data breach (lost phone, codes sent to the wrong person)
+  description: 'Possible data breach: lost or stolen phone or papers with data, codes or personal data
+    sent to the wrong person. A lost physical key alone is dispatcher.lost_key'
   roles:
   - cleaner
   - supervisor
@@ -3015,8 +2807,10 @@ intents:
   agent: admin
   process: Lead-to-Contract
   label_en: Edit a client
-  description: Change a client's master data
+  description: 'Change a client''s master data: name, contact persons, phone, email, address and billing
+    details (invoice address, e-invoice, VAT or TIN, references), from the client or the office'
   roles:
+  - client
   - office
   triggers:
   - msg
@@ -3049,10 +2843,12 @@ intents:
   agent: admin
   process: Contract-to-Service
   label_en: Edit a site
-  description: Change a site's details (address, area, access, checklist)
+  description: 'Change a site''s details: address, area, access (door codes, keys, alarm, opening hours),
+    checklist, from the client, supervisor or office'
   roles:
-  - office
+  - client
   - supervisor
+  - office
   triggers:
   - msg
   risk: write
@@ -3101,7 +2897,8 @@ intents:
   agent: admin
   process: Record-to-Report
   label_en: Archive a record
-  description: Archive or delete a client, site or employee record
+  description: Archive or delete one client, site or employee record. Starting the whole leaver process
+    is hr.offboard_employee
   roles:
   - office
   triggers:
@@ -3169,7 +2966,7 @@ intents:
   agent: admin
   process: platform
   label_en: Remove access
-  description: Remove someone's access to Mia
+  description: Remove someone's access to Mia, nothing else
   roles:
   - office
   triggers:
@@ -3186,7 +2983,8 @@ intents:
   agent: admin
   process: platform
   label_en: Can't log in
-  description: Locked out, forgot PIN or password, new phone
+  description: 'Cannot log in to Mia: locked out of the app, forgot PIN or password, new phone or SIM.
+    A locked site door is dispatcher.cannot_access_site'
   roles:
   - cleaner
   - supervisor

@@ -57,7 +57,7 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | dispatcher.daily_plan | - | Evening message to each cleaner with tomorrow's visits | - | sched | write | p | - | n | Mia | both | 1 | no | C2S |
 | dispatcher.check_in | I've arrived | Cleaner says they arrived at the site (or shares location) | C | msg, event | write | p | - | n | Mia | both | 1 | no | C2S |
 | dispatcher.check_out | I'm done here | Cleaner says the visit is finished and they are leaving | C | msg, event | write | p | - | n | Mia | both | 1 | no | S2C |
-| dispatcher.cannot_access_site | Can't get in | Cleaner is at the site but cannot get in (locked, no key, wrong code, alarm) | C | msg | write | n | - | n | Mia | both | 1 | no | C2S |
+| dispatcher.cannot_access_site | Can't get in | Cleaner is at a site and cannot get in physically (locked door, no key, wrong door code, alarm). Logging in to Mia is admin.reset_login | C | msg | write | n | - | n | Mia | both | 1 | no | C2S |
 | dispatcher.site_problem | Problem at the site | Site conditions stop or change the work (no water or power, renovation, event, client still there) | C | msg | write | n | - | n | Mia | both | 1 | no | C2S |
 | dispatcher.visit_details | Job details | Ask practical details of a visit: address, door code, where things are, special instructions | C | msg | read | p | - | n | Mia | both | 1 | no | C2S |
 | dispatcher.checklist | My checklist | Ask for or tick off the visit checklist | C | msg | write | n | - | n | Mia | both | 1 | no | C2S |
@@ -74,11 +74,16 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | dispatcher.route_plan | Plan the route | Order a day's visits into an efficient route | S | msg | read | n | - | n | Mia | both | 3 | no | C2S |
 | dispatcher.key_location | Where's the key | Where is the key or access card for a site, who has it | C, S | msg | read | n | - | n | Mia | both | 2 | no | C2S |
 | dispatcher.key_handover | Key handed over | Record a key or card given to or returned by someone | C, S | msg | write | n | - | n | Mia | both | 2 | no | C2S |
-| dispatcher.lost_key | Lost a key | A key, card or remote for a client site is lost | C, S | msg | external | n | office (client notice) | y | Mia | both | 2 | no | C2S |
+| dispatcher.lost_key | Lost a key | A physical key, card or remote for a client site is lost. A lost phone, codes or documents with data is site_manager.data_breach | C, S | msg | external | n | office (client notice) | y | Mia | both | 2 | no | C2S |
 | dispatcher.book_vehicle | Book the van | Ask to use a company car or van for visits | C, S | msg | write | n | supervisor | n | Mia | both | 2 | no | C2S |
-| dispatcher.directions | How to get there | How to get to a site, parking, public transport | C | msg | read | n | - | n | Mia | both | 2 | no | C2S |
+| dispatcher.directions | How to get there | How to get to a company site or visit, parking, public transport there. Directions anywhere else are conversation.oos_directions_transport | C | msg | read | n | - | n | Mia | both | 2 | no | C2S |
 
 ## Client service (Customer service)
+
+Compliments, service questions and general insurance questions go to the shared conversation
+catalogue (conversation.compliment, kb_services, kb_eco_products, kb_pets, kb_insurance_damages;
+D30). Contact and access changes are admin.update_client and admin.update_site; damage claims are
+site_manager.report_damage. Client service owns the follow-up with the client.
 
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -88,27 +93,24 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | client_service.pause_service | Pause cleaning | Client pauses the recurring service for a period (holiday, renovation) | CL | msg | write | n | office | n | Mia | both | 2 | no | C2S |
 | client_service.visit_status | Is cleaner coming | Client asks whether or when the cleaner is coming, or whether the visit was done | CL | msg | read | p | - | n | Mia | both | 2 | no | C2S |
 | client_service.special_instructions | Leave instructions | Client leaves instructions for coming visits (skip a room, extra attention somewhere) | CL | msg | write | n | - | n | Mia | both | 2 | no | C2S |
-| client_service.change_access | New access details | Client gives new access details (door code, key, alarm, opening hours) | CL | msg | write | p | - | n | Mia | both | 2 | no | C2S |
 | client_service.add_extra_task | Add an extra task | Client adds a priced extra to a booked visit (oven, windows, fridge) | CL | msg | write | n | - | n | Mia | both | 2 | no | S2C |
 | client_service.cleaner_preference | Choose my cleaner | Client asks for the same cleaner, or not to send a particular one | CL | msg | write | p | supervisor | n | Mia | both | 2 | no | C2S |
 | client_service.complaint | Make a complaint | Client complains about the quality of a visit | CL | msg | write | p | - | n | Mia | both | 2 | no | C2S |
 | client_service.request_reclean | Redo the cleaning | Client asks for the job to be redone | CL | msg | write | n | supervisor (free or charged) | n | Mia | both | 2 | no | C2S |
-| client_service.damage_claim | Report damage | Client says the cleaner damaged or broke something and wants compensation | CL | msg | money | p | owner | y | Mia | both | 2 | no | C2S |
 | client_service.missing_item | Something's missing | Client says something is missing or was moved after a visit | CL | msg | write | p | owner informed | n | Mia | both | 2 | no | C2S |
-| client_service.compliment | Give feedback | Client gives positive feedback about a visit or cleaner | CL | msg | write | p | - | n | Mia | both | 2 | no | C2S |
-| client_service.service_faq | Ask about service | General question about the service (products used, insurance, pets, what is included) | CL, L | msg | read | n | - | n | Mia | both | 2 | no | C2S |
-| client_service.update_contact | Update my contact | Client changes contact person, phone or email | CL | msg | write | p | - | n | Mia | both | 2 | no | C2S |
 | client_service.service_notice | - | Tell the client about a change (other cleaner, delay, cancelled visit) | - | event | external | p | office | n | Mia | both | 2 | no | C2S |
 | client_service.visit_report | - | Send the client a visit report with checklist and photos | - | event | external | p | - | n | Mia | both | 2 | no | C2S |
 | client_service.satisfaction_survey | - | Ask for a rating after visits | - | sched | external | n | - | n | Mia | both | 3 | no | C2S |
 
 ## Sales (Sales)
 
+General price and household deduction questions are conversation.kb_prices and
+conversation.kb_household_tax_deduction (D30); sales owns quotes.
+
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | sales.new_enquiry | Get cleaning service | A prospect asks about getting cleaning services (first contact) | L | msg | write | p | - | n | Mia | both | 2 | no | L2C |
 | sales.request_quote | Get a quote | Lead or client asks for a price offer for a described scope | L, CL | msg | write | p | - | n | Mia | both | 2 | no | L2C |
-| sales.price_question | Ask about prices | Quick question about rates or price list, no quote yet | L, CL | msg | read | n | - | n | Mia | both | 2 | no | L2C |
 | sales.book_site_survey | Book a site visit | Arrange a site visit to measure and scope before quoting | L, O | msg | write | p | - | n | Mia | both | 2 | no | L2C |
 | sales.record_survey | Save survey results | Record survey results (areas, rooms, floor types, frequency) | O | msg | write | n | - | n | Mia | both | 2 | no | L2C |
 | sales.calculate_quote | Work out a price | Calculate a price for a scope (code calculates) | O | msg | read | n | - | n | Mia | both | 2 | no | L2C |
@@ -125,7 +127,6 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | sales.index_increase | - | Annual index price increase per agreement clause (code calculates, notice to client) | - | sched | money | n | owner | y | Mia | both | 2 | no | L2C |
 | sales.pipeline | Sales pipeline | Office asks about open leads, quotes and win rate | O | msg | read | n | - | n | Mia | both | 2 | no | L2C |
 | sales.mark_lost | Mark lead lost | Record a lead as lost, with the reason | O | msg | write | n | - | n | Mia | both | 2 | no | L2C |
-| sales.household_deduction | Tax credit question | Question about the household tax credit for cleaning (kotitalousvähennys) | L, CL | msg | read | n | - | n | Mia | FI | 2 | no | L2C |
 | sales.tender | Prepare a tender | Prepare a bid for a public or corporate tender (Hilma, PhilGEPS) | O | msg | external | n | owner | y | Mia | both | 3 | no | L2C |
 
 ## Marketing assistant (Sales)
@@ -133,7 +134,7 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | marketing.draft_post | Write a post | Draft a social media post | O | msg | write | n | - | n | Mia | both | 3 | no | L2C |
-| marketing.publish_post | Publish a post | Publish an approved post | O | msg | external | n | owner | n | Social | both | 3 | no | L2C |
+| marketing.publish_post | Publish a post | Publish an approved marketing post (offers, news, before and after photos). A job vacancy is recruiter.publish_job_ad | O | msg | external | n | owner | n | Social | both | 3 | no | L2C |
 | marketing.campaign | Plan a campaign | Plan a campaign or special offer | O | msg | money | n | owner | n | Mia | both | 3 | no | L2C |
 | marketing.new_review | - | A new online review arrived | - | event | read | p | - | n | Social | both | 3 | no | L2C |
 | marketing.reply_review | Reply to a review | Draft a reply to an online review | O | msg | external | p | owner | n | Social | both | 3 | no | L2C |
@@ -145,12 +146,13 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 
 ## Recruiter (HR)
 
+Questions about working here are conversation.kb_jobs (D30); the recruiter owns applications.
+
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | recruiter.draft_job_ad | Write a job ad | Draft a job advertisement | O | msg | write | n | - | n | Mia | both | 3 | no | H2R |
-| recruiter.publish_job_ad | Publish a job ad | Publish a job ad on job boards | O | msg | external | n | owner | n | Jobs | both | 3 | no | H2R |
-| recruiter.apply | Apply for a job | Someone wants to apply for a job or sends a CV | AP | msg | write | p | - | n | Mia | both | 3 | no | H2R |
-| recruiter.job_question | Ask about the job | Applicant asks about pay, hours, location or requirements of a job | AP | msg | read | n | - | n | Mia | both | 3 | no | H2R |
+| recruiter.publish_job_ad | Publish a job ad | Publish a job vacancy (ad or hiring post) on job boards, the website or social media | O | msg | external | n | owner | n | Jobs | both | 3 | no | H2R |
+| recruiter.apply | Apply for a job | Someone applies for a job: says they want to apply, sends a CV or application. Questions about working here are conversation.kb_jobs | AP | msg | write | p | - | n | Mia | both | 3 | no | H2R |
 | recruiter.application_status | My application | Applicant asks how their application is going | AP | msg | read | p | - | n | Mia | both | 3 | no | H2R |
 | recruiter.screening | - | Ask the screening questions (right to work, availability, licence) after an application | - | event | write | p | - | n | Mia | both | 3 | no | H2R |
 | recruiter.schedule_interview | Book an interview | Arrange a job interview | O, AP | msg | write | p | - | n | Mia | both | 3 | no | H2R |
@@ -165,6 +167,10 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 
 ## HR and payroll administrator (HR)
 
+Questions on payday, employment terms, training and sick leave rules are conversation.kb_payday,
+kb_employment_terms, kb_training and kb_sick_leave_rules; harassment reports are
+conversation.harassment_report (D30). HR owns the follow-up.
+
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | hr.onboard_employee | Onboard new hire | Start onboarding a new hire (contract, tax card, bank details, IDs, induction) | O | msg | write | sc | owner signs contract | y | Mia | both | 2 | no | H2R |
@@ -173,32 +179,31 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | hr.update_details | Update my details | Employee changes address, phone, emergency contact or bank account | C | msg | write | p | bank account: office confirms | n | Mia | both | 2 | no | H2R |
 | hr.request_time_off | Ask for time off | Ask for vacation, unpaid leave or a day off in advance | C | msg | write | p | supervisor | n | Mia | both | 2 | no | H2R |
 | hr.time_off_balance | Holiday days left | How many holiday or leave days are left | C | msg | read | p | - | n | Payroll | both | 2 | no | H2R |
-| hr.sick_note | Sick note | Send or ask about a sick note or medical certificate | C | msg | write | sc | - | n | Mia | both | 2 | no | H2R |
+| hr.sick_note | Sick note | Send a sick note or medical certificate, or ask about one already sent. Rules on certificates are conversation.kb_sick_leave_rules | C | msg | write | sc | - | n | Mia | both | 2 | no | H2R |
 | hr.family_leave | Family leave | Maternity, paternity, parental or other family leave | C | msg | write | sc | owner | y | Payroll | both | 3 | no | H2R |
 | hr.my_hours | My hours | Hours worked in a period, timesheet, overtime | C | msg | read | p | - | n | Mia | both | 2 | no | H2R |
 | hr.correct_timesheet | Fix my hours | Fix own recorded hours (forgot to check out, wrong times) | C | msg | write | p | supervisor | n | Mia | both | 2 | no | H2R |
 | hr.approve_timesheets | Approve timesheets | Supervisor approves the period's timesheets | S | msg | write | p | SoD: not own hours | n | Mia | both | 2 | no | H2R |
 | hr.payslip | My payslip | Where is my payslip, or why is my pay different | C | msg | read | p | - | n | Payroll | both | 2 | no | H2R |
-| hr.payday | When is payday | When is payday | C | msg | read | n | - | n | Payroll | both | 2 | no | H2R |
 | hr.salary_advance | Salary advance | Ask for an advance on salary (cash advance, vale) | C | msg | money | p | owner | n | Payroll | both | 2 | no | H2R |
 | hr.prepare_payroll | - | Export hours, supplements and allowances to payroll at cut-off (code calculates) | - | sched | money | p | SoD: accountant prepares, owner approves | n | Payroll | both | 2 | no | H2R |
 | hr.thirteenth_month | - | 13th-month pay calculation, paid by 24 December | - | sched | money | p | owner | y | Payroll | PH | 2 | no | H2R |
 | hr.statutory_contributions | - | Monthly SSS, PhilHealth and Pag-IBIG reports and remittances | - | sched | external | p | accountant | y | Auth | PH | 2 | no | H2R |
 | hr.contribution_question | My contributions | Employee asks whether SSS, PhilHealth or Pag-IBIG contributions were paid | C | msg | read | p | - | n | Payroll | PH | 2 | no | H2R |
 | hr.incomes_register | - | Report wages to the Incomes Register within five days of payment | - | sched | external | p | accountant | y | Auth | FI | 2 | no | H2R |
-| hr.employment_terms | Pay and work rules | Question on pay rates, supplements, holiday pay or the collective agreement | C | msg | read | n | - | n | Mia | both | 2 | no | H2R |
 | hr.employment_certificate | Work certificate | Ask for a certificate of employment | C | msg | write | p | office | y | Mia | both | 2 | no | H2R |
 | hr.resign | I want to quit | Employee says they are quitting or gives notice | C | msg | write | p | owner acknowledges | y | Mia | both | 2 | no | H2R |
 | hr.terminate_employment | End employment | Office wants to end someone's employment | O | msg | write | p | owner decides | y | Mia | both | 3 | no | H2R |
 | hr.disciplinary | Give a warning | Warning or disciplinary note for an employee | O | msg | write | p | owner | y | Mia | both | 3 | no | H2R |
-| hr.offboard_employee | Offboard someone | Offboarding: keys back, access removed, final pay | O | msg | write | p | owner | n | Mia | both | 2 | no | H2R |
-| hr.grievance | Private complaint | Confidential complaint about a colleague or supervisor, harassment | C | msg | write | sc | owner only | y | Mia | both | 2 | no | H2R |
+| hr.offboard_employee | Offboard someone | Run the whole leaver process for a named person (keys back, access removed, final pay, exit checklist). Only the record is admin.archive_record; only Mia access is admin.remove_access | O | msg | write | p | owner | n | Mia | both | 2 | no | H2R |
 | hr.occupational_health | Occupational health | Occupational health care appointment or question | C | msg | read | sc | - | n | Mia | FI | 3 | no | H2R |
 | hr.work_injury_claim | Injury claim | Statutory accident insurance or ECC claim after a work injury | O | msg | external | sc | owner | y | Auth | both | 3 | no | H2R |
-| hr.training | Training | Sign up for or ask about training (induction, hygiene passport, safety card) | C, O | msg | write | n | - | n | Mia | both | 3 | no | H2R |
+| hr.training | Training | Enrol someone in training or check who needs it (induction, hygiene passport, safety card). Questions about courses are conversation.kb_training | C, S, O | msg | write | n | - | n | Mia | both | 3 | no | H2R |
 | hr.performance_review | Performance review | Schedule or record a performance review | O | msg | write | p | - | n | Mia | both | 3 | no | H2R |
 
 ## Bookkeeper (Finance)
+
+Billing detail changes are admin.update_client (D30).
 
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -212,10 +217,9 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | bookkeeper.payment_reminder | - | Overdue reminders and collection (Interest Act fees, collection agency) | - | sched | external | n | collection: owner | y | Acct | both | 2 | no | S2C |
 | bookkeeper.payment_plan | Pay later | Client asks to pay later or in instalments | CL | msg | money | n | owner | y | Acct | both | 2 | no | S2C |
 | bookkeeper.credit_note | Make a credit note | Credit all or part of an invoice | O, A | msg | money | n | SoD: preparer is not approver | y | Acct | both | 2 | no | S2C |
-| bookkeeper.billing_details | Billing details | Client changes billing address, e-invoice address, VAT or TIN details | CL | msg | write | n | - | n | Acct | both | 2 | no | S2C |
 | bookkeeper.receivables | Who owes us | Who owes us money, what is overdue | O, A | msg | read | n | - | n | Acct | both | 2 | no | S2C |
-| bookkeeper.expense_claim | Claim an expense | Employee claims back money spent for work (receipt) | C | msg | money | p | supervisor | n | Acct | both | 2 | no | P2P |
-| bookkeeper.mileage_claim | Claim mileage | Employee claims kilometre allowance for driving their own car | C | msg | money | p | supervisor | n | Payroll | both | 2 | no | P2P |
+| bookkeeper.expense_claim | Claim an expense | Employee claims back a specific amount spent for work (receipt). Questions about the rules are conversation.kb_expenses_travel | C | msg | money | p | supervisor | n | Acct | both | 2 | no | P2P |
+| bookkeeper.mileage_claim | Claim mileage | Employee claims kilometres driven with their own vehicle. Questions about rates and rules are conversation.kb_expenses_travel | C | msg | money | p | supervisor | n | Payroll | both | 2 | no | P2P |
 | bookkeeper.supplier_invoice | - | Supplier invoice received; match to order and delivery | - | event | money | n | SoD: approver is not the orderer | n | Acct | both | 3 | no | P2P |
 | bookkeeper.approve_supplier_invoice | Approve a bill | Approve or question a supplier invoice | O | msg | money | n | SoD: approver is not the orderer | n | Acct | both | 3 | no | P2P |
 | bookkeeper.pay_suppliers | - | Prepare the supplier payment batch (a person pays in the bank) | - | sched | money | n | owner | n | Bank | both | 3 | no | P2P |
@@ -236,7 +240,7 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | purchaser.receive_delivery | Delivery arrived | Record that an order arrived (complete, short, damaged) | S, O | msg | write | n | - | n | Mia | both | 3 | no | P2P |
 | purchaser.stock_level | Check stock | How much of an item is in stock | S, O | msg | read | n | - | n | Mia | both | 3 | no | P2P |
 | purchaser.reorder_alert | - | Stock below the minimum | - | event | write | n | - | n | Mia | both | 3 | no | P2P |
-| purchaser.broken_equipment | Equipment broken | Equipment is broken or not working (vacuum, scrubber, ladder) | C, S | msg | write | n | - | n | Mia | both | 2 | no | P2P |
+| purchaser.broken_equipment | Equipment broken | Equipment is broken or not working (vacuum, scrubber, trolley) and is not dangerous now. Equipment that is dangerous now (sparks, smoke, hot water leak, unsafe ladder) is conversation.hazard_report | C, S | msg | write | n | - | n | Mia | both | 2 | no | P2P |
 | purchaser.reserve_equipment | Reserve equipment | Reserve shared equipment for a job | S | msg | write | n | - | n | Mia | both | 3 | no | P2P |
 | purchaser.equipment_service_due | - | Equipment maintenance or inspection due | - | sched | write | n | - | n | Mia | both | 3 | no | P2P |
 | purchaser.vehicle_problem | Car or van problem | Problem with a company vehicle (breakdown, warning light, accident damage) | C | msg | write | n | - | n | Mia | both | 2 | no | P2P |
@@ -249,22 +253,22 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 
 ## Site manager: site quality, safety and compliance (supports the supervisor)
 
-First contact for emergencies, hazards, cleaning how-to questions and data subject requests is
-handled by Mia through the shared conversation catalogue (conversation.emergency,
-conversation.hazard_report, conversation.kb_cleaning_howto, conversation.privacy_rights_request;
-D30); the site manager owns the follow-up.
+First contact for emergencies, threats, injuries, chemical exposure, hazards, chemical and cleaning
+questions and data subject requests is handled by Mia through the shared conversation catalogue
+(conversation.emergency, personal_threat, injury_minor, chemical_exposure, hazard_report,
+kb_chemical_safety, kb_safety_data_sheet, kb_cleaning_howto, kb_surface_care,
+privacy_rights_request; D30); the site manager owns the follow-up.
 
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| site_manager.report_injury | I got hurt | Staff member was injured or had an accident at work | C, S | msg | write | sc | - | y | Mia | both | 2 | no | C2S |
-| site_manager.report_damage | I broke something | Staff member damaged or broke something at a site | C | msg | write | n | owner (insurance) | y | Mia | both | 2 | no | C2S |
-| site_manager.chemical_safety | Chemical safety | Chemical question, safety data sheet, spill or exposure | C | msg | read | n | - | n | Mia | both | 2 | no | C2S |
+| site_manager.report_injury | I got hurt | A supervisor or the office reports that a staff member was injured at work (accident record, insurance). The injured person's own message is conversation.injury_minor or conversation.emergency | S, O | msg | write | sc | - | y | Mia | both | 2 | no | C2S |
+| site_manager.report_damage | I broke something | Property at a site was damaged or broken, reported by the staff member or claimed by the client (compensation follows). General insurance questions are conversation.kb_insurance_damages | C, CL | msg | write | n | owner (insurance) | y | Mia | both | 2 | no | C2S |
 | site_manager.site_inspection | Site inspection | Supervisor records a quality inspection of a site (INSTA 800) | S | msg | write | p | - | n | Mia | both | 2 | no | C2S |
 | site_manager.schedule_inspections | - | Plan quality inspections across sites | - | sched | write | n | - | n | Mia | both | 3 | no | C2S |
 | site_manager.complaint_follow_up | - | Corrective action after a client complaint | - | event | write | p | supervisor | n | Mia | both | 2 | no | C2S |
 | site_manager.quality_scores | Quality scores | Quality scores and complaints per site, cleaner or period | S, O | msg | read | p | - | n | Mia | both | 3 | no | C2S |
 | site_manager.company_permits_due | - | Company insurance, permits and registrations due for renewal (business permit, BIR, trade register) | - | sched | write | n | owner | y | Mia | both | 3 | no | R2R |
-| site_manager.data_breach | Data leak | Possible data breach (lost phone, codes sent to the wrong person) | C, S, O | msg | write | p | owner (72 h notice to authority) | y | Mia | both | 2 | no | Plat |
+| site_manager.data_breach | Data leak | Possible data breach: lost or stolen phone or papers with data, codes or personal data sent to the wrong person. A lost physical key alone is dispatcher.lost_key | C, S, O | msg | write | p | owner (72 h notice to authority) | y | Mia | both | 2 | no | Plat |
 | site_manager.audit_trail | Who changed what | Who changed what and when (event log) | O | msg | read | p | - | n | Mia | both | 2 | no | Plat |
 
 ## Admin: master data, users and access, administration, management reporting
@@ -272,17 +276,17 @@ D30); the site manager owns the follow-up.
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | admin.add_client | Add a client | Create a new client record | O | msg | write | p | - | n | Mia | both | 2 | no | L2C |
-| admin.update_client | Edit a client | Change a client's master data | O | msg | write | p | - | n | Mia | both | 2 | no | L2C |
+| admin.update_client | Edit a client | Change a client's master data: name, contact persons, phone, email, address and billing details (invoice address, e-invoice, VAT or TIN, references), from the client or the office | CL, O | msg | write | p | - | n | Mia | both | 2 | no | L2C |
 | admin.add_site | Add a site | Add a site or location to a client | O | msg | write | n | - | n | Mia | both | 2 | no | C2S |
-| admin.update_site | Edit a site | Change a site's details (address, area, access, checklist) | O, S | msg | write | p | - | n | Mia | both | 2 | no | C2S |
+| admin.update_site | Edit a site | Change a site's details: address, area, access (door codes, keys, alarm, opening hours), checklist, from the client, supervisor or office | CL, S, O | msg | write | p | - | n | Mia | both | 2 | no | C2S |
 | admin.add_employee | Add an employee | Create an employee record | O | msg | write | p | - | n | Mia | both | 2 | no | H2R |
 | admin.update_employee | Edit an employee | Change an employee's role, contract hours, work limits or skills | O | msg | write | p | owner | n | Mia | both | 2 | no | H2R |
-| admin.archive_record | Archive a record | Archive or delete a client, site or employee record | O | msg | delete | p | admin | n | Mia | both | 2 | no | R2R |
+| admin.archive_record | Archive a record | Archive or delete one client, site or employee record. Starting the whole leaver process is hr.offboard_employee | O | msg | delete | p | admin | n | Mia | both | 2 | no | R2R |
 | admin.price_list | Change prices | Change service prices in the price list | O | msg | money | n | owner | n | Mia | both | 2 | no | L2C |
 | admin.invite_user | Invite to Mia | Give someone access to Mia | O | msg | write | p | - | n | Mia | both | 1 | no | Plat |
 | admin.change_role | Change access | Change what someone may do in Mia (role, permissions) | O | msg | write | p | owner; SoD: not own role | n | Mia | both | 1 | no | Plat |
-| admin.remove_access | Remove access | Remove someone's access to Mia | O | msg | write | p | - | n | Mia | both | 1 | no | Plat |
-| admin.reset_login | Can't log in | Locked out, forgot PIN or password, new phone | C, S, O | msg | write | p | admin | n | Mia | both | 1 | no | Plat |
+| admin.remove_access | Remove access | Remove someone's access to Mia, nothing else | O | msg | write | p | - | n | Mia | both | 1 | no | Plat |
+| admin.reset_login | Can't log in | Cannot log in to Mia: locked out of the app, forgot PIN or password, new phone or SIM. A locked site door is dispatcher.cannot_access_site | C, S, O | msg | write | p | admin | n | Mia | both | 1 | no | Plat |
 | admin.pending_approvals | My approvals | Show approvals waiting for me (decided in the app, never by the agent) | O | msg | read | n | - | n | Mia | both | 1 | part | Plat |
 | admin.agent_settings | Agent settings | Change an agent's organisation instructions or settings | O | msg | write | n | owner | n | Mia | both | 2 | no | Plat |
 | admin.branch_settings | Branch settings | Branch settings: opening hours, public holidays, time zone | O | msg | write | n | owner | n | Mia | both | 2 | no | Plat |
@@ -303,16 +307,16 @@ D30); the site manager owns the follow-up.
 | Agent | Intents | Message-triggered | Built |
 | --- | --- | --- | --- |
 | dispatcher | 31 | 28 | 6 |
-| client_service | 19 | 16 | 0 |
-| sales | 21 | 18 | 0 |
+| client_service | 14 | 11 | 0 |
+| sales | 19 | 16 | 0 |
 | marketing | 10 | 9 | 0 |
-| recruiter | 15 | 13 | 0 |
-| hr | 30 | 25 | 0 |
-| bookkeeper | 22 | 16 | 0 |
+| recruiter | 14 | 12 | 0 |
+| hr | 27 | 22 | 0 |
+| bookkeeper | 21 | 15 | 0 |
 | purchaser | 17 | 13 | 0 |
-| site_manager | 10 | 7 | 0 |
+| site_manager | 9 | 6 | 0 |
 | admin | 26 | 25 | 1 (2 part) |
-| total | 201 | 170 | 7 |
+| total | 188 | 157 | 7 (2 part) |
 
 Every intent also has a hand-off rule when the sender may not use it (for example a cleaner
 asking `dispatcher.find_cover` is answered with "permission denied" by the tool, rule 4); the

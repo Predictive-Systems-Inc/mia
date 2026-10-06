@@ -217,5 +217,12 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   privacy_rights_request (first contact by Mia, follow-up by the site manager); report_injury
   and chemical_safety stay separate because they cover more than injury_minor and
   kb_chemical_safety (serious and supervisor-reported injuries; exposures that already happened).
+- Addendum (6 Oct 2026): one message, one label, because the classifier sees text and not the
+  sender. (1) Questions about rules or company knowledge are the shared conversation kb_*
+  intents. (2) Doing something stays with the role intent, which keeps only action messages.
+  (3) The same message separated only by sender role is one intent with one owner (client
+  details: admin.update_client; site access: admin.update_site; damage: site_manager.report_damage).
+  report_injury keeps only reports about someone else; chemical_safety is split into the
+  conversation intents. Review: docs/research/intent-overlap-review-2026-10-06.md.
 - Consequences: docs/capabilities.md lists no chat area; intents.jsonl is relabelled; the
   classification eval accepts conversation.* ids as labels beside the catalogue ids and `other`.

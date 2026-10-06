@@ -836,7 +836,7 @@ intents:
 
   - id: conversation.hazard_report
     category: safety
-    description: Unsafe condition at a site, nobody hurt yet.
+    description: Unsafe condition at a site, nobody hurt yet, including equipment that is dangerous now (sparks, smoke, hot water leak, unsafe ladder). Broken equipment that is not dangerous is purchaser.broken_equipment.
     speakers: [cleaner, supervisor, client]
     handling: handoff
     risk: high. Tell the user not to continue the unsafe task; notify supervisor.
@@ -1286,9 +1286,9 @@ hard_negatives:
     not: business.quote
     note: published price list answers it; a quote needs address and size details
   - text: you broke my vase
-    expected: business.damage_claim
+    expected: site_manager.report_damage
     not: conversation.kb_insurance_damages
-    note: actual claim, not a policy question; handoff until business.damage_claim exists
+    note: actual claim, not a policy question (D30)
   - text: what are my shifts this week, also is friday a holiday
     expected: conversation.multiple_requests
     not: my_visits
@@ -1320,7 +1320,7 @@ hard_negatives:
     not: conversation.privacy_rights_request
   - text: delete my number
     expected: conversation.privacy_rights_request
-    not: business.update_contact
+    not: admin.update_client
     note: ask whether they want a new number saved or data removed
   - text: my baby was born yesterday!
     expected: conversation.share_news
