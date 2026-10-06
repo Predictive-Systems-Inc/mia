@@ -5,7 +5,7 @@ import onnxruntime
 from tokenizers import Tokenizer
 
 from mia.learning.package import ModelCard, package_dir, verify_artifacts
-from mia.skills.runtime import Classification, ScoredClassifier
+from mia.skills.runtime import Classification, ScoredClassifier, embed_text
 
 
 class OnnxClassifier(ScoredClassifier):
@@ -26,7 +26,10 @@ class OnnxClassifier(ScoredClassifier):
 
     def classify(self, text: str, context: str = "") -> Classification:
         """Training always encodes (text, context) as a pair, even with empty context; so do we."""
-        enc = self.tokenizer.encode(text, context)
+        if self.card.kind == "contrastive":
+            enc = self.tokenizer.encode(embed_text(self.card.prefix, text, context))
+        else:
+            enc = self.tokenizer.encode(text, context)
         feeds = {
             "input_ids": np.array([enc.ids], dtype=np.int64),
             "attention_mask": np.array([enc.attention_mask], dtype=np.int64),
@@ -37,6 +40,7 @@ class OnnxClassifier(ScoredClassifier):
             for name, v in values.items()
             if name.startswith("slot_")
         }
+        lang = values.get("lang_logits")
         return self.from_logits(
-            values["intent_logits"][0].tolist(), values["lang_logits"][0].tolist(), slots
+            values["intent_logits"][0].tolist(), lang[0].tolist() if lang is not None else [], slots
         )

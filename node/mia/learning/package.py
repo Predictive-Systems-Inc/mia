@@ -5,6 +5,7 @@ import hashlib
 import os
 import tempfile
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ValidationError
 from sqlmodel import Session
@@ -14,6 +15,13 @@ from mia.core.models import Actor
 from mia.learning.gate import GateResult
 from mia.learning.metrics import EvalReport
 from mia.settings import get_settings
+
+Kind = Literal["encoder", "knn", "contrastive"]
+ARTIFACTS: dict[str, tuple[str, ...]] = {
+    "encoder": ("model.onnx", "tokenizer.json"),
+    "contrastive": ("model.onnx", "tokenizer.json"),
+    "knn": ("model.onnx", "tokenizer.json", "examples.npy", "examples.json"),
+}
 
 
 class PromotionRefused(Exception):
@@ -26,6 +34,8 @@ class ModelCard(BaseModel):
 
     role: str
     version: str
+    kind: Kind = "encoder"
+    prefix: str = ""  # embedding input prefix (e5: "query: ")
     base_model: str
     data_hash: str
     temperature: float
@@ -67,14 +77,11 @@ def package_dir(role: str, version: str) -> Path:
     return get_settings().MIA_MODELS_DIR / role / version
 
 
-ARTIFACTS = ("model.onnx", "tokenizer.json")
-
-
 def verify_artifacts(card: ModelCard) -> None:
     """Returns only when every runtime file exists and matches the card's sha256; otherwise
     raises ValueError naming the first bad file."""
     folder = package_dir(card.role, card.version)
-    for name in ARTIFACTS:
+    for name in ARTIFACTS[card.kind]:
         expected = card.artifacts.get(name)
         if expected is None:
             raise ValueError(f"{name}: no sha256 in card artifacts")

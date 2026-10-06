@@ -100,3 +100,35 @@ def test_trained_package_classifies_on_cpu_with_pair_encoding(
     expected = softmax(logits, card.temperature)
     assert c.confidence == pytest.approx(max(expected), abs=1e-6)
     get_settings.cache_clear()
+
+
+def test_contrastive_cards_encode_one_joined_text() -> None:
+    import numpy as np
+
+    seen: list[tuple[str, ...]] = []
+
+    class Tok:
+        def encode(self, *texts: str) -> object:
+            seen.append(texts)
+            return type("E", (), {"ids": [0, 1], "attention_mask": [1, 1]})()
+
+    class Sess:
+        def run(self, names: list[str], feeds: dict[str, object]) -> list[object]:
+            return [np.array([[2.0, 0.0, 0.0]])]
+
+    clf = object.__new__(OnnxClassifier)
+    clf.card = make_card().model_copy(
+        update={
+            "kind": "contrastive",
+            "prefix": "query: ",
+            "labels": ["r.a", "conversation.greeting", "other"],
+            "thresholds": {"r.a": 0.5},
+        }
+    )
+    clf.safety = set()
+    clf.tokenizer = Tok()  # type: ignore[assignment]
+    clf.session = Sess()  # type: ignore[assignment]
+    clf.outputs = ["intent_logits"]
+    c = clf.classify("hi", "ctx")
+    assert seen == [("query: hi\nctx",)]
+    assert c.intent == "r.a" and c.lang is None

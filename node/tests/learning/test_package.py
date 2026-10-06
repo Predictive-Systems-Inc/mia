@@ -5,6 +5,8 @@ from sqlmodel import Session, select
 
 from mia.core.models import Actor, Event, Person
 from mia.learning.package import (
+    ARTIFACTS,
+    ModelCard,
     PromotionRefused,
     _atomic_write,
     active_version,
@@ -170,3 +172,25 @@ def test_atomic_write_removes_the_temp_file_when_the_write_fails(
     with pytest.raises(OSError, match="disk full"):
         _atomic_write(folder / "ACTIVE", "v1")
     assert list(folder.iterdir()) == []
+
+
+def test_cards_without_kind_load_as_encoder_packages() -> None:
+    raw = card().model_dump()
+    raw.pop("kind")
+    raw.pop("prefix")
+    loaded = ModelCard.model_validate(raw)
+    assert loaded.kind == "encoder" and loaded.prefix == ""
+
+
+def test_artifact_lists_per_kind() -> None:
+    assert ARTIFACTS["encoder"] == ("model.onnx", "tokenizer.json")
+    assert ARTIFACTS["contrastive"] == ("model.onnx", "tokenizer.json")
+    assert ARTIFACTS["knn"] == ("model.onnx", "tokenizer.json", "examples.npy", "examples.json")
+
+
+def test_knn_packages_need_their_example_files(session: Session, people: dict[str, Person]) -> None:
+    c = card(version="v1").model_copy(update={"kind": "knn"})
+    write_package(c)  # writes only model.onnx and tokenizer.json with digests
+    with pytest.raises(PromotionRefused) as err:
+        promote(session, Actor.person(people["Helena"]), "r", "v1", signed_by="Allan")
+    assert str(err.value) == "r@v1 cannot be loaded: examples.npy: no sha256 in card artifacts"

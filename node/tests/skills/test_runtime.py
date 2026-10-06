@@ -11,6 +11,7 @@ from mia.settings import get_settings
 from mia.skills.runtime import (
     NullClassifier,
     ScoredClassifier,
+    embed_text,
     get_classifier,
     health,
     reset_classifiers,
@@ -181,3 +182,22 @@ def test_broken_active_marker_falls_back() -> None:
     (root / "ACTIVE").write_bytes(b"\xff\xfe")
     assert isinstance(get_classifier("r"), NullClassifier)
     assert health()["r"]["status"] == "fallback"
+
+
+def test_embed_text_joins_prefix_text_and_context() -> None:
+    assert embed_text("query: ", "hi", "") == "query: hi"
+    assert embed_text("", "yes", "Did you mean X?") == "yes\nDid you mean X?"
+
+
+def test_knn_cards_load_the_knn_classifier(monkeypatch: pytest.MonkeyPatch) -> None:
+    made: list[str] = []
+
+    class FakeKnn:
+        def __init__(self, card: ModelCard, safety: set[str]) -> None:
+            made.append(card.kind)
+
+    fake = SimpleNamespace(KnnClassifier=FakeKnn)
+    monkeypatch.setitem(sys.modules, "mia.skills.knn", fake)
+    write_card(card().model_copy(update={"kind": "knn"}))
+    (get_settings().MIA_MODELS_DIR / "r" / "ACTIVE").write_text("v1", encoding="utf-8")
+    assert isinstance(get_classifier("r"), FakeKnn) and made == ["knn"]

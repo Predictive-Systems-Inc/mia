@@ -1,5 +1,6 @@
 """Load each role's active model and classify messages (spec section 5, runtime)."""
 
+import importlib
 import logging
 from functools import lru_cache
 from typing import Literal, Protocol
@@ -112,11 +113,21 @@ def _fallback(role: str, version: str | None, exc: Exception) -> Classifier:
     return NullClassifier()
 
 
+def embed_text(prefix: str, text: str, context: str) -> str:
+    """The single input string of the embedding contenders: prefix, text, then context."""
+    return f"{prefix}{text}\n{context}" if context else f"{prefix}{text}"
+
+
 @lru_cache
 def _load(role: str, version: str) -> Classifier:
     """Load one version once; a broken package yields a cached NullClassifier (and a warning)."""
     try:
         card = read_card(role, version)
+        if card.kind == "knn":
+            # Task 6 adds the module; imported by name so mypy does not need it yet.
+            knn = importlib.import_module("mia.skills.knn")
+            classifier: Classifier = knn.KnnClassifier(card, safety=catalogue.safety_ids())
+            return classifier
         from mia.skills.onnx import OnnxClassifier
 
         return OnnxClassifier(card, safety=catalogue.safety_ids())
