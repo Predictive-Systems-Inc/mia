@@ -212,5 +212,10 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   conversation.are_you_there; app_feedback -> conversation.feedback_about_mia;
   privacy_question -> conversation.privacy_what_do_you_know; who_am_i and link_account ->
   admin.who_am_i and admin.link_account (account and access).
+- One intent per message: site_manager.emergency, report_hazard, work_instructions and
+  privacy_request merge into conversation.emergency, hazard_report, kb_cleaning_howto and
+  privacy_rights_request (first contact by Mia, follow-up by the site manager); report_injury
+  and chemical_safety stay separate because they cover more than injury_minor and
+  kb_chemical_safety (serious and supervisor-reported injuries; exposures that already happened).
 - Consequences: docs/capabilities.md lists no chat area; intents.jsonl is relabelled; the
   classification eval accepts conversation.* ids as labels beside the catalogue ids and `other`.

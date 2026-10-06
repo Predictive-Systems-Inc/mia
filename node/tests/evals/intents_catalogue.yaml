@@ -2822,23 +2822,6 @@ intents:
   country: both
   phase: 3
   built: 'no'
-- id: site_manager.emergency
-  agent: site_manager
-  process: Contract-to-Service
-  label_en: Emergency
-  description: Someone is in danger or there is an emergency on site now
-  roles:
-  - cleaner
-  triggers:
-  - msg
-  risk: write
-  sensitivity: p
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
 - id: site_manager.report_injury
   agent: site_manager
   process: Contract-to-Service
@@ -2874,45 +2857,11 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: site_manager.report_hazard
-  agent: site_manager
-  process: Contract-to-Service
-  label_en: Report a hazard
-  description: Unsafe condition or near miss (needles, slippery floor, aggressive person, faulty wiring)
-  roles:
-  - cleaner
-  triggers:
-  - msg
-  risk: write
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
 - id: site_manager.chemical_safety
   agent: site_manager
   process: Contract-to-Service
   label_en: Chemical safety
   description: Chemical question, safety data sheet, spill or exposure
-  roles:
-  - cleaner
-  triggers:
-  - msg
-  risk: read
-  sensitivity: n
-  approval: '-'
-  legal_effect: false
-  system_of_record: Mia
-  country: both
-  phase: 2
-  built: 'no'
-- id: site_manager.work_instructions
-  agent: site_manager
-  process: Contract-to-Service
-  label_en: How to clean this
-  description: How to clean something, which method or product to use
   roles:
   - cleaner
   triggers:
@@ -3008,26 +2957,6 @@ intents:
   system_of_record: Mia
   country: both
   phase: 3
-  built: 'no'
-- id: site_manager.privacy_request
-  agent: site_manager
-  process: platform
-  label_en: My data
-  description: 'Data subject request: see, correct or delete my data (GDPR; Data Privacy Act)'
-  roles:
-  - cleaner
-  - client
-  - lead
-  - applicant
-  triggers:
-  - msg
-  risk: delete
-  sensitivity: p
-  approval: admin
-  legal_effect: true
-  system_of_record: Mia
-  country: both
-  phase: 2
   built: 'no'
 - id: site_manager.data_breach
   agent: site_manager

@@ -249,20 +249,21 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 
 ## Site manager: site quality, safety and compliance (supports the supervisor)
 
+First contact for emergencies, hazards, cleaning how-to questions and data subject requests is
+handled by Mia through the shared conversation catalogue (conversation.emergency,
+conversation.hazard_report, conversation.kb_cleaning_howto, conversation.privacy_rights_request;
+D30); the site manager owns the follow-up.
+
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| site_manager.emergency | Emergency | Someone is in danger or there is an emergency on site now | C | msg | write | p | - | n | Mia | both | 2 | no | C2S |
 | site_manager.report_injury | I got hurt | Staff member was injured or had an accident at work | C, S | msg | write | sc | - | y | Mia | both | 2 | no | C2S |
 | site_manager.report_damage | I broke something | Staff member damaged or broke something at a site | C | msg | write | n | owner (insurance) | y | Mia | both | 2 | no | C2S |
-| site_manager.report_hazard | Report a hazard | Unsafe condition or near miss (needles, slippery floor, aggressive person, faulty wiring) | C | msg | write | n | - | n | Mia | both | 2 | no | C2S |
 | site_manager.chemical_safety | Chemical safety | Chemical question, safety data sheet, spill or exposure | C | msg | read | n | - | n | Mia | both | 2 | no | C2S |
-| site_manager.work_instructions | How to clean this | How to clean something, which method or product to use | C | msg | read | n | - | n | Mia | both | 2 | no | C2S |
 | site_manager.site_inspection | Site inspection | Supervisor records a quality inspection of a site (INSTA 800) | S | msg | write | p | - | n | Mia | both | 2 | no | C2S |
 | site_manager.schedule_inspections | - | Plan quality inspections across sites | - | sched | write | n | - | n | Mia | both | 3 | no | C2S |
 | site_manager.complaint_follow_up | - | Corrective action after a client complaint | - | event | write | p | supervisor | n | Mia | both | 2 | no | C2S |
 | site_manager.quality_scores | Quality scores | Quality scores and complaints per site, cleaner or period | S, O | msg | read | p | - | n | Mia | both | 3 | no | C2S |
 | site_manager.company_permits_due | - | Company insurance, permits and registrations due for renewal (business permit, BIR, trade register) | - | sched | write | n | owner | y | Mia | both | 3 | no | R2R |
-| site_manager.privacy_request | My data | Data subject request: see, correct or delete my data (GDPR; Data Privacy Act) | C, CL, L, AP | msg | delete | p | admin | y | Mia | both | 2 | no | Plat |
 | site_manager.data_breach | Data leak | Possible data breach (lost phone, codes sent to the wrong person) | C, S, O | msg | write | p | owner (72 h notice to authority) | y | Mia | both | 2 | no | Plat |
 | site_manager.audit_trail | Who changed what | Who changed what and when (event log) | O | msg | read | p | - | n | Mia | both | 2 | no | Plat |
 
@@ -309,9 +310,9 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | hr | 30 | 25 | 0 |
 | bookkeeper | 22 | 16 | 0 |
 | purchaser | 17 | 13 | 0 |
-| site_manager | 14 | 11 | 0 |
+| site_manager | 10 | 7 | 0 |
 | admin | 26 | 25 | 1 (2 part) |
-| total | 205 | 174 | 7 |
+| total | 201 | 170 | 7 |
 
 Every intent also has a hand-off rule when the sender may not use it (for example a cleaner
 asking `dispatcher.find_cover` is answered with "permission denied" by the tool, rule 4); the
