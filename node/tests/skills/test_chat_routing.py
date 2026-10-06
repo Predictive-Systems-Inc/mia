@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 import pytest
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart, ToolReturnPart
@@ -59,7 +60,10 @@ def test_no_model_behaves_as_today(session: Session, people: dict[str, Person]) 
         run_turn(session, create_agent("test"), people["Juha"], "Olen kipeä huomenna.")
     )
     lines = reply.text().splitlines()
-    assert lines[0] == "Kirjasin poissaolosi (6.10.). Nämä käynnit ovat vaarassa:"
+    # The date is tomorrow in the organisation time zone, so only its shape is fixed.
+    assert re.fullmatch(
+        r"Kirjasin poissaolosi \(\d+\.\d+\.\)\. Nämä käynnit ovat vaarassa:", lines[0]
+    )
     assert lines[-2:] == [STRINGS["fi"]["absence.scope_question"], "  [Kaikki] [Vain aamu]"]
     assert events_of(session, "intent.clarify_asked") == []
     assert [e.after["version"] for e in events_of(session, "intent.classified")] == [None]  # type: ignore[index]
