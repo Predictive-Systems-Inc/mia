@@ -1886,6 +1886,25 @@ intents:
   country: both
   phase: 3
   built: 'no'
+- id: hr.workplace_complaint
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Raise a complaint
+  description: Employee raises a workplace complaint that is not harassment (unfair treatment, workload,
+    conflict with a colleague, fair scheduling). Harassment is conversation.harassment_report; questions
+    about rules are conversation.kb_*
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: owner only
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
 - id: hr.offboard_employee
   agent: hr
   process: Hire-to-Retire
@@ -2263,6 +2282,24 @@ intents:
   system_of_record: Acct
   country: PH
   phase: 3
+  built: 'no'
+- id: bookkeeper.household_deduction_statement
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: Tax credit statement
+  description: Client asks for the yearly labour-cost statement of their invoices for the household tax
+    deduction (kotitalousvähennys). How the deduction works is conversation.kb_household_tax_deduction
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Acct
+  country: FI
+  phase: 2
   built: 'no'
 - id: bookkeeper.vat_report
   agent: bookkeeper

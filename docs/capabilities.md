@@ -195,6 +195,7 @@ conversation.harassment_report (D30). HR owns the follow-up.
 | hr.resign | I want to quit | Employee says they are quitting or gives notice | C | msg | write | p | owner acknowledges | y | Mia | both | 2 | no | H2R |
 | hr.terminate_employment | End employment | Office wants to end someone's employment | O | msg | write | p | owner decides | y | Mia | both | 3 | no | H2R |
 | hr.disciplinary | Give a warning | Warning or disciplinary note for an employee | O | msg | write | p | owner | y | Mia | both | 3 | no | H2R |
+| hr.workplace_complaint | Raise a complaint | Employee raises a workplace complaint that is not harassment (unfair treatment, workload, conflict with a colleague, fair scheduling). Harassment is conversation.harassment_report; questions about rules are conversation.kb_* | C | msg | write | p | owner only | n | Mia | both | 2 | no | H2R |
 | hr.offboard_employee | Offboard someone | Run the whole leaver process for a named person (keys back, access removed, final pay, exit checklist). Only the record is admin.archive_record; only Mia access is admin.remove_access | O | msg | write | p | owner | n | Mia | both | 2 | no | H2R |
 | hr.occupational_health | Occupational health | Occupational health care appointment or question | C | msg | read | sc | - | n | Mia | FI | 3 | no | H2R |
 | hr.work_injury_claim | Injury claim | Statutory accident insurance or ECC claim after a work injury | O | msg | external | sc | owner | y | Auth | both | 3 | no | H2R |
@@ -224,6 +225,7 @@ Billing detail changes are admin.update_client (D30).
 | bookkeeper.approve_supplier_invoice | Approve a bill | Approve or question a supplier invoice | O | msg | money | n | SoD: approver is not the orderer | n | Acct | both | 3 | no | P2P |
 | bookkeeper.pay_suppliers | - | Prepare the supplier payment batch (a person pays in the bank) | - | sched | money | n | owner | n | Bank | both | 3 | no | P2P |
 | bookkeeper.withholding_certificate | Tax certificate | Client asks for or sends a withholding tax certificate (BIR 2307) | CL | msg | read | n | - | n | Acct | PH | 3 | no | S2C |
+| bookkeeper.household_deduction_statement | Tax credit statement | Client asks for the yearly labour-cost statement of their invoices for the household tax deduction (kotitalousvähennys). How the deduction works is conversation.kb_household_tax_deduction | CL | msg | read | p | - | n | Acct | FI | 2 | no | S2C |
 | bookkeeper.vat_report | - | VAT return (OmaVero; BIR 2550Q) through the accounting system | - | sched | external | n | accountant | y | Auth | both | 3 | no | R2R |
 | bookkeeper.month_end_close | Close the month | Reconcile bank, accruals and open items at month end | A | msg, sched | write | n | accountant | n | Acct | both | 3 | no | R2R |
 | bookkeeper.cash_position | Cash position | How much money we have, cash flow outlook | O, A | msg | read | n | - | n | Bank | both | 3 | no | R2R |
@@ -311,12 +313,12 @@ privacy_rights_request; D30); the site manager owns the follow-up.
 | sales | 19 | 16 | 0 |
 | marketing | 10 | 9 | 0 |
 | recruiter | 14 | 12 | 0 |
-| hr | 27 | 22 | 0 |
-| bookkeeper | 21 | 15 | 0 |
+| hr | 28 | 23 | 0 |
+| bookkeeper | 22 | 16 | 0 |
 | purchaser | 17 | 13 | 0 |
 | site_manager | 9 | 6 | 0 |
 | admin | 26 | 25 | 1 (2 part) |
-| total | 188 | 157 | 7 (2 part) |
+| total | 190 | 159 | 7 (2 part) |
 
 Every intent also has a hand-off rule when the sender may not use it (for example a cleaner
 asking `dispatcher.find_cover` is answered with "permission denied" by the tool, rule 4); the

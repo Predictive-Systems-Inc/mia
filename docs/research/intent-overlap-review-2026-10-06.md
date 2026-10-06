@@ -65,9 +65,9 @@ intents into conversation intents is recorded in D30.
 | Old id | Message | Between |
 | --- | --- | --- |
 | hr.payday/en/024 | can i get my salary earlier this month, i have a problem | kb_payday, hr.salary_advance |
-| sales.household_deduction/en/007 | i need a summary of last year's cleaning costs for my tax return deduction | a statement request (no intent), kb_household_tax_deduction |
-| sales.household_deduction/en/015 | for the tax credit I need the labour costs for 2026, and pls send to my email | same |
-| sales.household_deduction/en/016 | Could you confirm the labour share of my invoices for the household expense deduction? | same, bookkeeper.invoice_question |
+| sales.household_deduction/en/007 | i need a summary of last year's cleaning costs for my tax return deduction | a statement request (no intent), kb_household_tax_deduction; restored as bookkeeper.household_deduction_statement |
+| sales.household_deduction/en/015 | for the tax credit I need the labour costs for 2026, and pls send to my email | same; restored as bookkeeper.household_deduction_statement |
+| sales.household_deduction/en/016 | Could you confirm the labour share of my invoices for the household expense deduction? | same, bookkeeper.invoice_question; restored as bookkeeper.household_deduction_statement |
 | hr.employment_terms/en/007 | do we get paid for travel time between sites | kb_employment_terms, kb_expenses_travel |
 | hr.employment_terms/en/018 | can i see my employment contract again | a document request (no intent), kb_employment_terms |
 | hr.employment_terms/en/019 | do we get paid extra for using our own phone for work? | kb_employment_terms, kb_expenses_travel |
@@ -79,17 +79,23 @@ intents into conversation intents is recorded in D30.
 | client_service.service_faq/en/009 | do the cleaners speak english? my husband doesn't speak finnish | kb_services (no closer topic) |
 | client_service.service_faq/en/010 | Do you also clean on weekends and public holidays? | kb_services, kb_opening_hours_contact |
 | client_service.service_faq/en/016 | do you work evenings? and do you have insurance? we're a small office | two topics (multiple_requests) |
-| hr.grievance/en/007 | Sanna treats me unfair, i want to report it | harassment_report, an HR grievance (no intent) |
-| hr.grievance/en/010 | i need to report something serious about a colleague, privately | same |
-| hr.grievance/en/016 | is there someone outside my team i can talk to about a problem at work | same, kb_who_to_contact |
-| hr.grievance/en/017 | my colleague is always late and i have to do her work, not fair | an HR grievance (no intent), client_service.complaint |
+| hr.grievance/en/007 | Sanna treats me unfair, i want to report it | harassment_report, an HR grievance (no intent); restored as hr.workplace_complaint |
+| hr.grievance/en/010 | i need to report something serious about a colleague, privately | same; restored as hr.workplace_complaint |
+| hr.grievance/en/016 | is there someone outside my team i can talk to about a problem at work | same, kb_who_to_contact; restored as hr.workplace_complaint |
+| hr.grievance/en/017 | my colleague is always late and i have to do her work, not fair | an HR grievance (no intent), client_service.complaint; restored as hr.workplace_complaint |
 | site_manager.report_injury/en/010 | needle stick from a bag at the clinic | injury_minor, emergency (needs urgent care) |
 | site_manager.report_injury/en/019 | my hands are bleeding and cracked from the new chemical, cant hold the mop | injury_minor, chemical_exposure |
 | site_manager.chemical_safety/en/009 | someone put chemical in a water bottle with no label, what is it | kb_chemical_safety, hazard_report |
 | dispatcher.cannot_access_site/en/014 | locked out | cannot_access_site, admin.reset_login |
 
-## Open
+## Restored (owner, 6 Oct 2026)
 
-- An HR grievance that is not harassment (unfair treatment, workload) has no intent now; four
-  messages wait for that decision.
-- A household deduction statement (labour costs for the tax return) is an action with no intent.
+- hr.workplace_complaint (not harassment: unfair treatment, workload, conflict, fair scheduling):
+  the 4 grievance records above are hr.workplace_complaint/en/001 to 004; 005 to 016 are new
+  messages written for this review.
+- bookkeeper.household_deduction_statement (the yearly labour-cost statement): the 3 statement
+  records above are 001 to 003; 004 to 015 are new messages written for this review.
+- The 25 messages written earlier in this review are hr.training/en/017 to 023,
+  hr.sick_note/en/021 to 023, bookkeeper.mileage_claim/en/020 and 021, recruiter.apply/en/019
+  and 020, and site_manager.report_injury/en/022 to 032. The dataset has no field for this; this
+  list is the record.
