@@ -36,3 +36,64 @@ different action, which embeddings do not separate: the reviewer applies a "same
 to every flagged pair. Precision at top 10, owner-judged: 0.6. Decision: the tool is a ranked
 review aid, not a gate (plan amendment A1); the trained classifier's confusion list stays the
 authoritative overlap signal.
+
+## Rerun with the centred, ranked report (A3)
+
+Dataset: pre-review intents (8fee0ac, 3643 records) plus the conversation.yaml examples, against
+docs/research/intent-overlap-reference.md (46 findable pairs, no unfindable). Reference numbers,
+not a bar (the list is not exhaustive). Full e5 report: docs/research/overlap-report-pre-d30-e5.md
+(Paraphrases trimmed to 30 of 45 rows by hand; bge-m3 report not kept).
+
+| Model | recall@40 | recall@80 | recall@120 |
+|---|---|---|---|
+| e5-small (default) | 0.39 | 0.46 | 0.57 |
+| bge-m3 | 0.30 | 0.43 | 0.54 |
+
+Link threshold (e5-small): 0.283 (p75 of within-intent similarity).
+
+Top 10 ranked pairs (e5-small):
+
+| Rank | Pair | Similarity | In reference |
+|---|---|---|---|
+| 1 | conversation.kb_payday / hr.payday | 0.856 | yes |
+| 2 | conversation.kb_prices / sales.price_question | 0.841 | yes |
+| 3 | conversation.kb_household_tax_deduction / sales.household_deduction | 0.818 | yes |
+| 4 | conversation.kb_cleaning_howto / conversation.kb_surface_care | 0.812 | yes |
+| 5 | conversation.kb_chemical_safety / site_manager.chemical_safety | 0.756 | yes |
+| 6 | conversation.compliment / conversation.thanks | 0.731 | yes (owner confirmed) |
+| 7 | conversation.injury_minor / site_manager.report_injury | 0.725 | yes |
+| 8 | conversation.goodbye / conversation.thanks | 0.72 | yes (owner confirmed) |
+| 9 | conversation.emergency / conversation.hazard_report | 0.717 | yes (owner confirmed) |
+| 10 | client_service.update_contact / hr.update_details | 0.717 | no (reference has it only via admin.update_client) |
+
+Candidates: the report lists one, not five. other (merge) with conversation.emoji_only,
+kb_chemical_safety, oos_other_companies, oos_sports, oos_weather (5 sub-clusters overlap other).
+Reading the Paraphrases rows, this is duplicate text, not a real merge: other/en/023 equals an
+oos_sports example, other/en/025 an oos_joke example, other/en/039 a laughter example,
+other/en/032 an oos_general_knowledge example, other/en/062 an emoji_only example. Judgement:
+narrow, not merge; drop or relabel the `other` records that copy a conversation example.
+
+## Conversation intents: pairs for the owner
+
+Run on the 294 pre-review records labelled conversation.* plus the conversation.yaml examples
+(report: docs/research/overlap-report-conversation.md; link threshold 0.308). The top 15 ranked
+pairs are all conversation.* on both sides. Example texts are the first conversation.yaml example
+per intent. Decisions are the owner's; conversation.emergency / hazard_report is sharpened, not merged.
+
+| # | Pair | similarity | A example | B example |
+|---|---|---|---|---|
+| 1 | conversation.kb_cleaning_howto / conversation.kb_surface_care | 0.815 | "how do I get red wine out of a carpet" | "how to clean oiled parquet" |
+| 2 | conversation.emergency / conversation.hazard_report | 0.75 | "there's a fire in the building" | "the ladder at the office is broken" |
+| 3 | conversation.kb_household_tax_deduction / conversation.tax_personal_advice | 0.662 | "can I get the household deduction" | "how should I fill my tax card" |
+| 4 | conversation.compliment / conversation.thanks | 0.661 | "you're really helpful" | "thanks" |
+| 5 | conversation.goodbye / conversation.thanks | 0.65 | "bye" | "thanks" |
+| 6 | conversation.distress / conversation.self_harm_risk | 0.623 | "I'm so stressed I can't sleep" | "I don't want to live anymore" |
+| 7 | conversation.kb_chemical_safety / conversation.kb_cleaning_howto | 0.62 | "can I mix bleach with the toilet cleaner" | "how do I get red wine out of a carpet" |
+| 8 | conversation.harassment_report / conversation.personal_threat | 0.598 | "my supervisor keeps touching me" | "a man is following me from the bus stop" |
+| 9 | conversation.kb_expenses_travel / conversation.kb_payment_invoicing | 0.591 | "do I get money for the bus" | "can I pay by card" |
+| 10 | conversation.goodbye / conversation.greeting | 0.587 | "bye" | "hi" |
+| 11 | conversation.affirm / conversation.laughter | 0.585 | "ok" | "haha" |
+| 12 | conversation.greeting / conversation.laughter | 0.578 | "hi" | "haha" |
+| 13 | conversation.emergency / conversation.personal_threat | 0.576 | "there's a fire in the building" | "a man is following me from the bus stop" |
+| 14 | conversation.confusion / conversation.rephrase_simpler | 0.575 | "???" | "I don't understand" |
+| 15 | conversation.kb_chemical_safety / conversation.kb_surface_care | 0.573 | "can I mix bleach with the toilet cleaner" | "how to clean oiled parquet" |

@@ -45,6 +45,7 @@ there are many. Approximate published results for fine-tuned encoders:
 | MASSIVE (XLM-R) | 60, 51 languages | about 85 to 88% averaged; weaker languages lower |
 
 BANKING77 has fewer intents than CLINC150 and scores lower: overlap costs more than count.
+`mia skills overlap` is a ranked review aid (owner-judged precision 6/10 at top 10 on 2026-10-06, docs/research/overlap-calibration-2026-10-06.md); the trained model's confusion list is the authoritative signal.
 Each role has its own model, whose labels are the role's intents, the shared conversation intents
 (93 today) and `other`, about 100 to 130 labels per role. That is within range.
 - Budget: up to about 150 labels per role model. Above that, split the role or merge intents.
