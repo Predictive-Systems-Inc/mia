@@ -57,9 +57,10 @@ def test_overlap_on_a_dataset_writes_the_report_and_recall(
     )
     out = tmp_path / "r.md"
     argv = ["skills", "overlap", "--dataset", str(data), "--expect", str(review), "--out", str(out)]
-    assert main(argv) == 0
+    assert main([*argv, "--no-conversation"]) == 0
     text = out.read_text(encoding="utf-8")
-    assert "| conversation.kb_payday | hr.payday |" in text
+    assert "## Ranked pairs (top 1)\n\n| a | b | similarity |\n|---|---|---|\n" in text
+    assert "|---|---|---|\n| conversation.kb_payday | hr.payday | " in text
     assert "recall 1.00 (1/1)" in capsys.readouterr().out
 
 
@@ -106,22 +107,6 @@ def test_overlap_names_unfindable_pairs_and_scores_only_findable_ones(
     out = capsys.readouterr().out
     assert "unfindable: 1 pairs (no records): hr.ghost / hr.payday\n" in out
     assert "recall 1.00 (1/1)\n" in out
-
-
-def test_overlap_calibrate_writes_the_thresholds(
-    fake: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    data = tmp_path / "d.jsonl"
-    write_dataset(data)
-    review = tmp_path / "review.md"
-    review.write_text(
-        "## Decisions\n\n| Pair | D |\n| --- | --- |\n| hr.payday / conversation.kb_payday | x |\n",
-        encoding="utf-8",
-    )
-    out = tmp_path / "r.md"
-    argv = ["skills", "overlap", "--dataset", str(data), "--expect", str(review), "--out", str(out)]
-    assert main([*argv, "--calibrate"]) == 0
-    assert "Calibrated thresholds: {" in out.read_text(encoding="utf-8")
 
 
 def test_overlap_for_a_role_without_role_yaml_is_an_error(

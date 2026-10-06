@@ -24,7 +24,6 @@ from mia.learning.harvest import harvest
 from mia.learning.overlap import (
     Item,
     analyse,
-    calibrate,
     recall,
     render,
     review_pairs,
@@ -352,11 +351,8 @@ def overlap_cmd(args: argparse.Namespace) -> int:
         names = ", ".join(" / ".join(sorted(p)) for p in sorted(lost, key=sorted))
         print(f"unfindable: {len(lost)} pairs (no records): {names}")
     expected -= lost
-    th = calibrate(items, emb, expected)[0] if args.calibrate and expected else None
-    report = analyse(items, emb, th) if th else analyse(items, emb)
+    report = analyse(items, emb)
     text = render(report)
-    if th:
-        text += f"\nCalibrated thresholds: {th.model_dump_json()}\n"
     if args.expect:
         r = recall(report, expected)
         score = f"{r:.2f}" if expected else "n/a"
@@ -406,7 +402,6 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--dataset", default=None, help="eval-format jsonl: id, intent, text")
     p.add_argument("--embedding-model", default=None)
     p.add_argument("--expect", default=None, help="review markdown whose pairs must be found")
-    p.add_argument("--calibrate", action="store_true", help="tune thresholds against --expect")
     p.add_argument("--no-conversation", action="store_true")
     p.add_argument("--out", default=None)
     p.set_defaults(func=overlap_cmd)
