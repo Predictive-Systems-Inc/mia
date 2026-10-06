@@ -126,3 +126,45 @@ def test_no_other_records_is_an_error() -> None:
     recs = [rec(1, "im sick today", "train")]
     report = check_records(role(train=1, dev=0, test=0), recs, conversation=[])
     assert report.errors == ["no records labelled other"]
+
+
+def test_same_text_with_two_intents_is_an_error() -> None:
+    r = role(train=0, dev=0, test=0)
+    r.intents.append(r.intents[0].model_copy(update={"id": "r.b"}))
+    recs = [
+        rec(1, "Is it ok to mix bleach?", "train"),
+        rec(2, "is it ok to mix bleach", "test", intent="r.b"),
+        rec(3, "other text", "dev", intent="other", kind="other"),
+    ]
+    report = check_records(r, recs, conversation=[])
+    assert "same text with two intents: 'is it ok to mix bleach' (r.a, r.b)" in report.errors
+
+
+def test_same_text_with_the_same_intent_is_not_an_error() -> None:
+    recs = [rec(1, "im sick", "train"), rec(2, "Im sick!", "test")]
+    report = check_records(role(train=0, dev=0, test=0), recs, conversation=[])
+    assert not [e for e in report.errors if "two intents" in e]
+
+
+def test_two_intent_errors_list_at_most_five_examples() -> None:
+    r = role(train=0, dev=0, test=0)
+    r.intents.append(r.intents[0].model_copy(update={"id": "r.b"}))
+    recs = [rec(i, f"text {i}", "train") for i in range(7)]
+    recs += [rec(10 + i, f"text {i}", "train", intent="r.b") for i in range(7)]
+    report = check_records(r, recs, conversation=[])
+    assert len([e for e in report.errors if "two intents" in e]) == 5
+
+
+def test_role_intent_id_equal_to_a_conversation_id_is_an_error() -> None:
+    r = role(train=0, dev=0, test=0)
+    r.intents[0] = r.intents[0].model_copy(update={"id": "conversation.greeting"})
+    report = check_records(r, [], conversation=["conversation.greeting"])
+    assert "role intent conversation.greeting duplicates a conversation intent" in report.errors
+
+
+def test_record_equal_to_a_conversation_example_is_a_warning() -> None:
+    recs = [rec(1, "Good morning, Mia!", "train")]
+    report = check_records(
+        role(train=0, dev=0, test=0), recs, [], conversation_examples=["good morning mia"]
+    )
+    assert "r/1 equals a conversation.yaml example: 'Good morning, Mia!'" in report.warnings

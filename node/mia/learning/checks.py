@@ -3,6 +3,7 @@
 import re
 import string
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 
 from pydantic import BaseModel, Field
 
@@ -36,9 +37,17 @@ def similarity(a: str, b: str) -> float:
     return len(ga & gb) / len(ga | gb) if ga | gb else 1.0
 
 
-def check_records(role: RoleSpec, records: list[Record], conversation: list[str]) -> CheckReport:
+def check_records(
+    role: RoleSpec,
+    records: list[Record],
+    conversation: list[str],
+    conversation_examples: Iterable[str] = (),
+) -> CheckReport:
     """Errors block training; warnings go to review.md for the reviewer to judge."""
     report = CheckReport()
+    for intent in role.intents:
+        if intent.id in conversation:
+            report.errors.append(f"role intent {intent.id} duplicates a conversation intent")
     labels = set(role.label_space(conversation))
     for rid, n in Counter(r.id for r in records).items():
         if n > 1:
@@ -50,10 +59,31 @@ def check_records(role: RoleSpec, records: list[Record], conversation: list[str]
             report.errors.append(f"unknown negative_of {r.negative_of} in {r.id}")
         if r.lang in ("fi", "en") and detect_language(r.text, r.lang) not in (r.lang, "?"):
             report.warnings.append(f"{r.id} may not be {r.lang}: {r.text!r}")
+    _check_one_text_one_intent(records, report)
+    _check_conversation_examples(records, conversation_examples, report)
     _check_leakage(records, report)
     _check_quotas(role, records, report)
     _check_mix(records, report)
     return report
+
+
+def _check_one_text_one_intent(records: list[Record], report: CheckReport) -> None:
+    """One message, one label (D30): the same text under two intents is an error."""
+    intents: dict[str, set[str]] = defaultdict(set)
+    for r in records:
+        intents[normalize(r.text)].add(r.intent)
+    clashes = [(t, sorted(i)) for t, i in intents.items() if len(i) > 1]
+    for text, ids in clashes[:5]:  # ponytail: five examples keep the output readable
+        report.errors.append(f"same text with two intents: {text!r} ({', '.join(ids)})")
+
+
+def _check_conversation_examples(
+    records: list[Record], examples: Iterable[str], report: CheckReport
+) -> None:
+    known = {normalize(e) for e in examples}
+    for r in records:
+        if normalize(r.text) in known:
+            report.warnings.append(f"{r.id} equals a conversation.yaml example: {r.text!r}")
 
 
 def _check_leakage(records: list[Record], report: CheckReport) -> None:

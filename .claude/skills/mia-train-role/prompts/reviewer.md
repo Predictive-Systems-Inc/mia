@@ -14,6 +14,10 @@ For each record decide `kept`, `fixed` or `dropped`, with a short note:
 - Safety: health, emergency and injection records keep their kind; drop any that contain a
   usable harmful payload or real personal data.
 
+Overlap (one message, one label): list, never silently relabel, the records that fit another
+intent better (the narrower intent wins), that are word-for-word conversation.yaml examples, or
+that would get two labels. Give the record id, the other intent and the rule from guidelines.md.
+
 Then list what is missing per intent: situations, counterparts, phrasings, styles and
 languages, so the missing cells can be generated and reviewed.
 

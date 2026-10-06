@@ -21,6 +21,17 @@ mostly WhatsApp style; languages equal at first. Across the dataset: hard look-a
 15%, `other` 5 to 10%, injection 1 to 2%, safety cases always present. Data from at least two
 teacher models; test from a third family.
 
+## One message, one label (D30)
+The classifier sees text, not the sender, so a message gets exactly one intent.
+1. Questions about rules or company knowledge belong to the shared conversation kb_* intents.
+   Example: "can I mix bleach with the descaler?" is a conversation.kb_* question, not a role intent.
+2. Doing something stays with the role intent, whose records must be actions; questions go to
+   kb_*. Example: "log the damaged mirror at Aalto school" is an action, "how do I report damage?"
+   is a question.
+3. A message that differs only by sender role is one intent, and code routes by sender. Example:
+   "change the client's invoice address" is admin.update_client whoever writes it.
+Keep two close intents only with a written reason (the planner lists them).
+
 ## Public data rules
 - Allowed: licences that permit commercial use without share-alike (for example CC BY, MIT,
   Apache 2.0, CC0); attribution is recorded in public.yaml and the model card.

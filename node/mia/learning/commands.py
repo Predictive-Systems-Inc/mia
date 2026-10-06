@@ -80,8 +80,9 @@ def validate(args: argparse.Namespace) -> int:
         except ValueError as exc:  # pydantic ValidationError and JSON errors are ValueErrors
             print(f"error: {path}: {exc}")
             return 1
-    conversation = [c.id for c in catalogue.conversation_intents()]
-    report = check_records(role, records, conversation)
+    intents = catalogue.conversation_intents()
+    examples = [e for c in intents for e in c.examples]
+    report = check_records(role, records, [c.id for c in intents], examples)
     errors += report.errors
     for line in errors:
         print(f"error: {line}")

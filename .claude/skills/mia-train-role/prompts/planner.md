@@ -20,6 +20,13 @@ Derive:
    with a one-line difference).
 5. Styles and channels with shares; targets only where they differ from guidelines.md.
 
+One message, one label (rules in guidelines.md): questions about rules or company knowledge are
+the conversation kb_* intents, so do not define them; a role intent covers actions only; a
+message that differs only by sender role is one intent. Write each description so action versus
+question is explicit ("Asks Mia to do X", never "asks about X"). Do not define an intent the
+conversation catalogue or another role already covers. List every intent you kept close to
+another, with the other intent and the reason.
+
 Rules: every write, money, external or delete intent says why its risk is that level. Include
 out-of-scope neighbours as look-alikes. Do not invent capabilities the agent does not have.
 

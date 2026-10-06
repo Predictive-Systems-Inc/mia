@@ -37,7 +37,12 @@ def test_skill_has_steps_gates_and_prompts() -> None:
         assert marker in text, marker
     for prompt in PROMPTS:
         assert (SKILL / "prompts" / f"{prompt}.md").read_text().strip(), prompt
-    assert "30 minimum" in (SKILL / "guidelines.md").read_text()
+    guidelines = (SKILL / "guidelines.md").read_text()
+    assert "30 minimum" in guidelines
+    assert "Overlap review" in text
+    assert "One message, one label" in guidelines
+    for rule in ("1. Questions about rules", "2. Doing something", "3. A message that differs"):
+        assert rule in guidelines, rule
 
 
 def test_no_em_dash_or_tagalog_in_any_skill_file() -> None:
