@@ -41,6 +41,9 @@ def test_skill_has_steps_gates_and_prompts() -> None:
     assert "30 minimum" in guidelines
     assert "Overlap review" in text
     assert "One message, one label" in guidelines
+    assert "## How many intents one model can hold" in guidelines
+    assert "up to about 150 labels per role model" in guidelines
+    assert '("How many intents one model can hold")' in text
     for rule in ("1. Questions about rules", "2. Doing something", "3. A message that differs"):
         assert rule in guidelines, rule
 

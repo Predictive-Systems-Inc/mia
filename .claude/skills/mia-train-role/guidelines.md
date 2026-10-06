@@ -32,6 +32,29 @@ The classifier sees text, not the sender, so a message gets exactly one intent.
    "change the client's invoice address" is admin.update_client whoever writes it.
 Keep two close intents only with a written reason (the planner lists them).
 
+## How many intents one model can hold
+The intent head is one output per label, so the encoder is not the limit: BERT-class models are
+trained with hundreds to thousands of labels. Accuracy falls when intents look alike, not when
+there are many. Approximate published results for fine-tuned encoders:
+
+| Benchmark | Intents | Accuracy |
+|---|---|---|
+| CLINC150 | 150 plus out-of-scope | about 96 to 97% in scope |
+| BANKING77 | 77, fine-grained look-alikes | about 93 to 94% |
+| HWU64 | 64 | about 92% |
+| MASSIVE (XLM-R) | 60, 51 languages | about 85 to 88% averaged; weaker languages lower |
+
+BANKING77 has fewer intents than CLINC150 and scores lower: overlap costs more than count.
+Each role has its own model, whose labels are the role's intents, the shared conversation intents
+(93 today) and `other`, about 100 to 130 labels per role. That is within range.
+- Budget: up to about 150 labels per role model. Above that, split the role or merge intents.
+- When the report shows confusion between two intents, merge them or sharpen both descriptions
+  (D30) before adding data. Watch the shared conversation intents first: they are the largest
+  group and some are close (confusion, repeat, rephrase_simpler).
+- More data per intent helps look-alikes; more intents with thin data hurts everyone.
+- Low confidence asks "Did you mean" instead of acting, and Gate 2 holds write intents to 0.99
+  precision, so a close pair costs coverage, not wrong actions.
+
 ## Public data rules
 - Allowed: licences that permit commercial use without share-alike (for example CC BY, MIT,
   Apache 2.0, CC0); attribution is recorded in public.yaml and the model card.
