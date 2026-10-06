@@ -1969,3 +1969,71 @@ git commit -m "skill and docs: overlap review and bake-off"
 - Types used across tasks: `Item`, `Thresholds`, `OverlapReport`, `ModelCard.kind`/`prefix`, `ARTIFACTS`, `embed_text`, `knn_logits`, `SCALE`, `load_splits`, `new_version`, `new_package_dir`, `package`, `train_knn`, `train_contrastive`, `triplets`, `choose_winner`, `render_bakeoff`, `bakeoff`.
 - Context: knn and contrastive embed `text\ncontext` as one string; the encoder keeps its pair encoding.
 - Language: knn and contrastive have no language head; `Classification.lang` is None for them (chat uses detect_language for replies).
+
+## Amendments (2026-10-06, after Task 4)
+
+Task 4 found that raw centroid cosines are compressed (e5-small: median intent pair 0.94, the
+reviewed pairs 0.96 to 0.98), so no fixed threshold separates them, and that the reference review
+was not exhaustive (the owner confirmed 6 of the top 10 unreviewed pairs as real). Rulings are in
+the research note docs/research/overlap-calibration-2026-10-06.md.
+
+### A1: Task 1 becomes a ranked, centred review aid (fix round 2 of Task 1)
+
+- `centre(emb: np.ndarray) -> np.ndarray`: subtract the mean row, re-normalise rows (zero rows
+  stay zero). `analyse(items, emb, th, centred: bool = True)` centres first; every intent-level
+  signal (centroids, sub-clusters, suspects) uses centred rows. Record-level paraphrases keep the
+  raw rows and the 0.95 threshold (near-duplicate texts are a raw-scale property).
+- Pairs are ranked, not thresholded. `Thresholds` loses `close_pair`, `overlap` and `split` and
+  gains `top_pairs: int = 50`, `nearest: int = 2`, `link_percentile: float = 75.0`.
+  `OverlapReport.ranked: list[Pair]` is the top `top_pairs` intent pairs by centred centroid
+  cosine, descending. `OverlapReport.nearest: dict[str, list[Pair]]` is each intent's `nearest`
+  closest intents. `close_pairs` stays as the union of both (so found_pairs and recall work).
+- Sub-cluster rules are relative to the data: the link threshold for `_groups` is the
+  `link_percentile` of all within-intent pairwise centred similarities in the dataset (computed
+  once per analyse, exposed as `OverlapReport.link_threshold`); a sub-cluster "overlaps" another
+  intent when its centroid is closer to that intent's centroid than to its own intent's; two
+  sub-clusters are "far" when their centroids' centred cosine is below 0. Merge, narrow and split
+  keep their definitions over these relations (narrow still requires the other intent to be
+  tighter by `_spread`).
+- `calibrate` is removed. `recall_at(items, emb, expected, ks: tuple[int, ...] = (40, 80, 120))
+  -> dict[int, float]` ranks all intent pairs by centred centroid cosine and returns recall of
+  `expected` within the top k for each k. `found_pairs`, `recall`, `unfindable` and
+  `review_pairs` stay.
+- `render` sections: "Ranked pairs (top N)", "Nearest intents" (intent | 1st (sim) | 2nd (sim)),
+  "Suspect labels", "Paraphrases across intents" (showing N of M), "Candidates", then
+  "Link threshold: x (p75 of within-intent similarity)".
+- Tests to change or add (exact values): centring on rows that share a common offset separates
+  them (an uncentred pair above 0.9 falls below 0.5 after centring); ranked order and length;
+  nearest per intent with ties broken by name; link threshold equals the numpy percentile of the
+  within-intent pairs of a 3-intent fixture; merge, narrow and split under the relative rules
+  (including "closer to its own intent" giving no candidate); recall_at exact values for a
+  fixture with 3 expected pairs at ranks 1, 3 and 50.
+
+### A2: Task 3 command
+
+`--calibrate` is removed. With `--expect`, the command prints the unfindable line, then
+`recall@40 x.xx, recall@80 x.xx, recall@120 x.xx (N findable pairs)`, and appends the same to the
+report. Tests adapt (the fake embedder fixtures give deterministic ranks).
+
+### A3: Task 4 rerun (operational)
+
+- Reference file: create `docs/research/intent-overlap-reference.md` with a "## Decisions"
+  table (parsed by `review_pairs`) holding the 40 review pairs plus the 6 owner-confirmed pairs
+  (listed in the calibration note), and a "## Not overlaps" table of the 4 owner-rejected pairs
+  (not parsed; kept so they are not re-asked).
+- Run `mia skills overlap --dataset <pre-review 8fee0ac dataset> --expect
+  docs/research/intent-overlap-reference.md` with e5-small (and bge-m3 if cached); record
+  recall@40/80/120 in the calibration note (reference numbers, not a bar) and the top 10 pairs
+  with their rank.
+- Acceptance is the owner-judged precision at top 10 already recorded (6/10). Nothing is pinned.
+- Then a targeted run on the conversation intents only (dataset records labelled conversation.*
+  plus conversation.yaml examples, `--no-conversation` off) and a list of the top 15
+  conversation pairs for the owner, each with two example texts; merges there are the owner's
+  decision (conversation.emergency / hazard_report is sharpened, not merged).
+
+### A4: Task 9
+
+The skill shows the ranked list and the nearest-intents table at Gate 1 and, after the bake-off,
+the winner's confusion list next to it (the classifier's confusions are the authoritative
+overlap signal). guidelines.md adds the "same action?" test: a flagged pair that shares a topic
+but names a different action (add vs update, book vs change) is not an overlap.
