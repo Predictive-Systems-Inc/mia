@@ -6,8 +6,10 @@ Every command returns an exit code: 0 ok, 1 a reported error, 2 a missing option
 import argparse
 import asyncio
 import datetime as dt
+import json
 from importlib import import_module
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 from sqlmodel import select
@@ -19,6 +21,15 @@ from mia.learning import catalogue
 from mia.learning.checks import check_records
 from mia.learning.generate import Cell, generate, plan_cells
 from mia.learning.harvest import harvest
+from mia.learning.overlap import (
+    Item,
+    analyse,
+    calibrate,
+    recall,
+    render,
+    review_pairs,
+    unfindable,
+)
 from mia.learning.package import PromotionRefused, promote
 from mia.learning.public import load_public
 from mia.learning.schema import (
@@ -115,17 +126,26 @@ def split(args: argparse.Namespace) -> int:
     return 0
 
 
-def train(args: argparse.Namespace) -> int:
-    """Runs mia.learning.train, or prints the install hint and returns 2 when it is missing."""
+def _learning_module(name: str) -> Any:
+    """The learning-group module, or None after printing the install hint. Only a missing
+    module or learning-group package counts; a bug inside the module must surface."""
     try:
-        train_role = import_module("mia.learning.train").train_role
+        return import_module(name)
     except ModuleNotFoundError as exc:
-        # Only a missing training module or learning-group package; a bug inside it must surface.
-        if exc.name != "mia.learning.train" and (exc.name or "").split(".")[0] not in LEARNING_PKGS:
+        if exc.name != name and (exc.name or "").split(".")[0] not in LEARNING_PKGS:
             raise
         print(LEARNING_HINT)
+        return None
+
+
+def train(args: argparse.Namespace) -> int:
+    """Runs mia.learning.train, or prints the install hint and returns 2 when it is missing."""
+    module = _learning_module("mia.learning.train")
+    if module is None:
         return 2
-    card = train_role(skill_dir(args.role), base_model=args.base_model, with_real=args.with_real)
+    card = module.train_role(
+        skill_dir(args.role), base_model=args.base_model, with_real=args.with_real
+    )
     print(f"{card.role}@{card.version}: gate {'passed' if card.gate.passed else 'failed'}")
     for f in card.gate.failures:
         print(f"  {f}")
@@ -254,6 +274,74 @@ def generate_cmd(args: argparse.Namespace) -> int:
     return 0
 
 
+def _overlap_items(args: argparse.Namespace) -> tuple[list[Item], str, Path] | None:
+    """Items, embedding model and report path for a dataset or a role; None after a message."""
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%d%H%M")
+    if args.dataset:
+        lines = Path(args.dataset).read_text(encoding="utf-8").splitlines()
+        rows = [json.loads(line) for line in lines if line.strip()]
+        items = [Item(id=r["id"], intent=r["intent"], text=r["text"]) for r in rows]
+        model = args.embedding_model or RoleSpec.model_fields["embedding_model"].default
+        return items, model, Path(args.out) if args.out else Path(f"overlap-{stamp}.md")
+    role = _role_spec(args.role)
+    if role is None:
+        return None
+    data = skill_dir(args.role) / "data"
+    items = [
+        Item(id=r.id, intent=r.intent, text=r.text)
+        for s in ("train", "dev", "test", "reviewed")
+        if (data / f"{s}.jsonl").exists()
+        for r in load_records(data / f"{s}.jsonl")
+    ]
+    out = Path(args.out) if args.out else skill_dir(args.role) / "reports" / f"overlap-{stamp}.md"
+    return items, args.embedding_model or role.embedding_model, out
+
+
+def overlap_cmd(args: argparse.Namespace) -> int:
+    """Embedding overlap report for a role's records or an eval-format dataset (id, intent,
+    text per line), plus the shared conversation examples unless --no-conversation."""
+    if not args.role and not args.dataset:
+        print("give a role or --dataset")
+        return 1
+    embed = _learning_module("mia.learning.embed")
+    if embed is None:
+        return 2
+    loaded = _overlap_items(args)
+    if loaded is None:
+        return 1
+    items, model, out = loaded
+    if not args.no_conversation:
+        items += [
+            Item(id=f"{c.id}/example/{n}", intent=c.id, text=e)
+            for c in catalogue.conversation_intents()
+            for n, e in enumerate(c.examples)
+        ]
+    if not items:
+        print("no records to compare")
+        return 1
+    emb = embed.Embedder(model)([i.text for i in items])
+    expected = review_pairs(Path(args.expect).read_text(encoding="utf-8")) if args.expect else set()
+    lost = unfindable(expected, {i.intent for i in items})
+    if lost:
+        names = ", ".join(" / ".join(sorted(p)) for p in sorted(lost, key=sorted))
+        print(f"unfindable: {len(lost)} pairs (no records): {names}")
+    expected -= lost
+    th = calibrate(items, emb, expected)[0] if args.calibrate and expected else None
+    report = analyse(items, emb, th) if th else analyse(items, emb)
+    text = render(report)
+    if th:
+        text += f"\nCalibrated thresholds: {th.model_dump_json()}\n"
+    if args.expect:
+        r = recall(report, expected)
+        line = f"recall {r:.2f} ({round(r * len(expected))}/{len(expected)})"
+        text += f"\nAgainst {args.expect}: {line}\n"
+        print(line)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    print(out)
+    return 0
+
+
 def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
     skills = sub.add_parser("skills", help="role skill models").add_subparsers(
         dest="skills_command", required=True
@@ -286,3 +374,12 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--only", default=None, help="comma list of intent ids and languages")
     p.add_argument("--prompt", default=None, help="generator prompt file")
     p.set_defaults(func=generate_cmd)
+    p = skills.add_parser("overlap", help="embedding overlap review of intents")
+    p.add_argument("role", nargs="?", default=None)
+    p.add_argument("--dataset", default=None, help="eval-format jsonl: id, intent, text")
+    p.add_argument("--embedding-model", default=None)
+    p.add_argument("--expect", default=None, help="review markdown whose pairs must be found")
+    p.add_argument("--calibrate", action="store_true", help="tune thresholds against --expect")
+    p.add_argument("--no-conversation", action="store_true")
+    p.add_argument("--out", default=None)
+    p.set_defaults(func=overlap_cmd)

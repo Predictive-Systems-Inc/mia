@@ -125,6 +125,7 @@ class RoleSpec(BaseModel):
     intents: list[IntentSpec]
     targets: Targets = Field(default_factory=Targets)
     base_model: str = "jhu-clsp/mmBERT-base"
+    embedding_model: str = "intfloat/multilingual-e5-small"
 
     def intent(self, intent_id: str) -> IntentSpec | None:
         return next((i for i in self.intents if i.id == intent_id), None)

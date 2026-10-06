@@ -77,7 +77,9 @@ hand, they are rewritten by `split`.
 Judge completeness against role.yaml and generate what is missing (then review it). Then run
 `uv run mia skills split <role>` (writes train.jsonl and dev.jsonl only, from reviewed.jsonl)
 and `uv run mia skills validate <role>` until there are no errors. Write review.md with the
-coverage notes and the validator's warnings with your judgement on each.
+coverage notes and the validator's warnings with your judgement on each. To see which intents
+overlap in meaning, run `uv run mia skills overlap <role>` (needs the learning group) and read the
+report it writes.
 
 Harvested real candidates (`mia skills harvest <role>`, self-learning) follow extra rules:
 - Harvest appends to MIA_LEARNING_DIR/<role>/candidates.jsonl (default data/learning/<role>/),
