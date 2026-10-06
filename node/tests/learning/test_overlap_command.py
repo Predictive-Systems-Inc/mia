@@ -129,3 +129,49 @@ def test_overlap_for_a_role_without_role_yaml_is_an_error(
 ) -> None:
     assert main(["skills", "overlap", "nosuchrole"]) == 1
     assert "role.yaml not found" in capsys.readouterr().out
+
+
+def test_overlap_reports_a_missing_dataset(
+    fake: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "nope.jsonl"
+    assert main(["skills", "overlap", "--dataset", str(path)]) == 1
+    assert capsys.readouterr().out == f"error: {path}: file not found\n"
+
+
+def test_overlap_reports_a_missing_expect_file(
+    fake: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = tmp_path / "d.jsonl"
+    write_dataset(data)
+    review = tmp_path / "nope.md"
+    assert main(["skills", "overlap", "--dataset", str(data), "--expect", str(review)]) == 1
+    assert capsys.readouterr().out == f"error: {review}: file not found\n"
+
+
+def test_overlap_reports_malformed_json_and_incomplete_rows(
+    fake: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bad = tmp_path / "b.jsonl"
+    bad.write_text('{"id": "a", "intent": "x", "text": "t"}\n{oops\n', encoding="utf-8")
+    assert main(["skills", "overlap", "--dataset", str(bad)]) == 1
+    assert capsys.readouterr().out == f"error: {bad}: line 2: invalid JSON\n"
+    short = tmp_path / "s.jsonl"
+    short.write_text('{"id": "a", "intent": "x"}\n', encoding="utf-8")
+    assert main(["skills", "overlap", "--dataset", str(short)]) == 1
+    assert capsys.readouterr().out == f"error: {short}: line 1: needs id, intent and text\n"
+
+
+def test_overlap_recall_is_not_available_when_nothing_is_findable(
+    fake: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = tmp_path / "d.jsonl"
+    write_dataset(data)
+    review = tmp_path / "review.md"
+    review.write_text(
+        "## Decisions\n\n| Pair | D |\n| --- | --- |\n| hr.ghost / hr.phantom | x |\n",
+        encoding="utf-8",
+    )
+    argv = ["skills", "overlap", "--dataset", str(data), "--expect", str(review)]
+    assert main([*argv, "--out", str(tmp_path / "r.md")]) == 0
+    assert "recall n/a (0/0)\n" in capsys.readouterr().out

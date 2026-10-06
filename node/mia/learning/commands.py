@@ -274,13 +274,34 @@ def generate_cmd(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_dataset(path: Path) -> list[Item] | None:
+    """Items of an eval-format jsonl (id, intent, text per line); None after printing why not."""
+    if not path.is_file():
+        print(f"error: {path}: file not found")
+        return None
+    items: list[Item] = []
+    for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+            items.append(Item(id=row["id"], intent=row["intent"], text=row["text"]))
+        except json.JSONDecodeError:
+            print(f"error: {path}: line {n}: invalid JSON")
+            return None
+        except (KeyError, TypeError):
+            print(f"error: {path}: line {n}: needs id, intent and text")
+            return None
+    return items
+
+
 def _overlap_items(args: argparse.Namespace) -> tuple[list[Item], str, Path] | None:
     """Items, embedding model and report path for a dataset or a role; None after a message."""
     stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%d%H%M")
     if args.dataset:
-        lines = Path(args.dataset).read_text(encoding="utf-8").splitlines()
-        rows = [json.loads(line) for line in lines if line.strip()]
-        items = [Item(id=r["id"], intent=r["intent"], text=r["text"]) for r in rows]
+        items = _read_dataset(Path(args.dataset))
+        if items is None:
+            return None
         model = args.embedding_model or RoleSpec.model_fields["embedding_model"].default
         return items, model, Path(args.out) if args.out else Path(f"overlap-{stamp}.md")
     role = _role_spec(args.role)
@@ -320,7 +341,12 @@ def overlap_cmd(args: argparse.Namespace) -> int:
         print("no records to compare")
         return 1
     emb = embed.Embedder(model)([i.text for i in items])
-    expected = review_pairs(Path(args.expect).read_text(encoding="utf-8")) if args.expect else set()
+    expected: set[frozenset[str]] = set()
+    if args.expect:
+        if not Path(args.expect).is_file():
+            print(f"error: {args.expect}: file not found")
+            return 1
+        expected = review_pairs(Path(args.expect).read_text(encoding="utf-8"))
     lost = unfindable(expected, {i.intent for i in items})
     if lost:
         names = ", ".join(" / ".join(sorted(p)) for p in sorted(lost, key=sorted))
@@ -333,7 +359,8 @@ def overlap_cmd(args: argparse.Namespace) -> int:
         text += f"\nCalibrated thresholds: {th.model_dump_json()}\n"
     if args.expect:
         r = recall(report, expected)
-        line = f"recall {r:.2f} ({round(r * len(expected))}/{len(expected)})"
+        score = f"{r:.2f}" if expected else "n/a"
+        line = f"recall {score} ({round(r * len(expected))}/{len(expected)})"
         text += f"\nAgainst {args.expect}: {line}\n"
         print(line)
     out.parent.mkdir(parents=True, exist_ok=True)

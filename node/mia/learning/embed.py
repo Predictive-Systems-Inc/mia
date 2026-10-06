@@ -64,10 +64,10 @@ def export(
     model: Pooled,
     tok: PreTrainedTokenizerBase,
     out: Path,
-    outputs: str = "embedding",
+    output: str = "embedding",
     max_len: int = MAX_LEN,
 ) -> None:
-    """Writes model.onnx (inputs input_ids, attention_mask; one output named `outputs`) and
+    """Writes model.onnx (inputs input_ids, attention_mask; one output named `output`) and
     tokenizer.json with truncation pinned at max_len, so the runtime needs neither torch nor
     transformers."""
     out.mkdir(parents=True, exist_ok=True)
@@ -78,7 +78,7 @@ def export(
         (sample["input_ids"], sample["attention_mask"]),
         out / "model.onnx",
         input_names=["input_ids", "attention_mask"],
-        output_names=[outputs],
+        output_names=[output],
         dynamic_axes={"input_ids": {0: "b", 1: "s"}, "attention_mask": {0: "b", 1: "s"}},
         opset_version=17,
         dynamo=False,
