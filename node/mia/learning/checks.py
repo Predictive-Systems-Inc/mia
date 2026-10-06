@@ -45,9 +45,10 @@ def check_records(
 ) -> CheckReport:
     """Errors block training; warnings go to review.md for the reviewer to judge."""
     report = CheckReport()
+    shadows = {c.split(".", 1)[-1].removeprefix("kb_"): c for c in conversation}
     for intent in role.intents:
-        if intent.id in conversation:
-            report.errors.append(f"role intent {intent.id} duplicates a conversation intent")
+        if clash := shadows.get(intent.id.split(".", 1)[-1]):
+            report.errors.append(f"role intent {intent.id} duplicates {clash}")
     labels = set(role.label_space(conversation))
     for rid, n in Counter(r.id for r in records).items():
         if n > 1:

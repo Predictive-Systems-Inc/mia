@@ -155,11 +155,25 @@ def test_two_intent_errors_list_at_most_five_examples() -> None:
     assert len([e for e in report.errors if "two intents" in e]) == 5
 
 
-def test_role_intent_id_equal_to_a_conversation_id_is_an_error() -> None:
+def _shadow(intent_id: str) -> list[str]:
     r = role(train=0, dev=0, test=0)
-    r.intents[0] = r.intents[0].model_copy(update={"id": "conversation.greeting"})
-    report = check_records(r, [], conversation=["conversation.greeting"])
-    assert "role intent conversation.greeting duplicates a conversation intent" in report.errors
+    r.intents[0] = r.intents[0].model_copy(update={"id": intent_id})
+    conv = ["conversation.emergency", "conversation.kb_payday", "conversation.greeting"]
+    return check_records(r, [], conversation=conv).errors
+
+
+def test_role_intent_shadowing_a_conversation_suffix_is_an_error() -> None:
+    assert "role intent site_manager.emergency duplicates conversation.emergency" in _shadow(
+        "site_manager.emergency"
+    )
+
+
+def test_role_intent_matching_kb_suffix_is_an_error() -> None:
+    assert "role intent hr.payday duplicates conversation.kb_payday" in _shadow("hr.payday")
+
+
+def test_role_intent_without_a_matching_suffix_is_not_an_error() -> None:
+    assert not [e for e in _shadow("dispatcher.report_absence") if "duplicates" in e]
 
 
 def test_record_equal_to_a_conversation_example_is_a_warning() -> None:
