@@ -76,6 +76,7 @@ class OverlapReport(BaseModel):
     suspects: list[Suspect] = []
     paraphrases: list[Paraphrase] = []  # at most MAX_PARAPHRASES, most similar first
     paraphrase_total: int = 0
+    paraphrase_intent_pairs: list[list[str]] = []  # every linked intent pair, uncapped
     clusters: dict[str, list[SubCluster]] = {}
     candidates: list[Candidate] = []
 
@@ -148,6 +149,9 @@ def analyse(items: list[Item], emb: np.ndarray, th: Thresholds = _DEFAULTS) -> O
     lab = np.array([it.intent for it in items])
     found = np.argwhere(np.triu(sims >= th.paraphrase, 1) & (lab[:, None] != lab[None, :]))
     rep.paraphrase_total = len(found)
+    if len(found):
+        both = np.sort(np.stack([lab[found[:, 0]], lab[found[:, 1]]], axis=1), axis=1)
+        rep.paraphrase_intent_pairs = np.unique(both, axis=0).tolist()
     ordered = sorted(found.tolist(), key=lambda ij: -sims[ij[0], ij[1]])[:MAX_PARAPHRASES]
     for i, j in ordered:
         (a_int, a_id), (b_int, b_id) = sorted(
@@ -279,10 +283,15 @@ def review_pairs(markdown: str) -> set[frozenset[str]]:
 def found_pairs(report: OverlapReport) -> set[frozenset[str]]:
     """Every intent pair any signal links: close pairs, paraphrases, suspects and candidates."""
     found = {frozenset({p.a, p.b}) for p in report.close_pairs}
-    found |= {frozenset({p.a_intent, p.b_intent}) for p in report.paraphrases}
+    found |= {frozenset(p) for p in report.paraphrase_intent_pairs}
     found |= {frozenset({s.intent, s.neighbours_label}) for s in report.suspects}
     found |= {frozenset({c.intent, o}) for c in report.candidates for o in c.others}
     return found
+
+
+def unfindable(expected: set[frozenset[str]], intents: set[str]) -> set[frozenset[str]]:
+    """Expected pairs that name an intent with no items, which no signal can ever find."""
+    return {pair for pair in expected if not pair <= intents}
 
 
 def recall(report: OverlapReport, expected: set[frozenset[str]]) -> float:

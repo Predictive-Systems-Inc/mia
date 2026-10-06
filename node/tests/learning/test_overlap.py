@@ -9,6 +9,7 @@ from mia.learning.overlap import (
     recall,
     render,
     review_pairs,
+    unfindable,
 )
 
 
@@ -260,3 +261,19 @@ def test_calibrate_falls_back_when_nothing_fits_the_budget() -> None:
         budget=1.0,
     )
     assert (th, r) == (Thresholds(), 0.0)
+
+
+def test_found_pairs_counts_paraphrase_pairs_beyond_the_display_cap() -> None:
+    its = items(*["a"] * 15, *["b"] * 15, "c")
+    rows = [[1, 0, 0]] * 30 + [[0.99, 0.14, 0]]
+    rep = analyse(its, unit(*rows))
+    assert len(rep.paraphrases) == 200
+    assert rep.paraphrase_total == 225 + 30
+    assert {frozenset({"a", "c"}), frozenset({"b", "c"}), frozenset({"a", "b"})} <= found_pairs(rep)
+    assert {tuple(p) for p in rep.paraphrase_intent_pairs} == {("a", "b"), ("a", "c"), ("b", "c")}
+
+
+def test_unfindable_names_pairs_with_an_intent_without_items() -> None:
+    ab, ax, xy = (frozenset(p) for p in ({"a", "b"}, {"a", "x"}, {"x", "y"}))
+    assert unfindable({ab, ax, xy}, {"a", "b"}) == {ax, xy}
+    assert unfindable({ab}, {"a", "b"}) == set()
