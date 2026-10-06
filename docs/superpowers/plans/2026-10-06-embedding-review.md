@@ -59,8 +59,16 @@ def items(*labels: str) -> list[Item]:
     return [Item(id=f"r{i}", intent=label, text=f"text {i}") for i, label in enumerate(labels)]
 
 
-TH = Thresholds(close_pair=0.9, paraphrase=0.99, cluster=0.9, overlap=0.9, split=0.5,
-                min_cluster=2, k=2, suspect_share=0.5)
+TH = Thresholds(
+    close_pair=0.9,
+    paraphrase=0.99,
+    cluster=0.9,
+    overlap=0.9,
+    split=0.5,
+    min_cluster=2,
+    k=2,
+    suspect_share=0.5,
+)
 
 
 def test_close_pair_and_paraphrase() -> None:
@@ -72,7 +80,9 @@ def test_close_pair_and_paraphrase() -> None:
 
 
 def test_far_intents_give_nothing() -> None:
-    rep = analyse(items("a", "a", "b", "b"), unit([1, 0, 0], [1, 0.01, 0], [0, 1, 0], [0, 1, 0.01]), TH)
+    rep = analyse(
+        items("a", "a", "b", "b"), unit([1, 0, 0], [1, 0.01, 0], [0, 1, 0], [0, 1, 0.01]), TH
+    )
     assert rep.close_pairs == [] and rep.paraphrases == [] and rep.candidates == []
 
 
@@ -88,8 +98,16 @@ def test_suspect_label() -> None:
 def test_merge_candidate_when_two_sub_clusters_overlap_other_intents() -> None:
     # intent m has one sub-cluster near x and one near y
     its = items("m", "m", "m", "m", "x", "x", "y", "y")
-    emb = unit([1, 0, 0], [1, 0.01, 0], [0, 1, 0], [0, 1, 0.01],
-               [1, 0.02, 0], [1, 0.03, 0], [0, 1, 0.02], [0, 1, 0.03])
+    emb = unit(
+        [1, 0, 0],
+        [1, 0.01, 0],
+        [0, 1, 0],
+        [0, 1, 0.01],
+        [1, 0.02, 0],
+        [1, 0.03, 0],
+        [0, 1, 0.02],
+        [0, 1, 0.03],
+    )
     rep = analyse(its, emb, TH)
     merge = [c for c in rep.candidates if c.kind == "merge"]
     assert [(c.intent, c.others) for c in merge] == [("m", ["x", "y"])]
@@ -123,11 +141,23 @@ def test_small_intents_are_one_group_and_tiny_inputs_do_not_crash() -> None:
 
 def test_render_lists_every_section() -> None:
     its = items("m", "m", "m", "m", "x", "x", "y", "y")
-    emb = unit([1, 0, 0], [1, 0.01, 0], [0, 1, 0], [0, 1, 0.01],
-               [1, 0.02, 0], [1, 0.03, 0], [0, 1, 0.02], [0, 1, 0.03])
+    emb = unit(
+        [1, 0, 0],
+        [1, 0.01, 0],
+        [0, 1, 0],
+        [0, 1, 0.01],
+        [1, 0.02, 0],
+        [1, 0.03, 0],
+        [0, 1, 0.02],
+        [0, 1, 0.03],
+    )
     text = render(analyse(its, emb, TH))
-    for heading in ("## Close intents", "## Suspect labels", "## Paraphrases across intents",
-                    "## Candidates"):
+    for heading in (
+        "## Close intents",
+        "## Suspect labels",
+        "## Paraphrases across intents",
+        "## Candidates",
+    ):
         assert heading in text
     assert "| m | merge | x, y |" in text
 ```
@@ -274,15 +304,27 @@ def analyse(items: list[Item], emb: np.ndarray, th: Thresholds = Thresholds()) -
         label, count = Counter(near).most_common(1)[0]
         if label != it.intent and count / k >= th.suspect_share:
             rep.suspects.append(
-                Suspect(id=it.id, intent=it.intent, text=it.text, neighbours_label=label,
-                        share=round(count / k, 3))
+                Suspect(
+                    id=it.id,
+                    intent=it.intent,
+                    text=it.text,
+                    neighbours_label=label,
+                    share=round(count / k, 3),
+                )
             )
     for i in range(len(items)):
         for j in range(i + 1, len(items)):
             if items[i].intent != items[j].intent and sims[i, j] >= th.paraphrase:
                 a, b = sorted([(items[i].intent, items[i].id), (items[j].intent, items[j].id)])
-                rep.paraphrases.append(Paraphrase(a_id=a[1], a_intent=a[0], b_id=b[1],
-                                                  b_intent=b[0], similarity=round(float(sims[i, j]), 3)))
+                rep.paraphrases.append(
+                    Paraphrase(
+                        a_id=a[1],
+                        a_intent=a[0],
+                        b_id=b[1],
+                        b_intent=b[0],
+                        similarity=round(float(sims[i, j]), 3),
+                    )
+                )
     for n in names:
         groups = _groups(by_intent[n], emb, th)
         subs: list[SubCluster] = []
@@ -291,42 +333,81 @@ def analyse(items: list[Item], emb: np.ndarray, th: Thresholds = Thresholds()) -
             others = [(float(gc @ cent[o]), o) for o in names if o != n]
             best_sim, best = max(others) if others else (0.0, None)
             subs.append(
-                SubCluster(size=len(g), examples=[items[i].text for i in g[:3]],
-                           nearest=best if best_sim >= th.overlap else None,
-                           similarity=round(best_sim, 3))
+                SubCluster(
+                    size=len(g),
+                    examples=[items[i].text for i in g[:3]],
+                    nearest=best if best_sim >= th.overlap else None,
+                    similarity=round(best_sim, 3),
+                )
             )
         rep.clusters[n] = subs
         hits = [s.nearest for s in subs if s.nearest]
         if len(hits) >= 2:
-            rep.candidates.append(Candidate(intent=n, kind="merge", others=sorted(set(hits)),
-                                            reason=f"{len(hits)} sub-clusters overlap other intents"))
+            rep.candidates.append(
+                Candidate(
+                    intent=n,
+                    kind="merge",
+                    others=sorted(set(hits)),
+                    reason=f"{len(hits)} sub-clusters overlap other intents",
+                )
+            )
         elif len(hits) == 1:
             other = hits[0]
             if len(subs) >= 2 and _spread(emb[by_intent[other]]) < _spread(emb[by_intent[n]]):
-                rep.candidates.append(Candidate(intent=n, kind="narrow", others=[other],
-                                                reason=f"one sub-cluster fits the narrower {other}"))
+                rep.candidates.append(
+                    Candidate(
+                        intent=n,
+                        kind="narrow",
+                        others=[other],
+                        reason=f"one sub-cluster fits the narrower {other}",
+                    )
+                )
         elif len(groups) >= 2:
-            far = min(float(gcent[i] @ gcent[j]) for i in range(len(gcent))
-                      for j in range(i + 1, len(gcent)))
+            far = min(
+                float(gcent[i] @ gcent[j])
+                for i in range(len(gcent))
+                for j in range(i + 1, len(gcent))
+            )
             if far < th.split:
-                rep.candidates.append(Candidate(intent=n, kind="split", others=[],
-                                                reason=f"{len(groups)} distant sub-clusters"))
+                rep.candidates.append(
+                    Candidate(
+                        intent=n,
+                        kind="split",
+                        others=[],
+                        reason=f"{len(groups)} distant sub-clusters",
+                    )
+                )
     return rep
 
 
 def render(report: OverlapReport) -> str:
     """Markdown with one table per signal, for Gate 1 and the data review."""
-    out = ["# Overlap review", "", "## Close intents", "", "| a | b | similarity |", "|---|---|---|"]
+    out = [
+        "# Overlap review",
+        "",
+        "## Close intents",
+        "",
+        "| a | b | similarity |",
+        "|---|---|---|",
+    ]
     out += [f"| {p.a} | {p.b} | {p.similarity} |" for p in report.close_pairs]
-    out += ["", "## Suspect labels", "", "| record | labelled | neighbours say | share |",
-            "|---|---|---|---|"]
+    out += [
+        "",
+        "## Suspect labels",
+        "",
+        "| record | labelled | neighbours say | share |",
+        "|---|---|---|---|",
+    ]
     out += [f"| {s.id} | {s.intent} | {s.neighbours_label} | {s.share} |" for s in report.suspects]
     out += ["", "## Paraphrases across intents", "", "| a | b | similarity |", "|---|---|---|"]
-    out += [f"| {p.a_id} ({p.a_intent}) | {p.b_id} ({p.b_intent}) | {p.similarity} |"
-            for p in report.paraphrases]
+    out += [
+        f"| {p.a_id} ({p.a_intent}) | {p.b_id} ({p.b_intent}) | {p.similarity} |"
+        for p in report.paraphrases
+    ]
     out += ["", "## Candidates", "", "| intent | kind | others | reason |", "|---|---|---|---|"]
-    out += [f"| {c.intent} | {c.kind} | {', '.join(c.others)} | {c.reason} |"
-            for c in report.candidates]
+    out += [
+        f"| {c.intent} | {c.kind} | {', '.join(c.others)} | {c.reason} |" for c in report.candidates
+    ]
     return "\n".join(out) + "\n"
 ```
 
@@ -467,8 +548,9 @@ def calibrate(
     point (fewer flags)."""
     best: tuple[float, int, Thresholds] | None = None
     limit = max(1, int(budget * len(expected)))
-    for close, ovl, clu, para in product((0.75, 0.8, 0.85, 0.9, 0.92), (0.75, 0.8, 0.85, 0.9),
-                                         (0.75, 0.8, 0.85), (0.92, 0.95, 0.97)):
+    for close, ovl, clu, para in product(
+        (0.75, 0.8, 0.85, 0.9, 0.92), (0.75, 0.8, 0.85, 0.9), (0.75, 0.8, 0.85), (0.92, 0.95, 0.97)
+    ):
         th = Thresholds(close_pair=close, overlap=ovl, cluster=clu, paraphrase=para)
         rep = analyse(items, emb, th)
         flagged = len(found_pairs(rep))
@@ -548,11 +630,16 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def write_dataset(path: Path) -> None:
-    rows = [("a/1", "hr.payday", "when is pay day"), ("a/2", "hr.payday", "pay day when"),
-            ("b/1", "conversation.kb_payday", "what day is pay day"),
-            ("b/2", "conversation.kb_payday", "pay day date")]
-    path.write_text("".join(json.dumps({"id": i, "intent": n, "text": t}) + "\n"
-                            for i, n, t in rows), encoding="utf-8")
+    rows = [
+        ("a/1", "hr.payday", "when is pay day"),
+        ("a/2", "hr.payday", "pay day when"),
+        ("b/1", "conversation.kb_payday", "what day is pay day"),
+        ("b/2", "conversation.kb_payday", "pay day date"),
+    ]
+    path.write_text(
+        "".join(json.dumps({"id": i, "intent": n, "text": t}) + "\n" for i, n, t in rows),
+        encoding="utf-8",
+    )
 
 
 def test_overlap_on_a_dataset_writes_the_report_and_recall(
@@ -561,11 +648,26 @@ def test_overlap_on_a_dataset_writes_the_report_and_recall(
     data = tmp_path / "d.jsonl"
     write_dataset(data)
     review = tmp_path / "review.md"
-    review.write_text("## Decisions\n\n| Pair | D |\n| --- | --- |\n"
-                      "| hr.payday / conversation.kb_payday | x |\n", encoding="utf-8")
+    review.write_text(
+        "## Decisions\n\n| Pair | D |\n| --- | --- |\n| hr.payday / conversation.kb_payday | x |\n",
+        encoding="utf-8",
+    )
     out = tmp_path / "r.md"
-    assert main(["skills", "overlap", "--dataset", str(data), "--expect", str(review),
-                 "--out", str(out)]) == 0
+    assert (
+        main(
+            [
+                "skills",
+                "overlap",
+                "--dataset",
+                str(data),
+                "--expect",
+                str(review),
+                "--out",
+                str(out),
+            ]
+        )
+        == 0
+    )
     text = out.read_text(encoding="utf-8")
     assert "| conversation.kb_payday | hr.payday |" in text
     assert "recall 1.00 (1/1)" in capsys.readouterr().out
@@ -675,8 +777,13 @@ class Embedder:
         self.max_len = max_len
 
     def encode(self, texts: list[str]) -> dict[str, torch.Tensor]:
-        enc = self.tok([self.prefix + t for t in texts], truncation=True, max_length=self.max_len,
-                       padding=True, return_tensors="pt")
+        enc = self.tok(
+            [self.prefix + t for t in texts],
+            truncation=True,
+            max_length=self.max_len,
+            padding=True,
+            return_tensors="pt",
+        )
         return {"input_ids": enc["input_ids"], "attention_mask": enc["attention_mask"]}
 
     def __call__(self, texts: list[str], batch: int = 64) -> np.ndarray:
@@ -690,8 +797,13 @@ class Embedder:
         return np.concatenate(out).astype(np.float32)
 
 
-def export(model: nn.Module, tok: PreTrainedTokenizerBase, out: Path, output: str = "embedding",
-           max_len: int = MAX_LEN) -> None:
+def export(
+    model: nn.Module,
+    tok: PreTrainedTokenizerBase,
+    out: Path,
+    output: str = "embedding",
+    max_len: int = MAX_LEN,
+) -> None:
     """Writes model.onnx (inputs input_ids, attention_mask; one output) and tokenizer.json with
     truncation pinned at max_len, so the runtime needs neither torch nor transformers."""
     out.mkdir(parents=True, exist_ok=True)
@@ -760,7 +872,9 @@ def overlap_cmd(args: argparse.Namespace) -> int:
             for r in load_records(data / f"{s}.jsonl")
         ]
         model = args.embedding_model or role.embedding_model
-        out = Path(args.out) if args.out else skill_dir(args.role) / "reports" / f"overlap-{stamp}.md"
+        out = (
+            Path(args.out) if args.out else skill_dir(args.role) / "reports" / f"overlap-{stamp}.md"
+        )
     if not args.no_conversation:
         items += [
             Item(id=f"{c.id}/example/{n}", intent=c.id, text=e)
@@ -927,8 +1041,9 @@ def test_knn_cards_load_the_knn_classifier(monkeypatch: pytest.MonkeyPatch) -> N
         def __init__(self, card: ModelCard, safety: set[str]) -> None:
             made.append(card.kind)
 
-    monkeypatch.setitem(__import__("sys").modules, "mia.skills.knn",
-                        type(__import__("sys"))("mia.skills.knn"))
+    monkeypatch.setitem(
+        __import__("sys").modules, "mia.skills.knn", type(__import__("sys"))("mia.skills.knn")
+    )
     __import__("sys").modules["mia.skills.knn"].KnnClassifier = FakeKnn  # type: ignore[attr-defined]
     write_card(card().model_copy(update={"kind": "knn"}))
     (get_settings().MIA_MODELS_DIR / "r" / "ACTIVE").write_text("v1", encoding="utf-8")
@@ -957,9 +1072,14 @@ def test_contrastive_cards_encode_one_joined_text(monkeypatch: pytest.MonkeyPatc
             return [np.array([[2.0, 0.0, 0.0]])]
 
     clf = object.__new__(OnnxClassifier)
-    clf.card = card().model_copy(update={"kind": "contrastive", "prefix": "query: ",
-                                         "labels": ["r.a", "conversation.greeting", "other"],
-                                         "thresholds": {"r.a": 0.5}})
+    clf.card = card().model_copy(
+        update={
+            "kind": "contrastive",
+            "prefix": "query: ",
+            "labels": ["r.a", "conversation.greeting", "other"],
+            "thresholds": {"r.a": 0.5},
+        }
+    )
     clf.safety = set()
     clf.tokenizer = Tok()
     clf.session = Session()
@@ -1102,7 +1222,12 @@ def test_knn_contender_packages_and_classifies(folder: Path) -> None:
     assert card.kind == "knn" and card.version.endswith("-knn") and card.slots == {}
     verify_artifacts(card)
     assert sorted(p.name for p in package_dir("tiny", card.version).iterdir()) == [
-        "card.json", "examples.json", "examples.npy", "model.onnx", "tokenizer.json"]
+        "card.json",
+        "examples.json",
+        "examples.npy",
+        "model.onnx",
+        "tokenizer.json",
+    ]
     c = KnnClassifier(card, safety=set()).classify("sick today, cant come")
     assert c.intent in card.labels and c.version == card.version
     assert (folder / "reports" / f"{card.version}.md").exists()
@@ -1193,7 +1318,9 @@ class KnnClassifier(ScoredClassifier):
 In train.py, extract from `train_role` without changing its behaviour:
 
 ```python
-def load_splits(folder: Path, with_real: bool = False) -> tuple[RoleSpec, list[Record], list[Record], list[Record]]:
+def load_splits(
+    folder: Path, with_real: bool = False
+) -> tuple[RoleSpec, list[Record], list[Record], list[Record]]:
     """role.yaml and the three splits; with_real adds kept or fixed local candidates (D18)."""
     # body: the first lines of train_role up to and including the with_real block
 
@@ -1210,11 +1337,24 @@ def new_package_dir(role_id: str, version: str) -> Path:
     return out
 
 
-def package(*, folder: Path, role: RoleSpec, kind: str, base: str, prefix: str,
-            labels: list[str], slots: dict[str, list[str]], train: list[Record],
-            dev: list[Record], test: list[Record], dev_preds: list[Prediction],
-            test_preds: list[Prediction], curve: dict[int, float], out: Path,
-            version: str) -> ModelCard:
+def package(
+    *,
+    folder: Path,
+    role: RoleSpec,
+    kind: str,
+    base: str,
+    prefix: str,
+    labels: list[str],
+    slots: dict[str, list[str]],
+    train: list[Record],
+    dev: list[Record],
+    test: list[Record],
+    dev_preds: list[Prediction],
+    test_preds: list[Prediction],
+    curve: dict[int, float],
+    out: Path,
+    version: str,
+) -> ModelCard:
     """Calibrates on dev, evaluates on test, gates, hashes ARTIFACTS[kind] in out, writes the
     card and the report. The exported files must already be in out."""
     # body: temperature, thresholds, evaluate, gate, digest and card from train_role,
@@ -1247,8 +1387,9 @@ def _label(r: Record, labels: list[str]) -> str:
     return r.intent if r.intent in labels else OTHER
 
 
-def train_knn(folder: Path, embedding_model: str | None = None, k: int = 3,
-              with_real: bool = False) -> ModelCard:
+def train_knn(
+    folder: Path, embedding_model: str | None = None, k: int = 3, with_real: bool = False
+) -> ModelCard:
     """Frozen embeddings of the train records as the example matrix; no slots, no language."""
     role, train, dev, test = load_splits(folder, with_real)
     labels = role.label_space([c.id for c in catalogue.conversation_intents()])
@@ -1264,9 +1405,15 @@ def train_knn(folder: Path, embedding_model: str | None = None, k: int = 3,
 
     def preds(rs: list[Record]) -> list[Prediction]:
         return [
-            Prediction(record_id=r.id, intent=_label(r, labels), lang=r.lang, kind=r.kind,
-                       style=r.style, labels=labels,
-                       logits=knn_logits(x @ v, ex_labels, len(labels), k))
+            Prediction(
+                record_id=r.id,
+                intent=_label(r, labels),
+                lang=r.lang,
+                kind=r.kind,
+                style=r.style,
+                labels=labels,
+                logits=knn_logits(x @ v, ex_labels, len(labels), k),
+            )
             for r, v in zip(rs, vectors(rs), strict=True)
         ]
 
@@ -1274,12 +1421,26 @@ def train_knn(folder: Path, embedding_model: str | None = None, k: int = 3,
     out = new_package_dir(role.id, version)
     export(emb.model, emb.tok, out)
     np.save(out / "examples.npy", x.astype(np.float32))
-    (out / "examples.json").write_text(json.dumps({"labels": ex_labels.tolist(), "k": k}),
-                                       encoding="utf-8")
-    return package(folder=folder, role=role, kind="knn", base=name, prefix=emb.prefix,
-                   labels=labels, slots={}, train=train, dev=dev, test=test,
-                   dev_preds=preds(dev), test_preds=preds(test), curve={}, out=out,
-                   version=version)
+    (out / "examples.json").write_text(
+        json.dumps({"labels": ex_labels.tolist(), "k": k}), encoding="utf-8"
+    )
+    return package(
+        folder=folder,
+        role=role,
+        kind="knn",
+        base=name,
+        prefix=emb.prefix,
+        labels=labels,
+        slots={},
+        train=train,
+        dev=dev,
+        test=test,
+        dev_preds=preds(dev),
+        test_preds=preds(test),
+        curve={},
+        out=out,
+        version=version,
+    )
 ```
 
 - [ ] **Step 4: Run them to verify they pass**
@@ -1360,7 +1521,9 @@ Expected: FAIL (ModuleNotFoundError: mia.learning.pairs)
 import random
 
 
-def triplets(by_label: dict[str, list[str]], n: int, rng: random.Random) -> list[tuple[str, str, str]]:
+def triplets(
+    by_label: dict[str, list[str]], n: int, rng: random.Random
+) -> list[tuple[str, str, str]]:
     """n (anchor, positive, negative) triplets: anchor and positive share a label with at least
     two texts, the negative has another label. Empty when no such triplet exists."""
     anchors = sorted(k for k, ts in by_label.items() if len(ts) >= 2)
@@ -1396,8 +1559,14 @@ class _Classify(nn.Module):  # type: ignore[misc,unused-ignore]
         return self.head(self.pooled(input_ids, attention_mask))
 
 
-def train_contrastive(folder: Path, embedding_model: str | None = None, steps: int = 200,
-                      head_epochs: int = 50, seed: int = 0, with_real: bool = False) -> ModelCard:
+def train_contrastive(
+    folder: Path,
+    embedding_model: str | None = None,
+    steps: int = 200,
+    head_epochs: int = 50,
+    seed: int = 0,
+    with_real: bool = False,
+) -> ModelCard:
     """SetFit method without the library: triplet fine-tune of the embedding model on train,
     then a linear head on the frozen tuned embeddings. One output, intent_logits."""
     role, train, dev, test = load_splits(folder, with_real)
@@ -1444,18 +1613,38 @@ def train_contrastive(folder: Path, embedding_model: str | None = None, steps: i
         with torch.no_grad():
             logits = head(vectors(rs))
         return [
-            Prediction(record_id=r.id, intent=_label(r, labels), lang=r.lang, kind=r.kind,
-                       style=r.style, labels=labels, logits=row.tolist())
+            Prediction(
+                record_id=r.id,
+                intent=_label(r, labels),
+                lang=r.lang,
+                kind=r.kind,
+                style=r.style,
+                labels=labels,
+                logits=row.tolist(),
+            )
             for r, row in zip(rs, logits, strict=True)
         ]
 
     version = new_version("contrastive")
     out = new_package_dir(role.id, version)
     export(_Classify(emb.model, head), emb.tok, out, output="intent_logits")
-    return package(folder=folder, role=role, kind="contrastive", base=name, prefix=emb.prefix,
-                   labels=labels, slots={}, train=train, dev=dev, test=test,
-                   dev_preds=preds(dev), test_preds=preds(test), curve={}, out=out,
-                   version=version)
+    return package(
+        folder=folder,
+        role=role,
+        kind="contrastive",
+        base=name,
+        prefix=emb.prefix,
+        labels=labels,
+        slots={},
+        train=train,
+        dev=dev,
+        test=test,
+        dev_preds=preds(dev),
+        test_preds=preds(test),
+        curve={},
+        out=out,
+        version=version,
+    )
 ```
 
 Note: `Embedder.encode` adds the prefix; the ONNX runtime path adds it through `embed_text(card.prefix, ...)` (Task 5), so training and serving see the same string.
@@ -1497,15 +1686,21 @@ from tests.learning.helpers import card
 
 def scored(kind: str, f1: float, cov: float, passed: bool = True):  # type: ignore[no-untyped-def]
     c = card(version=f"v1-{kind}")
-    return c.model_copy(update={
-        "kind": kind,
-        "report": c.report.model_copy(update={"macro_f1": f1, "coverage": cov}),
-        "gate": c.gate.model_copy(update={"passed": passed}),
-    })
+    return c.model_copy(
+        update={
+            "kind": kind,
+            "report": c.report.model_copy(update={"macro_f1": f1, "coverage": cov}),
+            "gate": c.gate.model_copy(update={"passed": passed}),
+        }
+    )
 
 
 def test_winner_is_best_macro_f1_among_passing_then_coverage() -> None:
-    a, b, c = scored("encoder", 0.9, 0.8), scored("knn", 0.92, 0.7), scored("contrastive", 0.92, 0.75)
+    a, b, c = (
+        scored("encoder", 0.9, 0.8),
+        scored("knn", 0.92, 0.7),
+        scored("contrastive", 0.92, 0.75),
+    )
     assert choose_winner([a, b, c], role_has_slots=False) is c
 
 
@@ -1556,7 +1751,9 @@ def test_train_kind_dispatches_to_the_contender(
 
 ```python
 # node/tests/learning/test_contenders.py (append)
-def test_bakeoff_trains_three_and_writes_the_report(folder: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bakeoff_trains_three_and_writes_the_report(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from mia.learning import contenders
 
     monkeypatch.setattr(contenders, "EMBEDDING_OVERRIDE", TINY)  # tiny model in tests
@@ -1589,8 +1786,9 @@ def choose_winner(cards: list[ModelCard], role_has_slots: bool) -> ModelCard | N
     return max(ok, key=lambda c: (c.report.macro_f1, c.report.coverage), default=None)
 
 
-def render_bakeoff(cards: list[ModelCard], winner: ModelCard | None,
-                   latency_ms: dict[str, float]) -> str:
+def render_bakeoff(
+    cards: list[ModelCard], winner: ModelCard | None, latency_ms: dict[str, float]
+) -> str:
     rows = [
         "| kind | version | macro F1 | coverage | accuracy | ECE | safety recall | gate | ms |",
         "|---|---|---|---|---|---|---|---|---|",
@@ -1603,9 +1801,19 @@ def render_bakeoff(cards: list[ModelCard], winner: ModelCard | None,
             f"| {latency_ms.get(c.version, float('nan')):.1f} |"
         )
     head = f"Winner: {winner.kind} {winner.version}" if winner else "Winner: none passed the gate"
-    return "\n".join(["# Bake-off", "", head, "", *rows, "",
-                      "No contender is promoted by the bake-off; promote the winner with "
-                      "`mia skills promote <role> <version> --signed-by NAME` after Gate 2.", ""])
+    return "\n".join(
+        [
+            "# Bake-off",
+            "",
+            head,
+            "",
+            *rows,
+            "",
+            "No contender is promoted by the bake-off; promote the winner with "
+            "`mia skills promote <role> <version> --signed-by NAME` after Gate 2.",
+            "",
+        ]
+    )
 ```
 
 In contenders.py:
@@ -1635,15 +1843,20 @@ def _latency_ms(card: ModelCard, texts: list[str]) -> float:
     return statistics.median(times) if times else float("nan")
 
 
-def bakeoff(folder: Path, encoder_epochs: int = 20, contrastive_steps: int = 200
-            ) -> tuple[list[ModelCard], ModelCard | None]:
+def bakeoff(
+    folder: Path, encoder_epochs: int = 20, contrastive_steps: int = 200
+) -> tuple[list[ModelCard], ModelCard | None]:
     """Trains the encoder, nearest-examples and contrastive contenders on the same splits and
     writes reports/bakeoff-<UTC>.md. Promotes nothing."""
     role = load_role(folder / "role.yaml")
     model = EMBEDDING_OVERRIDE or role.embedding_model
     cards = [
-        train_role(folder, base_model=EMBEDDING_OVERRIDE, epochs=encoder_epochs,
-                   seeds=(0,) if EMBEDDING_OVERRIDE else (0, 1, 2)),
+        train_role(
+            folder,
+            base_model=EMBEDDING_OVERRIDE,
+            epochs=encoder_epochs,
+            seeds=(0,) if EMBEDDING_OVERRIDE else (0, 1, 2),
+        ),
         train_knn(folder, embedding_model=model),
         train_contrastive(folder, embedding_model=model, steps=contrastive_steps),
     ]
@@ -1653,7 +1866,8 @@ def bakeoff(folder: Path, encoder_epochs: int = 20, contrastive_steps: int = 200
     stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%d%H%M")
     (folder / "reports").mkdir(exist_ok=True)
     (folder / "reports" / f"bakeoff-{stamp}.md").write_text(
-        render_bakeoff(cards, winner, latency), encoding="utf-8")
+        render_bakeoff(cards, winner, latency), encoding="utf-8"
+    )
     return cards, winner
 ```
 
@@ -1667,8 +1881,10 @@ def bakeoff_cmd(args: argparse.Namespace) -> int:
         return 2
     cards, winner = module.bakeoff(skill_dir(args.role))  # type: ignore[attr-defined]
     for c in cards:
-        print(f"{c.kind} {c.version}: macro F1 {c.report.macro_f1:.3f}, gate "
-              f"{'passed' if c.gate.passed else 'failed'}")
+        print(
+            f"{c.kind} {c.version}: macro F1 {c.report.macro_f1:.3f}, gate "
+            f"{'passed' if c.gate.passed else 'failed'}"
+        )
     print(f"winner: {winner.kind} {winner.version}" if winner else "winner: none")
     return 0
 ```
@@ -1704,8 +1920,13 @@ git commit -m "learning: train --kind and mia skills bakeoff"
 # node/tests/learning/test_skill_files.py (append)
 def test_skill_runs_overlap_and_bakeoff() -> None:
     text = (SKILL / "SKILL.md").read_text()
-    for marker in ("mia skills overlap", "mia skills bakeoff", "merge candidate",
-                   "split candidate", "narrow candidate"):
+    for marker in (
+        "mia skills overlap",
+        "mia skills bakeoff",
+        "merge candidate",
+        "split candidate",
+        "narrow candidate",
+    ):
         assert marker in text
 ```
 
