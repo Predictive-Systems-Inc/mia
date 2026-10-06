@@ -3,7 +3,9 @@
 Rows of `emb` are unit vectors, one per Item, in the same order. Nothing here relabels data: the
 report lists signals and suggested decisions for the developer (D30 rules)."""
 
+import re
 from collections import Counter, defaultdict
+from itertools import combinations, product
 from typing import Literal
 
 import numpy as np
@@ -246,3 +248,67 @@ def render(report: OverlapReport) -> str:
         f"| {c.intent} | {c.kind} | {', '.join(c.others)} | {c.reason} |" for c in report.candidates
     ]
     return "\n".join(out) + "\n"
+
+
+def _intent_id(token: str) -> str:
+    token = token.strip().strip("*`")
+    return token if "." in token else f"conversation.{token}"
+
+
+def review_pairs(markdown: str) -> set[frozenset[str]]:
+    """Intent pairs named in the first column of the "## Decisions" table of a review document
+    ("a / b, c" means a with b and a with c; "a / b / c" means every pair of a, b and c).
+    Parenthesised text and bold markers in the cell are ignored; bare kb_* names are conversation
+    intents."""
+    pairs: set[frozenset[str]] = set()
+    section = markdown.split("## Decisions", 1)[-1].split("\n## ", 1)[0]
+    for line in section.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 2 or "/" not in cells[0] or cells[0].startswith("Pair"):
+            continue
+        first = re.sub(r"\([^)]*\)", "", cells[0]).replace("**", "")
+        sides = [[_intent_id(t) for t in part.split(",")] for part in first.split(" / ")]
+        if len(sides) == 2:
+            pairs |= {frozenset({a, b}) for a, b in product(sides[0], sides[1]) if a != b}
+        else:
+            flat = [x for side in sides for x in side]
+            pairs |= {frozenset({a, b}) for a, b in combinations(flat, 2) if a != b}
+    return pairs
+
+
+def found_pairs(report: OverlapReport) -> set[frozenset[str]]:
+    """Every intent pair any signal links: close pairs, paraphrases, suspects and candidates."""
+    found = {frozenset({p.a, p.b}) for p in report.close_pairs}
+    found |= {frozenset({p.a_intent, p.b_intent}) for p in report.paraphrases}
+    found |= {frozenset({s.intent, s.neighbours_label}) for s in report.suspects}
+    found |= {frozenset({c.intent, o}) for c in report.candidates for o in c.others}
+    return found
+
+
+def recall(report: OverlapReport, expected: set[frozenset[str]]) -> float:
+    """Share of the expected pairs that the report links; 1.0 when nothing is expected."""
+    return len(expected & found_pairs(report)) / len(expected) if expected else 1.0
+
+
+def calibrate(
+    items: list[Item], emb: np.ndarray, expected: set[frozenset[str]], budget: float = 3.0
+) -> tuple[Thresholds, float]:
+    """Grid search for the thresholds with the best recall whose flagged pairs stay within
+    budget x len(expected) (flagging everything would score 1.0); ties keep the stricter grid
+    point (fewer flags). Returns the default thresholds and 0.0 when no grid point fits."""
+    best: tuple[float, int, Thresholds] | None = None
+    limit = max(1, int(budget * len(expected)))
+    for close, ovl, clu, para in product(
+        (0.75, 0.8, 0.85, 0.9, 0.92), (0.75, 0.8, 0.85, 0.9), (0.75, 0.8, 0.85), (0.92, 0.95, 0.97)
+    ):
+        th = Thresholds(close_pair=close, overlap=ovl, cluster=clu, paraphrase=para)
+        rep = analyse(items, emb, th)
+        flagged = len(found_pairs(rep))
+        if flagged > limit:
+            continue
+        key = (recall(rep, expected), -flagged)
+        if best is None or key > (best[0], best[1]):
+            best = (key[0], key[1], th)
+    if best is None:
+        return Thresholds(), 0.0
+    return best[2], best[0]

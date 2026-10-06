@@ -1,6 +1,15 @@
 import numpy as np
 
-from mia.learning.overlap import Item, Thresholds, analyse, render
+from mia.learning.overlap import (
+    Item,
+    Thresholds,
+    analyse,
+    calibrate,
+    found_pairs,
+    recall,
+    render,
+    review_pairs,
+)
 
 
 def unit(*rows: list[float]) -> np.ndarray:
@@ -188,3 +197,66 @@ def test_paraphrases_are_sorted_and_capped_with_total_shown() -> None:
     rep = analyse(items(*["a"] * n, *["b"] * n), emb, TH)
     assert rep.paraphrase_total == n * n and len(rep.paraphrases) == 200
     assert "Showing 200 of 40401." in render(rep)
+
+
+REVIEW = """# Intent overlap review
+
+## Decisions
+
+| Pair | Decision | Rule | Records moved |
+| --- | --- | --- | --- |
+| hr.payday / conversation.kb_payday | removed | 1 | 23 |
+| sales.price_question / kb_prices | removed | 1 | 20 |
+| client_service.update_contact / admin.update_client / bookkeeper.billing_details | one | 3 | 38 |
+| client_service.service_faq / kb_services, kb_pets | removed | 1 | 5 |
+| conversation.kb_cleaning_howto / kb_surface_care (no dilution records) | narrower | n | 9 |
+| **hr.x** / **kb_y** | bold | 1 | 1 |
+
+## Removed records
+| id | text |
+| --- | --- |
+| x/en/1 | not a pair |
+"""
+
+
+def test_review_pairs_parses_the_decisions_table() -> None:
+    assert review_pairs(REVIEW) == {
+        frozenset({"hr.payday", "conversation.kb_payday"}),
+        frozenset({"sales.price_question", "conversation.kb_prices"}),
+        frozenset({"client_service.update_contact", "admin.update_client"}),
+        frozenset({"client_service.update_contact", "bookkeeper.billing_details"}),
+        frozenset({"admin.update_client", "bookkeeper.billing_details"}),
+        frozenset({"client_service.service_faq", "conversation.kb_services"}),
+        frozenset({"client_service.service_faq", "conversation.kb_pets"}),
+        frozenset({"conversation.kb_cleaning_howto", "conversation.kb_surface_care"}),
+        frozenset({"hr.x", "conversation.kb_y"}),
+    }
+
+
+def test_recall_counts_pairs_found_by_any_signal() -> None:
+    its = items("a", "a", "b", "b", "c", "c")
+    emb = unit([1, 0, 0], [1, 0.01, 0], [1, 0.02, 0], [0.99, 0.03, 0], [0, 0, 1], [0, 0.01, 1])
+    rep = analyse(its, emb, TH)
+    assert found_pairs(rep) >= {frozenset({"a", "b"})}
+    assert recall(rep, {frozenset({"a", "b"}), frozenset({"a", "c"})}) == 0.5
+    assert recall(rep, set()) == 1.0
+
+
+def test_calibrate_picks_thresholds_within_the_flag_budget() -> None:
+    its = items("a", "a", "b", "b", "c", "c")
+    emb = unit([1, 0, 0], [1, 0.01, 0], [0.9, 0.44, 0], [0.88, 0.47, 0], [0, 0, 1], [0, 0.01, 1])
+    th, r = calibrate(its, emb, {frozenset({"a", "b"})}, budget=1.0)
+    assert r == 1.0
+    rep = analyse(its, emb, th)
+    assert len(found_pairs(rep)) <= 1
+
+
+def test_calibrate_falls_back_when_nothing_fits_the_budget() -> None:
+    # three near-identical intents: every grid point flags 3 pairs, the limit is 1
+    th, r = calibrate(
+        items("a", "b", "c"),
+        unit([1, 0, 0], [1, 0.01, 0], [1, 0.02, 0]),
+        {frozenset({"a", "b"})},
+        budget=1.0,
+    )
+    assert (th, r) == (Thresholds(), 0.0)
