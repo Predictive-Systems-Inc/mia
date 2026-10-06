@@ -61,7 +61,9 @@ def test_overlap_on_a_dataset_writes_the_report_and_recall(
     text = out.read_text(encoding="utf-8")
     assert "## Ranked pairs (top 1)\n\n| a | b | similarity |\n|---|---|---|\n" in text
     assert "|---|---|---|\n| conversation.kb_payday | hr.payday | " in text
-    assert "recall 1.00 (1/1)" in capsys.readouterr().out
+    line = "recall@40 1.00, recall@80 1.00, recall@120 1.00 (1 findable pairs)\n"
+    assert text.endswith(f"\n{line}")
+    assert capsys.readouterr().out == f"{line}{out}\n"
 
 
 def test_overlap_needs_a_role_or_a_dataset(fake: None, capsys: pytest.CaptureFixture[str]) -> None:
@@ -103,10 +105,12 @@ def test_overlap_names_unfindable_pairs_and_scores_only_findable_ones(
         encoding="utf-8",
     )
     argv = ["skills", "overlap", "--dataset", str(data), "--expect", str(review)]
-    assert main([*argv, "--out", str(tmp_path / "r.md")]) == 0
+    assert main([*argv, "--no-conversation", "--out", str(tmp_path / "r.md")]) == 0
     out = capsys.readouterr().out
-    assert "unfindable: 1 pairs (no records): hr.ghost / hr.payday\n" in out
-    assert "recall 1.00 (1/1)\n" in out
+    lost = "unfindable: 1 pairs (no records): hr.ghost / hr.payday\n"
+    line = "recall@40 1.00, recall@80 1.00, recall@120 1.00 (1 findable pairs)\n"
+    assert out == f"{lost}{line}{tmp_path / 'r.md'}\n"
+    assert (tmp_path / "r.md").read_text(encoding="utf-8").endswith(f"\n{lost}{line}")
 
 
 def test_overlap_for_a_role_without_role_yaml_is_an_error(
@@ -114,6 +118,17 @@ def test_overlap_for_a_role_without_role_yaml_is_an_error(
 ) -> None:
     assert main(["skills", "overlap", "nosuchrole"]) == 1
     assert "role.yaml not found" in capsys.readouterr().out
+
+
+def test_overlap_without_expect_prints_no_recall(
+    fake: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = tmp_path / "d.jsonl"
+    write_dataset(data)
+    out = tmp_path / "r.md"
+    assert main(["skills", "overlap", "--dataset", str(data), "--out", str(out)]) == 0
+    assert capsys.readouterr().out == f"{out}\n"
+    assert "recall" not in out.read_text(encoding="utf-8")
 
 
 def test_overlap_reports_a_missing_dataset(
@@ -159,4 +174,6 @@ def test_overlap_recall_is_not_available_when_nothing_is_findable(
     )
     argv = ["skills", "overlap", "--dataset", str(data), "--expect", str(review)]
     assert main([*argv, "--out", str(tmp_path / "r.md")]) == 0
-    assert "recall n/a (0/0)\n" in capsys.readouterr().out
+    assert "recall@40 n/a, recall@80 n/a, recall@120 n/a (0 findable pairs)\n" in (
+        capsys.readouterr().out
+    )

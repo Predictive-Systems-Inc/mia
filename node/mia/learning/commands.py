@@ -24,7 +24,7 @@ from mia.learning.harvest import harvest
 from mia.learning.overlap import (
     Item,
     analyse,
-    recall,
+    recall_at,
     render,
     review_pairs,
     unfindable,
@@ -347,18 +347,18 @@ def overlap_cmd(args: argparse.Namespace) -> int:
             return 1
         expected = review_pairs(Path(args.expect).read_text(encoding="utf-8"))
     lost = unfindable(expected, {i.intent for i in items})
-    if lost:
-        names = ", ".join(" / ".join(sorted(p)) for p in sorted(lost, key=sorted))
-        print(f"unfindable: {len(lost)} pairs (no records): {names}")
     expected -= lost
-    report = analyse(items, emb)
-    text = render(report)
+    text = render(analyse(items, emb))
     if args.expect:
-        r = recall(report, expected)
-        score = f"{r:.2f}" if expected else "n/a"
-        line = f"recall {score} ({round(r * len(expected))}/{len(expected)})"
-        text += f"\nAgainst {args.expect}: {line}\n"
-        print(line)
+        lines = []
+        if lost:
+            names = ", ".join(" / ".join(sorted(p)) for p in sorted(lost, key=sorted))
+            lines.append(f"unfindable: {len(lost)} pairs (no records): {names}")
+        at = recall_at(items, emb, expected)
+        scores = ", ".join(f"recall@{k} {f'{r:.2f}' if expected else 'n/a'}" for k, r in at.items())
+        lines.append(f"{scores} ({len(expected)} findable pairs)")
+        print("\n".join(lines))
+        text += "\n" + "\n".join(lines) + "\n"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     print(out)
