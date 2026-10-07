@@ -129,3 +129,10 @@ def test_conversation_catalogue_has_safety_intents() -> None:
     ids = {c.id for c in catalogue.conversation_intents()}
     assert "conversation.greeting" in ids
     assert catalogue.safety_ids() and catalogue.safety_ids() <= ids
+    # D31: 93 to 87 after five merges; distress runs the emergency script
+    assert len(ids) == 87
+    assert catalogue.safety_ids() == {
+        "conversation.emergency",
+        "conversation.chemical_exposure",
+        "conversation.distress",
+    }

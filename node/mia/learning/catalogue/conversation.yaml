@@ -11,7 +11,7 @@ intents:
   # ---------------------------------------------------------------- social
   - id: conversation.greeting
     category: social
-    description: Greeting with no request, at any time of day.
+    description: Greeting with no request, at any time of day. A farewell (bye, good night) is conversation.goodbye and laughter alone is conversation.laughter, not a greeting.
     speakers: [all]
     handling: template
     risk: low. A greeting followed by a request is the request, not a greeting.
@@ -24,7 +24,7 @@ intents:
 
   - id: conversation.goodbye
     category: social
-    description: Ending the conversation.
+    description: Ending the conversation. Thanks with no sign of leaving is conversation.thanks, and a hello is conversation.greeting, not goodbye.
     speakers: [all]
     handling: template
     risk: low. Clear pending-question context only if the user leaves explicitly.
@@ -37,16 +37,21 @@ intents:
 
   - id: conversation.thanks
     category: social
-    description: Thanks or appreciation, usually after an answer.
+    description: Thanks, appreciation or praise for Mia or the service, usually after an answer. Thanks that ends the conversation ("gotta go, thanks") is conversation.goodbye, not thanks.
     speakers: [all]
     handling: template
-    risk: low. Never read thanks as confirmation of a pending action.
+    risk: low. Never read thanks as confirmation of a pending action. Praise for a cleaner may be passed on as feedback only if the user asks.
     examples:
       - thanks
       - thank you so much
       - ty!
       - great, thanks a lot
       - appreciate it
+      - you're really helpful
+      - nice, that was quick
+      - good bot
+      - love this
+      - you're smarter than my old boss haha
 
   - id: conversation.apology
     category: social
@@ -73,19 +78,6 @@ intents:
       - you ok mia?
       - what's up
       - busy day for you?
-
-  - id: conversation.compliment
-    category: social
-    description: Praise for Mia or the service.
-    speakers: [all]
-    handling: template
-    risk: low. Praise for a cleaner may be passed on as feedback only if the user asks.
-    examples:
-      - you're really helpful
-      - nice, that was quick
-      - good bot
-      - love this
-      - you're smarter than my old boss haha
 
   - id: conversation.holiday_wishes
     category: social
@@ -115,7 +107,7 @@ intents:
 
   - id: conversation.laughter
     category: social
-    description: Laughter or light reaction without content.
+    description: Laughter or light reaction without content. Yes or OK is conversation.affirm, a hello is conversation.greeting and emoji other than laughing faces are conversation.emoji_only, not laughter.
     speakers: [all]
     handling: template
     risk: low. Reply with nothing or one emoji.
@@ -247,7 +239,7 @@ intents:
   # --------------------------------------------------- conversation management
   - id: conversation.affirm
     category: management
-    description: Yes or OK with no pending question (when a question is pending, the resolver handles it).
+    description: Yes or OK with no pending question (when a question is pending, the resolver handles it). Laughter (haha, lol) is conversation.laughter, not affirm.
     speakers: [all]
     handling: template
     risk: medium. Never approve a risky action unless that exact question was asked last turn.
@@ -310,31 +302,23 @@ intents:
       - send that again
       - repeat the address
 
-  - id: conversation.rephrase_simpler
-    category: management
-    description: Did not understand Mia's reply, wants simpler words.
-    speakers: [all]
-    handling: model_brief
-    risk: low. Rephrase at A2 level; offer the other language.
-    examples:
-      - I don't understand
-      - simple english please
-      - what does that mean
-      - too long, short please
-      - explain again slower
-
   - id: conversation.confusion
     category: management
-    description: Unclear what the user wants; question marks, "huh".
+    description: The user is confused; question marks, "huh", did not understand Mia's reply or asks to say it more simply.
     speakers: [all]
     handling: template
-    risk: low. One clarifying question, then the help menu.
+    risk: low. Offer to say it more simply (A2 level, other language) or ask one clarifying question, then the help menu.
     examples:
       - ???
       - huh
       - what
       - hmm?
       - I'm confused
+      - I don't understand
+      - simple english please
+      - what does that mean
+      - too long, short please
+      - explain again slower
 
   - id: conversation.wait
     category: management
@@ -390,7 +374,7 @@ intents:
 
   - id: conversation.emoji_only
     category: management
-    description: Emoji-only message with no pending question.
+    description: Emoji-only message with no pending question. Laughing faces alone are conversation.laughter, not emoji_only.
     speakers: [all]
     handling: template
     risk: low. With a pending question, 👍 means yes and is resolved by the resolver.
@@ -508,7 +492,7 @@ intents:
 
   - id: conversation.kb_expenses_travel
     category: kb_hr
-    description: Travel between sites, bus cards, mileage, expenses.
+    description: Travel between sites, bus cards, mileage, expenses (staff being paid back). How clients pay Mia's company is conversation.kb_payment_invoicing, not expenses.
     speakers: [cleaner, supervisor]
     handling: kb_company
     risk: low. Money amounts come from KB text, never model estimates.
@@ -691,7 +675,7 @@ intents:
 
   - id: conversation.kb_household_tax_deduction
     category: kb_client
-    description: Finnish household tax deduction (kotitalousvähennys) in general.
+    description: Finnish household tax deduction (kotitalousvähennys) in general. Advice on the sender's own taxes is conversation.tax_personal_advice, not the deduction rules.
     speakers: [client, accountant]
     handling: kb_company
     risk: high. Reviewed KB text per tax year; personal tax advice is declined; invoice labour share by code.
@@ -704,7 +688,7 @@ intents:
 
   - id: conversation.kb_payment_invoicing
     category: kb_client
-    description: Payment methods and invoicing terms in general. A specific invoice is a business intent.
+    description: Payment methods and invoicing terms in general (clients paying the company). A specific invoice is a business intent; staff travel costs and expenses are conversation.kb_expenses_travel, not invoicing.
     speakers: [client, accountant]
     handling: kb_company
     risk: medium.
@@ -731,24 +715,21 @@ intents:
   # ---------------------------------------------------- cleaning knowledge base
   - id: conversation.kb_cleaning_howto
     category: kb_cleaning
-    description: Stain removal and cleaning technique.
-    speakers: [cleaner, client]
+    description: Cleaning technique, stain removal, care of specific materials (parquet, marble, stainless steel, induction hob) and safe use and mixing of chemicals. An exposure that already happened is conversation.chemical_exposure.
+    speakers: [cleaner, client, supervisor]
     handling: kb_cleaning
-    risk: low. Always add "test on a hidden spot".
+    risk: high. Always add "test on a hidden spot"; chemical mixing and protection answers come from the product sheet. Actual exposure goes to conversation.chemical_exposure (emergency).
     examples:
       - how do I get red wine out of a carpet
       - best way to clean limescale in the shower
       - how to remove mould from silicone
       - streaks on the windows how to avoid
       - candle wax on the table how to remove
-
-  - id: conversation.kb_chemical_safety
-    category: kb_cleaning
-    description: Safe use and mixing of chemicals (not an exposure that already happened).
-    speakers: [cleaner, supervisor]
-    handling: kb_cleaning
-    risk: high. Actual exposure goes to conversation.chemical_exposure (emergency).
-    examples:
+      - how to clean oiled parquet
+      - can I use the steam mop on laminate
+      - what's safe for marble countertops
+      - how to clean stainless steel without streaks
+      - induction hob cleaning tips
       - can I mix bleach with the toilet cleaner
       - is it ok to use chlorine without gloves
       - which products can't go together
@@ -781,32 +762,24 @@ intents:
       - is there a data sheet in finnish
       - what PPE does the SDS say for this
 
-  - id: conversation.kb_surface_care
-    category: kb_cleaning
-    description: Care of specific materials (parquet, marble, stainless steel, induction hob).
-    speakers: [cleaner, client]
-    handling: kb_cleaning
-    risk: low.
-    examples:
-      - how to clean oiled parquet
-      - can I use the steam mop on laminate
-      - what's safe for marble countertops
-      - how to clean stainless steel without streaks
-      - induction hob cleaning tips
-
   # ---------------------------------------------------- safety
   - id: conversation.emergency
     category: safety
-    description: Immediate danger to life, health or property.
+    description: Immediate danger to life, health or property, including the user being threatened, followed, held or attacked.
     speakers: [all]
     handling: emergency
-    risk: critical. Pre-check before classifier; numbers first (112 FI, 911 PH); notify supervisor.
+    risk: critical. Pre-check before classifier; numbers first (112 FI, 911 PH); notify supervisor. Do not ask for details first.
     examples:
       - there's a fire in the building
       - client collapsed on the floor help
       - someone's not breathing
       - water everywhere pipe burst and electricity sparking
       - help I fell from the ladder can't move
+      - a man is following me from the bus stop
+      - client is shouting and won't let me leave
+      - someone broke in while I'm cleaning
+      - I'm scared he will hit me
+      - the guy at the site is threatening me
 
   - id: conversation.chemical_exposure
     category: safety
@@ -847,44 +820,23 @@ intents:
       - mould everywhere in the bathroom, smell is bad
       - loose wire hanging in the stairwell
 
-  - id: conversation.personal_threat
-    category: safety
-    description: The user is threatened, followed or attacked.
-    speakers: [cleaner, client]
-    handling: emergency
-    risk: critical. 112/911 first; then supervisor. Do not ask for details first.
-    examples:
-      - a man is following me from the bus stop
-      - client is shouting and won't let me leave
-      - someone broke in while I'm cleaning
-      - I'm scared he will hit me
-      - the guy at the site is threatening me
-
-  - id: conversation.self_harm_risk
-    category: safety
-    description: Suicidal thoughts or self-harm.
-    speakers: [all]
-    handling: emergency
-    risk: critical. Crisis line (MIELI 09 2525 0111, NCMH 1553) and 112/911; warm, short; notify with consent policy.
-    examples:
-      - I don't want to live anymore
-      - thinking of ending it
-      - I want to hurt myself
-      - nobody would care if I disappeared
-      - I can't go on, I want to die
-
   - id: conversation.distress
     category: safety
-    description: Stress, sadness, overwhelm without self-harm signals.
+    description: Stress, sadness, overwhelm, despair, suicidal thoughts or self-harm (D31, one intent with the emergency script).
     speakers: [all]
-    handling: handoff
-    risk: high. Acknowledge, offer to tell supervisor with consent, give support line. No therapy.
+    handling: emergency
+    risk: critical. Crisis line (MIELI 09 2525 0111, NCMH 1553) and 112/911; warm, short; notify with consent policy. No therapy.
     examples:
       - I'm so stressed I can't sleep
       - everything is too much right now
       - I feel so alone here
       - I cried all the way home
       - I'm burned out
+      - I don't want to live anymore
+      - thinking of ending it
+      - I want to hurt myself
+      - nobody would care if I disappeared
+      - I can't go on, I want to die
 
   - id: conversation.harassment_report
     category: safety
@@ -1033,7 +985,7 @@ intents:
 
   - id: conversation.tax_personal_advice
     category: privacy
-    description: Personal tax advice beyond the KB summary.
+    description: Personal tax advice beyond the KB summary. General household deduction rules are conversation.kb_household_tax_deduction, not personal advice.
     speakers: [client, cleaner, accountant]
     handling: decline_redirect
     risk: medium. Point to Vero / BIR; KB summary is fine.
@@ -1299,13 +1251,13 @@ hard_negatives:
     note: profanity inside a real request; serve the request
   - text: I'm dying here it's so hot
     expected: conversation.venting
-    not: conversation.self_harm_risk
+    not: conversation.distress
     note: figure of speech; if unsure, ask a gentle check-in question
   - text: I want to kill this stain
     expected: conversation.kb_cleaning_howto
     not: conversation.threat_by_user
   - text: help, the client is yelling at me and blocking the door
-    expected: conversation.personal_threat
+    expected: conversation.emergency
     not: conversation.help
   - text: can you take my shift on saturday
     expected: find_cover

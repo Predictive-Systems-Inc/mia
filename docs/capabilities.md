@@ -81,8 +81,8 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 ## Client service (Customer service)
 
 Compliments, service questions and general insurance questions go to the shared conversation
-catalogue (conversation.compliment, kb_services, kb_eco_products, kb_pets, kb_insurance_damages;
-D30). Contact and access changes are admin.update_client and admin.update_site; damage claims are
+catalogue (conversation.thanks, kb_services, kb_eco_products, kb_pets, kb_insurance_damages;
+D30, D31). Contact and access changes are admin.update_client and admin.update_site; damage claims are
 site_manager.report_damage. Client service owns the follow-up with the client.
 
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
@@ -257,9 +257,8 @@ Billing detail changes are admin.update_client (D30).
 
 First contact for emergencies, threats, injuries, chemical exposure, hazards, chemical and cleaning
 questions and data subject requests is handled by Mia through the shared conversation catalogue
-(conversation.emergency, personal_threat, injury_minor, chemical_exposure, hazard_report,
-kb_chemical_safety, kb_safety_data_sheet, kb_cleaning_howto, kb_surface_care,
-privacy_rights_request; D30); the site manager owns the follow-up.
+(conversation.emergency, injury_minor, chemical_exposure, hazard_report, kb_safety_data_sheet,
+kb_cleaning_howto, privacy_rights_request; D30, D31); the site manager owns the follow-up.
 
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

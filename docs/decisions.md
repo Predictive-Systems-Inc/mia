@@ -226,3 +226,31 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   conversation intents. Review: docs/research/intent-overlap-review-2026-10-06.md.
 - Consequences: docs/capabilities.md lists no chat area; intents.jsonl is relabelled; the
   classification eval accepts conversation.* ids as labels beside the catalogue ids and `other`.
+
+## D31: Conversation intents merged after the embedding overlap review
+- Context: the overlap review (docs/research/overlap-report-conversation.md and
+  docs/research/intent-overlap-reference.md) showed conversation intents that one message could
+  fairly get either of. One message, one label (D30): the owner decided on 2026-10-07 to merge
+  five groups, so the catalogue goes from 93 to 87 conversation intents.
+
+  | Removed | Survives as | Handling |
+  | --- | --- | --- |
+  | conversation.compliment | conversation.thanks | template (one reply fits both) |
+  | conversation.rephrase_simpler | conversation.confusion | template |
+  | conversation.kb_surface_care, conversation.kb_chemical_safety | conversation.kb_cleaning_howto | kb_cleaning |
+  | conversation.self_harm_risk | conversation.distress | emergency |
+  | conversation.personal_threat | conversation.emergency | emergency |
+
+- Merges among intents with the same handling cost nothing at runtime: the reply was the same
+  either way, and the classifier no longer has to split one meaning in two. The removed intents'
+  examples and records moved to the survivor; survivor descriptions cover both.
+- distress now runs the emergency script (crisis line, 112 or 911, supervisor told) by the
+  owner's decision, so stress and despair get the stronger script rather than risk a missed
+  self-harm message; distress joins safety_ids(). Exposures that already happened stay
+  conversation.chemical_exposure.
+- Kept apart, descriptions sharpened with one clause each saying what the other intent is not:
+  goodbye / thanks, goodbye / greeting, the laughter pairs (affirm, greeting, emoji_only),
+  kb_expenses_travel / kb_payment_invoicing and kb_household_tax_deduction / tax_personal_advice.
+- Consequences: i18n drops conversation.compliment and its label, and the thanks and confusion
+  replies are reworded to fit both meanings; intents.jsonl relabels 42 records; the merged pairs
+  move to "## Merged (D31)" in the overlap reference so recall is not measured on them.

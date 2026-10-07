@@ -3,8 +3,10 @@
 Pairs that a person confirmed as real overlaps (one message could fairly get either label).
 The Decisions table below is what `mia skills overlap --expect` parses (bare kb_* names mean
 conversation.kb_*); recall against it is a reference number, not a bar, because this list is not
-exhaustive. Add a row whenever the owner confirms a new pair. The "## Not overlaps" table keeps
-rejected pairs so they are not asked again.
+exhaustive. Add a row whenever the owner confirms a new pair. The "## Merged (D31)" table keeps
+pairs that became one intent, and the "## Not overlaps" table keeps rejected pairs so they are not
+asked again. Rows above that name removed intents (D30 or D31) are history; the overlap command
+drops pairs it cannot find in the data.
 
 ## Decisions
 
@@ -30,18 +32,29 @@ rejected pairs so they are not asked again.
 | client_service.damage_claim / site_manager.report_damage / kb_insurance_damages | one intent: **site_manager.report_damage** (staff or client sender); general policy questions stay kb_insurance_damages | 3 | 19 to report_damage |
 | site_manager.report_injury / injury_minor, emergency, chemical_exposure | kept only for a supervisor or the office reporting someone else's injury; the injured person's own message goes to the conversation intent | split | 15 to injury_minor, 1 to chemical_exposure, 0 to emergency, 2 ambiguous, 11 new supervisor and office messages |
 | site_manager.chemical_safety / kb_chemical_safety, chemical_exposure, kb_safety_data_sheet | site_manager.chemical_safety removed | split | 9 to kb_chemical_safety, 5 to chemical_exposure, 2 to kb_safety_data_sheet, 1 ambiguous |
-| conversation.kb_cleaning_howto / kb_surface_care | narrower wins: a named material (marble, steel, parquet, leather, induction, vinyl, rubber) is surface care | narrower | 9 to kb_surface_care (no dilution records) |
-| conversation.emergency / personal_threat | narrower wins: the sender is threatened, followed or held | narrower | 4 to personal_threat |
 | purchaser.broken_equipment / conversation.hazard_report | dangerous now (sparks, smoke, hot water leak, unsafe ladder) is a hazard, else broken equipment; rule in both descriptions | narrower | 4 to hazard_report |
 | site_manager.data_breach / dispatcher.lost_key | kept; a physical key alone is lost_key, anything with data (phone, papers, codes) is a breach | 2 | 0 (descriptions sharpened) |
 | admin.reset_login / dispatcher.cannot_access_site | kept; Mia login vs physical site door | 2 | 0, 1 ambiguous ("locked out") |
 | dispatcher.directions / conversation.oos_directions_transport | kept; a company site or visit is dispatcher.directions, anywhere else is out of scope | 2 | 0 (descriptions sharpened) |
-| conversation.compliment / conversation.thanks | owner confirmed 2026-10-06 (overlap tool, top 10) | 1 | 0 |
 | conversation.goodbye / conversation.thanks | owner confirmed 2026-10-06 | 1 | 0 |
-| conversation.confusion / conversation.rephrase_simpler | owner confirmed 2026-10-06 | 1 | 0 |
 | conversation.emergency / conversation.hazard_report | owner confirmed 2026-10-06; sharpen, do not merge (different handling) | 2 | 0 |
 | site_manager.report_damage / site_manager.report_injury | owner confirmed 2026-10-06 | 2 | 0 |
 | admin.update_client / hr.update_details | owner confirmed 2026-10-06; same words, two record types | 3 | 0 |
+
+## Merged (D31)
+
+Pairs that became one intent on 2026-10-07; they are kept here, outside the Decisions table, so
+recall is not measured on pairs that no longer exist. The removed id's records moved to the
+survivor in intents.jsonl.
+
+| Pair | Survivor | Earlier decision | Records moved |
+| --- | --- | --- | --- |
+| conversation.compliment / conversation.thanks | conversation.thanks | owner confirmed 2026-10-06 | 19 |
+| conversation.confusion / conversation.rephrase_simpler | conversation.confusion | owner confirmed 2026-10-06 | 0 |
+| conversation.kb_cleaning_howto / kb_surface_care | conversation.kb_cleaning_howto | narrower wins (D30 review) | 10 |
+| conversation.kb_cleaning_howto / kb_chemical_safety | conversation.kb_cleaning_howto | new (overlap report 2026-10-06) | 9 |
+| conversation.distress / conversation.self_harm_risk | conversation.distress | new (overlap report 2026-10-06) | 0 |
+| conversation.emergency / personal_threat | conversation.emergency | narrower wins (D30 review) | 4 |
 
 ## Not overlaps
 
