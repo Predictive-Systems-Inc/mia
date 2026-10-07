@@ -12,7 +12,14 @@ from transformers import AutoModel, AutoTokenizer, PreTrainedTokenizerBase
 from mia.learning import catalogue
 from mia.learning.gate import check_gate
 from mia.learning.metrics import Prediction, choose_thresholds, evaluate, fit_temperature
-from mia.learning.package import ModelCard, active_version, read_card, write_card
+from mia.learning.package import (
+    ARTIFACTS,
+    Kind,
+    ModelCard,
+    active_version,
+    read_card,
+    write_card,
+)
 from mia.learning.schema import Record, RoleSpec, load_records, load_role
 from mia.settings import get_settings
 
@@ -206,7 +213,7 @@ def _report(card: ModelCard, curve: dict[int, float]) -> str:
     lines = [
         f"# {card.role} {card.version}",
         "",
-        f"Base model: {card.base_model}. Data hash: {card.data_hash}.",
+        f"Kind: {card.kind}. Base model: {card.base_model}. Data hash: {card.data_hash}.",
         f"Gate: {'passed' if card.gate.passed else 'failed'}",
         *(f"- {f}" for f in card.gate.failures),
         "",
@@ -228,9 +235,15 @@ def _report(card: ModelCard, curve: dict[int, float]) -> str:
             for k, s in rep.per_intent.items()
         ),
         "",
-        "Learning curve (share of train: test accuracy): "
-        + ", ".join(f"{k}%: {v:.3f}" for k, v in curve.items()),
-        "",
+        *(
+            [
+                "Learning curve (share of train: test accuracy): "
+                + ", ".join(f"{k}%: {v:.3f}" for k, v in curve.items()),
+                "",
+            ]
+            if curve
+            else []
+        ),
         "Most confused: " + "; ".join(f"{a} -> {b} ({n})" for a, b, n in rep.confusions[:10]),
         "",
         "Sign-off: pending (mia skills promote ... --signed-by NAME)",
@@ -238,15 +251,11 @@ def _report(card: ModelCard, curve: dict[int, float]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def train_role(
-    folder: Path,
-    base_model: str | None = None,
-    with_real: bool = False,
-    seeds: tuple[int, ...] = (0, 1, 2),
-    epochs: int = 20,
-) -> ModelCard:
+def load_splits(
+    folder: Path, with_real: bool = False
+) -> tuple[RoleSpec, list[Record], list[Record], list[Record]]:
+    """role.yaml and the three splits; with_real adds kept or fixed local candidates (D18)."""
     role = load_role(folder / "role.yaml")
-    base = base_model or role.base_model
     data = folder / "data"
     train, dev, test = (load_records(data / f"{s}.jsonl") for s in ("train", "dev", "test"))
     if with_real:
@@ -258,40 +267,59 @@ def train_role(
         )
         train += [r for r in approved if r.split == "train"]
         dev += [r for r in approved if r.split == "dev"]
+    return role, train, dev, test
+
+
+def new_version(kind: str = "encoder") -> str:
+    """v<UTC YYYYMMDDHHMM>, with -<kind> appended for every kind but encoder."""
+    stamp = "v" + dt.datetime.now(dt.UTC).strftime("%Y%m%d%H%M")
+    return stamp if kind == "encoder" else f"{stamp}-{kind}"
+
+
+def new_package_dir(role_id: str, version: str) -> Path:
+    """The (not yet created) package directory; raises FileExistsError if it already exists."""
+    out = get_settings().MIA_MODELS_DIR / role_id / version
+    if out.exists():
+        raise FileExistsError(f"{role_id}@{version} already exists; refusing to overwrite")
+    return out
+
+
+def package(
+    *,
+    folder: Path,
+    role: RoleSpec,
+    kind: Kind,
+    base: str,
+    prefix: str,
+    labels: list[str],
+    slots: dict[str, list[str]],
+    train: list[Record],
+    dev: list[Record],
+    test: list[Record],
+    dev_preds: list[Prediction],
+    test_preds: list[Prediction],
+    curve: dict[int, float],
+    out: Path,
+    version: str,
+) -> ModelCard:
+    """Calibrates on dev, evaluates on test, gates, hashes ARTIFACTS[kind] in out, writes the
+    card and the report. The exported files must already be in out."""
     conversation = {c.id: c.handling for c in catalogue.conversation_intents()}
-    labels = role.label_space(list(conversation))
-    slots = _slot_values(role, train)
-    tok = AutoTokenizer.from_pretrained(base)
-    runs = [_fit(base, tok, labels, slots, train, dev, s, epochs) for s in seeds]
-    model, _ = min(runs, key=lambda x: x[1])
-    dev_preds = _predict(model, tok, dev, labels)
     temperature = fit_temperature(dev_preds)
     thresholds = choose_thresholds(dev_preds, role, temperature, conversation)
-    safety = catalogue.safety_ids()
     report = evaluate(
-        _predict(model, tok, test, labels), role, thresholds, temperature, safety, conversation
+        test_preds, role, thresholds, temperature, catalogue.safety_ids(), conversation
     )
     previous = active_version(role.id)
     gate = check_gate(report, role, read_card(role.id, previous).report if previous else None)
-    curve: dict[int, float] = {}
-    for share in (25, 50, 75):
-        part = random.Random(0).sample(train, max(1, len(train) * share // 100))
-        m, _ = _fit(base, tok, labels, slots, part, dev, seeds[0], max(1, epochs // 2))
-        curve[share] = evaluate(
-            _predict(m, tok, test, labels), role, thresholds, temperature, safety, conversation
-        ).accuracy
-    curve[100] = report.accuracy
-    version = "v" + dt.datetime.now(dt.UTC).strftime("%Y%m%d%H%M")
     digest = hashlib.sha256(
         "".join(r.model_dump_json() for r in train + dev + test).encode()
     ).hexdigest()[:16]
-    out = get_settings().MIA_MODELS_DIR / role.id / version
-    if out.exists():
-        raise FileExistsError(f"{role.id}@{version} already exists; refusing to overwrite")
-    _export(model, tok, out, slots)
     card = ModelCard(
         role=role.id,
         version=version,
+        kind=kind,
+        prefix=prefix,
         base_model=base,
         data_hash=digest,
         temperature=temperature,
@@ -303,12 +331,60 @@ def train_role(
         thresholds=thresholds,
         report=report,
         gate=gate,
-        artifacts={
-            n: hashlib.sha256((out / n).read_bytes()).hexdigest()
-            for n in ("model.onnx", "tokenizer.json")
-        },
+        artifacts={n: hashlib.sha256((out / n).read_bytes()).hexdigest() for n in ARTIFACTS[kind]},
     )
     write_card(card)
     (folder / "reports").mkdir(exist_ok=True)
     (folder / "reports" / f"{version}.md").write_text(_report(card, curve), encoding="utf-8")
     return card
+
+
+def train_role(
+    folder: Path,
+    base_model: str | None = None,
+    with_real: bool = False,
+    seeds: tuple[int, ...] = (0, 1, 2),
+    epochs: int = 20,
+) -> ModelCard:
+    role, train, dev, test = load_splits(folder, with_real)
+    base = base_model or role.base_model
+    conversation = {c.id: c.handling for c in catalogue.conversation_intents()}
+    labels = role.label_space(list(conversation))
+    slots = _slot_values(role, train)
+    tok = AutoTokenizer.from_pretrained(base)
+    runs = [_fit(base, tok, labels, slots, train, dev, s, epochs) for s in seeds]
+    model, _ = min(runs, key=lambda x: x[1])
+    dev_preds = _predict(model, tok, dev, labels)
+    test_preds = _predict(model, tok, test, labels)
+    # The curve needs the same calibration package() derives (deterministic from dev_preds).
+    temperature = fit_temperature(dev_preds)
+    thresholds = choose_thresholds(dev_preds, role, temperature, conversation)
+    safety = catalogue.safety_ids()
+    curve: dict[int, float] = {}
+    for share in (25, 50, 75):
+        part = random.Random(0).sample(train, max(1, len(train) * share // 100))
+        m, _ = _fit(base, tok, labels, slots, part, dev, seeds[0], max(1, epochs // 2))
+        curve[share] = evaluate(
+            _predict(m, tok, test, labels), role, thresholds, temperature, safety, conversation
+        ).accuracy
+    curve[100] = evaluate(test_preds, role, thresholds, temperature, safety, conversation).accuracy
+    version = new_version()
+    out = new_package_dir(role.id, version)
+    _export(model, tok, out, slots)
+    return package(
+        folder=folder,
+        role=role,
+        kind="encoder",
+        base=base,
+        prefix="",
+        labels=labels,
+        slots=slots,
+        train=train,
+        dev=dev,
+        test=test,
+        dev_preds=dev_preds,
+        test_preds=test_preds,
+        curve=curve,
+        out=out,
+        version=version,
+    )

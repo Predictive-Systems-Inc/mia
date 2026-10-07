@@ -1,6 +1,5 @@
 """Load each role's active model and classify messages (spec section 5, runtime)."""
 
-import importlib
 import logging
 from functools import lru_cache
 from typing import Literal, Protocol
@@ -124,10 +123,9 @@ def _load(role: str, version: str) -> Classifier:
     try:
         card = read_card(role, version)
         if card.kind == "knn":
-            # Task 6 adds the module; imported by name so mypy does not need it yet.
-            knn = importlib.import_module("mia.skills.knn")
-            classifier: Classifier = knn.KnnClassifier(card, safety=catalogue.safety_ids())
-            return classifier
+            from mia.skills.knn import KnnClassifier
+
+            return KnnClassifier(card, safety=catalogue.safety_ids())
         from mia.skills.onnx import OnnxClassifier
 
         return OnnxClassifier(card, safety=catalogue.safety_ids())
