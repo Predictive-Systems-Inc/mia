@@ -106,6 +106,9 @@ real records; on a cloud GPU only with synthetic or scrubbed data, D27). For the
 the base-model bake-off with `--base-model` for jhu-clsp/mmBERT-small, jhu-clsp/mmBERT-base,
 FacebookAI/xlm-roberta-base and intfloat/multilingual-e5-base, and compare per-language
 accuracy, ECE and CPU latency.
+Other kinds: `uv run mia skills train <role> --kind knn --embedding-model <model>` (or
+`--kind contrastive`). `uv run mia skills bakeoff <role>` trains the encoder, knn and contrastive
+kinds and writes reports/bakeoff-<UTC>.md; it promotes nothing.
 
 ## 8. Explain the report
 Read reports/<version>.md. If the gate failed: list the weakest intent by language by style

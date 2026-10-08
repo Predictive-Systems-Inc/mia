@@ -1,7 +1,10 @@
 """Embedding contenders for the bake-off (spec embedding review section 4); learning group."""
 
+import datetime as dt
 import json
 import random
+import statistics
+import time
 from pathlib import Path
 
 import numpy as np
@@ -9,14 +12,20 @@ import torch
 from torch import nn
 
 from mia.learning import catalogue
+from mia.learning.bakeoff import choose_winner, render_bakeoff
 from mia.learning.embed import Embedder, export
 from mia.learning.metrics import Prediction
 from mia.learning.package import ModelCard
 from mia.learning.pairs import triplets
-from mia.learning.schema import OTHER, Record
-from mia.learning.train import load_splits, new_package_dir, new_version, package
-from mia.skills.knn import knn_logits
+from mia.learning.schema import OTHER, Record, load_role
+from mia.learning.train import load_splits, new_package_dir, new_version, package, train_role
+from mia.skills.knn import KnnClassifier, knn_logits
+from mia.skills.onnx import OnnxClassifier
 from mia.skills.runtime import embed_text
+
+# Tests only: a tiny embedding model for every contender (encoder base model included).
+# Production leaves it None and uses role.yaml (embedding_model) and the encoder's default.
+EMBEDDING_OVERRIDE: str | None = None
 
 
 def _label(r: Record, labels: list[str]) -> str:
@@ -183,3 +192,43 @@ def train_contrastive(
         out=out,
         version=version,
     )
+
+
+def _latency_ms(card: ModelCard, texts: list[str]) -> float:
+    """Median ms per classify over up to 20 texts through the node's runtime class; nan if none."""
+    clf = KnnClassifier(card, set()) if card.kind == "knn" else OnnxClassifier(card, set())
+    times = []
+    for t in texts[:20]:
+        start = time.perf_counter()
+        clf.classify(t)
+        times.append((time.perf_counter() - start) * 1000)
+    return statistics.median(times) if times else float("nan")
+
+
+def bakeoff(
+    folder: Path, encoder_epochs: int = 20, contrastive_steps: int = 200
+) -> tuple[list[ModelCard], ModelCard | None]:
+    """Trains the encoder, nearest-examples and contrastive contenders on the same splits and
+    writes reports/bakeoff-<UTC>.md. Returns the cards in that order and the winner. Promotes
+    nothing."""
+    role = load_role(folder / "role.yaml")
+    model = EMBEDDING_OVERRIDE or role.embedding_model
+    cards = [
+        train_role(
+            folder,
+            base_model=EMBEDDING_OVERRIDE,
+            epochs=encoder_epochs,
+            seeds=(0,) if EMBEDDING_OVERRIDE else (0, 1, 2),
+        ),
+        train_knn(folder, embedding_model=model),
+        train_contrastive(folder, embedding_model=model, steps=contrastive_steps),
+    ]
+    winner = choose_winner(cards, role_has_slots=any(i.slots for i in role.intents))
+    _, _, _, test = load_splits(folder)
+    latency = {c.version: _latency_ms(c, [r.text for r in test]) for c in cards}
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%d%H%M")
+    (folder / "reports").mkdir(exist_ok=True)
+    (folder / "reports" / f"bakeoff-{stamp}.md").write_text(
+        render_bakeoff(cards, winner, latency), encoding="utf-8"
+    )
+    return cards, winner

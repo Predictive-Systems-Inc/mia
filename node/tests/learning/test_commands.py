@@ -270,3 +270,87 @@ def test_train_prints_the_gate_result(
     )
     assert main(["skills", "train", "tr"]) == 0
     assert capsys.readouterr().out == "tr@v8: gate passed\n"
+
+
+def test_train_kind_dispatches_to_the_contender(
+    skill: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls: list[tuple[str, Path, str | None, bool]] = []
+    modules: list[str] = []
+
+    def fake(kind: str, version: str):  # type: ignore[no-untyped-def]
+        def run(folder: Path, embedding_model: str | None = None, with_real: bool = False):  # type: ignore[no-untyped-def]
+            calls.append((kind, folder, embedding_model, with_real))
+            return card(version)
+
+        return run
+
+    def load(name: str) -> object:
+        modules.append(name)
+        return SimpleNamespace(
+            train_knn=fake("knn", "v1-knn"), train_contrastive=fake("contrastive", "v1-c")
+        )
+
+    monkeypatch.setattr(commands, "import_module", load)
+    assert main(["skills", "train", "tr", "--kind", "knn", "--embedding-model", "m"]) == 0
+    assert capsys.readouterr().out == "tr@v1-knn: gate passed\n"
+    assert main(["skills", "train", "tr", "--kind", "contrastive", "--with-real"]) == 0
+    assert capsys.readouterr().out == "tr@v1-c: gate passed\n"
+    assert calls == [("knn", skill, "m", False), ("contrastive", skill, None, True)]
+    assert modules == ["mia.learning.contenders", "mia.learning.contenders"]
+
+
+def test_train_rejects_an_unknown_kind_and_kind_encoder_trains_the_encoder(
+    skill: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        main(["skills", "train", "tr", "--kind", "svm"])
+    capsys.readouterr()
+    seen: list[str] = []
+
+    def load(name: str) -> object:
+        seen.append(name)
+        return SimpleNamespace(train_role=lambda *a, **k: card("v9"))
+
+    monkeypatch.setattr(commands, "import_module", load)
+    assert main(["skills", "train", "tr", "--kind", "encoder"]) == 0
+    assert capsys.readouterr().out == "tr@v9: gate passed\n"
+    assert seen == ["mia.learning.train"]
+
+
+def test_bakeoff_prints_each_contender_and_the_winner(
+    skill: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    a = card("v1").model_copy(update={"kind": "encoder"})
+    b = card("v1-knn", passed=False).model_copy(update={"kind": "knn"})
+    folders: list[Path] = []
+
+    def bakeoff(folder: Path) -> tuple[list[ModelCard], ModelCard | None]:
+        folders.append(folder)
+        return [a, b], a
+
+    monkeypatch.setattr(commands, "import_module", lambda name: SimpleNamespace(bakeoff=bakeoff))
+    assert main(["skills", "bakeoff", "tr"]) == 0
+    assert capsys.readouterr().out == (
+        "encoder v1: macro F1 1.000, gate passed\n"
+        "knn v1-knn: macro F1 1.000, gate failed\n"
+        "winner: encoder v1\n"
+    )
+    assert folders == [skill]
+    monkeypatch.setattr(
+        commands, "import_module", lambda name: SimpleNamespace(bakeoff=lambda f: ([b], None))
+    )
+    assert main(["skills", "bakeoff", "tr"]) == 0
+    assert capsys.readouterr().out.splitlines()[-1] == "winner: none"
+
+
+def test_bakeoff_missing_learning_package_gives_the_hint(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def raiser(name: str) -> object:
+        raise ModuleNotFoundError("No module named 'torch'", name="torch")
+
+    monkeypatch.setattr(commands, "import_module", raiser)
+    assert main(["skills", "bakeoff", "dispatcher"]) == 2
+    assert main(["skills", "train", "dispatcher", "--kind", "knn"]) == 2
+    assert capsys.readouterr().out == ("install the learning group: uv sync --group learning\n" * 2)

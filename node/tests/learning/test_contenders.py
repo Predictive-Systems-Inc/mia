@@ -92,15 +92,21 @@ def test_knn_runtime_matches_training_embeddings(
 
     from mia.learning.contenders import train_knn
     from mia.learning.embed import Embedder
+    from mia.learning.train import load_splits
     from mia.skills.knn import KnnClassifier, knn_logits
     from mia.skills.runtime import embed_text
 
+    monkeypatch.setattr("mia.learning.embed.prefix_for", lambda _n: "query: ")
     card = train_knn(folder, embedding_model=TINY)
+    assert card.prefix == "query: "
     clf = KnnClassifier(card, safety=set())
     emb = Embedder(TINY)
     assert len(emb.tok(embed_text("", LONG, CONTEXT))["input_ids"]) > 96
     v = clf.embed(embed_text(card.prefix, LONG, CONTEXT))
     assert np.allclose(v, emb([embed_text("", LONG, CONTEXT)])[0], atol=1e-5)
+    r0 = load_splits(folder)[1][0]
+    first = clf.embed(embed_text(card.prefix, r0.text, r0.context))
+    assert np.allclose(clf.examples[0], first, atol=1e-5)
     seen = _spy_logits(clf, monkeypatch)
     clf.classify(LONG, CONTEXT)
     assert seen == [knn_logits(clf.examples @ v, clf.example_labels, len(card.labels), clf.k)]
@@ -144,10 +150,12 @@ def test_contrastive_onnx_matches_the_torch_head(
         real_export(model, tok, out, **kw)  # type: ignore[arg-type]
 
     monkeypatch.setattr(contenders, "export", capture)
+    monkeypatch.setattr("mia.learning.embed.prefix_for", lambda _n: "query: ")
     card = contenders.train_contrastive(folder, embedding_model=TINY, steps=4, head_epochs=2)
+    assert card.prefix == "query: "
     model, tok = exported[0]
     enc = tok(  # type: ignore[operator]
-        [card.prefix + embed_text("", LONG, CONTEXT)],
+        [embed_text(card.prefix, LONG, CONTEXT)],
         truncation=True,
         max_length=96,
         return_tensors="pt",
@@ -187,5 +195,36 @@ def test_a_failed_prediction_leaves_no_version_dir(
 
     monkeypatch.setattr(contenders, "Prediction", boom)
     with pytest.raises(RuntimeError, match="^prediction failed$"):
-        getattr(contenders, trainer)(folder, embedding_model=TINY)
+        kw = {"steps": 4, "head_epochs": 2} if trainer == "train_contrastive" else {}
+        getattr(contenders, trainer)(folder, embedding_model=TINY, **kw)
     assert not (get_settings().MIA_MODELS_DIR / "tiny").exists()
+
+
+def test_bakeoff_trains_three_and_writes_the_report(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mia.learning import contenders
+    from mia.learning.bakeoff import choose_winner, render_bakeoff
+    from mia.learning.package import active_version
+
+    timed: list[str] = []
+    real_latency = contenders._latency_ms
+
+    def latency(card: object, texts: list[str]) -> float:
+        timed.append(card.kind)  # type: ignore[attr-defined]
+        assert len(texts) == 14  # every test record of the fixture
+        real_latency(card, texts)  # type: ignore[arg-type]
+        return 1.0
+
+    monkeypatch.setattr(contenders, "EMBEDDING_OVERRIDE", TINY)  # tiny model in tests
+    monkeypatch.setattr(contenders, "_latency_ms", latency)
+    cards, winner = contenders.bakeoff(folder, encoder_epochs=1, contrastive_steps=4)
+    assert [c.kind for c in cards] == ["encoder", "knn", "contrastive"]
+    assert all(c.base_model == TINY for c in cards)
+    assert timed == ["encoder", "knn", "contrastive"]
+    assert winner is choose_winner(cards, role_has_slots=True)  # the fixture has a slot intent
+    reports = list((folder / "reports").glob("bakeoff-*.md"))
+    assert len(reports) == 1
+    expected = render_bakeoff(cards, winner, {c.version: 1.0 for c in cards})
+    assert reports[0].read_text(encoding="utf-8") == expected
+    assert active_version("tiny") is None

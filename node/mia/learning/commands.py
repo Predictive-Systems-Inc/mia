@@ -138,16 +138,40 @@ def _learning_module(name: str) -> Any:
 
 
 def train(args: argparse.Namespace) -> int:
-    """Runs mia.learning.train, or prints the install hint and returns 2 when it is missing."""
-    module = _learning_module("mia.learning.train")
-    if module is None:
-        return 2
-    card = module.train_role(
-        skill_dir(args.role), base_model=args.base_model, with_real=args.with_real
-    )
+    """Trains one kind: encoder through mia.learning.train (--base-model), knn or contrastive
+    through mia.learning.contenders (--embedding-model). Prints the install hint and returns 2
+    when the learning group is missing."""
+    folder = skill_dir(args.role)
+    if args.kind == "encoder":
+        module = _learning_module("mia.learning.train")
+        if module is None:
+            return 2
+        card = module.train_role(folder, base_model=args.base_model, with_real=args.with_real)
+    else:
+        module = _learning_module("mia.learning.contenders")
+        if module is None:
+            return 2
+        card = getattr(module, f"train_{args.kind}")(
+            folder, embedding_model=args.embedding_model, with_real=args.with_real
+        )
     print(f"{card.role}@{card.version}: gate {'passed' if card.gate.passed else 'failed'}")
     for f in card.gate.failures:
         print(f"  {f}")
+    return 0
+
+
+def bakeoff_cmd(args: argparse.Namespace) -> int:
+    """Trains every contender for the role and writes the comparison; promotes nothing."""
+    module = _learning_module("mia.learning.contenders")
+    if module is None:
+        return 2
+    cards, winner = module.bakeoff(skill_dir(args.role))
+    for c in cards:
+        print(
+            f"{c.kind} {c.version}: macro F1 {c.report.macro_f1:.3f}, gate "
+            f"{'passed' if c.gate.passed else 'failed'}"
+        )
+    print(f"winner: {winner.kind} {winner.version}" if winner else "winner: none")
     return 0
 
 
@@ -378,9 +402,14 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.set_defaults(func=split)
     p = skills.add_parser("train", help="train, calibrate, evaluate and package")
     p.add_argument("role")
-    p.add_argument("--base-model", default=None)
+    p.add_argument("--kind", choices=["encoder", "knn", "contrastive"], default="encoder")
+    p.add_argument("--base-model", default=None, help="encoder kind")
+    p.add_argument("--embedding-model", default=None, help="knn and contrastive kinds")
     p.add_argument("--with-real", action="store_true")
     p.set_defaults(func=train)
+    p = skills.add_parser("bakeoff", help="train every kind and compare; promotes nothing")
+    p.add_argument("role")
+    p.set_defaults(func=bakeoff_cmd)
     p = skills.add_parser("promote", help="make a signed, gate-passing version active")
     p.add_argument("role")
     p.add_argument("version")
