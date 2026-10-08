@@ -182,3 +182,18 @@ def test_record_equal_to_a_conversation_example_is_a_warning() -> None:
         role(train=0, dev=0, test=0), recs, [], conversation_examples=["good morning mia"]
     )
     assert "r/1 equals a conversation.yaml example: 'Good morning, Mia!'" in report.warnings
+
+
+def test_punctuation_only_texts_do_not_clash() -> None:
+    recs = [rec(1, "??", "train"), rec(2, "...", "train", intent="other", kind="other")]
+    report = check_records(role(train=0, dev=0, test=0), recs, conversation=[])
+    assert [e for e in report.errors if "two intents" in e] == []
+    word = [rec(1, "ok?", "train"), rec(2, "ok...", "train", intent="other", kind="other")]
+    errors = check_records(role(train=0, dev=0, test=0), word, conversation=[]).errors
+    assert "same text with two intents: 'ok' (other, r.a)" in errors
+
+
+def test_punctuation_only_text_does_not_equal_a_punctuation_example() -> None:
+    recs = [rec(1, "??", "train")]
+    report = check_records(role(train=0, dev=0, test=0), recs, [], conversation_examples=["..."])
+    assert [w for w in report.warnings if "conversation.yaml example" in w] == []

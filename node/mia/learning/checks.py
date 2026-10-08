@@ -73,7 +73,8 @@ def _check_one_text_one_intent(records: list[Record], report: CheckReport) -> No
     intents: dict[str, set[str]] = defaultdict(set)
     for r in records:
         intents[normalize(r.text)].add(r.intent)
-    clashes = [(t, sorted(i)) for t, i in intents.items() if len(i) > 1]
+    # punctuation-only texts normalise to "" and say nothing about the label
+    clashes = [(t, sorted(i)) for t, i in intents.items() if t and len(i) > 1]
     for text, ids in clashes[:5]:  # ponytail: five examples keep the output readable
         report.errors.append(f"same text with two intents: {text!r} ({', '.join(ids)})")
 
@@ -81,7 +82,7 @@ def _check_one_text_one_intent(records: list[Record], report: CheckReport) -> No
 def _check_conversation_examples(
     records: list[Record], examples: Iterable[str], report: CheckReport
 ) -> None:
-    known = {normalize(e) for e in examples}
+    known = {normalize(e) for e in examples} - {""}
     for r in records:
         if normalize(r.text) in known:
             report.warnings.append(f"{r.id} equals a conversation.yaml example: {r.text!r}")
