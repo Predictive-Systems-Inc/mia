@@ -88,6 +88,8 @@ messages, then runs:
     uv run mia skills promote <role> <version> --signed-by "Name"
     uv run mia skills harvest <role>     # on the node: clarification choices to candidates
     uv run mia skills generate <role> --model ROUTE --split train|test   # teacher generation
+    uv run mia skills overlap <role>     # ranked overlap review of intents (learning group)
+    uv run mia skills bakeoff <role>     # train encoder, knn, contrastive; compare; promotes nothing
 
 Harvested candidates stay in `MIA_LEARNING_DIR/<role>/candidates.jsonl` on the node. If a stale
 Hugging Face token gives 401 errors when training, set `HF_HUB_DISABLE_IMPLICIT_TOKEN=1`.

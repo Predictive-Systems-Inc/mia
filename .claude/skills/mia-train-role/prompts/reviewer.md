@@ -18,6 +18,9 @@ Overlap (one message, one label): list, never silently relabel, the records that
 intent better (the narrower intent wins), that are word-for-word conversation.yaml examples, or
 that would get two labels. Give the record id, the other intent and the rule from guidelines.md.
 
+The overlap report's suspect labels and paraphrases are listed for the developer the same way,
+never relabelled; apply the "same action?" test (guidelines.md) before listing a flagged pair.
+
 Then list what is missing per intent: situations, counterparts, phrasings, styles and
 languages, so the missing cells can be generated and reviewed.
 

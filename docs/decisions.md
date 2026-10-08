@@ -259,3 +259,18 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   merged confusion intent keeps rephrase_simpler's model_brief handling (the model rephrases
   its last answer), not the template, so "say it more simply" still works; its template
   reply key is removed.
+
+## D32: Embedding overlap review and the three-contender bake-off
+- Context: the D30 review found overlapping intents by reading. The embedding review
+  (docs/superpowers/specs/2026-10-06-embedding-review-design.md) measures it, and a bake-off tests
+  whether embedding classifiers can match the fine-tuned encoder.
+- Decision: the default embedding model is intfloat/multilingual-e5-small; no new dependency
+  (transformers, torch and numpy from the learning group). `mia skills overlap` is a ranked review
+  aid, not a gate: owner-judged precision 6/10 at the top 10, recall@40/80/120 = 0.39/0.46/0.57
+  against 46 reference pairs (docs/research/overlap-calibration-2026-10-06.md). The trained
+  classifier's confusion list is the authoritative overlap signal. `mia skills bakeoff <role>`
+  trains the encoder, nearest-examples and contrastive contenders; the winner is the gate passer
+  with the best macro F1, then coverage, and the encoder only for roles with slots. Nothing is
+  promoted by the bake-off; Gate 2 and `promote` stay with the developer.
+- Consequences: the skill and guidelines carry the "same action?" test; the reviewer lists suspect
+  labels and paraphrases and never relabels; nothing is merged automatically.

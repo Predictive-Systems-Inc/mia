@@ -84,3 +84,15 @@ def test_every_command_and_flag_in_skill_exists_in_the_cli() -> None:
     assert seen == set(parsers)
     assert "candidates.jsonl" in text
     assert "--with-real" in text
+
+
+def test_skill_runs_overlap_and_bakeoff() -> None:
+    text = (SKILL / "SKILL.md").read_text()
+    for marker in (
+        "mia skills overlap",
+        "mia skills bakeoff",
+        "merge candidate",
+        "split candidate",
+        "narrow candidate",
+    ):
+        assert marker in text

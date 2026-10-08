@@ -1,7 +1,7 @@
 # Embedding review and embedding classifiers (addition to the skill models spec)
 
 Date: 2026-10-06. Extends docs/superpowers/specs/2026-10-06-skill-models-design.md sections 4, 5
-and 6. Status: proposed, for the owner's review.
+and 6. Status: accepted.
 
 ## 1. Goal
 Measure intent overlap instead of finding it by reading (the D30 review found about 25
@@ -40,10 +40,15 @@ catalogue examples; writes `<role>/skill/reports/overlap-<UTC>.md`; changes noth
    D30 rules). The skill shows it at Gate 1 and again after the data review; the developer
    decides; nothing is relabelled automatically.
 
-Thresholds start as defaults and are calibrated once on the pre-review dataset
-(node/tests/evals/intents.jsonl at commit 8fee0ac, before the D30 review): the report must find
-most pairs in docs/research/intent-overlap-review-2026-10-06.md. That recall is the acceptance
-test for the report and is written into the skill's guidelines.
+Outcome of the calibration (docs/research/overlap-calibration-2026-10-06.md): raw centroid
+cosines are compressed (e5-small median intent pair 0.94, reviewed pairs 0.96 to 0.98), so no
+fixed threshold separates real overlaps. The report is a ranked review aid on centred embeddings:
+ranked pairs (top 50), nearest intents, suspect labels, paraphrases, candidates (merge, split,
+narrow) and a data-relative link threshold. Measured against 46 reference pairs
+(docs/research/intent-overlap-reference.md): recall@40/80/120 = 0.39/0.46/0.57 for e5-small
+(bge-m3 0.30/0.43/0.54); owner-judged precision at the top 10 is 6/10. The misses share a topic
+but name a different action, so the reviewer applies a "same action?" test. It is a reference,
+not a gate.
 
 ## 4. Classifier contenders (bake-off, Task 19)
 All three are trained on the same train and dev splits, scored on the same test split and judged
@@ -59,6 +64,9 @@ by the same promotion gate; the winner per role is promoted. The model card reco
   "Did you mean", routing and safety work unchanged. B ships the embedding model and an example
   matrix (hashed in `artifacts` like model.onnx). Slots stay with A; a role that needs slots
   either keeps A or runs A's slot head alongside.
+- Bake-off report: lists exclusions (roles with slots keep the encoder) and temperature
+  grid-edge flags. The winner's confusion list is the authoritative overlap signal, ahead of the
+  embedding report.
 - Starting classifier: before a role has a promoted package, B built from the reviewed synthetic
   data can be promoted through the same gate and replaces the regex hint fallback (D28 A) for that
   role.
@@ -71,4 +79,4 @@ by the same promotion gate; the winner per role is promoted. The model card reco
 ## 6. Open items
 - Embedding model choice after the bake-off (e5-small vs bge-m3 vs LaBSE: size against accuracy
   on Finnish and Filipino).
-- Overlap thresholds after calibration.
+- Resolved: no thresholds; ranked review aid (section 3).

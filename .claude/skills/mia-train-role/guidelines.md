@@ -46,6 +46,8 @@ there are many. Approximate published results for fine-tuned encoders:
 
 BANKING77 has fewer intents than CLINC150 and scores lower: overlap costs more than count.
 `mia skills overlap` is a ranked review aid (owner-judged precision 6/10 at top 10 on 2026-10-06, docs/research/overlap-calibration-2026-10-06.md); the trained model's confusion list is the authoritative signal.
+"Same action?" test: a flagged pair that shares a topic but names a different action (add vs
+update, book vs change) is not an overlap; embeddings do not separate those.
 Each role has its own model, whose labels are the role's intents, the shared conversation intents
 (87 today) and `other`, about 100 to 130 labels per role. That is within range.
 - Budget: up to about 150 labels per role model. Above that, split the role or merge intents.
@@ -55,6 +57,13 @@ Each role has its own model, whose labels are the role's intents, the shared con
 - More data per intent helps look-alikes; more intents with thin data hurts everyone.
 - Low confidence asks "Did you mean" instead of acting, and Gate 2 holds write intents to 0.99
   precision, so a close pair costs coverage, not wrong actions.
+
+## Classifier kinds (bake-off)
+`mia skills bakeoff <role>` compares three contenders on the same splits. The fine-tuned encoder
+wins for roles with slots (only it has a slot head) and for fine-grained look-alikes. Nearest
+examples (knn) wins for a new role and for fast iteration: no training, adding an intent is
+adding examples. Contrastive wins when intents have few examples each. The winner is the gate
+passer with the best macro F1, then coverage; nothing is promoted by the bake-off (Gate 2).
 
 ## Public data rules
 - Allowed: licences that permit commercial use without share-alike (for example CC BY, MIT,
