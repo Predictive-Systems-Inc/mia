@@ -22,6 +22,9 @@ from tests.learning.helpers import card, write_package
 def test_card_round_trip() -> None:
     write_card(card())
     assert read_card("r", "v1") == card()
+    assert read_card("r", "v1").with_real is False
+    write_card(card().model_copy(update={"with_real": True}))
+    assert read_card("r", "v1").with_real is True
 
 
 def test_promote_refuses_failed_gate_and_missing_signature(
@@ -178,8 +181,9 @@ def test_cards_without_kind_load_as_encoder_packages() -> None:
     raw = card().model_dump()
     raw.pop("kind")
     raw.pop("prefix")
+    raw.pop("with_real")
     loaded = ModelCard.model_validate(raw)
-    assert loaded.kind == "encoder" and loaded.prefix == ""
+    assert loaded.kind == "encoder" and loaded.prefix == "" and loaded.with_real is False
 
 
 def test_artifact_lists_per_kind() -> None:

@@ -28,7 +28,8 @@ def test_tiny_role_trains_packages_and_reports(
 
     folder = tmp_path / "skill"
     shutil.copytree(FIXTURE, folder)
-    card = train_role(folder, seeds=(0,), epochs=1)
+    card = train_role(folder, seeds=(0,), epochs=1, with_real=True)
+    assert card.with_real is True  # no local candidates exist, but the card records the flag
     out = tmp_path / "models" / "tiny" / card.version
     assert (
         (out / "model.onnx").exists()

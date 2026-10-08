@@ -48,6 +48,7 @@ class ModelCard(BaseModel):
     report: EvalReport
     gate: GateResult
     artifacts: dict[str, str] = {}  # filename -> sha256 hex of the file bytes
+    with_real: bool = False  # trained with local real messages (D18): the package holds them
     signed_by: str | None = None
     signed_at: str | None = None
 

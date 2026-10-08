@@ -301,9 +301,11 @@ def package(
     curve: dict[int, float],
     out: Path,
     version: str,
+    with_real: bool,
 ) -> ModelCard:
     """Calibrates on dev, evaluates on test, gates, hashes ARTIFACTS[kind] in out, writes the
-    card and the report. The exported files must already be in out."""
+    card (with_real marks a package trained on local real messages, D18) and the report. The
+    exported files must already be in out."""
     conversation = {c.id: c.handling for c in catalogue.conversation_intents()}
     temperature = fit_temperature(dev_preds)
     thresholds = choose_thresholds(dev_preds, role, temperature, conversation)
@@ -332,6 +334,7 @@ def package(
         report=report,
         gate=gate,
         artifacts={n: hashlib.sha256((out / n).read_bytes()).hexdigest() for n in ARTIFACTS[kind]},
+        with_real=with_real,
     )
     write_card(card)
     (folder / "reports").mkdir(exist_ok=True)
@@ -387,4 +390,5 @@ def train_role(
         curve=curve,
         out=out,
         version=version,
+        with_real=with_real,
     )

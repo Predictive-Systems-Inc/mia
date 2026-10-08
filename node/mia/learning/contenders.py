@@ -87,6 +87,7 @@ def train_knn(
         curve={},
         out=out,
         version=version,
+        with_real=with_real,
     )
 
 
@@ -191,6 +192,7 @@ def train_contrastive(
         curve={},
         out=out,
         version=version,
+        with_real=with_real,
     )
 
 

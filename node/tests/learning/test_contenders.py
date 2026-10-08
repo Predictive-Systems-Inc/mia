@@ -21,6 +21,7 @@ def test_knn_contender_packages_and_classifies(folder: Path) -> None:
 
     card = train_knn(folder, embedding_model=TINY)
     assert card.kind == "knn" and card.version.endswith("-knn") and card.slots == {}
+    assert card.with_real is False
     verify_artifacts(card)
     assert sorted(p.name for p in package_dir("tiny", card.version).iterdir()) == [
         "card.json",
@@ -40,7 +41,8 @@ def test_report_prints_the_curve_only_when_there_is_one(folder: Path) -> None:
     from mia.learning.contenders import train_knn
     from mia.learning.train import _report
 
-    card = train_knn(folder, embedding_model=TINY)
+    card = train_knn(folder, embedding_model=TINY, with_real=True)
+    assert card.with_real is True
     line = "Learning curve (share of train: test accuracy): 50%: 0.250, 100%: 0.500"
     assert line in _report(card, {50: 0.25, 100: 0.5}).splitlines()
     assert not any(x.startswith("Learning curve") for x in _report(card, {}).splitlines())
@@ -151,8 +153,10 @@ def test_contrastive_onnx_matches_the_torch_head(
 
     monkeypatch.setattr(contenders, "export", capture)
     monkeypatch.setattr("mia.learning.embed.prefix_for", lambda _n: "query: ")
-    card = contenders.train_contrastive(folder, embedding_model=TINY, steps=4, head_epochs=2)
-    assert card.prefix == "query: "
+    card = contenders.train_contrastive(
+        folder, embedding_model=TINY, steps=4, head_epochs=2, with_real=True
+    )
+    assert card.prefix == "query: " and card.with_real is True
     model, tok = exported[0]
     enc = tok(  # type: ignore[operator]
         [embed_text(card.prefix, LONG, CONTEXT)],
