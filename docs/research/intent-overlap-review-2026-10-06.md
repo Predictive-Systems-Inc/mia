@@ -99,3 +99,9 @@ intents into conversation intents is recorded in D30.
   hr.sick_note/en/021 to 023, bookkeeper.mileage_claim/en/020 and 021, recruiter.apply/en/019
   and 020, and site_manager.report_injury/en/022 to 032. The dataset has no field for this; this
   list is the record.
+
+## Not a clash
+
+- "deal" (dispatcher.cover_reply) and "deal!" (sales.accept_quote) normalise to the same text but
+  belong to different role models (the dispatcher's and the sales role's), so no one classifier
+  sees both labels. This is not a D30 clash; the next relabel leaves them.
