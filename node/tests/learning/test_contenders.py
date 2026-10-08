@@ -225,6 +225,6 @@ def test_bakeoff_trains_three_and_writes_the_report(
     assert winner is choose_winner(cards, role_has_slots=True)  # the fixture has a slot intent
     reports = list((folder / "reports").glob("bakeoff-*.md"))
     assert len(reports) == 1
-    expected = render_bakeoff(cards, winner, {c.version: 1.0 for c in cards})
+    expected = render_bakeoff(cards, winner, {c.version: 1.0 for c in cards}, role_has_slots=True)
     assert reports[0].read_text(encoding="utf-8") == expected
     assert active_version("tiny") is None

@@ -1,4 +1,5 @@
 from mia.learning.bakeoff import choose_winner, render_bakeoff
+from mia.learning.metrics import TEMPERATURE_GRID
 from mia.learning.package import ModelCard
 from tests.learning.helpers import card
 
@@ -59,12 +60,45 @@ def test_render_without_a_winner_or_latency() -> None:
     assert "| knn | v1-knn | 0.500 | 0.500 | 1.000 | 0.000 | 1.000 | failed | nan |" in lines
 
 
-def test_render_flags_a_temperature_at_the_grid_edge() -> None:
-    edge = scored("knn", 0.9, 0.9, temperature=0.5)
-    inside = scored("contrastive", 0.9, 0.9, temperature=0.55)
+def test_render_flags_a_temperature_at_either_grid_edge() -> None:
+    edge = scored("knn", 0.9, 0.9, temperature=TEMPERATURE_GRID[0])
+    inside = scored("contrastive", 0.9, 0.9, temperature=TEMPERATURE_GRID[1])
     ok = scored("encoder", 0.9, 0.9, temperature=1.0)
-    lines = render_bakeoff([ok, edge, inside], ok, {}).splitlines()
+    top = scored("knn", 0.9, 0.9, temperature=TEMPERATURE_GRID[-1]).model_copy(
+        update={"version": "v2-knn"}
+    )
+    below_top = scored("knn", 0.9, 0.9, temperature=TEMPERATURE_GRID[-2])
+    lines = render_bakeoff([ok, edge, inside, top, below_top], ok, {}).splitlines()
     assert (
         "Temperature at the grid edge (0.5; SCALE may be too small, coverage understated): v1-knn"
     ) in lines
-    assert sum(line.startswith("Temperature at the grid edge") for line in lines) == 1
+    assert "Temperature at the grid ceiling (5; the model is overconfident): v2-knn" in lines
+    assert sum(line.startswith("Temperature at the grid") for line in lines) == 2
+    assert not any(
+        line.startswith("Temperature at the grid")
+        for line in render_bakeoff([ok, inside, below_top], ok, {}).splitlines()
+    )
+
+
+def test_fit_temperature_searches_the_shared_grid() -> None:
+    assert (TEMPERATURE_GRID[0], len(TEMPERATURE_GRID)) == (0.5, 91)
+    assert abs(TEMPERATURE_GRID[-1] - 5.0) < 1e-9
+
+
+def test_render_names_kinds_excluded_for_slots() -> None:
+    enc = scored("encoder", 0.8, 0.8)
+    knn, con = scored("knn", 0.9, 0.9), scored("contrastive", 0.9, 0.9)
+    failed = scored("contrastive", 0.9, 0.9, passed=False)
+    lines = render_bakeoff([enc, knn, con], enc, {}, role_has_slots=True).splitlines()
+    assert lines[2:5] == [
+        "Winner: encoder v1-encoder",
+        "excluded: knn, contrastive (role has slot intents)",
+        "",
+    ]
+    failed_enc = scored("encoder", 0.8, 0.8, passed=False)
+    lines = render_bakeoff([failed_enc, knn, failed], None, {}, role_has_slots=True).splitlines()
+    assert lines[2:4] == ["Winner: none (excluded: knn (role has slot intents))", ""]
+    lines = render_bakeoff([enc, knn], enc, {}).splitlines()
+    assert lines[2:4] == ["Winner: encoder v1-encoder", ""]
+    lines = render_bakeoff([failed_enc, failed], None, {}, role_has_slots=True).splitlines()
+    assert lines[2] == "Winner: none passed the gate"

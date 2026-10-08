@@ -223,12 +223,13 @@ def bakeoff(
         train_knn(folder, embedding_model=model),
         train_contrastive(folder, embedding_model=model, steps=contrastive_steps),
     ]
-    winner = choose_winner(cards, role_has_slots=any(i.slots for i in role.intents))
+    has_slots = any(i.slots for i in role.intents)
+    winner = choose_winner(cards, role_has_slots=has_slots)
     _, _, _, test = load_splits(folder)
     latency = {c.version: _latency_ms(c, [r.text for r in test]) for c in cards}
     stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%d%H%M")
     (folder / "reports").mkdir(exist_ok=True)
     (folder / "reports" / f"bakeoff-{stamp}.md").write_text(
-        render_bakeoff(cards, winner, latency), encoding="utf-8"
+        render_bakeoff(cards, winner, latency, role_has_slots=has_slots), encoding="utf-8"
     )
     return cards, winner

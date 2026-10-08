@@ -59,6 +59,9 @@ def _safety_mass(pred: Prediction, temperature: float, safety: set[str]) -> floa
     return sum(pr for label, pr in zip(pred.labels, probs, strict=True) if label in safety)
 
 
+TEMPERATURE_GRID = [0.5 + 0.05 * i for i in range(91)]  # 0.5 to 5.0, searched by fit_temperature
+
+
 def fit_temperature(preds: list[Prediction]) -> float:
     """Grid search on dev; NLL of the true label."""
 
@@ -67,8 +70,7 @@ def fit_temperature(preds: list[Prediction]) -> float:
             math.log(max(softmax(p.logits, t)[p.labels.index(p.intent)], 1e-12)) for p in preds
         )
 
-    grid = [0.5 + 0.05 * i for i in range(91)]
-    return min(grid, key=nll)
+    return min(TEMPERATURE_GRID, key=nll)
 
 
 def expected_calibration_error(

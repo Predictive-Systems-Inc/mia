@@ -1,8 +1,7 @@
 """Bake-off decision and report (pure; spec embedding review section 4)."""
 
+from mia.learning.metrics import TEMPERATURE_GRID
 from mia.learning.package import ModelCard
-
-GRID_EDGE = 0.5  # lowest temperature metrics.fit_temperature tries
 
 
 def choose_winner(cards: list[ModelCard], role_has_slots: bool) -> ModelCard | None:
@@ -14,10 +13,15 @@ def choose_winner(cards: list[ModelCard], role_has_slots: bool) -> ModelCard | N
 
 
 def render_bakeoff(
-    cards: list[ModelCard], winner: ModelCard | None, latency_ms: dict[str, float]
+    cards: list[ModelCard],
+    winner: ModelCard | None,
+    latency_ms: dict[str, float],
+    *,
+    role_has_slots: bool = False,
 ) -> str:
-    """Markdown: the winner line, one table row per card (latency nan when not measured), a
-    line naming cards whose temperature hit the grid edge, and the no-promotion note."""
+    """Markdown: the winner line (naming kinds that passed the gate but were excluded because
+    the role has slot intents), one table row per card (latency nan when not measured), lines
+    naming cards whose temperature hit either end of the grid, and the no-promotion note."""
     rows = [
         "| kind | version | macro F1 | coverage | accuracy | ECE | safety recall | gate | ms |",
         "|---|---|---|---|---|---|---|---|---|",
@@ -29,21 +33,33 @@ def render_bakeoff(
             f"| {r.ece:.3f} | {r.safety_recall:.3f} | {'passed' if c.gate.passed else 'failed'} "
             f"| {latency_ms.get(c.version, float('nan')):.1f} |"
         )
-    edge = [c.version for c in cards if c.temperature == GRID_EDGE]
-    if edge:
-        rows += [
-            "",
-            (
-                f"Temperature at the grid edge ({GRID_EDGE}; SCALE may be too small, coverage "
-                f"understated): {', '.join(edge)}"
-            ),
-        ]
-    head = f"Winner: {winner.kind} {winner.version}" if winner else "Winner: none passed the gate"
+    floor, ceiling = TEMPERATURE_GRID[0], TEMPERATURE_GRID[-1]
+    low = [c.version for c in cards if c.temperature == floor]
+    high = [c.version for c in cards if c.temperature == ceiling]
+    notes = []
+    if low:
+        notes.append(
+            f"Temperature at the grid edge ({floor:g}; SCALE may be too small, coverage "
+            f"understated): {', '.join(low)}"
+        )
+    if high:
+        notes.append(
+            f"Temperature at the grid ceiling ({ceiling:g}; the model is overconfident): "
+            f"{', '.join(high)}"
+        )
+    if notes:
+        rows += ["", *notes]
+    excluded = [c.kind for c in cards if role_has_slots and c.gate.passed and c.kind != "encoder"]
+    why = f"excluded: {', '.join(excluded)} (role has slot intents)" if excluded else ""
+    if winner:
+        head = [f"Winner: {winner.kind} {winner.version}", *([why] if why else [])]
+    else:
+        head = [f"Winner: none ({why})" if why else "Winner: none passed the gate"]
     return "\n".join(
         [
             "# Bake-off",
             "",
-            head,
+            *head,
             "",
             *rows,
             "",

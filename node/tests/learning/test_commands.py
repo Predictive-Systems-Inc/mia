@@ -354,3 +354,28 @@ def test_bakeoff_missing_learning_package_gives_the_hint(
     assert main(["skills", "bakeoff", "dispatcher"]) == 2
     assert main(["skills", "train", "dispatcher", "--kind", "knn"]) == 2
     assert capsys.readouterr().out == ("install the learning group: uv sync --group learning\n" * 2)
+
+
+def _no_import(name: str) -> object:
+    raise AssertionError(f"imported {name}")
+
+
+def test_train_refuses_embedding_model_for_the_encoder(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(commands, "import_module", _no_import)
+    assert main(["skills", "train", "tr", "--embedding-model", "m"]) == 1
+    assert capsys.readouterr().out == (
+        "--embedding-model applies to knn and contrastive; use --base-model for the encoder\n"
+    )
+
+
+@pytest.mark.parametrize("kind", ["knn", "contrastive"])
+def test_train_refuses_base_model_for_the_embedding_kinds(
+    kind: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(commands, "import_module", _no_import)
+    assert main(["skills", "train", "tr", "--kind", kind, "--base-model", "b"]) == 1
+    assert capsys.readouterr().out == (
+        f"--base-model applies to the encoder kind; use --embedding-model for {kind}\n"
+    )

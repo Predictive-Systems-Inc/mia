@@ -140,7 +140,14 @@ def _learning_module(name: str) -> Any:
 def train(args: argparse.Namespace) -> int:
     """Trains one kind: encoder through mia.learning.train (--base-model), knn or contrastive
     through mia.learning.contenders (--embedding-model). Prints the install hint and returns 2
-    when the learning group is missing."""
+    when the learning group is missing. A model flag for the other kind is refused (1) before
+    any learning import."""
+    if args.kind == "encoder" and args.embedding_model:
+        print("--embedding-model applies to knn and contrastive; use --base-model for the encoder")
+        return 1
+    if args.kind != "encoder" and args.base_model:
+        print(f"--base-model applies to the encoder kind; use --embedding-model for {args.kind}")
+        return 1
     folder = skill_dir(args.role)
     if args.kind == "encoder":
         module = _learning_module("mia.learning.train")
