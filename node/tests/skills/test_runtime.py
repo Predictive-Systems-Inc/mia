@@ -1,4 +1,5 @@
 # node/tests/skills/test_runtime.py
+import json
 import sys
 from types import SimpleNamespace
 
@@ -201,3 +202,15 @@ def test_knn_cards_load_the_knn_classifier(monkeypatch: pytest.MonkeyPatch) -> N
     write_card(card().model_copy(update={"kind": "knn"}))
     (get_settings().MIA_MODELS_DIR / "r" / "ACTIVE").write_text("v1", encoding="utf-8")
     assert isinstance(get_classifier("r"), FakeKnn) and made == ["knn"]
+
+
+def test_unknown_kind_falls_back() -> None:
+    raw = card().model_dump(mode="json") | {"kind": "svm"}
+    folder = get_settings().MIA_MODELS_DIR / "r" / "v1"
+    folder.mkdir(parents=True)
+    (folder / "card.json").write_text(json.dumps(raw), encoding="utf-8")
+    (folder.parent / "ACTIVE").write_text("v1", encoding="utf-8")
+    assert isinstance(get_classifier("r"), NullClassifier)
+    h = health()["r"]
+    assert h["status"] == "fallback"
+    assert str(h["error"]).startswith("ValidationError")
