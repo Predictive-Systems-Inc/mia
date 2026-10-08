@@ -61,7 +61,7 @@ class Embedder:
 
 
 def export(
-    model: Pooled,
+    model: nn.Module,
     tok: PreTrainedTokenizerBase,
     out: Path,
     output: str = "embedding",

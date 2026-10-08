@@ -66,3 +66,126 @@ def test_versions_differ_per_kind() -> None:
 
     assert new_version("knn").endswith("-knn")
     assert "-" not in new_version()
+
+
+LONG = "sick today, cant come in, the bus broke down and my kid has a fever as well " * 8
+CONTEXT = "Mia: Your next visit is at 9 at the office."
+
+
+def _spy_logits(clf: object, monkeypatch: pytest.MonkeyPatch) -> list[list[float]]:
+    """Records the intent logits each classify call hands to from_logits."""
+    seen: list[list[float]] = []
+    real = clf.from_logits  # type: ignore[attr-defined]
+
+    def spy(intent: list[float], lang: list[float], slots: dict[str, list[float]]) -> object:
+        seen.append(intent)
+        return real(intent, lang, slots)
+
+    monkeypatch.setattr(clf, "from_logits", spy)
+    return seen
+
+
+def test_knn_runtime_matches_training_embeddings(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import numpy as np
+
+    from mia.learning.contenders import train_knn
+    from mia.learning.embed import Embedder
+    from mia.skills.knn import KnnClassifier, knn_logits
+    from mia.skills.runtime import embed_text
+
+    card = train_knn(folder, embedding_model=TINY)
+    clf = KnnClassifier(card, safety=set())
+    emb = Embedder(TINY)
+    assert len(emb.tok(embed_text("", LONG, CONTEXT))["input_ids"]) > 96
+    v = clf.embed(embed_text(card.prefix, LONG, CONTEXT))
+    assert np.allclose(v, emb([embed_text("", LONG, CONTEXT)])[0], atol=1e-5)
+    seen = _spy_logits(clf, monkeypatch)
+    clf.classify(LONG, CONTEXT)
+    assert seen == [knn_logits(clf.examples @ v, clf.example_labels, len(card.labels), clf.k)]
+
+
+def test_contrastive_contender_packages_and_runs_on_onnx(folder: Path) -> None:
+    from mia.learning.contenders import train_contrastive
+    from mia.learning.package import package_dir, verify_artifacts
+    from mia.skills.onnx import OnnxClassifier
+
+    card = train_contrastive(folder, embedding_model=TINY, steps=4, head_epochs=2)
+    assert card.kind == "contrastive" and card.version.endswith("-contrastive")
+    assert card.slots == {}
+    verify_artifacts(card)
+    assert sorted(p.name for p in package_dir("tiny", card.version).iterdir()) == [
+        "card.json",
+        "model.onnx",
+        "tokenizer.json",
+    ]
+    clf = OnnxClassifier(card, safety=set())
+    assert clf.outputs == ["intent_logits"]
+    c = clf.classify("sick today, cant come")
+    assert c.intent in card.labels and c.lang is None and c.version == card.version
+
+
+def test_contrastive_onnx_matches_the_torch_head(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import numpy as np
+    import torch
+
+    from mia.learning import contenders
+    from mia.skills.onnx import OnnxClassifier
+    from mia.skills.runtime import embed_text
+
+    exported: list[tuple[torch.nn.Module, object]] = []
+    real_export = contenders.export
+
+    def capture(model: torch.nn.Module, tok: object, out: Path, **kw: object) -> None:
+        exported.append((model, tok))
+        real_export(model, tok, out, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(contenders, "export", capture)
+    card = contenders.train_contrastive(folder, embedding_model=TINY, steps=4, head_epochs=2)
+    model, tok = exported[0]
+    enc = tok(  # type: ignore[operator]
+        [card.prefix + embed_text("", LONG, CONTEXT)],
+        truncation=True,
+        max_length=96,
+        return_tensors="pt",
+    )
+    assert enc["input_ids"].shape[1] == 96
+    with torch.no_grad():
+        expected = model(enc["input_ids"], enc["attention_mask"])[0].numpy()
+    clf = OnnxClassifier(card, safety=set())
+    seen = _spy_logits(clf, monkeypatch)
+    clf.classify(LONG, CONTEXT)
+    assert np.allclose(np.array(seen[0]), expected, atol=1e-4)
+
+
+def test_contrastive_skips_tuning_when_no_triplet_exists(folder: Path) -> None:
+    import re
+
+    from mia.learning.contenders import train_contrastive
+
+    # Every train record becomes absence: one labelled intent, so triplets returns [] at once.
+    path = folder / "data" / "train.jsonl"
+    text = re.sub(r'"intent": "[^"]*"', '"intent": "tiny.absence"', path.read_text("utf-8"))
+    path.write_text(text, encoding="utf-8")
+    assert set(re.findall(r'"intent": "[^"]*"', text)) == {'"intent": "tiny.absence"'}
+    card = train_contrastive(folder, embedding_model=TINY, steps=4, head_epochs=2)
+    assert card.kind == "contrastive"
+
+
+@pytest.mark.parametrize("trainer", ["train_knn", "train_contrastive"])
+def test_a_failed_prediction_leaves_no_version_dir(
+    folder: Path, monkeypatch: pytest.MonkeyPatch, trainer: str
+) -> None:
+    from mia.learning import contenders
+    from mia.settings import get_settings
+
+    def boom(**_: object) -> None:
+        raise RuntimeError("prediction failed")
+
+    monkeypatch.setattr(contenders, "Prediction", boom)
+    with pytest.raises(RuntimeError, match="^prediction failed$"):
+        getattr(contenders, trainer)(folder, embedding_model=TINY)
+    assert not (get_settings().MIA_MODELS_DIR / "tiny").exists()

@@ -14,7 +14,9 @@ SCALE = 20.0  # cosine to logit scale, so the card's temperature grid (0.5 to 5)
 
 
 def knn_logits(sims: np.ndarray, example_labels: np.ndarray, n_labels: int, k: int) -> list[float]:
-    """Per label: SCALE x mean of its k most similar examples; -SCALE for labels without one."""
+    """Per label: SCALE x mean of its k most similar examples; -SCALE for labels without one.
+    A label with fewer than k examples is scored by the mean of fewer, higher similarities and
+    is slightly favoured."""
     out = np.full(n_labels, -SCALE, dtype=np.float64)
     for label in np.unique(example_labels):
         top = np.sort(sims[example_labels == label])[::-1][:k]
