@@ -237,3 +237,12 @@ def test_overlap_for_a_role_dedupes_reviewed_and_skips_dropped(
     assert out.parent == skill / "reports"
     assert re.fullmatch(r"overlap-\d{12}\.md", out.name)
     assert out.is_file()
+
+
+def test_dataset_row_with_wrong_types_is_reported(
+    fake: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bad = tmp_path / "w.jsonl"
+    bad.write_text('{"id": 1, "intent": "x", "text": "t"}\n', encoding="utf-8")
+    assert main(["skills", "overlap", "--dataset", str(bad)]) == 1
+    assert capsys.readouterr().out == f"error: {bad}: line 1: needs id, intent and text\n"

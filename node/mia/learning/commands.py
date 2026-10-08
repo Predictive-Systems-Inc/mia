@@ -319,7 +319,7 @@ def _read_dataset(path: Path) -> list[Item] | None:
         except json.JSONDecodeError:
             print(f"error: {path}: line {n}: invalid JSON")
             return None
-        except (KeyError, TypeError):
+        except (KeyError, TypeError, ValidationError):
             print(f"error: {path}: line {n}: needs id, intent and text")
             return None
     return items
