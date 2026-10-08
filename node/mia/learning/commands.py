@@ -338,12 +338,15 @@ def _overlap_items(args: argparse.Namespace) -> tuple[list[Item], str, Path] | N
     if role is None:
         return None
     data = skill_dir(args.role) / "data"
-    items = [
-        Item(id=r.id, intent=r.intent, text=r.text)
-        for s in ("train", "dev", "test", "reviewed")
-        if (data / f"{s}.jsonl").exists()
-        for r in load_records(data / f"{s}.jsonl")
-    ]
+    # split copies reviewed records into train and dev: keep the first copy of each id and
+    # leave out records a reviewer dropped.
+    seen: dict[str, Item] = {}
+    for s in ("train", "dev", "test", "reviewed"):
+        if (data / f"{s}.jsonl").exists():
+            for r in load_records(data / f"{s}.jsonl"):
+                if r.id not in seen and r.review.status != "dropped":
+                    seen[r.id] = Item(id=r.id, intent=r.intent, text=r.text)
+    items = list(seen.values())
     out = Path(args.out) if args.out else skill_dir(args.role) / "reports" / f"overlap-{stamp}.md"
     return items, args.embedding_model or role.embedding_model, out
 

@@ -1,4 +1,5 @@
 import json
+import re
 import types
 from pathlib import Path
 
@@ -177,3 +178,62 @@ def test_overlap_recall_is_not_available_when_nothing_is_findable(
     assert "recall@40 n/a, recall@80 n/a, recall@120 n/a (0 findable pairs)\n" in (
         capsys.readouterr().out
     )
+
+
+ROLE_YAML = """
+id: tr
+job_summary: j
+responsibilities: [x]
+counterparts: [{role: c, share: 1.0}]
+languages: [en]
+countries: [FI]
+styles: {informal: 1.0}
+intents:
+  - {id: tr.a, description: d, counterparts: [c], risk: read, label_en: A}
+"""
+
+
+def role_record(i: int, split: str, status: str) -> dict[str, object]:
+    return {
+        "id": f"r/{i}",
+        "role": "tr",
+        "intent": "tr.a",
+        "lang": "en",
+        "text": f"pay day {i}",
+        "counterpart": "c",
+        "style": "informal",
+        "split": split,
+        "source": "t",
+        "review": {"status": status},
+    }
+
+
+def test_overlap_for_a_role_dedupes_reviewed_and_skips_dropped(
+    fake: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(commands, "AGENTS", tmp_path / "agents")
+    skill = tmp_path / "agents" / "tr" / "skill"
+    (skill / "data").mkdir(parents=True)
+    (skill / "role.yaml").write_text(ROLE_YAML, encoding="utf-8")
+    rows = {
+        "train": [role_record(1, "train", "kept")],
+        "reviewed": [role_record(1, "train", "kept"), role_record(2, "train", "dropped")],
+    }
+    for name, rs in rows.items():
+        (skill / "data" / f"{name}.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in rs), encoding="utf-8"
+        )
+    seen: list[list[str]] = []
+    real = commands.analyse
+
+    def spy(items: list[commands.Item], emb: np.ndarray) -> object:
+        seen.append([i.id for i in items])
+        return real(items, emb)
+
+    monkeypatch.setattr(commands, "analyse", spy)
+    assert main(["skills", "overlap", "tr", "--no-conversation"]) == 0
+    assert seen == [["r/1"]]
+    out = Path(capsys.readouterr().out.strip())
+    assert out.parent == skill / "reports"
+    assert re.fullmatch(r"overlap-\d{12}\.md", out.name)
+    assert out.is_file()
