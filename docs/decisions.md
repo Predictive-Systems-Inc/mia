@@ -254,3 +254,8 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
 - Consequences: i18n drops conversation.compliment and its label, and the thanks and confusion
   replies are reworded to fit both meanings; intents.jsonl relabels 42 records; the merged pairs
   move to "## Merged (D31)" in the overlap reference so recall is not measured on them.
+- Addendum (2026-10-08): the owner keeps distress merged with the emergency handling after
+  seeing the script it triggers; a later layer will split distress from self-harm risk. The
+  merged confusion intent keeps rephrase_simpler's model_brief handling (the model rephrases
+  its last answer), not the template, so "say it more simply" still works; its template
+  reply key is removed.

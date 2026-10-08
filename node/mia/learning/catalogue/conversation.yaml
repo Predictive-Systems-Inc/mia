@@ -306,8 +306,8 @@ intents:
     category: management
     description: The user is confused; question marks, "huh", did not understand Mia's reply or asks to say it more simply.
     speakers: [all]
-    handling: template
-    risk: low. Offer to say it more simply (A2 level, other language) or ask one clarifying question, then the help menu.
+    handling: model_brief
+    risk: low. The model rephrases its last answer more simply (A2 level, other language on request) or asks one clarifying question (rephrase_simpler folded in, D31).
     examples:
       - ???
       - huh
