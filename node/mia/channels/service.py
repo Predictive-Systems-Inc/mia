@@ -56,8 +56,10 @@ def deliver(
     urgent: bool = False,
     now: dt.datetime | None = None,
     source_id: str | None = None,
+    redact: bool = False,
 ) -> list[ChannelOutbox]:
-    """Queue the message for every enabled channel the person has linked. Returns new rows."""
+    """Queue the message for every enabled channel the person has linked. Returns new rows.
+    `redact` keeps the payload out of the events (sign-in codes and links)."""
     now = now or utcnow()
     source = source_id or new_id()
     branch = session.get(Branch, person.branch_id)
@@ -96,7 +98,15 @@ def deliver(
                 status=status,
                 send_after=send_after if status == "queued" else None,
             )
-            rows.append(store.insert(session, row, actor, action="channel.queued"))
+            rows.append(
+                store.insert(
+                    session,
+                    row,
+                    actor,
+                    action="channel.queued",
+                    redact={"payload"} if redact else (),
+                )
+            )
     return rows
 
 

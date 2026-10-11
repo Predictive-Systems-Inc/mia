@@ -19,4 +19,6 @@ TEMPLATES: dict[str, Template] = {
     "mia_new_message": Template(params=0, langs=("fi", "en")),
     # "Hei {{1}}, voitko tuurata käynnin {{3}} klo {{4}}, {{2}}?" [Hyväksyn] [En pysty]
     "mia_cover_request": Template(params=4, langs=("fi", "en")),
+    # Authentication template (copy-code button): "Kirjautumiskoodisi on {{1}}. Älä jaa sitä."
+    "mia_login_code": Template(params=1, langs=("fi", "en")),
 }

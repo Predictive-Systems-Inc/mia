@@ -274,3 +274,23 @@ def test_current_password_guesses_are_limited_without_locking_the_login(
     other = TestClient(app)  # the login itself is not locked by those guesses
     res = other.post("/auth/login", json={"email": EMAIL, "password": PW})
     assert res.status_code == 200
+
+
+def test_mfa_guesses_are_capped_per_person_across_ips(
+    session: Session, owner: Person, login
+) -> None:  # type: ignore[no-untyped-def]
+    """Rotating IPs must not give unlimited TOTP guesses with a stolen password."""
+    first = TestClient(app)
+    login(first, owner)
+    _enrol(first, session, owner)
+    for ip in range(4):
+        far = TestClient(app, client=(f"10.0.0.{ip}", 4000))
+        for _ in range(5):
+            token = far.post("/auth/login", json={"email": EMAIL, "password": PW}).json()[
+                "mfa_token"
+            ]
+            far.post("/auth/mfa", json={"mfa_token": token, "code": "000000"})
+    fresh = TestClient(app, client=("10.0.1.1", 4000))
+    token = fresh.post("/auth/login", json={"email": EMAIL, "password": PW}).json()["mfa_token"]
+    res = fresh.post("/auth/mfa", json={"mfa_token": token, "code": _totp_now(session, owner)})
+    assert res.status_code == 401  # 20 failures in an hour: the person's MFA is paused

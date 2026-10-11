@@ -8,6 +8,7 @@ everything else gets bearer tokens. Every failure is 401 `invalid credentials`.
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+from sqlmodel import Session
 
 from mia.api.deps import (
     REFRESH_COOKIE,
@@ -21,7 +22,7 @@ from mia.api.deps import (
 )
 from mia.core import auth, keys
 from mia.core.db import utcnow
-from mia.core.models import Actor, AuthDevice, AuthSession, Person
+from mia.core.models import Actor, AuthCode, AuthDevice, AuthSession, Person
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -284,5 +285,121 @@ def enrol(request: Request, response: Response, session: DbSession, code: str) -
     auth.use_code(session, Actor.person(person), found.row, now)
     tokens = auth.issue_session(
         session, person, method="enrol", aal="enrol", ip=client_ip(request), now=now
+    )
+    return _tokens_response(request, response, tokens)
+
+
+# ---- staff: phone code, bound devices, login links ---------------------------------------
+
+
+class PhoneIn(BaseModel):
+    phone: str = Field(max_length=30)
+
+
+class DeviceIn(BaseModel):
+    name: str = Field(max_length=80)
+    platform: str = Field(max_length=20)
+
+
+class OtpVerifyIn(BaseModel):
+    phone: str = Field(max_length=30)
+    code: str = Field(max_length=6)
+    device: DeviceIn
+
+
+class DeviceLoginIn(BaseModel):
+    device_id: str = Field(max_length=26)
+    device_secret: str = Field(max_length=100)
+
+
+@router.post("/otp/start")
+def otp_start(session: DbSession, body: PhoneIn) -> dict[str, bool]:
+    """Send a sign-in code to the number's WhatsApp. The answer never says whether the
+    number is known."""
+    auth.send_otp(session, body.phone, utcnow())
+    return {"ok": True}
+
+
+@router.post("/otp/verify")
+def otp_verify(
+    request: Request, response: Response, session: DbSession, body: OtpVerifyIn
+) -> dict[str, object]:
+    """Check the code, bind the device and sign in (aal1). The device secret is shown once."""
+    now, ip = utcnow(), client_ip(request)
+    try:
+        person = auth.check_otp(session, body.phone, body.code, ip, now)
+    except auth.AuthError:
+        raise _invalid() from None
+    actor = Actor.person(person)
+    name = f"{body.device.name} ({body.device.platform})"
+    device, secret = auth.bind_device(session, actor, person, "mobile", name, now)
+    tokens = auth.issue_session(
+        session, person, method="phone_otp", aal="aal1", ip=ip, now=now, device=device
+    )
+    out = _tokens_response(request, response, tokens).model_dump()
+    out.update({"device_id": device.id, "device_secret": secret})
+    return out
+
+
+@router.post("/device", response_model=TokensOut)
+def device_login(
+    request: Request, response: Response, session: DbSession, body: DeviceLoginIn
+) -> TokensOut:
+    """Sign in on a bound device with its secret (aal1; the PIN steps it up)."""
+    now, ip = utcnow(), client_ip(request)
+    try:
+        device = auth.check_device(session, body.device_id, body.device_secret, ip, now)
+    except auth.AuthError:
+        raise _invalid() from None
+    person = session.get(Person, device.person_id)
+    if person is None or person.status != "active":
+        raise _invalid()
+    tokens = auth.issue_session(
+        session, person, method="device", aal="aal1", ip=ip, now=now, device=device
+    )
+    return _tokens_response(request, response, tokens)
+
+
+LINK_PAGE = """<!doctype html><meta charset="utf-8"><title>Mia</title>
+<body style="font-family:system-ui;max-width:28rem;margin:4rem auto"><h1>Mia</h1>
+<form method="post"><button style="padding:.6rem 1.2rem">Continue as {name}</button></form>
+<script>document.forms[0].onsubmit = async (e) => { e.preventDefault();
+ const r = await fetch(location.pathname, {method: "POST", headers: {"X-Mia-Client": "web"}});
+ location.href = r.ok ? "/" : location.pathname + "?failed=1"; };</script>"""
+
+
+def _link_person(session: Session, code: str) -> tuple[Person, AuthCode] | None:
+    found = auth.check_code(session, "link_login", code, utcnow())
+    if found.status != "ok" or found.row is None:
+        return None
+    person = session.get(Person, found.row.person_id)
+    if person is None or person.status != "active":
+        return None
+    return person, found.row
+
+
+@router.get("/link/{code}", response_class=HTMLResponse)
+def link_page(session: DbSession, code: str) -> str:
+    """The login link's page: one button, so fetching the URL never consumes the link."""
+    found = _link_person(session, code)
+    if found is None:
+        raise HTTPException(404, "link expired or already used")
+    return LINK_PAGE.replace("{name}", found[0].name.split()[0])
+
+
+@router.post("/link/{code}", response_model=TokensOut)
+def link_login(request: Request, response: Response, session: DbSession, code: str) -> TokensOut:
+    """Consume the login link: a browser device and an aal1 session."""
+    found = _link_person(session, code)
+    if found is None:
+        raise _invalid()
+    person, row = found
+    now, ip = utcnow(), client_ip(request)
+    actor = Actor.person(person)
+    auth.use_code(session, actor, row, now)
+    agent = request.headers.get("user-agent", "browser")[:80]
+    device, _ = auth.bind_device(session, actor, person, "browser", agent, now)
+    tokens = auth.issue_session(
+        session, person, method="wa_link", aal="aal1", ip=ip, now=now, device=device
     )
     return _tokens_response(request, response, tokens)

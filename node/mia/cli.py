@@ -419,6 +419,21 @@ def auth_reset(args: argparse.Namespace) -> int:
     return 0
 
 
+def auth_link(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor
+
+    with session_scope() as session:
+        person = _match_one(session, args.name)
+        url = auth.send_login_link(session, Actor.system(person.branch_id), person, utcnow())
+    if url is None:
+        print(f"{person.name} has no active channel identity; send an invite first")
+        return 1
+    print(f"login link sent to {person.name} (10 minutes, single use): {url}")
+    return 0
+
+
 def auth_unlock(args: argparse.Namespace) -> int:
     from mia.core import auth
     from mia.core.db import session_scope, utcnow
@@ -515,6 +530,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = auth_p.add_parser("reset", help="end a person's sessions and print an enrolment link")
     p.add_argument("name")
     p.set_defaults(func=auth_reset)
+    p = auth_p.add_parser("link", help="send a one-time login link to a person's WhatsApp")
+    p.add_argument("name")
+    p.set_defaults(func=auth_link)
     p = auth_p.add_parser("unlock", help="clear the lockout of a login")
     p.add_argument("login")
     p.set_defaults(func=auth_unlock)

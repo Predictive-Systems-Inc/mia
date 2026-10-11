@@ -68,7 +68,6 @@ M15, H1 = dt.timedelta(minutes=15), dt.timedelta(hours=1)
 M5 = dt.timedelta(minutes=5)
 LIMITS: dict[str, Limit] = {
     "password": Limit(5, M15, M15),  # per (login, IP)
-    "password_login": Limit(20, H1, M15),  # per login, any IP
     "ip": Limit(50, M15, M15),  # any kind, per IP
     "client_secret": Limit(10, M15, M15),
     "device": Limit(10, M15, M15),
@@ -76,6 +75,13 @@ LIMITS: dict[str, Limit] = {
     "otp": Limit(5, M5, M5),
     "mfa": Limit(5, M5, M5),
     "password_change": Limit(5, M15, M15),  # per person: cannot lock the login itself
+}
+# Per subject whatever the IP, so rotating addresses does not multiply the guesses.
+SUBJECT_LIMITS: dict[str, Limit] = {
+    "password": Limit(20, H1, M15),
+    "mfa": Limit(20, H1, M15),
+    "otp": Limit(20, H1, M15),
+    "device": Limit(20, H1, M15),
 }
 EVENT_NAME = {"password": "login", "client_secret": "client", "link_code": "link"}
 
@@ -138,8 +144,9 @@ def throttled(session: Session, kind: str, key: str, now: dt.datetime) -> bool:
     subject, ip = key.rsplit("@", 1)
     if ip != "-" and _over(session, now, LIMITS["ip"], suffix=f"@{ip}"):
         return True
-    if kind == "password" and _over(
-        session, now, LIMITS["password_login"], kind=kind, prefix=f"{subject}@"
+    per_subject = SUBJECT_LIMITS.get(kind)
+    if per_subject is not None and _over(
+        session, now, per_subject, kind=kind, prefix=f"{subject}@"
     ):
         return True
     limit = LIMITS.get(kind)
@@ -378,7 +385,7 @@ def check_password(
     actor = Actor.person(found[0]) if found is not None and ok else None
     record_attempt(session, "password", key, ok, now, actor=actor)
     if not ok or found is None:
-        if _over(session, now, LIMITS["password_login"], kind="password", prefix=f"{subject}@"):
+        if _over(session, now, SUBJECT_LIMITS["password"], kind="password", prefix=f"{subject}@"):
             _locked_event(session, "password", subject)
         raise AuthError(INVALID)
     store.update(
@@ -887,7 +894,117 @@ def unlock_login(session: Session, login: str, now: dt.datetime) -> None:
     """Owner's unlock from the CLI: the login's recent failures no longer count (each is
     marked ok, with `auth.attempt_cleared`), and `auth.unlocked` is written."""
     subject = login_key(login)
-    since = now - LIMITS["password_login"].window
+    since = now - SUBJECT_LIMITS["password"].window
     for row in _recent(session, since, kind="password", prefix=f"{subject}@"):
         store.update(session, row, {"ok": True}, auth_actor(), action="auth.attempt_cleared")
     events.emit(session, "auth.unlocked", ("login", subject), None, {"via": "cli"}, auth_actor())
+
+
+# ---- staff codes and links (delivery through the channel layer, rule 6) ----------------
+
+OTP_TEMPLATE = "mia_login_code"
+
+
+def normalise_phone(phone: str) -> str:
+    """Digits only, without leading zeros or a plus (E.164 digits, like channel addresses)."""
+    return "".join(c for c in phone if c.isdigit()).lstrip("0")
+
+
+def _person_for_address(session: Session, address: str) -> Person | None:
+    from mia.core.models import ChannelIdentity
+
+    row = session.exec(
+        select(ChannelIdentity)
+        .where(ChannelIdentity.address == address)
+        .where(ChannelIdentity.status == "active")
+        .order_by(col(ChannelIdentity.id).desc())
+    ).first()
+    if row is None:
+        return None
+    person = session.get(Person, row.person_id)
+    return person if person is not None and person.status == "active" else None
+
+
+def _identity_count(session: Session, person: Person) -> int:
+    from mia.core.models import ChannelIdentity
+
+    rows = session.exec(
+        select(ChannelIdentity)
+        .where(ChannelIdentity.person_id == person.id)
+        .where(ChannelIdentity.status == "active")
+    ).all()
+    return len(rows)
+
+
+def send_otp(session: Session, phone: str, now: dt.datetime) -> None:
+    """Send a 6-digit code to the active identity behind the number, through the channel
+    layer. Unknown numbers and numbers past 3 sends an hour get nothing, silently."""
+    from mia.channels.base import TemplateCall
+    from mia.channels.service import deliver
+    from mia.chat.blocks import TextBlock
+    from mia.i18n import t
+
+    address = normalise_phone(phone)
+    person = _person_for_address(session, address)
+    if (
+        person is None
+        or sends_in_last_hour(session, "otp_login", address, now) >= OTP_SENDS_PER_HOUR
+    ):
+        return
+    actor = Actor.person(person)
+    code = create_code(session, actor, person, "otp_login", now, address=address)
+    deliver(
+        session,
+        person,
+        [TextBlock(text=t("auth.otp_text", person.language, code=code))],
+        actor,
+        kind="otp",
+        template=TemplateCall(name=OTP_TEMPLATE, lang=person.language, params=[code]),
+        urgent=True,
+        now=now,
+        redact=True,
+    )
+    events.emit(session, "auth.otp_sent", person, None, {"address": address}, actor)
+
+
+def check_otp(session: Session, phone: str, code: str, ip: str, now: dt.datetime) -> Person:
+    """The person behind the number when the code is live and right. Wrong codes use a try."""
+    address = normalise_phone(phone)
+    key = attempt_key(address, ip)
+    if throttled(session, "otp", key, now):
+        raise Locked(INVALID)
+    person = _person_for_address(session, address)
+    result = check_code(session, "otp_login", code, now, person_id=person.id if person else None)
+    ok = result.status == "ok" and result.row is not None and result.row.address == address
+    record_attempt(session, "otp", key, ok, now, actor=Actor.person(person) if person else None)
+    if not ok or result.row is None or person is None:
+        fail_code(session, "otp_login", now, address=address)
+        raise AuthError(INVALID)
+    use_code(session, Actor.person(person), result.row, now)
+    unlock_pin(session, Actor.person(person), person, now)
+    return person
+
+
+def send_login_link(session: Session, actor: Actor, person: Person, now: dt.datetime) -> str | None:
+    """A one-time login link to the person's active identity. None without one."""
+    from mia.channels.service import deliver
+    from mia.chat.blocks import TextBlock
+    from mia.i18n import t
+    from mia.settings import get_settings
+
+    if _identity_count(session, person) == 0:
+        return None
+    code = create_code(session, actor, person, "link_login", now, token=True)
+    url = f"{get_settings().MIA_PUBLIC_URL.rstrip('/')}/auth/link/{code}"
+    deliver(
+        session,
+        person,
+        [TextBlock(text=t("auth.link_text", person.language, url=url))],
+        actor,
+        kind="otp",
+        urgent=True,
+        now=now,
+        redact=True,
+    )
+    events.emit(session, "auth.link_sent", person, None, None, actor)
+    return url
