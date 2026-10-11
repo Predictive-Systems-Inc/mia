@@ -313,17 +313,22 @@ def set_password(
     other = session.exec(select(AuthCredential).where(AuthCredential.login == login)).first()
     if other is not None and other.person_id != person.id:
         raise ValueError("that email is already in use")
-    changes = {"login": login, "secret_hash": keys.hash_secret(password), "status": "active"}
+    digest = keys.hash_secret(password)
     row = credential(session, person.id, "password", ("active", "revoked"))
     if row is None:
         return store.insert(
             session,
             AuthCredential(
-                branch_id=person.branch_id, person_id=person.id, kind="password", **changes
+                branch_id=person.branch_id,
+                person_id=person.id,
+                kind="password",
+                login=login,
+                secret_hash=digest,
             ),
             actor,
             action="auth.password_set",
         )
+    changes = {"login": login, "secret_hash": digest, "status": "active"}
     return store.update(session, row, changes, actor, action="auth.password_set")
 
 
@@ -353,7 +358,8 @@ def check_password(
     found = person_by_login(session, login)
     stored = found[1].secret_hash if found and found[1].secret_hash else keys.dummy_hash()
     ok = keys.verify_secret(password, stored) and found is not None
-    record_attempt(session, "password", key, ok, now, actor=Actor.person(found[0]) if ok else None)
+    actor = Actor.person(found[0]) if found is not None and ok else None
+    record_attempt(session, "password", key, ok, now, actor=actor)
     if not ok or found is None:
         if _over(session, now, LIMITS["password_login"], kind="password", prefix=f"{subject}@"):
             _locked_event(session, "password", subject)
@@ -515,15 +521,22 @@ def set_pin(
         raise ValueError("the PIN is 6 digits")
     if trivial_pin(pin):
         raise ValueError("choose a less obvious PIN")
-    changes = {"secret_hash": keys.hash_secret(pin), "status": "active", "last_used_at": now}
+    digest = keys.hash_secret(pin)
     row = credential(session, person.id, "pin", ("active", "locked"))
     if row is None:
         return store.insert(
             session,
-            AuthCredential(branch_id=person.branch_id, person_id=person.id, kind="pin", **changes),
+            AuthCredential(
+                branch_id=person.branch_id,
+                person_id=person.id,
+                kind="pin",
+                secret_hash=digest,
+                last_used_at=now,
+            ),
             actor,
             action="auth.pin_set",
         )
+    changes = {"secret_hash": digest, "status": "active", "last_used_at": now}
     return store.update(session, row, changes, actor, action="auth.pin_set")
 
 
