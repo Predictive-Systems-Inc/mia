@@ -154,7 +154,8 @@ availability, absences, double booking, daily and weekly hour limits, skills.
 - `GET /approvals`: the inbox, the approvals the signed-in person may decide.
 - Over chat, a cleaner checks in ("Olen perillä"), asks the door code, gets the checklist
   ("Mikä on tarkistuslista?") and ticks items with the quick replies ("Tehty: Empty bins"),
-  reports a problem ("En pääse sisään") and checks out ("Valmis, lähden nyt").
+  reports a problem ("En pääse sisään"), sends a photo as proof of work (saved under
+  `MIA_MEDIA_DIR`, referenced on the visit) and checks out ("Valmis, lähden nyt").
 - `GET /supervisor/summary`: unfilled visits this week, today's late check-ins, open site
   problems (a cleaner's "en pääse sisään" or "no water" over chat tells the supervisors at
   once) and the number of pending approvals; `POST /problems/{id}/resolve` closes a problem.

@@ -34,6 +34,8 @@ class InboundMessage(BaseModel):
     text: str = ""
     button: str | None = None  # label of a tapped button or list row
     has_media: bool = False
+    media_id: str | None = None  # the channel's id of the attachment, for fetch_media
+    media_kind: str | None = None  # image, document, video, audio
     received_at: datetime
 
 
@@ -95,6 +97,10 @@ class ChannelAdapter(Protocol):
 
     def render_template(self, address: str, call: TemplateCall) -> ChannelPayload:
         """The payload for a registered template. Raises ValueError for unknown templates."""
+        ...
+
+    async def fetch_media(self, media_id: str) -> bytes | None:
+        """The bytes of an attachment, through the channel transport; None when it fails."""
         ...
 
     async def send(self, payload: ChannelPayload) -> DeliveryResult:

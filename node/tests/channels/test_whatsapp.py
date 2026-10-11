@@ -220,3 +220,96 @@ def test_server_start_registers_whatsapp_when_configured(wa: WhatsAppAdapter) ->
     finally:
         registry._adapters.clear()
         registry._adapters.update(saved)
+
+
+def test_image_message_carries_the_media_id(wa: WhatsAppAdapter) -> None:
+    (m,) = wa.receive(SAMPLES.joinpath("inbound_image.json").read_bytes())
+    assert isinstance(m, InboundMessage)
+    assert (m.has_media, m.media_id, m.media_kind) == (True, "MEDIA_ID", "image")
+
+
+def test_fetch_media_resolves_the_url_then_downloads(wa: WhatsAppAdapter) -> None:
+    import asyncio
+
+    seen: list[tuple[str, str | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((str(request.url), request.headers.get("authorization")))
+        if request.url.path.endswith("/MEDIA_ID"):
+            return httpx.Response(
+                200, json={"url": "https://lookaside.fbsbx.com/whatsapp/file.jpg", "file_size": 9}
+            )
+        return httpx.Response(200, content=b"JPEGBYTES")
+
+    from mia.channels import transport
+
+    adapter = _wa_with(httpx.MockTransport(handler))
+    with pytest.raises(transport.ChannelBlocked):  # outside fetching(): rule 6 holds
+        asyncio.run(adapter.fetch_media("MEDIA_ID"))
+    with transport.fetching("inbound-1"):
+        assert asyncio.run(adapter.fetch_media("MEDIA_ID")) == b"JPEGBYTES"
+    assert len(seen) == 2 and all(auth == "Bearer tok" for _, auth in seen)
+    assert (
+        seen[0][0].endswith("/MEDIA_ID")
+        and seen[1][0] == "https://lookaside.fbsbx.com/whatsapp/file.jpg"
+    )
+
+    def broken(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500)
+
+    with transport.fetching("inbound-2"):
+        assert asyncio.run(_wa_with(httpx.MockTransport(broken)).fetch_media("MEDIA_ID")) is None
+
+
+@pytest.mark.parametrize(
+    ("meta", "why"),
+    [
+        (
+            {"url": "https://evil.example/file.jpg", "file_size": 9},
+            "an off-domain host never sees the token",
+        ),
+        ({"url": "http://lookaside.fbsbx.com/file.jpg", "file_size": 9}, "plain http is refused"),
+        (
+            {"url": "https://lookaside.fbsbx.com/file.jpg", "file_size": 10**9},
+            "too large by the metadata",
+        ),
+    ],
+)
+def test_fetch_media_refuses_unsafe_metadata(
+    wa: WhatsAppAdapter, meta: dict[str, object], why: str
+) -> None:
+    import asyncio
+
+    from mia.channels import transport
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.path.endswith("/MEDIA_ID"):
+            return httpx.Response(200, json=meta)
+        return httpx.Response(200, content=b"x")
+
+    with transport.fetching("i"):
+        assert (
+            asyncio.run(_wa_with(httpx.MockTransport(handler)).fetch_media("MEDIA_ID")) is None
+        ), why
+    assert len(seen) == 1, why  # the second GET never happens
+
+
+def test_fetch_media_refuses_a_crafted_id_and_an_oversized_body(wa: WhatsAppAdapter) -> None:
+    import asyncio
+
+    from mia.channels import transport
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/MEDIA_ID"):
+            return httpx.Response(
+                200, json={"url": "https://lookaside.fbsbx.com/f.jpg", "file_size": 9}
+            )
+        return httpx.Response(200, content=b"x" * (wa.MAX_MEDIA_BYTES + 1))
+
+    adapter = _wa_with(httpx.MockTransport(handler))
+    with transport.fetching("i"):
+        assert asyncio.run(adapter.fetch_media("../PNID/messages")) is None
+        assert asyncio.run(adapter.fetch_media("MEDIA_ID")) is None  # the body lied about its size

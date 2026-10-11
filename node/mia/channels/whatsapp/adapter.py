@@ -5,6 +5,7 @@ requests go out only through ChannelTransport (so only from the outbox); only re
 templates with the right parameter count are sent; channel errors come back as results.
 """
 
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
@@ -48,7 +49,8 @@ class WhatsAppAdapter:
     ) -> None:
         self.app_secret = settings.MIA_WA_APP_SECRET
         self.verify_token = settings.MIA_WA_VERIFY_TOKEN
-        url = f"{settings.MIA_WA_GRAPH_URL.rstrip('/')}/{settings.MIA_WA_PHONE_NUMBER_ID}/messages"
+        self.graph_url = settings.MIA_WA_GRAPH_URL.rstrip("/")
+        url = f"{self.graph_url}/{settings.MIA_WA_PHONE_NUMBER_ID}/messages"
         self.messages_url = url
         self.client = httpx.AsyncClient(
             transport=ChannelTransport(transport),
@@ -83,6 +85,7 @@ class WhatsAppAdapter:
     def _message(self, m: dict[str, Any]) -> InboundMessage:
         kind = m.get("type")
         text, button, media = "", None, False
+        media_id = media_kind = None
         if kind == "text":
             text = m.get("text", {}).get("body", "")
         elif kind == "interactive":
@@ -93,6 +96,9 @@ class WhatsAppAdapter:
             button = m.get("button", {}).get("text")
         else:
             media = True
+            if kind in ("image", "document", "video", "audio"):
+                media_kind = kind
+                media_id = m.get(kind, {}).get("id")
         return InboundMessage(
             channel=self.channel_id,
             address=m["from"],
@@ -100,6 +106,8 @@ class WhatsAppAdapter:
             text=text,
             button=button,
             has_media=media,
+            media_id=media_id,
+            media_kind=media_kind,
             received_at=datetime.fromtimestamp(int(m.get("timestamp", 0)), UTC),
         )
 
@@ -166,6 +174,34 @@ class WhatsAppAdapter:
             template["components"] = [{"type": "body", "parameters": params}]
         body = self._base(address) | {"type": "template", "template": template}
         return ChannelPayload(channel=self.channel_id, address=address, body=body)
+
+    MAX_MEDIA_BYTES = 25 * 1024 * 1024
+    MEDIA_HOSTS = (".fbsbx.com", ".facebook.com", ".whatsapp.net")
+
+    async def fetch_media(self, media_id: str) -> bytes | None:
+        """Resolve the media id to its URL on the Graph API, then download it; both requests
+        go through the channel transport with the bearer token. None on any failure, on a
+        crafted id, on a download URL outside Meta's https hosts (the token must not leave
+        for anywhere else) and above MAX_MEDIA_BYTES (by the metadata, then by the body)."""
+        if not re.fullmatch(r"[\w-]+", media_id):  # Meta ids are digits; never a path
+            return None
+        try:
+            meta = await self.client.get(f"{self.graph_url}/{media_id}")
+            info = meta.json() if meta.status_code < 400 else {}
+            url = str(info.get("url") or "")
+            size = int(info.get("file_size") or 0)
+            if not url or size > self.MAX_MEDIA_BYTES or not self._media_host_ok(url):
+                return None
+            data = await self.client.get(url)
+        except (httpx.HTTPError, ValueError):
+            return None
+        if data.status_code >= 400 or len(data.content) > self.MAX_MEDIA_BYTES:
+            return None
+        return data.content
+
+    def _media_host_ok(self, url: str) -> bool:
+        parts = httpx.URL(url)
+        return parts.scheme == "https" and any(parts.host.endswith(h) for h in self.MEDIA_HOSTS)
 
     async def send(self, payload: ChannelPayload) -> DeliveryResult:
         """POST to the Graph API. Meta errors and network errors come back as results."""

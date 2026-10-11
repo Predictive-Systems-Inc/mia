@@ -14,6 +14,7 @@ services:
       MIA_DB_PATH: /data/mia.db
       MIA_MODELS_DIR: /data/models
       MIA_LEARNING_DIR: /data/learning
+      MIA_MEDIA_DIR: /data/media
       MIA_MASTER_KEY_FILE: /run/secrets/mia_master_key
       # Requests through the tunnel arrive from the cloudflared container: trust the compose
       # network for CF-Connecting-IP, or every visitor shares one IP for the login limits.

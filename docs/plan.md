@@ -64,7 +64,8 @@ Remaining work in this order, because each step unblocks the next:
    Check-in, check-out, visit details (address, instructions, access notes), the checklist
    (shown and ticked with quick replies) and site problems ("en pääse sisään", "no water")
    work over chat since 2026-10-12 (specs 2026-10-12-field-work-chat, -checklist-chat and
-   -supervisor-view-and-site-problems); open: location sharing as check-in, photos.
+   -supervisor-view-and-site-problems); a photo sent during a visit is saved as proof on it
+   (spec 2026-10-12-photos-as-proof); open: location sharing as check-in.
 6. **Alerts, billing export, rollout** (Sprint 5). Built 2026-10-12: the missed-check-in
    alert, the unstaffed-visits card and the daily plan on the ticker, and `mia billing export`
    (completed work per client and site, no amounts until service agreements exist, D21).

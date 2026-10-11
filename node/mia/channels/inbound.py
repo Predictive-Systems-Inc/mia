@@ -9,28 +9,33 @@ worker threads and nothing holds the write lock across the model call.
 import asyncio
 import datetime as dt
 import logging
+import os
 
 from pydantic import BaseModel
 from sqlalchemy import text as sql
 from sqlmodel import Session, col, select
 
 from mia.agents.dispatcher.agent import MANIFEST, get_agent
-from mia.channels import linking, outbox
+from mia.channels import linking, outbox, registry, transport
 from mia.channels.base import InboundMessage
 from mia.channels.service import deliver
 from mia.chat.blocks import ChatReply, TextBlock
 from mia.chat.service import run_turn
 from mia.core import store
 from mia.core.db import get_engine, session_scope, utcnow
+from mia.core.ids import new_id
 from mia.core.models import (
     Actor,
+    Branch,
     ChannelIdentity,
     ChannelInbound,
+    Location,
     Person,
     Principal,
     Thread,
 )
 from mia.i18n import SUPPORTED, t
+from mia.settings import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +49,7 @@ class _Step(BaseModel):
     person: Person | None = None
     text: str | None = None  # run a chat turn with this text
     thread_id: str | None = None
+    media: InboundMessage | None = None  # save the attachment as proof of the current visit
 
 
 SHOW_LABELS = {t("channel.show", lang).casefold() for lang in SUPPORTED}
@@ -92,6 +98,8 @@ def _begin(session: Session, inbound_id: str, now: dt.datetime) -> _Step | None:
     if msg.button and msg.button.strip().casefold() in SHOW_LABELS:
         _finish(session, row, "done")  # the new-message notice's button only releases held
         return _Step(person=person)
+    if msg.has_media and msg.media_id:
+        return _Step(person=person, media=msg)
     text = (msg.button or msg.text).strip()
     if not text:
         reply = t("channel.text_only", person.language)
@@ -107,6 +115,64 @@ def _begin(session: Session, inbound_id: str, now: dt.datetime) -> _Step | None:
         .order_by(col(Thread.id).desc())
     ).first()
     return _Step(person=person, text=text, thread_id=thread.id if thread else None)
+
+
+EXT = {"image": "jpg", "video": "mp4", "audio": "ogg", "document": "bin"}
+
+
+def _save_proof(
+    session: Session,
+    inbound_id: str,
+    person: Person,
+    msg: InboundMessage,
+    data: bytes,
+    now: dt.datetime,
+) -> None:
+    """Store the attachment under MIA_MEDIA_DIR and reference it on the person's current
+    visit (event `visit.proof_added`, the reference only). Replies to the person and marks
+    the inbound row done. Ownership: current_visit only returns a visit the person is assigned
+    to, in their branch, today (the non-tool path's equivalent of the tools' rbac check)."""
+    from mia.core import scheduling  # core imports channels for linking; keep this one lazy
+
+    actor = Actor.person(person)
+    row = session.get(ChannelInbound, inbound_id)
+    branch = session.get(Branch, person.branch_id)
+    visit = scheduling.current_visit(session, branch, person, now) if branch else None
+    if visit is None:
+        deliver(
+            session,
+            person,
+            [TextBlock(text=t("proof.no_visit", person.language))],
+            actor,
+            urgent=True,
+        )
+        if row is not None:
+            _finish(session, row, "done")
+        return
+    folder = get_settings().MIA_MEDIA_DIR / visit.branch_id / visit.id
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"{new_id()}.{EXT.get(msg.media_kind or '', 'bin')}"
+    path = folder / name
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    try:
+        ref = f"media/{visit.branch_id}/{visit.id}/{name}"
+        store.update(
+            session,
+            visit,
+            {"proof_refs": [*visit.proof_refs, ref]},
+            actor,
+            action="visit.proof_added",
+        )
+        loc = session.get(Location, visit.location_id)
+        text = t("proof.saved", person.language, location=loc.name if loc else "?")
+        deliver(session, person, [TextBlock(text=text)], actor, urgent=True)
+        if row is not None:
+            _finish(session, row, "done")
+    except Exception:
+        path.unlink(missing_ok=True)  # no orphan file without its reference
+        raise
 
 
 def _touch(
@@ -174,6 +240,16 @@ async def handle_inbound(inbound_id: str) -> None:
     try:
         step = await asyncio.to_thread(_begin, session, inbound_id, utcnow())
         await asyncio.to_thread(session.commit)
+        if step is not None and step.media is not None and step.person is not None:
+            adapter = registry.get(step.media.channel)
+            with transport.fetching(inbound_id):  # rule 6: a GET for a logged attachment only
+                data = await adapter.fetch_media(step.media.media_id or "")
+            if data is None:
+                raise RuntimeError(f"media {step.media.media_id} could not be fetched")
+            await asyncio.to_thread(
+                _save_proof, session, inbound_id, step.person, step.media, data, utcnow()
+            )
+            await asyncio.to_thread(session.commit)
         if step is not None and step.text is not None and step.person is not None:
             agent = get_agent()
             reply = await run_turn(session, agent, step.person, step.text, step.thread_id)

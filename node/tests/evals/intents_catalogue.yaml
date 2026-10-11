@@ -281,7 +281,7 @@ intents:
   system_of_record: Mia
   country: both
   phase: 1
-  built: 'no'
+  built: 'yes'
 - id: dispatcher.extra_time
   agent: dispatcher
   process: Service-to-Cash

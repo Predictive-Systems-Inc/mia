@@ -428,6 +428,39 @@ def on_override_approved(session: Session, approval: Approval, decider: Actor) -
 approvals.register_handler(OVERRIDE_TYPE, on_override_approved)
 
 
+# ---- the current visit ---------------------------------------------------------------------
+
+
+def current_visit(
+    session: Session,
+    branch: Branch,
+    person: Person,
+    now: dt.datetime,
+    *,
+    location_id: str | None = None,
+) -> Visit | None:
+    """The person's visit in progress today, else the planned one today nearest to now that
+    has not ended (the visit check-in, photos and problem reports attach to)."""
+    today = now.astimezone(ZoneInfo(branch.timezone)).date()
+    rows = [
+        v
+        for v in session.exec(
+            select(Visit)
+            .where(Visit.branch_id == branch.id)
+            .where(Visit.date == today)
+            .where(col(Visit.status).in_(("planned", "in_progress")))
+            .order_by(col(Visit.planned_start))
+        ).all()
+        if person.id in v.assigned_person_ids
+        and (location_id is None or v.location_id == location_id)
+    ]
+    running = [v for v in rows if v.status == "in_progress"]
+    if running:
+        return running[0]
+    ahead = [v for v in rows if v.planned_end >= now]
+    return min(ahead, key=lambda v: abs((v.planned_start - now).total_seconds())) if ahead else None
+
+
 # ---- check-in and check-out ------------------------------------------------------------
 
 

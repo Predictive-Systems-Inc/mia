@@ -52,6 +52,7 @@ class SimAdapter:
 
         self.capabilities = capabilities or CAPABILITIES
         self.secret = secret
+        self.media: dict[str, bytes] = {}  # media id -> bytes, for fetch_media
         self.sent: list[ChannelPayload] = []
         self.fail_next: str | None = None
         self.on_demand = on_demand
@@ -79,6 +80,8 @@ class SimAdapter:
                     text=m.get("text") or "",
                     button=m.get("button"),
                     has_media=bool(m.get("media")),
+                    media_id=m["media"] if isinstance(m.get("media"), str) else None,
+                    media_kind="image" if m.get("media") else None,
                     received_at=datetime.now(UTC),
                 )
             )
@@ -118,6 +121,10 @@ class SimAdapter:
         return ChannelPayload(
             channel=self.channel_id, address=address, body={"kind": "template", **call.model_dump()}
         )
+
+    async def fetch_media(self, media_id: str) -> bytes | None:
+        """The bytes registered in `media` for the id (None when there are none)."""
+        return self.media.get(media_id)
 
     async def send(self, payload: ChannelPayload) -> DeliveryResult:
         """Record the payload; fail with `fail_next` once if set."""
