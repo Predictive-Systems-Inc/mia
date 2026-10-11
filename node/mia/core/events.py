@@ -7,6 +7,7 @@ previous hash plus the canonical JSON of the row, so any edit breaks verify_chai
 
 import hashlib
 import json
+from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy import DDL, event, text
@@ -62,9 +63,17 @@ def _last_hash(session: Session) -> str:
     return last or GENESIS_HASH
 
 
-def snapshot(row: SQLModel | None) -> dict[str, Any] | None:
-    """JSON-safe copy of a row for before/after values."""
-    return None if row is None else row.model_dump(mode="json")
+REDACTED = "<redacted>"
+
+
+def snapshot(row: SQLModel | None, redact: Iterable[str] = ()) -> dict[str, Any] | None:
+    """JSON-safe copy of a row for before/after values. Fields named in the model's
+    `__redact__` and in `redact` are replaced by "<redacted>" so secrets never enter events."""
+    if row is None:
+        return None
+    data = row.model_dump(mode="json")
+    hidden = set(getattr(row, "__redact__", ())) | set(redact)
+    return {k: (REDACTED if k in hidden and v is not None else v) for k, v in data.items()}
 
 
 def emit(

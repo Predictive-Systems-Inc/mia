@@ -101,3 +101,24 @@ def test_concurrent_writers_do_not_fork_the_chain(engine: Engine) -> None:
     with Session(engine) as s:
         assert len(s.exec(select(Event)).all()) == 2
         assert verify_chain(s)
+
+
+def test_snapshot_redacts_declared_and_requested_fields(branch: object) -> None:
+    from mia.core.events import snapshot
+    from mia.core.models import AuthCredential, ChannelOutbox
+
+    bid = branch.id  # type: ignore[attr-defined]
+    cred = AuthCredential(
+        branch_id=bid, person_id="P", kind="password", login="a@b.fi", secret_hash="scrypt$x"
+    )
+    snap = snapshot(cred)
+    assert snap is not None and snap["secret_hash"] == "<redacted>" and snap["login"] == "a@b.fi"
+    row = ChannelOutbox(
+        branch_id=bid,
+        person_id="P",
+        channel="sim",
+        address="1",
+        payload={"text": "123456"},
+        idempotency_key="k",
+    )
+    assert snapshot(row, redact={"payload"})["payload"] == "<redacted>"  # type: ignore[index]

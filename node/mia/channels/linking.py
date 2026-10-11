@@ -20,9 +20,9 @@ from mia.core import store
 from mia.core.db import utcnow
 from mia.core.models import (
     Actor,
+    AuthAttempt,
+    AuthCode,
     ChannelIdentity,
-    ChannelLinkAttempt,
-    ChannelLinkCode,
     Person,
     Principal,
 )
@@ -58,12 +58,12 @@ def create_code(session: Session, actor: Actor, person: Person, purpose: Purpose
     while True:
         code = f"{secrets.randbelow(10**6):06d}"
         digest = _hmac(code)
-        taken = session.exec(select(ChannelLinkCode).where(ChannelLinkCode.code_hmac == digest))
+        taken = session.exec(select(AuthCode).where(AuthCode.code_hmac == digest))
         if taken.first() is None:
             break
     store.insert(
         session,
-        ChannelLinkCode(
+        AuthCode(
             branch_id=person.branch_id,
             person_id=person.id,
             code_hmac=digest,
@@ -106,17 +106,17 @@ def _channel_actor(channel: str) -> Actor:
 
 def _blocked(session: Session, channel: str, address: str, now: dt.datetime) -> bool:
     failures = session.exec(
-        select(ChannelLinkAttempt)
-        .where(ChannelLinkAttempt.channel == channel)
-        .where(ChannelLinkAttempt.address == address)
-        .where(ChannelLinkAttempt.ok == False)
-        .where(col(ChannelLinkAttempt.created_at) > now - LOCKOUT)
+        select(AuthAttempt)
+        .where(AuthAttempt.kind == "link_code")
+        .where(AuthAttempt.key == f"{channel}:{address}@-")
+        .where(AuthAttempt.ok == False)
+        .where(col(AuthAttempt.created_at) > now - LOCKOUT)
     ).all()
     return len(failures) >= MAX_FAILURES
 
 
 def _record(session: Session, channel: str, address: str, ok: bool, now: dt.datetime) -> None:
-    attempt = ChannelLinkAttempt(channel=channel, address=address, ok=ok, created_at=now)
+    attempt = AuthAttempt(kind="link_code", key=f"{channel}:{address}@-", ok=ok, created_at=now)
     store.insert(session, attempt, _channel_actor(channel), action="channel.link_attempt")
 
 
@@ -127,9 +127,7 @@ def redeem(
     if _blocked(session, channel, address, now):
         _record(session, channel, address, False, now)
         return RedeemResult(status="blocked")
-    row = session.exec(
-        select(ChannelLinkCode).where(ChannelLinkCode.code_hmac == _hmac(code))
-    ).first()
+    row = session.exec(select(AuthCode).where(AuthCode.code_hmac == _hmac(code))).first()
     status: Status
     if row is None:
         status = "invalid"
@@ -171,7 +169,7 @@ def redeem(
     return RedeemResult(status="linked", person=person)
 
 
-def _tell_inviter(session: Session, row: ChannelLinkCode, person: Person) -> None:
+def _tell_inviter(session: Session, row: AuthCode, person: Person) -> None:
     from mia.chat.channels import notify  # chat.channels imports channels.service later
 
     inviter = session.get(Person, row.created_by)

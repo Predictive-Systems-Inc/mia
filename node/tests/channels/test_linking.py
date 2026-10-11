@@ -12,7 +12,7 @@ from mia.core.db import utcnow
 from mia.core.models import (
     Actor,
     ChannelIdentity,
-    ChannelLinkCode,
+    AuthCode,
     Message,
     Person,
     Thread,
@@ -32,7 +32,7 @@ def test_code_is_six_digits_and_stored_only_as_hmac(
 ) -> None:
     code = _code(session, people["Juha"], people["Sanna"])
     assert len(code) == 6 and code.isdigit()
-    row = session.exec(select(ChannelLinkCode)).one()
+    row = session.exec(select(AuthCode)).one()
     assert code not in row.code_hmac and len(row.code_hmac) == 64
     assert row.created_by == people["Sanna"].id
 
