@@ -12,7 +12,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from mia.api.deps import (
     REFRESH_COOKIE,
@@ -493,3 +493,102 @@ async def token(request: Request, session: DbSession) -> JSONResponse:
         },
         headers={"Cache-Control": "no-store"},
     )
+
+
+# ---- administration: sessions, devices, resets -------------------------------------------
+
+
+def _require(
+    session: Session, ctx: AuthContext, name: str, action: str, owner_id: str | None
+) -> None:
+    from mia.core.rbac import PermissionDenied, Resource, get_rbac
+
+    resource = Resource(kind="data", name=name, owner_id=owner_id)
+    try:
+        get_rbac().require(ctx.actor, resource, action, session=session)
+    except PermissionDenied as exc:
+        raise HTTPException(403, "not allowed") from exc
+
+
+@router.get("/sessions")
+def sessions(session: DbSession, ctx: PersonAuth) -> list[dict[str, object]]:
+    """The person's active sessions, oldest first."""
+    rows = session.exec(
+        select(AuthSession)
+        .where(AuthSession.subject_id == _person(ctx).id)
+        .where(AuthSession.status == "active")
+        .order_by(col(AuthSession.id))
+    ).all()
+    return [
+        {
+            "id": r.id,
+            "method": r.method,
+            "aal": r.aal,
+            "ip": r.ip,
+            "created_at": r.created_at.isoformat(),
+            "device_id": r.device_id,
+            "current": r.id == ctx.session_id,
+        }
+        for r in rows
+    ]
+
+
+@router.delete("/sessions/{session_id}")
+def revoke_session(session: DbSession, ctx: PersonAuth, session_id: str) -> dict[str, bool]:
+    """End one of the person's own sessions."""
+    row = session.get(AuthSession, session_id)
+    if row is None or row.subject_id != _person(ctx).id or row.status != "active":
+        raise HTTPException(404, "session not found")
+    auth.revoke_session(session, ctx.actor, row, utcnow())
+    return {"ok": True}
+
+
+@router.get("/devices")
+def devices(
+    session: DbSession, ctx: PersonAuth, person_id: str | None = None
+) -> list[dict[str, object]]:
+    """Active devices of the person, or of another person for those who may read them."""
+    owner = person_id or _person(ctx).id
+    _require(session, ctx, "core.auth_devices", "read", owner)
+    rows = session.exec(
+        select(AuthDevice)
+        .where(AuthDevice.person_id == owner)
+        .where(AuthDevice.status == "active")
+        .order_by(col(AuthDevice.id))
+    ).all()
+    return [
+        {
+            "id": d.id,
+            "kind": d.kind,
+            "name": d.name,
+            "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None,
+        }
+        for d in rows
+    ]
+
+
+@router.delete("/devices/{device_id}")
+def revoke_device(session: DbSession, ctx: PersonAuth, device_id: str) -> dict[str, bool]:
+    """Revoke a device (own, or a person's for supervisors and up); its sessions end at once.
+    The row must exist in the branch before the permission is checked, so nothing leaks
+    about other branches."""
+    row = session.get(AuthDevice, device_id)
+    if row is None or row.status != "active" or row.branch_id != ctx.actor.branch_id:
+        raise HTTPException(404, "device not found")
+    _require(session, ctx, "core.auth_devices", "write", row.person_id)
+    auth.revoke_device(session, ctx.actor, row, utcnow())
+    return {"ok": True}
+
+
+@router.post("/people/{person_id}/reset")
+def reset_person(session: DbSession, ctx: PersonAuth, person_id: str) -> dict[str, str]:
+    """Admin reset: every session, device and credential of the person goes; a new
+    enrolment link comes back."""
+    from mia.settings import get_settings
+
+    target = session.get(Person, person_id)
+    if target is None or target.branch_id != ctx.actor.branch_id:
+        raise HTTPException(404, "person not found")
+    _require(session, ctx, "core.auth_credentials", "write", None)
+    code = auth.start_enrolment(session, ctx.actor, target, utcnow(), reason="reset")
+    return {"enrol_url": f"{get_settings().MIA_PUBLIC_URL.rstrip('/')}/auth/enrol/{code}"}
