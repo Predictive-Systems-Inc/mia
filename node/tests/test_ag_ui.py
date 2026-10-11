@@ -553,3 +553,32 @@ def test_clarify_streamed_run_lists_the_options_as_text(
     assert_well_formed(events)
     delta = next(e for e in events if e["type"] == "TEXT_MESSAGE_CONTENT")["delta"]
     assert delta == "Tarkoititko:\n- Näytä käyntini\n- Jotain muuta"
+
+
+def test_a_capped_run_ends_with_a_translated_run_error(
+    client: TestClient, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+
+    def loop(_messages: list[ModelMessage], _info: AgentInfo) -> Any:
+        return ModelResponse(parts=[ToolCallPart(tool_name="ping", args={})])
+
+    async def stream(
+        _messages: list[ModelMessage], _info: AgentInfo
+    ) -> AsyncIterator[DeltaToolCalls]:
+        yield {0: DeltaToolCall(name="ping", json_args="{}")}
+
+    agent = Agent(
+        FunctionModel(loop, stream_function=stream), deps_type=AgentDeps, output_type=AgentReply
+    )
+
+    @agent.tool_plain
+    def ping() -> str:
+        return "pong"
+
+    monkeypatch.setattr(runs, "get_agent", lambda: agent)
+    res = post(client, "/ag-ui", people["Juha"], body("Olen kipeä huomenna."))
+    events = parse(res.text)
+    assert_well_formed(events)
+    assert events[-1]["type"] == "RUN_ERROR" and events[-1]["code"] == "turn_capped"
+    assert "esihenkilö" in events[-1]["message"].casefold()

@@ -14,7 +14,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from pydantic_ai import Agent, AgentRunResult
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
+from pydantic_ai.usage import UsageLimits
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps
@@ -330,6 +332,24 @@ def _store_reply(
     )
 
 
+MAX_MODEL_CALLS = 8  # D22: a turn stops after this many model requests
+USAGE_LIMITS = UsageLimits(request_limit=MAX_MODEL_CALLS)
+
+
+def reply_capped(session: Session, deps: AgentDeps, thread: Thread) -> ChatReply:
+    """The reply when the turn hit the model-call cap (D22): a short translated text that a
+    supervisor will follow up, and the event `chat.turn_capped` on the thread."""
+    events.emit(
+        session,
+        "chat.turn_capped",
+        thread,
+        None,
+        {"model_calls": MAX_MODEL_CALLS},
+        deps.actor,
+    )
+    return _reply_text(session, deps, thread, t("chat.capped", deps.lang))
+
+
 def _reply_text(session: Session, deps: AgentDeps, thread: Thread, text: str) -> ChatReply:
     return _store_reply(session, deps, thread, [TextBlock(text=text)])
 
@@ -454,8 +474,14 @@ async def run_turn(
     reply, agent_text = await asyncio.to_thread(resolve_turn, session, deps, thread, text)
     if reply is not None:
         return reply
-    with egress_context(ctx):
-        result = await agent.run(
-            wrap_user_text(agent_text, person), deps=deps, message_history=past
-        )
+    try:
+        with egress_context(ctx):
+            result = await agent.run(
+                wrap_user_text(agent_text, person),
+                deps=deps,
+                message_history=past,
+                usage_limits=USAGE_LIMITS,
+            )
+    except UsageLimitExceeded:
+        return await asyncio.to_thread(reply_capped, session, deps, thread)
     return await asyncio.to_thread(_finish, session, deps, thread, result)
