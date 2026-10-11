@@ -14,10 +14,14 @@ from mia.agents.dispatcher.classifier import classify
 from mia.agents.dispatcher.rules import rules_model
 from mia.agents.dispatcher.tools import BINDINGS
 from mia.chat.blocks import AgentReply, TextBlock
+from mia.core.rbac import get_rbac
 from mia.settings import get_settings
 
 AGENT_DIR = Path(__file__).resolve().parent
 MANIFEST = Manifest.load(AGENT_DIR / "manifest.yaml")
+# The agent role's grants are in RBAC as soon as the dispatcher is imported, so its tools work
+# through the API and the CLI before any agent is built (idempotent; build_agent loads too).
+get_rbac().load_agent_role(MANIFEST.roles.agent_role, MANIFEST.roles.grants, MANIFEST.roles.denies)
 
 
 def text_reply(text: str) -> AgentReply:

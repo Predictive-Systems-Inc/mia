@@ -21,6 +21,8 @@ IntentName = Literal[
     "check_in",
     "check_out",
     "visit_details",
+    "cannot_access_site",
+    "site_problem",
     "other",
 ]
 
@@ -91,6 +93,20 @@ CHECK_OUT = re.compile(
     r"^\W*(?:(?:i'?m |i am )?(?:all done|done here|finished here|done|finished)|"
     r"check(?:ing|ed)? out|leaving now)\W*(?:here|now|(?:at|in) \S+)?\W*$|"
     r"^\W*(?:valmis|valmista|lopetin)\b|\blähden nyt\b",
+    re.IGNORECASE,
+)
+CANNOT_ACCESS = re.compile(
+    r"\b(can'?t get in|cannot get in|can'?t open|locked out|door is locked|the alarm|"
+    r"code (is|doesn'?t|does not) (wrong|work)|wrong code|no key|"
+    r"en pääse sisään|ovi on lukossa|lukossa|ovikoodi ei toimi|koodi ei toimi|"
+    r"väärä koodi|hälytin|ei avainta)\b",
+    re.IGNORECASE,
+)
+SITE_PROBLEM = re.compile(
+    r"\b(no (water|power|electricity|heating)|water is off|power is out|renovation|"
+    r"client is still (here|there)|customer is still|can'?t start|"
+    r"ei (ole )?(vettä|sähköä|lämpöä)|remontti|asiakas on (vielä|yhä) paikalla|"
+    r"en voi aloittaa)\b",
     re.IGNORECASE,
 )
 DETAILS = re.compile(
@@ -227,6 +243,10 @@ def classify(text: str, today: dt.date, default_lang: str = "en") -> Intent:
             time=parse_time(text),
             location_hint=words[0] if words else None,
         )
+    if CANNOT_ACCESS.search(text):  # before absence: "en pääse sisään" is not "en pääse"
+        return Intent(name="cannot_access_site", lang=lang)
+    if SITE_PROBLEM.search(text):
+        return Intent(name="site_problem", lang=lang)
     if ABSENCE.search(text):
         reason = "late" if LATE.search(text) else "leaving_early" if EARLY.search(text) else "sick"
         return Intent(

@@ -562,6 +562,73 @@ def visit_details(
     )
 
 
+# ---- site problems -----------------------------------------------------------------------
+
+
+class ReportProblemInput(BaseModel):
+    kind: Literal["cannot_access", "site_problem"] = Field(
+        description="cannot_access: locked door, no key, wrong code, alarm; site_problem: the "
+        "site is unusable (no water or power, renovation, client still there)"
+    )
+    text: str = Field(max_length=500, description="The user's own words")
+
+
+class ProblemOutput(BaseModel):
+    status: Literal["ok", "invalid"]
+    reason: str | None = None
+    visit: VisitInfo | None = None
+    problem_id: str | None = None
+
+
+def report_site_problem(
+    deps: AgentDeps, args: ReportProblemInput, tool_call_id: str
+) -> ProblemOutput:
+    """Record a problem at the acting person's current (or next) visit today and tell the
+    supervisors at once."""
+    from mia.agents.dispatcher.alerts import supervisors
+    from mia.agents.dispatcher.models import SiteProblem
+    from mia.chat.blocks import TextBlock
+    from mia.chat.channels import notify
+    from mia.i18n import t
+
+    _check(
+        deps,
+        Resource(kind="data", name="dispatcher_site_problems", owner_id=deps.person.id),
+        "write",
+        tool_call_id,
+    )
+    now = utcnow()
+    rows = [v for v in _own_visits_today(deps, None) if v.status in ("planned", "in_progress")]
+    current = [v for v in rows if v.status == "in_progress" or v.planned_end >= now]
+    if not rows:
+        return ProblemOutput(status="invalid", reason="no_visit")
+    visit = current[0] if current else rows[-1]
+    row = store.insert(
+        deps.session,
+        SiteProblem(
+            branch_id=deps.branch.id,
+            visit_id=visit.id,
+            person_id=deps.person.id,
+            kind=args.kind,
+            text=args.text,
+        ),
+        deps.actor,
+        action="site_problem.reported",
+        tool_call_id=tool_call_id,
+    )
+    info = visit_info(deps.session, visit, deps.branch.timezone)
+    for sup in supervisors(deps.session, deps.branch.id):
+        text = t(
+            f"alert.{args.kind}",
+            sup.language,
+            name=deps.person.name,
+            location=info.location,
+            text=args.text,
+        )
+        notify(deps.session, sup, [TextBlock(text=text)], deps.actor, deps.manifest.id, urgent=True)
+    return ProblemOutput(status="ok", visit=info, problem_id=row.id)
+
+
 BINDINGS = [
     ToolBinding(
         "dispatcher.get_my_visits",
@@ -615,5 +682,12 @@ BINDINGS = [
         VisitDetailsInput,
         "Address, instructions, access notes and checklist of the user's current or next "
         "visit today (or of the site they name).",
+    ),
+    ToolBinding(
+        "dispatcher.report_site_problem",
+        report_site_problem,
+        ReportProblemInput,
+        "The user cannot get into the site, or the site is unusable: record it and tell the "
+        "supervisors. Pass the user's own words as text.",
     ),
 ]

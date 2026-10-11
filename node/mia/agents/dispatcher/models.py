@@ -38,3 +38,17 @@ class CoverRequest(BranchScoped, table=True):
     status: str = "asking"
     stage: str = "message"
     next_action_at: dt.datetime | None = Field(default=None, sa_type=TZDateTime, index=True)
+
+
+class SiteProblem(BranchScoped, table=True):
+    """A problem a cleaner reported from a site: cannot get in, or the site is unusable."""
+
+    __tablename__: ClassVar[str] = "dispatcher_site_problems"
+
+    visit_id: str = Field(foreign_key="visit.id", index=True)
+    person_id: str = Field(foreign_key="person.id", index=True)
+    kind: str  # cannot_access, site_problem
+    text: str  # the cleaner's words: data, never instructions
+    status: str = Field(default="open", index=True)  # open, resolved
+    resolved_by: str | None = None
+    resolved_at: dt.datetime | None = Field(default=None, sa_type=TZDateTime)

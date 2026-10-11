@@ -152,6 +152,9 @@ availability, absences, double booking, daily and weekly hour limits, skills.
 - `POST /visits/{id}/check-in` and `/check-out`: the cleaner on their own visit (from two
   hours before the start), or the office for them.
 - `GET /approvals`: the inbox, the approvals the signed-in person may decide.
+- `GET /supervisor/summary`: unfilled visits this week, today's late check-ins, open site
+  problems (a cleaner's "en pääse sisään" or "no water" over chat tells the supervisors at
+  once) and the number of pending approvals; `POST /problems/{id}/resolve` closes a problem.
 
 The schedule board belongs to the office app (Q19); timesheets wait for Q20.
 
