@@ -571,6 +571,7 @@ class ReportProblemInput(BaseModel):
         "site is unusable (no water or power, renovation, client still there)"
     )
     text: str = Field(max_length=500, description="The user's own words")
+    location_name: str | None = Field(None, description="The site, when the user names it")
 
 
 class ProblemOutput(BaseModel):
@@ -598,11 +599,21 @@ def report_site_problem(
         tool_call_id,
     )
     now = utcnow()
-    rows = [v for v in _own_visits_today(deps, None) if v.status in ("planned", "in_progress")]
-    current = [v for v in rows if v.status == "in_progress" or v.planned_end >= now]
+    rows = [
+        v
+        for v in _own_visits_today(deps, args.location_name)
+        if v.date == deps.today and v.status in ("planned", "in_progress")
+    ]  # today only: never tomorrow's visit
+    running = [v for v in rows if v.status == "in_progress"]
     if not rows:
         return ProblemOutput(status="invalid", reason="no_visit")
-    visit = current[0] if current else rows[-1]
+    if running:
+        visit = running[0]
+    else:
+        ahead = [v for v in rows if v.planned_end >= now]  # the current or next one today
+        if not ahead:
+            return ProblemOutput(status="invalid", reason="no_visit")
+        visit = min(ahead, key=lambda v: abs((v.planned_start - now).total_seconds()))
     row = store.insert(
         deps.session,
         SiteProblem(
@@ -618,6 +629,8 @@ def report_site_problem(
     )
     info = visit_info(deps.session, visit, deps.branch.timezone)
     for sup in supervisors(deps.session, deps.branch.id):
+        if sup.id == deps.person.id:
+            continue  # a supervisor reporting from their own visit is not paged about it
         text = t(
             f"alert.{args.kind}",
             sup.language,

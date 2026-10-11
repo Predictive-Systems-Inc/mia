@@ -8,17 +8,12 @@ from sqlmodel import Session, select
 
 from mia.agents.base import AgentDeps, call_tool
 from mia.agents.dispatcher import tools
-from mia.agents.dispatcher.agent import MANIFEST, create_agent
+from mia.agents.dispatcher.agent import MANIFEST
 from mia.agents.dispatcher.models import Absence
 from mia.core import approvals
 from mia.core.db import utcnow
 from mia.core.models import Actor, Approval, Branch, Event, Person, Visit
 from mia.core.rbac import PermissionDenied
-
-
-@pytest.fixture(autouse=True)
-def dispatcher_role() -> None:
-    create_agent("test")  # loads the agent role and registers the approval handler
 
 
 def deps_for(session: Session, branch: Branch, person: Person) -> AgentDeps:

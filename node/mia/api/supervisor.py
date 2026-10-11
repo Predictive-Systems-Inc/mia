@@ -10,7 +10,7 @@ from sqlmodel import col, select
 
 from mia.agents.dispatcher.models import SiteProblem
 from mia.api.deps import DbSession, PersonAuth
-from mia.api.schedule import VisitCard, _branch, _card, _require
+from mia.api.schedule import VisitCard, branch_of, require_visit, visit_card
 from mia.core import scheduling, store
 from mia.core.db import utcnow
 from mia.core.models import Location, Person, Visit
@@ -40,8 +40,8 @@ class Summary(BaseModel):
 def summary(session: DbSession, ctx: PersonAuth) -> Summary:
     """Unfilled visits this week, today's late check-ins, open problems and the number of
     approvals the person may decide. Staff get 403."""
-    _require(session, ctx, "read", None)
-    branch = _branch(session, ctx)
+    require_visit(session, ctx, "read", None)
+    branch = branch_of(session, ctx)
     tz = branch.timezone
     now = utcnow()
     today = now.astimezone(ZoneInfo(tz)).date()
@@ -78,8 +78,8 @@ def summary(session: DbSession, ctx: PersonAuth) -> Summary:
             )
         )
     return Summary(
-        unfilled=[_card(session, v, tz) for v in week if v.status == "unfilled"],
-        late_check_ins=[_card(session, v, tz) for v in late],
+        unfilled=[visit_card(session, v, tz) for v in week if v.status == "unfilled"],
+        late_check_ins=[visit_card(session, v, tz) for v in late],
         open_problems=cards,
         pending_approvals=len(scheduling.inbox(session, ctx.actor)),
     )
@@ -88,7 +88,7 @@ def summary(session: DbSession, ctx: PersonAuth) -> Summary:
 @router.post("/problems/{problem_id}/resolve")
 def resolve(session: DbSession, ctx: PersonAuth, problem_id: str) -> dict[str, str]:
     """Close a site problem (supervisors and up)."""
-    _require(session, ctx, "write", None)
+    require_visit(session, ctx, "write", None)
     row = session.get(SiteProblem, problem_id)
     if row is None or row.branch_id != ctx.actor.branch_id:
         raise HTTPException(404, "problem not found")

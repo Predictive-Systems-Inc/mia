@@ -160,7 +160,11 @@ def decide(intent: Intent, messages: list[ModelMessage], info: AgentInfo) -> Mod
         return _call("respond_to_cover", {"accept": bool(intent.accept)})
     if intent.name in ("cannot_access_site", "site_problem"):
         kind = "cannot_access" if intent.name == "cannot_access_site" else "site_problem"
-        return _call("report_site_problem", {"kind": kind, "text": _last_user_text(messages)})
+        text = _last_user_text(messages)[:500]  # the tool's bound; the rest stays in the thread
+        args = {"kind": kind, "text": text}
+        if intent.location_hint:
+            args["location_name"] = intent.location_hint
+        return _call("report_site_problem", args)
     if intent.name in ("check_in", "check_out", "visit_details"):
         args = {"location_name": intent.location_hint} if intent.location_hint else {}
         return _call(intent.name, args)

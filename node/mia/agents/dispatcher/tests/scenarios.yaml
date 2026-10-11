@@ -281,3 +281,17 @@
   message: "Mikä on ovikoodi Kampissa?"
   tools: [{tool: visit_details, status: ok}]
   reply_blocks: [card]
+
+- id: fi_cannot_get_in
+  as: Juha
+  message: "En pääse sisään, ovi on lukossa"
+  tools: [{tool: report_site_problem, args: {kind: cannot_access}}]
+  or_tools: [{tool: report_site_problem, status: invalid}]
+  reply_lang: fi
+
+- id: en_no_water
+  as: Juha
+  message: "No water at the site"
+  tools: [{tool: report_site_problem, args: {kind: site_problem}}]
+  or_tools: [{tool: report_site_problem, status: invalid}]
+  reply_lang: en
