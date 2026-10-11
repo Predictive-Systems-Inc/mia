@@ -1,6 +1,7 @@
 """WhatsApp Cloud API adapter: request bodies, webhook parsing, templates, transport."""
 
 import asyncio
+import datetime as dt
 import json
 from pathlib import Path
 
@@ -319,3 +320,42 @@ def test_location_message_carries_coordinates(wa: WhatsAppAdapter) -> None:
     (m,) = wa.receive(SAMPLES.joinpath("inbound_location.json").read_bytes())
     assert isinstance(m, InboundMessage)
     assert (m.lat, m.lon, m.has_media, m.text) == (60.169, 24.932, False, "")
+
+
+@pytest.mark.parametrize("latitude", ['"abc"', "1e400", "91", "true"])
+def test_crafted_coordinates_are_dropped_not_crashed(wa: WhatsAppAdapter, latitude: str) -> None:
+    sample = (
+        SAMPLES.joinpath("inbound_location.json")
+        .read_text()
+        .replace('"latitude": 60.169', f'"latitude": {latitude}')
+    )
+    (m,) = wa.receive(sample.encode())
+    assert isinstance(m, InboundMessage)
+    assert (m.lat, m.lon, m.has_media) == (None, None, False)
+
+
+def test_a_place_with_a_name_is_a_picked_place(wa: WhatsAppAdapter) -> None:
+    (m,) = wa.receive(SAMPLES.joinpath("inbound_location.json").read_bytes())
+    assert isinstance(m, InboundMessage) and m.picked_place
+    bare = (
+        SAMPLES.joinpath("inbound_location.json")
+        .read_text()
+        .replace(', "name": "Kamppi", "address": "Urho Kekkosen katu 1"', "")
+    )
+    (m,) = wa.receive(bare.encode())
+    assert isinstance(m, InboundMessage) and not m.picked_place
+
+
+def test_inbound_message_refuses_infinite_coordinates() -> None:
+
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        InboundMessage(
+            channel="sim",
+            address="1",
+            channel_message_id="1",
+            received_at=dt.datetime.now(dt.UTC),
+            lat=float("inf"),
+            lon=0.0,
+        )

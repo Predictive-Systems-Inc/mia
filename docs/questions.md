@@ -209,4 +209,6 @@ Format for each entry:
   corrected by the office (`POST /visits/{id}/check-in` again is not possible, so a timesheet
   correction once Q20 lands). The site's geofence radius comes from `location.geofence`
   (`radius_m`, 100 m when unset); the shared coordinates are never stored, only the distance.
+  A shared point is the cleaner's claim (WhatsApp lets anyone send a chosen place), so a chosen
+  place is flagged like a point outside the fence and a point inside it proves nothing.
 - Blocking: no

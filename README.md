@@ -156,8 +156,9 @@ availability, absences, double booking, daily and weekly hour limits, skills.
   ("Mikä on tarkistuslista?") and ticks items with the quick replies ("Tehty: Empty bins"),
   reports a problem ("En pääse sisään"), sends a photo as proof of work (saved under
   `MIA_MEDIA_DIR`, referenced on the visit) and checks out ("Valmis, lähden nyt"). A shared
-  location checks in (or out, during the visit); one outside the site's geofence is flagged
-  for the supervisors, not rejected.
+  location checks in (or out, during the visit); one outside the site's geofence, or a chosen
+  place rather than the phone's position, is flagged for the supervisors, not rejected. The
+  coordinates are used once and never stored.
 - `GET /supervisor/summary`: unfilled visits this week, today's late check-ins, today's
   check-ins and check-outs outside the site's geofence, open site
   problems (a cleaner's "en pääse sisään" or "no water" over chat tells the supervisors at

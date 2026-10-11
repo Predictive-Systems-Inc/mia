@@ -19,6 +19,7 @@ from mia.channels.base import (
     InboundMessage,
     StatusUpdate,
     TemplateCall,
+    coordinates,
 )
 from mia.channels.render import ButtonsPart, ListPart, RenderedPart
 from mia.channels.simulator import hub_signature_ok
@@ -86,6 +87,7 @@ class WhatsAppAdapter:
         kind = m.get("type")
         text, button, media = "", None, False
         media_id = media_kind = lat = lon = None
+        picked = False
         if kind == "text":
             text = m.get("text", {}).get("body", "")
         elif kind == "interactive":
@@ -96,7 +98,8 @@ class WhatsAppAdapter:
             button = m.get("button", {}).get("text")
         elif kind == "location":
             where = m.get("location", {})
-            lat, lon = where.get("latitude"), where.get("longitude")
+            lat, lon = coordinates(where.get("latitude"), where.get("longitude"))
+            picked = bool(where.get("name") or where.get("address"))  # a chosen place
         else:
             media = True
             if kind in ("image", "document", "video", "audio"):
@@ -113,6 +116,7 @@ class WhatsAppAdapter:
             media_kind=media_kind,
             lat=lat,
             lon=lon,
+            picked_place=picked,
             received_at=datetime.fromtimestamp(int(m.get("timestamp", 0)), UTC),
         )
 

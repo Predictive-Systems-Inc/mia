@@ -9,6 +9,7 @@ import hmac
 import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from typing import Any
 
 from mia.channels.base import (
     ChannelCapabilities,
@@ -17,6 +18,7 @@ from mia.channels.base import (
     InboundMessage,
     StatusUpdate,
     TemplateCall,
+    coordinates,
 )
 from mia.channels.render import ButtonsPart, ListPart, RenderedPart
 from mia.core.ids import new_id
@@ -29,6 +31,13 @@ def hub_signature_ok(secret: str, headers: Mapping[str, str], body: bytes) -> bo
         return False
     expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(given.removeprefix("sha256="), expected)
+
+
+def _point(m: dict[str, Any]) -> tuple[float, float] | tuple[None, None]:
+    where = m.get("location")
+    if not isinstance(where, list) or len(where) != 2:
+        return None, None
+    return coordinates(where[0], where[1])
 
 
 class SimAdapter:
@@ -82,8 +91,9 @@ class SimAdapter:
                     has_media=bool(m.get("media")),
                     media_id=m["media"] if isinstance(m.get("media"), str) else None,
                     media_kind="image" if m.get("media") else None,
-                    lat=(m.get("location") or [None, None])[0],
-                    lon=(m.get("location") or [None, None])[1],
+                    lat=_point(m)[0],
+                    lon=_point(m)[1],
+                    picked_place=bool(m.get("place")),
                     received_at=datetime.now(UTC),
                 )
             )

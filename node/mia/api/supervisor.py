@@ -34,6 +34,7 @@ class FenceCard(BaseModel):
     """A check-in or check-out by location share outside the site's geofence."""
 
     kind: str  # check_in or check_out
+    reason: str  # outside (the fence) or picked_place (a chosen place, not the person's position)
     person: str
     distance_m: int
     visit: VisitCard
@@ -85,6 +86,7 @@ def summary(session: DbSession, ctx: PersonAuth) -> Summary:
         fence.append(
             FenceCard(
                 kind=str(data.get("kind")),
+                reason=str(data.get("reason", "outside")),
                 person=person.name if person else "?",
                 distance_m=int(data.get("distance_m", 0)),
                 visit=visit_card(session, visit, tz),

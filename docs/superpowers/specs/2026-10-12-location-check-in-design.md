@@ -13,9 +13,16 @@ geofence for the supervisors without rejecting it.
 
 ## Behaviour
 
-- `InboundMessage` carries `lat` and `lon` when the channel delivered a location message; the
-  WhatsApp adapter reads `location.latitude` and `location.longitude`; the simulator takes
-  `location: [lat, lon]`.
+- `InboundMessage` carries `lat` and `lon` when the channel delivered a location message (both
+  finite and in range, else neither: a crafted payload becomes a plain empty message) and
+  `picked_place` when the person sent a chosen place (WhatsApp adds `name` or `address`) rather
+  than where they are; the simulator takes `location: [lat, lon]` and `place`.
+- Trust: the point is the person's claim, like a text "Olen perillä" is. WhatsApp lets anyone
+  send any place, so a point inside the fence is not proof of presence; it is one more signal
+  for the supervisor, never a gate. A picked place is flagged like a point outside the fence.
+- Privacy: the coordinates are used once and kept nowhere. `channel_inbound.body` is redacted
+  from events (the append-only log never holds them) and the row's copy is dropped when the
+  message is handled; the fence event holds the distance, the radius and the reason only.
 - Inbound handling: a location message from a linked person is attendance, not a chat turn
   and not media. The visit is the person's current one today (`scheduling.current_visit`: in
   progress, else the nearest ahead), after `rbac.require(data:core.visit, write)` with the
@@ -30,12 +37,14 @@ geofence for the supervisors without rejecting it.
 - The fence: when the site has coordinates, the great-circle distance from the shared point
   to the site is compared with `location.geofence["radius_m"]` (100 m when unset). Beyond it,
   the node appends one event `visit.attendance_outside_fence` on the visit (kind check_in or
-  check_out, person_id, distance_m, radius_m, date; never the shared coordinates, which are
-  not kept anywhere) and adds to the reply "You seem to be {distance} m from {location}. I
+  check_out, reason outside or picked_place, person_id, distance_m, radius_m, date; never
+  the shared coordinates) and adds to the reply "You seem to be {distance} m from {location}. I
   recorded that for your supervisor." The check-in or check-out itself stands. A site without
-  coordinates is never flagged.
+  coordinates is never flagged; an unusable `radius_m` falls back to 100 m rather than failing
+  the check-in. On a two-person visit the second arrival hears "already checked in" (the chat
+  tool's answer, D34) instead of checking the visit out.
 - `GET /supervisor/summary` gains `outside_fence`: today's flagged check-ins and check-outs
-  of the branch (visit card, person, kind, distance).
+  of the branch (visit card, person, kind, reason, distance).
 
 ## Out of scope
 

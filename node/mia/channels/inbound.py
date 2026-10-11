@@ -10,6 +10,7 @@ import asyncio
 import datetime as dt
 import logging
 import os
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
@@ -30,10 +31,12 @@ from mia.core.models import (
     Branch,
     ChannelIdentity,
     ChannelInbound,
+    Event,
     Location,
     Person,
     Principal,
     Thread,
+    Visit,
 )
 from mia.core.rbac import Resource, get_rbac
 from mia.i18n import SUPPORTED, t
@@ -103,8 +106,9 @@ def _begin(session: Session, inbound_id: str, now: dt.datetime) -> _Step | None:
     if msg.has_media and msg.media_id:
         return _Step(person=person, media=msg)
     if msg.lat is not None and msg.lon is not None:
-        _attend(session, person, (msg.lat, msg.lon), now)
-        _finish(session, row, "done")
+        _attend(session, person, msg, now)
+        dropped = {**row.body, "lat": None, "lon": None}  # the point is used once, never kept
+        _finish(session, row, "done", body=dropped)
         return _Step(person=person)
     text = (msg.button or msg.text).strip()
     if not text:
@@ -127,11 +131,14 @@ DEFAULT_RADIUS_M = 100
 OUTSIDE_FENCE = "visit.attendance_outside_fence"
 
 
-def _attend(session: Session, person: Person, point: tuple[float, float], now: dt.datetime) -> None:
+def _attend(session: Session, person: Person, msg: InboundMessage, now: dt.datetime) -> None:
     """A shared location checks the person in to their current visit (planned, in its window)
     or out of it (in progress). Code compares the point with the site's geofence (rule 7): a
     point outside it is flagged with one event (distance only, never the coordinates) and
-    named in the reply; the check-in or check-out stands. Replies to the person."""
+    named in the reply; the check-in or check-out stands. A chosen place (WhatsApp lets the
+    person pick one) is flagged the same way: the point is the person's claim, never proof.
+    On a two-person visit the second arrival is told it is already checked in, as the chat
+    tool does. Replies to the person."""
     from mia.agents.dispatcher.scoring import distance_km
     from mia.core import scheduling  # core imports channels for linking; keep this one lazy
 
@@ -151,6 +158,10 @@ def _attend(session: Session, person: Person, point: tuple[float, float], now: d
     loc = session.get(Location, visit.location_id)
     name = loc.name if loc else "?"
     kind = "check_out" if visit.status == "in_progress" else "check_in"
+    if kind == "check_out" and _checked_in_by(session, visit) != person.id:
+        text = t("check_in.already", person.language)
+        deliver(session, person, [TextBlock(text=text)], actor, urgent=True)
+        return
     try:
         if kind == "check_out":
             scheduling.check_out(session, actor, visit, person, now)
@@ -169,11 +180,14 @@ def _attend(session: Session, person: Person, point: tuple[float, float], now: d
     when = now.astimezone(ZoneInfo(branch.timezone)).strftime("%H:%M")
     text = t(f"{kind}.done", person.language, location=name, time=when)
     if loc is not None and loc.lat is not None and loc.lon is not None:
-        distance_m = round(distance_km((loc.lat, loc.lon), point) * 1000)
-        radius_m = int(loc.geofence.get("radius_m", DEFAULT_RADIUS_M))
-        if distance_m > radius_m:
+        assert msg.lat is not None and msg.lon is not None
+        distance_m = round(distance_km((loc.lat, loc.lon), (msg.lat, msg.lon)) * 1000)
+        radius_m = _radius_m(loc)
+        reason = "picked_place" if msg.picked_place else "outside"
+        if distance_m > radius_m or msg.picked_place:
             data = {
                 "kind": kind,
+                "reason": reason,
                 "person_id": person.id,
                 "distance_m": distance_m,
                 "radius_m": radius_m,
@@ -181,9 +195,32 @@ def _attend(session: Session, person: Person, point: tuple[float, float], now: d
             }
             events.emit(session, OUTSIDE_FENCE, visit, None, data, actor)
             text += "\n" + t(
-                "attendance.outside_fence", person.language, distance=str(distance_m), location=name
+                f"attendance.{'picked_place' if msg.picked_place else 'outside_fence'}",
+                person.language,
+                distance=str(distance_m),
+                location=name,
             )
     deliver(session, person, [TextBlock(text=text)], actor, urgent=True)
+
+
+def _radius_m(loc: Location) -> int:
+    """The site's fence radius; the default when the JSON holds nothing usable, so a bad value
+    never fails the check-in."""
+    try:
+        return int(loc.geofence.get("radius_m", DEFAULT_RADIUS_M))
+    except (TypeError, ValueError, AttributeError):
+        return DEFAULT_RADIUS_M
+
+
+def _checked_in_by(session: Session, visit: Visit) -> str | None:
+    """The person whose check-in put the visit in progress (the latest `visit.checked_in`)."""
+    row = session.exec(
+        select(Event)
+        .where(Event.action == "visit.checked_in")
+        .where(Event.entity_id == visit.id)
+        .order_by(col(Event.id).desc())
+    ).first()
+    return row.actor_id if row else None
 
 
 EXT = {"image": "jpg", "video": "mp4", "audio": "ogg", "document": "bin"}
@@ -262,14 +299,21 @@ def _touch(
     )
 
 
-def _finish(session: Session, row: ChannelInbound, status: str, error: str | None = None) -> None:
+def _finish(
+    session: Session,
+    row: ChannelInbound,
+    status: str,
+    error: str | None = None,
+    body: dict[str, Any] | None = None,
+) -> None:
     actor = Actor(
         principal=Principal(type="system", id=f"channel:{row.channel}"),
         branch_id=row.branch_id or "",
     )
-    store.update(
-        session, row, {"status": status, "error": error}, actor, action=f"channel.inbound_{status}"
-    )
+    changes: dict[str, Any] = {"status": status, "error": error}
+    if body is not None:
+        changes["body"] = body
+    store.update(session, row, changes, actor, action=f"channel.inbound_{status}")
 
 
 def _after_turn(session: Session, inbound_id: str, person: Person, reply: ChatReply) -> None:
