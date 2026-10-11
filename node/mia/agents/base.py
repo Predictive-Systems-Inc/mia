@@ -330,10 +330,11 @@ def build_model(
 
 
 def _is_local(url: str) -> bool:
-    """True for localhost, loopback and private-network IP addresses."""
-    # ponytail: hostnames other than localhost are refused (no DNS lookup); use an IP address.
+    """True for localhost, host.docker.internal (the node host seen from the Docker install),
+    loopback and private-network IP addresses."""
+    # ponytail: other hostnames are refused (no DNS lookup); use an IP address.
     host = urlsplit(url).hostname or ""
-    if host == "localhost":
+    if host in ("localhost", "host.docker.internal"):
         return True
     try:
         ip = ipaddress.ip_address(host)

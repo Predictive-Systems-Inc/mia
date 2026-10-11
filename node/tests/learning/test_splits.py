@@ -175,3 +175,15 @@ def test_unknown_intent_raises_error() -> None:
     ]
     with pytest.raises(ValueError, match="unknown intent unknown.intent"):
         assign_train_dev(ROLE, recs, seed=1)
+
+
+def test_shared_labels_split_with_the_light_quota() -> None:
+    """`other` and conversation.* records have no IntentSpec in the role; they still split."""
+    recs = [rec(i, t) for i, t in enumerate(TEXTS)]
+    shared = [
+        rec(100 + i, f"hello there {i}").model_copy(update={"intent": "conversation.greeting"})
+        for i in range(4)
+    ] + [rec(200 + i, f"weather chat {i}").model_copy(update={"intent": "other"}) for i in range(4)]
+    out = assign_train_dev(ROLE, recs + shared, seed=1)
+    for intent in ("conversation.greeting", "other"):
+        assert sum(r.intent == intent and r.split == "dev" for r in out) == ROLE.targets.dev

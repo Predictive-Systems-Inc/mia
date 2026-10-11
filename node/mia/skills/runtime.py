@@ -119,18 +119,16 @@ def embed_text(prefix: str, text: str, context: str) -> str:
 
 @lru_cache
 def _load(role: str, version: str) -> Classifier:
-    """Load one version once; a broken package yields a cached NullClassifier (and a warning)."""
-    try:
-        card = read_card(role, version)
-        if card.kind == "knn":
-            from mia.skills.knn import KnnClassifier
+    """Load one version once. Raises on a broken package, so a failure is never cached and a
+    package repaired in place is picked up on the next call."""
+    card = read_card(role, version)
+    if card.kind == "knn":
+        from mia.skills.knn import KnnClassifier
 
-            return KnnClassifier(card, safety=catalogue.safety_ids())
-        from mia.skills.onnx import OnnxClassifier
+        return KnnClassifier(card, safety=catalogue.safety_ids())
+    from mia.skills.onnx import OnnxClassifier
 
-        return OnnxClassifier(card, safety=catalogue.safety_ids())
-    except Exception as exc:  # noqa: BLE001 - any broken package falls back, never breaks chat
-        return _fallback(role, version, exc)
+    return OnnxClassifier(card, safety=catalogue.safety_ids())
 
 
 def get_classifier(role: str) -> Classifier:
@@ -144,9 +142,11 @@ def get_classifier(role: str) -> Classifier:
     if version is None:
         _status[role] = {"status": "none", "version": None}
         return NullClassifier()
-    classifier = _load(role, version)
-    if not isinstance(classifier, NullClassifier):
-        _status[role] = {"status": "active", "version": version}
+    try:
+        classifier = _load(role, version)
+    except Exception as exc:  # noqa: BLE001 - any broken package falls back, never breaks chat
+        return _fallback(role, version, exc)
+    _status[role] = {"status": "active", "version": version}
     return classifier
 
 

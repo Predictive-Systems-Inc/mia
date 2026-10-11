@@ -59,8 +59,6 @@ def get_session() -> Iterator[Session]:
 
 # "function": commit before the response is sent, so a failed commit is a 500, not a lost write.
 DbSession = Annotated[Session, Depends(get_session, scope="function")]
-# "request": the AG-UI stream runs after the route returns; close only when the response ends.
-StreamSession = Annotated[Session, Depends(get_session, scope="request")]
 
 
 async def _turn(session: Session, body: ChatRequest, x_mia_actor: str | None) -> ChatReply:

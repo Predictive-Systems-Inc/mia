@@ -12,6 +12,8 @@ services:
     env_file: .env
     environment:
       MIA_DB_PATH: /data/mia.db
+      MIA_MODELS_DIR: /data/models
+      MIA_LEARNING_DIR: /data/learning
     volumes:
       - mia-data:/data
       - mia-backups:/backups

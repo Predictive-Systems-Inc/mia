@@ -76,6 +76,8 @@ def harvest(session: Session, role: str, branch_id: str) -> list[Record]:
     seen = {r.id for r in existing}
     pseudo = Pseudonymiser.for_branch(session, branch_id)
     found: list[Record] = []
+    # ponytail: every clarification event of the branch is rescanned per run (ids in the file
+    # short-circuit before any query); keep a last-event cursor if a branch grows past thousands.
     for ev in session.exec(
         select(Event)
         .where(Event.action == "intent.clarified")

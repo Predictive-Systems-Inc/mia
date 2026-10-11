@@ -4,7 +4,7 @@ import random
 from collections import defaultdict
 
 from mia.learning.checks import LEAK, similarity
-from mia.learning.schema import Record, RoleSpec
+from mia.learning.schema import OTHER, Record, RoleSpec
 
 
 class _UnionFind:
@@ -52,9 +52,12 @@ def assign_train_dev(role: RoleSpec, records: list[Record], seed: int = 0) -> li
     split_of: dict[str, str] = {}
     for (intent_id, _lang), bucket in sorted(buckets.items()):
         spec = role.intent(intent_id)
-        if not spec:
+        if spec:
+            need = role.targets.quota(spec, "dev")
+        elif intent_id == OTHER or intent_id.startswith("conversation."):
+            need = role.targets.dev  # shared labels: the light quota, no IntentSpec of their own
+        else:
             raise ValueError(f"unknown intent {intent_id}")
-        need = role.targets.quota(spec, "dev")
         clusters = _clusters(sorted(bucket, key=lambda r: r.id))
         rng.shuffle(clusters)
         dev_normal = 0

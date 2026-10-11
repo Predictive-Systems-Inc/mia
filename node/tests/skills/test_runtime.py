@@ -214,3 +214,26 @@ def test_unknown_kind_falls_back() -> None:
     h = health()["r"]
     assert h["status"] == "fallback"
     assert str(h["error"]).startswith("ValidationError")
+
+
+def test_package_repaired_in_place_is_picked_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed load is never cached: once the package is fixed, the next call loads it."""
+    import mia.skills.runtime as rt
+
+    broken = {"v1"}
+
+    def fake_read(role: str, version: str) -> ModelCard:
+        if version in broken:
+            raise ValueError("model.onnx: sha256 mismatch")
+        return card(version=version)
+
+    monkeypatch.setattr(rt, "read_card", fake_read)
+    monkeypatch.setitem(sys.modules, "mia.skills.onnx", SimpleNamespace(OnnxClassifier=_Stub))
+    root = get_settings().MIA_MODELS_DIR / "r"
+    root.mkdir(parents=True)
+    (root / "ACTIVE").write_text("v1")
+    assert isinstance(get_classifier("r"), NullClassifier)
+    assert health()["r"]["status"] == "fallback"
+    broken.clear()
+    assert isinstance(get_classifier("r"), _Stub)
+    assert health()["r"] == {"status": "active", "version": "v1"}

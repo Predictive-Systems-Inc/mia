@@ -41,7 +41,14 @@ def test_local_model_refuses_a_url_off_the_node(url: str, monkeypatch: pytest.Mo
         build_model("local/qwen3.5:9b", rules_model())
 
 
-@pytest.mark.parametrize("url", ["http://localhost:11434/v1", "http://192.168.1.20:11434/v1"])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost:11434/v1",
+        "http://192.168.1.20:11434/v1",
+        "http://host.docker.internal:11434/v1",
+    ],
+)
 def test_local_model_accepts_loopback_and_private(
     url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
