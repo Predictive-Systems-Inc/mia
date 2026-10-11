@@ -5,6 +5,8 @@ Web clients (header `X-Mia-Client: web`) get HttpOnly cookies and no tokens in t
 everything else gets bearer tokens. Every failure is 401 `invalid credentials`.
 """
 
+import html
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -385,7 +387,7 @@ def link_page(session: DbSession, code: str) -> str:
     found = _link_person(session, code)
     if found is None:
         raise HTTPException(404, "link expired or already used")
-    return LINK_PAGE.replace("{name}", found[0].name.split()[0])
+    return LINK_PAGE.replace("{name}", html.escape(found[0].name.split()[0]))
 
 
 @router.post("/link/{code}", response_model=TokensOut)

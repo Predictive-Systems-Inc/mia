@@ -152,3 +152,34 @@ def test_deactivation_revokes_devices_sessions_and_identity(
     dev = {"device_id": body["device_id"], "device_secret": body["device_secret"]}
     assert client.post("/auth/device", json=dev).status_code == 401
     assert linking.identity_for(session, "sim", ADDR) is None
+
+
+def test_sending_the_code_keeps_it_out_of_events(
+    client: TestClient, session: Session, linked: Person, sim: SimAdapter
+) -> None:
+    """The outbox row is updated when sent; that update must not snapshot the code either."""
+    import asyncio
+
+    from mia.channels import outbox
+
+    client.post("/auth/otp/start", json={"phone": ADDR})
+    code = _sent_code(session)
+    asyncio.run(outbox.send_due(utcnow()))
+    session.expire_all()
+    for e in session.exec(select(Event)):
+        assert code not in str(e.after) and code not in str(e.before), e.action
+
+
+def test_link_page_escapes_the_name(
+    client: TestClient, session: Session, linked: Person, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from mia.cli import main
+    from mia.core import store
+
+    store.update(session, linked, {"name": "<b>Juha</b> X"}, Actor.person(linked))
+    session.commit()
+    assert main(["auth", "link", "<b>Juha</b> X"]) == 0
+    m = re.search(r"/auth/link/(\S+)", capsys.readouterr().out)
+    assert m
+    page = client.get(f"/auth/link/{m[1]}").text
+    assert "<b>" not in page and "&lt;b&gt;" in page

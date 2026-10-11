@@ -351,6 +351,9 @@ class ChannelOutbox(BranchScoped, table=True):
     """One outbound channel message: queued, sent, delivered, read, failed or held."""
 
     __tablename__: ClassVar[str] = "channel_outbox"
+    # Message bodies stay in chat_messages and the outbox row; events carry the row's state
+    # only (sign-in codes travel through the outbox too).
+    __redact__: ClassVar[frozenset[str]] = frozenset({"payload"})
 
     person_id: str = Field(foreign_key="person.id", index=True)
     channel: str
