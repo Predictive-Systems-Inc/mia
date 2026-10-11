@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from mia.agents.base import build_model
 from mia.agents.dispatcher.rules import rules_model
@@ -121,13 +122,20 @@ async def generate(
         build_model(model_name, rules_model(), transport=transport),
         output_type=list[GeneratedMessage],
         instructions=prompt,
+        retries=2,
     )
     tag = model_name.replace("/", "-")
     out: list[Record] = []
     for cell in cells:
         spec = role.intent(cell.intent)
         allowed = set(spec.slots) if spec else set()
-        result = await agent.run(_ask(role, cell))
+        try:
+            result = await agent.run(_ask(role, cell))
+        except UnexpectedModelBehavior as exc:  # one cell's bad output never ends the run
+            log.warning("cell %s/%s skipped: %s", cell.intent, cell.lang, exc)
+            if drops is not None:
+                drops["model_error"] = drops.get("model_error", 0) + cell.count
+            continue
         for msg in result.output[: cell.count]:
             reason = _keep(msg, allowed)
             if reason:

@@ -2,10 +2,11 @@
 
 Date: 2026-10-12. Plan: role.yaml (13 intents, en and fi, cleaners 80% over WhatsApp,
 supervisors 20% over the web). Teachers: `local/gemma4-mia` and `local/qwen3.5-mia` for train
-(two families, nothing leaves the node), `local/clef-flash` for test. Clef-flash is a Qwen 3.5
-finetune, the same family as the second train teacher: the rule asks a third family, and this
-Mac has no third family that writes structured output. The test set is therefore provisional
-until a cloud teacher of another family regenerates it (a Gate 1 decision; the spend is small).
+(two families, nothing leaves the node). The test set comes from `local/gemma4-mia` again:
+the rule asks a third model family, and this Mac has none that answers structured chat (its
+`clef-flash` tag does not support chat). The test set is therefore provisional, usable to tune
+nothing and to read the first report only, until a cloud teacher of another family regenerates
+it (a Gate 1 decision; the spend is small, the data synthetic).
 
 ## Overlap review (one message, one label, D30)
 

@@ -283,3 +283,36 @@ def test_gateway_route_runs_in_an_egress_context_and_local_does_not(
     assert main(["skills", "generate", "tr", "--model", "gateway/x", "--only", "tr.a,fi"]) == 0
     assert main(["skills", "generate", "tr", "--model", "local/m", "--only", "tr.a,fi"]) == 0
     assert seen == {"gateway/x": "learning.generate/skill-generation/system", "local/m": None}
+
+
+def test_a_cell_whose_output_never_validates_is_skipped_not_fatal() -> None:
+    """The teacher's malformed answer costs that cell only; the run goes on (drops count it)."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls <= 3:  # the first cell: a broken answer, then two failed retries
+            message = {"role": "assistant", "content": "not a tool call", "tool_calls": []}
+        else:
+            args = json.dumps({"response": [{"text": "flu", "context": "", "slots": {}}]})
+            call = {
+                "id": "c",
+                "type": "function",
+                "function": {"name": "final_result", "arguments": args},
+            }
+            message = {"role": "assistant", "content": None, "tool_calls": [call]}
+        body = {
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "m",
+            "choices": [{"index": 0, "finish_reason": "stop", "message": message}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        return httpx.Response(200, json=body)
+
+    cells = [_cell("en", "cleaner", "informal", 4), _cell("fi", "owner", "terse", 2)]
+    drops: dict[str, int] = {}
+    records = _run(cells, httpx.MockTransport(handler), drops)
+    assert [r.lang for r in records] == ["fi"] and drops == {"model_error": 4}
