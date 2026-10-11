@@ -22,15 +22,19 @@ status, entered_by, note, approved_by, approved_at), so moving them to core is a
 - Drafts are built in code on the ticker (and by `timesheets.build_due`): one row per
   completed visit of the last 14 days and assigned person, once (unique visit and person). A
   visit that was checked in and out gives its actual times (source `check_out`); a completed
-  visit without them gives its planned times (source `planned`). The enterer is the person
-  themselves (their check-out is their entry). Event `timesheet.created`.
+  visit without them gives its planned times (source `planned`). The enterer is whoever
+  recorded the check-out (the cleaner, or the office when it checked them out and so set the
+  time); the person themselves for a planned row. Event `timesheet.created`.
 - Correction (`POST /timesheets/{id}/correct`, the person for their own row or the office for
   anyone's, `data:dispatcher_timesheets write` with the owner): new start and end (the end
   after the start, else 409), minutes recomputed, source `correction`, back to draft, the
-  corrector becomes the enterer. Event `timesheet.corrected`.
+  corrector becomes the enterer. An approved row is corrected by the office only (it may be
+  in a payroll export already). Event `timesheet.corrected`.
 - Approval (`POST /timesheets/{id}/approve`, supervisors and up, `write` without an owner):
-  refused with 409 when the approver is the enterer (SeparationError) or the row is already
-  approved. Event `timesheet.approved`. Staff get 403.
+  refused with 409 when the approver, or the person they act for, is the enterer or the
+  person whose time it is (SeparationError), or when the row is already approved. Both
+  service functions take the write lock and reread the row first (rule 11), so a parallel
+  correction cannot slip past the check. Event `timesheet.approved`. Staff get 403.
 - `GET /timesheets?start=&end=&person_id=`: the period (default the last 14 days); staff see
   their own rows.
 - Payroll export: `mia payroll export --from YYYY-MM-DD --to YYYY-MM-DD [--out file]` writes

@@ -5,7 +5,7 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 from sqlmodel import col, select
 
 from mia.agents.dispatcher import timesheets
@@ -37,8 +37,8 @@ class TimesheetCard(BaseModel):
 
 
 class CorrectIn(BaseModel):
-    start: dt.datetime
-    end: dt.datetime
+    start: AwareDatetime  # rule 10: a zone on every time, else 422
+    end: AwareDatetime
     note: str = Field(default="", max_length=500)
 
 

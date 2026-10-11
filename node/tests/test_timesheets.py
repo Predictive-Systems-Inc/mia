@@ -194,3 +194,124 @@ def test_overtime_alerts_supervisors_once(
     assert alerts.overtime(session, now) == 1
     assert "Juha" in _notes(session, sanna)[-1].text and "60" in _notes(session, sanna)[-1].text
     assert alerts.overtime(session, now) == 0
+
+
+def test_office_check_out_makes_the_office_the_enterer(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    from mia.core.models import Principal
+
+    juha, sanna, helena = people["Juha"], people["Sanna"], people["Helena"]
+    visit = _kamppi_today(session)
+    scheduling.check_in(session, Actor.person(juha), visit, juha, visit.planned_start)
+    office = Actor(
+        principal=Actor.person(sanna).principal,
+        on_behalf_of=Principal(type="person", id=juha.id, roles=list(juha.roles)),
+        branch_id=branch.id,
+    )
+    scheduling.check_out(session, office, visit, juha, visit.planned_end + dt.timedelta(hours=2))
+    session.commit()
+    timesheets.build_due(session, visit.planned_end + dt.timedelta(hours=3))
+    ts = session.exec(select(Timesheet).where(Timesheet.visit_id == visit.id)).one()
+    assert ts.entered_by == sanna.id  # she set the time, so she never approves it
+    with pytest.raises(timesheets.SeparationError):
+        timesheets.approve(session, Actor.person(sanna), ts)
+    assert timesheets.approve(session, Actor.person(helena), ts).status == "approved"
+
+
+def test_nobody_approves_their_own_hours_or_on_behalf_of_them(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    from mia.core import store
+    from mia.core.models import Principal
+
+    juha, sanna, helena = people["Juha"], people["Sanna"], people["Helena"]
+    visit = _worked(session, people)
+    timesheets.build_due(session, visit.planned_end + dt.timedelta(hours=1))
+    ts = session.exec(select(Timesheet).where(Timesheet.visit_id == visit.id)).one()
+    ts = timesheets.correct(session, Actor.person(helena), ts, ts.start, ts.end, "")
+    for_juha = Actor(
+        principal=Actor.person(sanna).principal,
+        on_behalf_of=Principal(type="person", id=juha.id, roles=list(juha.roles)),
+        branch_id=branch.id,
+    )
+    with pytest.raises(PermissionDenied):  # acting for staff: both must be allowed (rule 5)
+        timesheets.approve(session, for_juha, ts)
+    done = session.exec(
+        select(Visit).where(Visit.status == "completed").where(Visit.id != visit.id)
+    ).first()
+    assert done is not None
+    store.update(session, done, {"assigned_person_ids": [sanna.id]}, Actor.person(helena))
+    timesheets.build_due(session, visit.planned_end + dt.timedelta(hours=1))
+    own = session.exec(
+        select(Timesheet)
+        .where(Timesheet.visit_id == done.id)
+        .where(Timesheet.person_id == sanna.id)
+    ).one()
+    own = timesheets.correct(session, Actor.person(helena), own, own.start, own.end, "")
+    with pytest.raises(timesheets.SeparationError):  # her own hours, entered by Helena
+        timesheets.approve(session, Actor.person(sanna), own)
+    for_sanna = Actor(
+        principal=Actor.person(helena).principal,
+        on_behalf_of=Principal(type="person", id=sanna.id, roles=list(sanna.roles)),
+        branch_id=branch.id,
+    )
+    with pytest.raises(timesheets.SeparationError):  # Helena acting for Sanna: still hers
+        timesheets.approve(session, for_sanna, own)
+    assert (
+        timesheets.approve(session, Actor.person(sanna), ts).status == "approved"
+    )  # Juha's, entered by Helena
+
+
+def test_an_approved_row_is_corrected_by_the_office_only(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    juha, sanna = people["Juha"], people["Sanna"]
+    visit = _worked(session, people)
+    timesheets.build_due(session, visit.planned_end + dt.timedelta(hours=1))
+    ts = session.exec(select(Timesheet).where(Timesheet.visit_id == visit.id)).one()
+    ts = timesheets.approve(session, Actor.person(sanna), ts)
+    later = ts.end + dt.timedelta(hours=1)
+    with pytest.raises(timesheets.TimesheetError):
+        timesheets.correct(session, Actor.person(juha), ts, ts.start, later, "forgot")
+    assert ts.status == "approved"
+    ts = timesheets.correct(session, Actor.person(sanna), ts, ts.start, later, "late")
+    assert ts.status == "draft" and ts.entered_by == sanna.id
+
+
+def test_approve_checks_the_stored_row_not_a_stale_copy(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    from sqlmodel import Session as Other
+
+    from mia.core.db import get_engine
+
+    sanna = people["Sanna"]
+    visit = _worked(session, people)
+    timesheets.build_due(session, visit.planned_end + dt.timedelta(hours=1))
+    session.commit()
+    ts = session.exec(select(Timesheet).where(Timesheet.visit_id == visit.id)).one()
+    assert ts.entered_by == people["Juha"].id
+    with Other(get_engine()) as other:  # a parallel request: Sanna corrects it meanwhile
+        row = other.get(Timesheet, ts.id)
+        assert row is not None
+        timesheets.correct(other, Actor.person(sanna), row, row.start, row.end, "")
+        other.commit()
+    with pytest.raises(timesheets.SeparationError):  # the check reads the stored enterer
+        timesheets.approve(session, Actor.person(sanna), ts)
+
+
+def test_api_refuses_naive_times(
+    session: Session,
+    branch: Branch,
+    people: dict[str, Person],
+    login,  # type: ignore[no-untyped-def]
+) -> None:
+    visit = _worked(session, people)
+    timesheets.build_due(session, visit.planned_end + dt.timedelta(hours=1))
+    session.commit()
+    ts = session.exec(select(Timesheet).where(Timesheet.visit_id == visit.id)).one()
+    office = TestClient(app)
+    login(office, people["Sanna"])
+    body = {"start": "2026-10-12T08:00:00", "end": "2026-10-12T10:00:00", "note": ""}
+    assert office.post(f"/timesheets/{ts.id}/correct", json=body).status_code == 422

@@ -15,9 +15,9 @@ from typing import TextIO
 from sqlmodel import Session, col, select
 
 from mia.agents.dispatcher.models import Timesheet
-from mia.core import store
+from mia.core import events, store
 from mia.core.db import utcnow
-from mia.core.models import Actor, Branch, Location, Person, Visit
+from mia.core.models import Actor, Branch, Event, Location, Person, Visit
 from mia.core.rbac import Resource, get_rbac
 
 log = logging.getLogger(__name__)
@@ -35,6 +35,18 @@ class SeparationError(TimesheetError):
 
 def _minutes(start: dt.datetime, end: dt.datetime) -> int:
     return max(0, int((end - start).total_seconds() // 60))
+
+
+def _checked_out_by(session: Session, visit: Visit) -> str | None:
+    """The person who recorded the visit's check-out (the office when it acted for the
+    cleaner), from the `visit.checked_out` event; None for a system actor."""
+    row = session.exec(
+        select(Event)
+        .where(Event.action == "visit.checked_out")
+        .where(Event.entity_id == visit.id)
+        .order_by(col(Event.id).desc())
+    ).first()
+    return row.actor_id if row is not None and row.actor_type == "person" else None
 
 
 def _build_in(session: Session, branch: Branch, now: dt.datetime) -> int:
@@ -57,6 +69,7 @@ def _build_in(session: Session, branch: Branch, now: dt.datetime) -> int:
     count = 0
     for v in visits:
         timed = v.actual_start is not None and v.actual_end is not None
+        enterer = _checked_out_by(session, v) if timed else None
         start = v.actual_start if timed and v.actual_start else v.planned_start
         end = v.actual_end if timed and v.actual_end else v.planned_end
         for pid in v.assigned_person_ids:
@@ -71,7 +84,7 @@ def _build_in(session: Session, branch: Branch, now: dt.datetime) -> int:
                 end=end,
                 minutes=_minutes(start, end),
                 source="check_out" if timed else "planned",
-                entered_by=pid,  # the cleaner's own check-out (or their plan) is their entry
+                entered_by=enterer or pid,  # whoever recorded the check-out set the time
             )
             store.insert(session, row, Actor.system(branch.id), action="timesheet.created")
             have.add((v.id, pid))
@@ -94,6 +107,13 @@ def build_due(session: Session, now: dt.datetime) -> int:
     return count
 
 
+def _fresh(session: Session, row: Timesheet) -> None:
+    """Take the write lock, then reread the row (rule 11): the checks decide on what is
+    stored, not on a copy a parallel request may have changed."""
+    events.write_lock(session)
+    session.refresh(row)
+
+
 def correct(
     session: Session, actor: Actor, row: Timesheet, start: dt.datetime, end: dt.datetime, note: str
 ) -> Timesheet:
@@ -106,6 +126,11 @@ def correct(
         "write",
         session=session,
     )
+    _fresh(session, row)
+    if row.status == "approved" and not get_rbac().check(
+        actor, Resource(kind="data", name=RESOURCE), "write"
+    ):
+        raise TimesheetError("already approved; ask the office to correct it")
     if end <= start:
         raise TimesheetError("the end must be after the start")
     changes = {
@@ -126,10 +151,12 @@ def approve(session: Session, actor: Actor, row: Timesheet) -> Timesheet:
     """Approve a draft (supervisors and up). Raises SeparationError when the approver entered
     it, TimesheetError when it is already approved."""
     get_rbac().require(actor, Resource(kind="data", name=RESOURCE), "write", session=session)
+    _fresh(session, row)
     if row.status == "approved":
         raise TimesheetError("already approved")
-    if actor.principal.id == row.entered_by:
-        raise SeparationError("whoever entered a timesheet never approves it")
+    acting = {actor.principal.id} | ({actor.on_behalf_of.id} if actor.on_behalf_of else set())
+    if acting & {row.entered_by, row.person_id}:
+        raise SeparationError("whoever entered a timesheet, or whose time it is, never approves it")
     changes = {"status": "approved", "approved_by": actor.principal.id, "approved_at": utcnow()}
     return store.update(session, row, changes, actor, action="timesheet.approved")
 
