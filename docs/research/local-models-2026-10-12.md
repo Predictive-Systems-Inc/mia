@@ -79,42 +79,54 @@ absence_scope and checklist, where Gemma confuses neighbours it should not.
 ## 3. Intent classification, Finnish (the parallel suite)
 
 The first Finnish parallel suite: `uv run mia skills translate --lang fi --model
-local/gemma4-mia --split test` translated the held-out English records with the same labels
-(390 of 1091 in this run, the file's first intents: the dispatcher's 174 test messages and
-parts of admin, bookkeeper, client service, conversation and sales; the rest is being
-appended in later runs, the command resumes by `source_id`). Gemma classified its own
-translations, so this measures understanding of Finnish, not the translation layer of D26 (the
-Finnish message went to the classifier untranslated):
+local/gemma4-mia --split test` translated the held-out English records with the same labels,
+1051 of 1091 in two runs of about 95 minutes together (40 were dropped: an empty or doubled
+answer, or a batch whose output never validated; the command resumes by `source_id`, so a
+later run fills them). Gemma classified its own translations, so this measures understanding
+of Finnish, not the translation layer of D26 (the Finnish message went to the classifier
+untranslated):
 
-| | Finnish, 390 messages | English, the same 390 (from the run above) |
+| | Finnish, 1051 messages | English, 1091 messages |
 | --- | --- | --- |
-| Accuracy | **82.6%** (322/390) | about 90% |
-| Right agent (routing) | 92.0% | 92% |
-| Macro-F1 | 0.756 | |
-| Dispatcher intents (174) | **80.5%** (140/174) | 92.0% (160/174) |
-| Hard negatives (22) | 86.4% | |
-| Latency, mean / p95 | 0.99 / 1.35 s | 0.97 / 1.19 s |
-| Confidence >= 0.8, their accuracy | 97.2%, 84.7% | 97.8%, 89.8% |
+| Accuracy | **77.3%** (813/1051) | 88.9% (970/1091) |
+| Right agent (routing) | 85.6% | 92.0% |
+| Macro-F1 | 0.755 | 0.876 |
+| Dispatcher intents (174) | **79.9%** (139/174) | 92.0% (160/174) |
+| Hard negatives | 84.0% (of 75) | 83.5% (of 79) |
+| Injection attempts labelled `other` | 81.8% (9/11) | 72.7% (8/11) |
+| Ids not in the catalogue | 2 | 2 |
+| Latency, mean / p50 / p95 | 0.95 / 0.93 / 1.09 s | 0.97 / 0.95 / 1.19 s |
+| Confidence >= 0.8, their accuracy | 96.6%, 79.5% | 97.8%, 89.8% |
 
-Finnish costs the dispatcher 11 points. The misses concentrate where English was already
-weakest: absence_scope 2/8 (to report_absence and `other`), cover_reply 2/8 (to greeting and
-report_absence), checklist 1/5, assign 2/5 (to `other`), find_cover read as who_is_working.
-Routing to the right agent stays at 92%, so the loss is inside the dispatcher's own
-neighbours, the case the role skill model (a classifier that knows cover_reply from
-report_absence) is for, and the case D26's translation to English before the model would
-remove if the translation holds the meaning.
+By area in Finnish: marketing 41/45, client service 61/72, sales 75/89, dispatcher 139/174,
+admin 91/123, conversation 112/146, hr 98/128, bookkeeper 57/76, site_manager 28/36, recruiter
+44/61, `other` 21/29, purchaser 46/72.
+
+Finnish costs 12 points overall and 12 on the dispatcher. The misses concentrate where English
+was already weakest: absence_scope 1/8 (to report_absence, 5 times), cover_reply 2/8 (to
+report_absence and greeting), checklist 1/5, find_cover read as who_is_working; outside the
+dispatcher, kb_employment_terms read as kb_payday, cancel_booking as pause_service,
+update_client as update_site. Confidence stays high (97% of messages at 0.8 or more) while
+accuracy drops, so the model's confidence is not a usable gate for Finnish on its own; the
+role skill model's calibrated confidence (D28) is.
+
+Routing to the right agent falls to 86%, so the loss is both inside the dispatcher's own
+neighbours (the case the role skill model is for) and across agents (the case D26's
+translation to English before the model is for, if the translation holds the meaning).
 
 ## What this says for the pilot
 
-- Gemma 4 12B alone is at 77 to 79% on the agentic suite and 89% (English) or 83% (Finnish)
-  on intent classification; the 95% gate (D18) is not met by the model on its own.
+- Gemma 4 12B alone is at 77 to 79% on the agentic suite and 89% (English) or 77% (Finnish)
+  on intent classification; the 95% gate (D18) is not met by the model on its own, and
+  Finnish messages sent to it untranslated lose a further 12 points.
 - The gap is concentrated: structured-output format errors and extra tool calls (the suite),
   and three dispatcher intents confused with their neighbours (both suites). The dispatcher
   role skill model, trained first on cover_reply, absence_scope and checklist, plus the
   clarifying question when its confidence is low (D28), is the planned remedy for exactly
   these; the reply contract should also accept a broken tool call by retrying as plain text.
 - The translation layer (D26) was not measured here; `mia skills translate` now gives it a
-  parallel Finnish suite to be measured against the English numbers once the set is complete.
-- Measuring took 10 min (agentic suite), 18 min (1091 English messages) and 7 min (390
-  Finnish messages) on this Mac; the Mac mini of D19 is the same class of machine, so the
+  parallel Finnish suite of 1051 messages to be measured against the English numbers: translate
+  each Finnish message to English with the layer, classify, and compare with the 88.9%.
+- Measuring took 10 min (agentic suite), 18 min (1091 English messages) and 18 min (1051
+  Finnish messages) on this Mac, building the Finnish suite about 95 min; the Mac mini of D19 is the same class of machine, so the
   suite can run on the node itself before each model change.
