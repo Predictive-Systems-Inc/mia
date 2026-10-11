@@ -14,7 +14,7 @@ from mia.agents.dispatcher import cover, tools
 from mia.agents.dispatcher.agent import MANIFEST, create_agent
 from mia.agents.dispatcher.models import CoverRequest
 from mia.chat.channels import NOTIFICATION, CallResult, StubCallAdapter, set_call_adapter
-from mia.core import store
+from mia.core import scheduling, store
 from mia.core.models import Actor, Branch, Event, Job, Message, Person, Thread, Visit
 from mia.core.orgconfig import OrgSettings, QuietHours
 
@@ -66,7 +66,7 @@ def instruct(
         session,
         deps.actor,
         visit,
-        tools._slot(session, visit, branch.timezone),
+        scheduling.slot_of(session, visit, branch.timezone),
         pool[people[who].id],
         [people[q].id for q in queue],
         list(visit.assigned_person_ids),
@@ -278,7 +278,7 @@ def test_instructor_replacing_themselves_needs_approval(
         session,
         actor,
         visit,
-        tools._slot(session, visit, branch.timezone),
+        scheduling.slot_of(session, visit, branch.timezone),
         pool[people["Mikael"].id],
         [],
         [juha.id],

@@ -299,4 +299,8 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   approvals the person's roles (with inheritance) may decide. The schedule board is the apps
   project's (Q19). Timesheets wait for Q20 because they change the data standard.
 - Consequences: `mia schedule generate` and the daily ticker keep visits ahead; supervisors get
-  `data:core.visit write`, staff `write_own` for their own check-in and check-out.
+  `data:core.visit write`, staff `write_own` for their own check-in and check-out. Skills are a
+  hard rule in the office assignment path (an override approval) but stay a ranking factor in
+  the dispatcher's cover flow, where the supervisor's instruction is the approval (D1). Check-in
+  and check-out are per visit, as the visit status is; per-person times belong to timesheets
+  (Q20), so on a two-person visit the second cleaner cannot check in once the first has.

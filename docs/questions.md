@@ -181,7 +181,8 @@ Format for each entry:
 - Question: timesheets are a new core entity: `timesheet` (id, branch_id, person_id, visit_id,
   start, end, minutes, source: check_in | correction, status: draft | approved, entered_by,
   approved_by) with separation of duties (the approver is never the person who entered it).
-  Is that the shape, and is it core or the cleaning template?
+  Is that the shape, and is it core or the cleaning template? Note: until timesheets exist,
+  check-in and check-out are per visit, so a two-person visit records one pair of times.
 - Assumed answer: core, shape as above, built after the answer (changes the data standard).
 - Blocking: yes (for timesheets only; the rest of scheduling proceeds)
 

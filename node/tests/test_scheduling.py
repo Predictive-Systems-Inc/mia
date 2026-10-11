@@ -21,7 +21,13 @@ def test_recurrence_rules() -> None:
     assert not scheduling.occurs_on("FREQ=DAILY;INTERVAL=3", MON, MON + dt.timedelta(days=4))
     assert not scheduling.occurs_on("FREQ=DAILY;UNTIL=20261013", MON, MON + dt.timedelta(days=2))
     assert scheduling.occurs_on("FREQ=DAILY;UNTIL=20261013", MON, MON + dt.timedelta(days=1))
-    for bad in ("FREQ=MONTHLY", "nonsense", "FREQ=WEEKLY"):
+    for bad in (
+        "FREQ=MONTHLY",
+        "nonsense",
+        "FREQ=WEEKLY",
+        "FREQ=DAILY;COUNT=5",
+        "FREQ=DAILY;WKST=SU",
+    ):
         with pytest.raises(ValueError):
             scheduling.validate_rule(bad)
     scheduling.validate_rule("FREQ=WEEKLY;BYDAY=TU")
@@ -116,12 +122,28 @@ def test_generate_skips_a_bad_rule_and_warns(
     assert new and "Odd" in caplog.text and "FREQ=MONTHLY" in caplog.text
 
 
-def test_generate_due_runs_once_per_local_day(session: Session, branch: Branch) -> None:
-    now = utcnow()
-    first = scheduling.generate_due(session, now)
-    assert first > 0
-    assert scheduling.generate_due(session, now + dt.timedelta(hours=1)) == 0
-    assert scheduling.generate_due(session, now + dt.timedelta(days=1)) >= 0
+def test_generate_due_runs_once_per_local_day_after_three(
+    session: Session, branch: Branch, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from zoneinfo import ZoneInfo
+
+    calls: list[dt.date] = []
+    real = scheduling.generate
+
+    def spy(s: Session, actor: Actor, b: Branch, **kw: object) -> list[Visit]:
+        calls.append(kw["today"])  # type: ignore[arg-type]
+        return real(s, actor, b, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(scheduling, "generate", spy)
+    zone = ZoneInfo(branch.timezone)
+    night = dt.datetime(2026, 10, 20, 0, 30, tzinfo=zone)
+    assert scheduling.generate_due(session, night) == 0 and calls == []  # before 03:00: wait
+    morning = dt.datetime(2026, 10, 20, 3, 5, tzinfo=zone)
+    assert scheduling.generate_due(session, morning) > 0 and calls == [dt.date(2026, 10, 20)]
+    scheduling.generate_due(session, morning + dt.timedelta(hours=5))
+    assert calls == [dt.date(2026, 10, 20)]  # once a day
+    scheduling.generate_due(session, morning + dt.timedelta(days=1))
+    assert calls == [dt.date(2026, 10, 20), dt.date(2026, 10, 21)]  # the next day runs again
 
 
 def _visit(session: Session, branch: Branch, name: str, offset: int = 1) -> Visit:
@@ -364,3 +386,73 @@ def test_inbox_hides_the_actors_own_requests(
         )
     )
     assert out.approval_id in {a.id for a in scheduling.inbox(session, aki)}
+
+
+def test_repeated_rule_breaking_assign_reuses_the_open_approval(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    sanna = Actor.person(people["Sanna"])
+    visit = _visit(session, branch, "Kamppi shop clean", offset=10)
+    first = scheduling.assign(session, sanna, visit, people["Liisa"])
+    second = scheduling.assign(session, sanna, visit, people["Liisa"])
+    assert first.approval_id and second.approval_id == first.approval_id
+
+
+def test_generate_prefers_the_same_weekday_however_far_back(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    """A MO,TH job with different cleaners: a new Monday copies the Monday cleaner even when
+    the last fourteen visits hold no Monday."""
+    actor = Actor.person(people["Sanna"])
+    loc = session.exec(select(Location)).first()
+    assert loc is not None
+    job = store.insert(
+        session,
+        Job(
+            branch_id=branch.id,
+            location_id=loc.id,
+            name="Split",
+            recurrence="FREQ=WEEKLY;BYDAY=MO,TH",
+            start_time="11:00",
+            duration_minutes=60,
+        ),
+        actor,
+    )
+    monday = TODAY - dt.timedelta(days=TODAY.weekday() + 7 * 10)  # ten weeks back
+    start = scheduling.local_dt(monday, "11:00", branch.timezone)
+    store.insert(
+        session,
+        Visit(
+            branch_id=branch.id,
+            job_id=job.id,
+            location_id=loc.id,
+            date=monday,
+            planned_start=start,
+            planned_end=start + dt.timedelta(hours=1),
+            assigned_person_ids=[people["Aino"].id],
+            status="completed",
+        ),
+        actor,
+    )
+    for weeks in range(1, 16):  # fifteen later Thursdays with Mikael
+        thu = monday + dt.timedelta(days=3) + dt.timedelta(weeks=weeks - 1)
+        if thu >= TODAY:
+            break
+        start = scheduling.local_dt(thu, "11:00", branch.timezone)
+        store.insert(
+            session,
+            Visit(
+                branch_id=branch.id,
+                job_id=job.id,
+                location_id=loc.id,
+                date=thu,
+                planned_start=start,
+                planned_end=start + dt.timedelta(hours=1),
+                assigned_person_ids=[people["Mikael"].id],
+                status="completed",
+            ),
+            actor,
+        )
+    new = scheduling.generate(session, actor, branch, days=14)
+    mondays = [v for v in new if v.job_id == job.id and v.date.weekday() == 0]
+    assert mondays and all(v.assigned_person_ids == [people["Aino"].id] for v in mondays)

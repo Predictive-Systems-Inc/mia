@@ -23,6 +23,10 @@ class AssignIn(BaseModel):
     add: bool = False
 
 
+class UnassignIn(BaseModel):
+    person_id: str = Field(max_length=26)
+
+
 class PersonIn(BaseModel):
     person_id: str | None = Field(default=None, max_length=26)
 
@@ -136,8 +140,8 @@ def schedule(
 @router.post("/visits/{visit_id}/assign", response_model=AssignOut)
 def assign(session: DbSession, ctx: PersonAuth, visit_id: str, body: AssignIn) -> AssignOut:
     """Assign a person; an override approval comes back when a rule breaks (409 otherwise)."""
+    _require(session, ctx, "write", None)  # before the lookup: no visit ids to probe
     visit = _visit(session, ctx, visit_id)
-    _require(session, ctx, "write", None)
     person = _target(session, ctx, body.person_id)
     try:
         out = scheduling.assign(session, ctx.actor, visit, person, add=body.add)
@@ -150,10 +154,10 @@ def assign(session: DbSession, ctx: PersonAuth, visit_id: str, body: AssignIn) -
 
 
 @router.post("/visits/{visit_id}/unassign", response_model=VisitCard)
-def unassign(session: DbSession, ctx: PersonAuth, visit_id: str, body: AssignIn) -> VisitCard:
+def unassign(session: DbSession, ctx: PersonAuth, visit_id: str, body: UnassignIn) -> VisitCard:
     """Take a person off a visit."""
-    visit = _visit(session, ctx, visit_id)
     _require(session, ctx, "write", None)
+    visit = _visit(session, ctx, visit_id)
     person = _target(session, ctx, body.person_id)
     try:
         row = scheduling.unassign(session, ctx.actor, visit, person)

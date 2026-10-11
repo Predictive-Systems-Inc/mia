@@ -61,6 +61,9 @@ def _parts(rule: str) -> dict[str, str]:
         raise ValueError(f"INTERVAL must be positive: {rule!r}")
     if "UNTIL" in parts:
         _until(parts)
+    unknown = set(parts) - {"FREQ", "BYDAY", "INTERVAL", "UNTIL"}
+    if unknown:
+        raise ValueError(f"unsupported recurrence part {min(unknown)} in {rule!r}")
     return parts
 
 
@@ -210,14 +213,14 @@ def ineligibility(session: Session, branch: Branch, visit: Visit, person: Person
 
 
 def _last_assignees(session: Session, job: Job, day: dt.date) -> list[str]:
-    """Who did this job most recently on the same weekday (the copied assignment, Q21)."""
+    """Who did this job most recently on the same weekday (the copied assignment, Q21); the
+    most recent visit of any weekday when there was none."""
     rows = session.exec(
         select(Visit)
         .where(Visit.job_id == job.id)
         .where(col(Visit.date) < day)
         .where(Visit.status != "cancelled")
         .order_by(col(Visit.date).desc())
-        .limit(14)
     ).all()
     for v in rows:
         if v.date.weekday() == day.weekday() and v.assigned_person_ids:
@@ -285,12 +288,17 @@ def generate(
 _generated_on: dict[str, dt.date] = {}
 
 
+GENERATE_FROM_HOUR = 3
+
+
 def generate_due(session: Session, now: dt.datetime) -> int:
-    """Run generation for every branch once per local day (the ticker). Returns new visits."""
+    """Run generation for every branch once per local day, from 03:00 local (the ticker).
+    Returns new visits."""
     count = 0
     for branch in session.exec(select(Branch)).all():
-        local_day = now.astimezone(ZoneInfo(branch.timezone)).date()
-        if _generated_on.get(branch.id) == local_day:
+        local = now.astimezone(ZoneInfo(branch.timezone))
+        local_day = local.date()
+        if local.hour < GENERATE_FROM_HOUR or _generated_on.get(branch.id) == local_day:
             continue
         count += len(generate(session, Actor.system(branch.id), branch, today=local_day))
         _generated_on[branch.id] = local_day
@@ -341,7 +349,6 @@ def assign(
     person: Person,
     *,
     add: bool = False,
-    override_approved: bool = False,
 ) -> Assignment:
     """Put the person on the visit (replacing the assignees unless `add`). Eligible: done and
     `visit.assigned`. Not eligible: an override approval is created and the visit is unchanged
@@ -356,8 +363,15 @@ def assign(
         return Assignment(visit, None, [])
     branch = session.get(Branch, visit.branch_id)
     assert branch is not None
-    reasons = [] if override_approved else ineligibility(session, branch, visit, person)
+    reasons = ineligibility(session, branch, visit, person)
     if reasons:
+        for open_one in approvals.pending(session, visit.branch_id):  # one card per ask
+            if (
+                open_one.type == OVERRIDE_TYPE
+                and open_one.subject_id == visit.id
+                and open_one.evidence.get("person_id") == person.id
+            ):
+                return Assignment(visit, open_one.id, reasons)
         approval = approvals.request(
             session,
             OVERRIDE_TYPE,
@@ -396,7 +410,17 @@ def on_override_approved(session: Session, approval: Approval, decider: Actor) -
     """Approval handler: apply the assignment the office asked for."""
     visit = session.get(Visit, approval.subject_id)
     person = session.get(Person, str(approval.evidence.get("person_id")))
-    if visit is None or person is None or visit.status not in OPEN:
+    if visit is None or person is None or visit.status not in OPEN or person.status != "active":
+        why = (
+            "visit gone"
+            if visit is None
+            else "person gone"
+            if person is None
+            else (
+                f"visit is {visit.status}" if visit.status not in OPEN else "person is not active"
+            )
+        )
+        events.emit(session, "visit.override_not_applied", approval, None, {"reason": why}, decider)
         return
     _apply(session, decider, visit, person, bool(approval.evidence.get("add")), approval.id)
 

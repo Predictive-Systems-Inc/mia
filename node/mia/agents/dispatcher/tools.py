@@ -259,9 +259,6 @@ def resolve_visit(session: Session, deps: AgentDeps, args: FindReplacementsInput
     return visits[0]
 
 
-_slot = scheduling.slot_of  # the dispatcher tests build slots through this name
-
-
 def candidate_data(
     session: Session, deps: AgentDeps, visit: Visit, *, include_assigned: bool = False
 ) -> list[scoring.CandidateData]:
