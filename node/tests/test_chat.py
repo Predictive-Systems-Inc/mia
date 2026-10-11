@@ -278,6 +278,8 @@ def test_demo_5_cleaner_arrives_asks_the_door_code_and_finishes(
     card = blocks_of(details, "card")[0]
     assert any(f["label"] == "Osoite" for f in card["fields"])
     assert details["sensitive"] is True  # the tool returned access notes: the whole reply is
+    later = say(client, juha, "Kiitos", arrived["thread_id"])
+    assert later["sensitive"] is True  # the notes stay in the thread's model history
     done = say(client, juha, "Valmis, lähden nyt", arrived["thread_id"])
     assert "Kirjasin lähtösi" in blocks_of(done, "text")[0]["text"]
     today = dt.datetime.now(dt.UTC).date()
