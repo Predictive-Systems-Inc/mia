@@ -1,16 +1,15 @@
 """Chat endpoints: POST /chat (JSON), POST /chat/stream (SSE), and the AG-UI protocol:
 POST /ag-ui (start a run), POST /ag-ui/connect (catch up), POST /ag-ui/stop (cancel a run).
 
-The actor comes from the X-Mia-Actor header (a person id). This is a temporary stand-in for
-real authentication (Sprint 1); see docs/adr/001-stack.md.
+The actor is the signed-in person from `PersonAuth` (ADR 011).
 """
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Iterator
-from typing import Annotated, Any
+from collections.abc import AsyncIterator
+from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_ai.ui.ag_ui import AGUIAdapter
@@ -18,10 +17,10 @@ from sqlmodel import Session
 from ulid import ULID
 
 from mia.agents.dispatcher.agent import get_agent
+from mia.api.deps import AuthContext, DbSession, PersonAuth
 from mia.chat import runs
 from mia.chat.blocks import ChatReply
 from mia.chat.service import ChatError, run_turn
-from mia.core.db import session_scope
 from mia.core.ids import new_id
 from mia.core.models import Person, Thread
 
@@ -32,37 +31,15 @@ MAX_TEXT = 4000
 class ChatRequest(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_TEXT)
     thread_id: str | None = None
-    actor_id: str | None = Field(None, description="Person id; the X-Mia-Actor header wins")
 
 
-def resolve_actor(session: Session, header: str | None, body: str | None = None) -> Person:
-    """The acting person. 401 when missing, 403 when unknown or inactive, 400 on mismatch."""
-    if header and body and header != body:
-        raise HTTPException(400, "X-Mia-Actor and actor_id differ")
-    actor_id = header or body
-    if not actor_id:
-        raise HTTPException(401, "X-Mia-Actor header required")
-    person = session.get(Person, actor_id)
-    if person is None or person.status != "active":
-        raise HTTPException(403, "unknown actor")
-    return person
+def _person(auth: AuthContext) -> Person:
+    assert auth.person is not None  # PersonAuth guarantees it
+    return auth.person
 
 
-ActorHeader = Annotated[str | None, Header(alias="X-Mia-Actor")]
-
-
-def get_session() -> Iterator[Session]:
-    """One session per request: commits on success, rolls back on error, always closes."""
-    with session_scope() as session:
-        yield session
-
-
-# "function": commit before the response is sent, so a failed commit is a 500, not a lost write.
-DbSession = Annotated[Session, Depends(get_session, scope="function")]
-
-
-async def _turn(session: Session, body: ChatRequest, x_mia_actor: str | None) -> ChatReply:
-    person = resolve_actor(session, x_mia_actor, body.actor_id)
+async def _turn(session: Session, body: ChatRequest, auth: AuthContext) -> ChatReply:
+    person = _person(auth)
     try:
         return await run_turn(session, get_agent(), person, body.text, body.thread_id)
     except ChatError as exc:
@@ -70,9 +47,9 @@ async def _turn(session: Session, body: ChatRequest, x_mia_actor: str | None) ->
 
 
 @router.post("/chat", response_model=ChatReply)
-async def chat(session: DbSession, body: ChatRequest, x_mia_actor: ActorHeader = None) -> ChatReply:
+async def chat(session: DbSession, body: ChatRequest, auth: PersonAuth) -> ChatReply:
     """One chat turn as JSON for the acting person."""
-    return await _turn(session, body, x_mia_actor)
+    return await _turn(session, body, auth)
 
 
 def _sse(event: str, data: Any) -> str:
@@ -80,11 +57,9 @@ def _sse(event: str, data: Any) -> str:
 
 
 @router.post("/chat/stream")
-async def chat_stream(
-    session: DbSession, body: ChatRequest, x_mia_actor: ActorHeader = None
-) -> StreamingResponse:
+async def chat_stream(session: DbSession, body: ChatRequest, auth: PersonAuth) -> StreamingResponse:
     """Server-Sent Events: thread, text deltas, then the final blocks, then done."""
-    reply = await _turn(session, body, x_mia_actor)
+    reply = await _turn(session, body, auth)
 
     async def events() -> AsyncIterator[str]:
         yield _sse("thread", {"thread_id": reply.thread_id})
@@ -118,13 +93,13 @@ def _stream(chunks: AsyncIterator[str]) -> StreamingResponse:
 
 
 @router.post("/ag-ui")
-async def ag_ui(request: Request, session: DbSession, x_mia_actor: ActorHeader = None) -> Response:
+async def ag_ui(request: Request, session: DbSession, auth: PersonAuth) -> Response:
     """Start an AG-UI run on the person's thread (threadId: an existing thread or a new ULID).
 
     The run belongs to the server, not the connection: a dropped stream keeps it going and
     POST /ag-ui/connect rejoins it. 409 when the thread already has a live run.
     """
-    person = resolve_actor(session, x_mia_actor)
+    person = _person(auth)
     if not request.headers.get("content-type", "").startswith("application/json"):
         raise HTTPException(415, "application/json required")
     try:
@@ -148,12 +123,10 @@ async def ag_ui(request: Request, session: DbSession, x_mia_actor: ActorHeader =
 
 
 @router.post("/ag-ui/connect")
-async def ag_ui_connect(
-    session: DbSession, body: ThreadRef, x_mia_actor: ActorHeader = None
-) -> StreamingResponse:
+async def ag_ui_connect(session: DbSession, body: ThreadRef, auth: PersonAuth) -> StreamingResponse:
     """Catch up on a thread after a dropped connection: rejoin its live run, or get the stored
     messages and blocks as one snapshot run. 404 for unknown threads and other people's."""
-    person = resolve_actor(session, x_mia_actor)
+    person = _person(auth)
     run = runs.live(body.thread_id)
     if run is not None and run.person_id != person.id:
         raise HTTPException(404, "thread not found")
@@ -174,12 +147,10 @@ async def ag_ui_connect(
 
 
 @router.post("/ag-ui/stop")
-async def ag_ui_stop(
-    session: DbSession, body: ThreadRef, x_mia_actor: ActorHeader = None
-) -> dict[str, bool]:
+async def ag_ui_stop(session: DbSession, body: ThreadRef, auth: PersonAuth) -> dict[str, bool]:
     """Cancel the person's live run on the thread; it ends with RUN_FINISHED. 404 when there is
     no live run of this person on the thread."""
-    person = resolve_actor(session, x_mia_actor)
+    person = _person(auth)
     if not runs.stop(body.thread_id, person.id):
         raise HTTPException(404, "no live run")
     return {"stopped": True}

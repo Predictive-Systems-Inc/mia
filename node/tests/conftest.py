@@ -54,6 +54,7 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     monkeypatch.setenv("MIA_GEOCODER", "static")
     monkeypatch.setenv("MIA_NODE_SECRET", "test-node-secret")
     monkeypatch.setenv("MIA_WA_NUMBER", "358401110000")
+    monkeypatch.setenv("MIA_PUBLIC_URL", "http://localhost:8000")  # not the developer's .env
     key_file = tmp_path / "master.key"
     keys.generate(key_file)
     monkeypatch.setenv("MIA_MASTER_KEY_FILE", str(key_file))
@@ -104,6 +105,28 @@ def people(session: Session, branch: Branch) -> dict[str, Person]:
 def actor(people: dict[str, Person]) -> Actor:
     """A cleaner acting for themselves."""
     return Actor.person(people["Juha"])
+
+
+@pytest.fixture
+def login(session: Session):  # type: ignore[no-untyped-def]
+    """Sign a person in on a TestClient through the service (bearer token on every request)."""
+    from mia.core import auth as auth_service
+    from mia.core.db import utcnow
+
+    def _login(
+        client, person, *, aal="aal2", method="password_totp", stepped_up=False, device=None
+    ):  # type: ignore[no-untyped-def]
+        now = utcnow()
+        tokens = auth_service.issue_session(
+            session, person, method=method, aal=aal, ip="127.0.0.1", now=now, device=device
+        )
+        if stepped_up:
+            auth_service.step_up(session, tokens.row, now)
+        session.commit()
+        client.headers["Authorization"] = f"Bearer {tokens.access}"
+        return tokens
+
+    return _login
 
 
 @pytest.fixture

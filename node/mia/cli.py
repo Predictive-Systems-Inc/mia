@@ -47,6 +47,9 @@ def seed(_args: argparse.Namespace) -> int:
 def serve(args: argparse.Namespace) -> int:
     import uvicorn
 
+    from mia.api.deps import check_mode
+
+    check_mode(get_settings())
     # The node never downloads models (ADR 013); training processes do not go through serve.
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     uvicorn.run("mia.api.main:app", host=args.host, port=args.port, reload=args.reload)
@@ -86,14 +89,20 @@ def chat(args: argparse.Namespace) -> int:
 
 def decide(args: argparse.Namespace) -> int:
     from mia.core import approvals
-    from mia.core.db import session_scope
+    from mia.core.db import session_scope, utcnow
     from mia.core.models import Actor
 
     with session_scope() as session:
         person = _find_person(session, args.as_person)
         try:
+            # Shell access is full access: the CLI counts as a fresh step-up (ADR 011).
             row = approvals.decide(
-                session, args.approval_id, Actor.person(person), args.outcome, args.reason
+                session,
+                args.approval_id,
+                Actor.person(person),
+                args.outcome,
+                args.reason,
+                stepped_up_at=utcnow(),
             )
         except approvals.ApprovalError as exc:
             print(f"refused: {exc}")

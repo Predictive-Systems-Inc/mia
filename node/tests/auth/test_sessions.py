@@ -1,0 +1,225 @@
+"""Sessions: issue, verify, rotate, reuse detection, lifetimes, devices, the auth dependency,
+the dev header rules and the approval step-up."""
+
+import datetime as dt
+from types import SimpleNamespace
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlmodel import Session, select
+
+from mia.api.main import app
+from mia.core import auth
+from mia.core.db import utcnow
+from mia.core.models import Actor, AuthClient, Event, Person
+from mia.settings import get_settings
+
+IP = "203.0.113.5"
+
+
+@pytest.fixture
+def client(branch: object) -> TestClient:
+    return TestClient(app)
+
+
+def test_issue_verify_rotate_and_reuse(session: Session, people: dict[str, Person]) -> None:
+    helena = people["Helena"]
+    now = utcnow()
+    t = auth.issue_session(session, helena, method="password_totp", aal="aal2", ip=IP, now=now)
+    assert t.refresh and auth.verify_access(session, t.access, now) is t.row
+    assert auth.verify_access(session, t.access, now + auth.ACCESS_TTL) is None
+    assert auth.verify_access(session, "nope", now) is None
+    assert t.row.refresh_expires_at == now + auth.OFFICE_IDLE
+    assert t.row.absolute_expires_at == now + auth.OFFICE_MAX
+    t2 = auth.refresh_session(session, t.refresh, now + dt.timedelta(minutes=10))
+    assert t2.row is t.row and t2.access != t.access and t2.refresh != t.refresh
+    assert auth.verify_access(session, t.access, now + dt.timedelta(minutes=10)) is None
+    with pytest.raises(auth.AuthError):  # the old refresh token again: reuse, session revoked
+        auth.refresh_session(session, t.refresh, now + dt.timedelta(minutes=11))
+    assert t.row.status == "revoked"
+    assert session.exec(select(Event).where(Event.action == "auth.refresh_reused")).first()
+    with pytest.raises(auth.AuthError):
+        auth.refresh_session(session, t2.refresh, now + dt.timedelta(minutes=12))
+    for e in session.exec(select(Event).where(Event.entity_type == "auth_sessions")):
+        assert e.after is not None and e.after["access_hash"] == "<redacted>"
+
+
+def test_refresh_after_absolute_expiry_revokes(session: Session, people: dict[str, Person]) -> None:
+    now = utcnow()
+    helena = people["Helena"]
+    t = auth.issue_session(session, helena, method="password_totp", aal="aal2", ip=IP, now=now)
+    assert t.refresh
+    at = now + auth.OFFICE_MAX + dt.timedelta(seconds=1)
+    with pytest.raises(auth.AuthError):
+        auth.refresh_session(session, t.refresh, at)
+    assert t.row.status == "revoked"
+    idle = auth.issue_session(session, helena, method="password_totp", aal="aal2", ip=IP, now=now)
+    assert idle.refresh
+    with pytest.raises(auth.AuthError):
+        auth.refresh_session(
+            session, idle.refresh, now + auth.OFFICE_IDLE + dt.timedelta(seconds=1)
+        )
+
+
+def test_staff_device_lifetimes_and_revoke(session: Session, people: dict[str, Person]) -> None:
+    juha, actor = people["Juha"], Actor.person(people["Juha"])
+    now = utcnow()
+    device, secret = auth.bind_device(session, actor, juha, "mobile", "iPhone", now)
+    assert secret and len(secret) == 43 and device.secret_hash != secret
+    t = auth.issue_session(
+        session, juha, method="phone_otp", aal="aal1", ip=IP, now=now, device=device
+    )
+    assert t.row.refresh_expires_at == now + auth.STAFF_IDLE
+    assert t.row.absolute_expires_at == now + auth.STAFF_MAX
+    assert auth.check_device(session, device.id, secret, IP, now) is device
+    with pytest.raises(auth.AuthError):
+        auth.check_device(session, device.id, "wrong", IP, now)
+    auth.revoke_device(session, actor, device, now)
+    assert auth.verify_access(session, t.access, now) is None and t.row.status == "revoked"
+    with pytest.raises(auth.AuthError):
+        auth.check_device(session, device.id, secret, IP, now)
+    browser, none = auth.bind_device(session, actor, juha, "browser", "Safari", now)
+    assert none is None
+    auth.issue_session(session, juha, method="wa_link", aal="aal1", ip=IP, now=now, device=browser)
+    assert auth.revoke_everything(session, actor, juha, now) == 1  # one live session
+    assert browser.status == "revoked"
+
+
+def test_client_sessions_have_no_refresh(session: Session, people: dict[str, Person]) -> None:
+    helena = people["Helena"]
+    client = AuthClient(
+        branch_id=helena.branch_id,
+        name="n",
+        client_id="mia_x",
+        secret_hash="s",
+        roles=["dispatcher"],
+        created_by=helena.id,
+    )
+    session.add(client)  # a bare row for this unit test; Task 9 adds the service
+    session.flush()
+    now = utcnow()
+    t = auth.issue_session(session, client, method="client", aal="client", ip=IP, now=now)
+    assert t.refresh is None and t.row.access_expires_at == now + auth.CLIENT_TTL
+    assert auth.client_actor(client).principal.id == "client:mia_x"
+
+
+# ---- the dependency ----------------------------------------------------------------------
+
+
+def test_bearer_session_is_the_actor(client: TestClient, people: dict[str, Person], login) -> None:  # type: ignore[no-untyped-def]
+    login(client, people["Juha"])
+    assert client.post("/chat", json={"text": "hi"}).status_code == 200
+    assert client.get("/notifications").status_code == 200
+
+
+def test_header_is_refused_in_required_mode(
+    client: TestClient, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MIA_AUTH_MODE", "required")
+    get_settings.cache_clear()
+    res = client.post("/chat", json={"text": "hi"}, headers={"X-Mia-Actor": people["Juha"].id})
+    assert res.status_code == 401 and res.json()["detail"] == "invalid credentials"
+
+
+def test_dev_header_needs_a_loopback_peer_without_cloudflare(
+    client: TestClient, people: dict[str, Person]
+) -> None:
+    juha = people["Juha"].id
+    hdr = {"X-Mia-Actor": juha}
+    assert client.post("/chat", json={"text": "hi"}, headers=hdr).status_code == 200
+    via_cf = {"X-Mia-Actor": juha, "CF-Connecting-IP": "198.51.100.7"}
+    assert client.post("/chat", json={"text": "hi"}, headers=via_cf).status_code == 401
+    client.post("/chat", json={"text": "again"}, headers=hdr)
+    from mia.core.db import session_scope
+
+    with session_scope() as s:  # auth.dev_header_used is written once per process and person
+        rows = s.exec(select(Event).where(Event.action == "auth.dev_header_used")).all()
+        assert len([r for r in rows if r.actor_id == juha]) == 1
+
+
+def test_inactive_person_gets_403_and_roles_are_read_fresh(
+    client: TestClient, people: dict[str, Person], session: Session, login
+) -> None:  # type: ignore[no-untyped-def]
+    from mia.core import people as people_service
+    from mia.core import store
+
+    sanna = people["Sanna"]
+    login(client, sanna)
+    assert client.get("/notifications").status_code == 200
+    store.update(session, sanna, {"roles": ["staff"]}, Actor.person(people["Helena"]))
+    session.commit()
+    assert client.get("/notifications").status_code == 200  # still signed in, roles now staff
+    store.update(session, sanna, {"status": "inactive"}, Actor.person(people["Helena"]))
+    session.commit()
+    assert client.get("/notifications").status_code == 403  # a valid token, an inactive person
+    store.update(session, sanna, {"status": "active"}, Actor.person(people["Helena"]))
+    people_service.deactivate(session, Actor.person(people["Helena"]), sanna)
+    session.commit()
+    assert client.get("/notifications").status_code == 401  # deactivation revoked the session
+
+
+def test_enrol_session_reaches_only_auth_routes(
+    client: TestClient, people: dict[str, Person], login
+) -> None:  # type: ignore[no-untyped-def]
+    login(client, people["Helena"], aal="enrol", method="enrol")
+    assert client.post("/chat", json={"text": "hi"}).status_code == 403
+
+
+def test_dev_mode_refuses_a_public_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mia.api.deps import check_mode
+
+    monkeypatch.setenv("MIA_PUBLIC_URL", "https://mia.example.fi")
+    get_settings.cache_clear()
+    with pytest.raises(RuntimeError, match="MIA_AUTH_MODE=dev"):
+        check_mode(get_settings())
+    monkeypatch.setenv("MIA_AUTH_MODE", "required")
+    get_settings.cache_clear()
+    check_mode(get_settings())
+
+
+def test_client_ip_trusts_cf_header_only_from_a_trusted_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mia.api.deps import client_ip
+
+    req = SimpleNamespace(
+        client=SimpleNamespace(host="172.18.0.9"), headers={"cf-connecting-ip": "198.51.100.7"}
+    )
+    assert client_ip(req) == "172.18.0.9"  # type: ignore[arg-type]
+    monkeypatch.setenv("MIA_TRUSTED_PROXIES", "172.18.0.9, 10.0.0.1")
+    get_settings.cache_clear()
+    assert client_ip(req) == "198.51.100.7"  # type: ignore[arg-type]
+
+
+# ---- approvals need a step-up ------------------------------------------------------------
+
+
+def test_app_only_approval_needs_aal2_and_a_fresh_step_up(
+    session: Session, people: dict[str, Person]
+) -> None:
+    from mia.core import approvals
+
+    helena = Actor.person(people["Helena"])
+    row = approvals.request(
+        session,
+        "dispatcher.cover_override",
+        ("visit", "V"),
+        "x",
+        Actor.person(people["Sanna"]),
+        ["admin"],
+        "app_only",
+    )
+    now = utcnow()
+    stale = now - auth.STEP_UP_TTL - dt.timedelta(seconds=1)
+    for kw in (
+        {"aal": "aal1", "stepped_up_at": now},
+        {"aal": "aal2", "stepped_up_at": None},
+        {"aal": "aal2", "stepped_up_at": stale},
+        {"aal": "aal2", "stepped_up_at": now, "channel": "whatsapp"},
+    ):
+        with pytest.raises(approvals.ApprovalError):
+            approvals.decide(session, row.id, helena, "approved", **kw)  # type: ignore[arg-type]
+    denied = session.exec(select(Event).where(Event.action == "approval.refused")).all()
+    assert len(denied) == 4
+    approvals.decide(session, row.id, helena, "approved", aal="aal2", stepped_up_at=now)
+    assert row.status == "approved"

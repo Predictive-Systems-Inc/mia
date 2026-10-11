@@ -7,12 +7,12 @@ request and decision is written to the events log; approved requests run their h
 """
 
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlmodel import Session, col, select
 
-from mia.core import store
+from mia.core import events, store
 from mia.core.db import utcnow
 from mia.core.models import Actor, Approval
 from mia.core.rbac import get_rbac
@@ -123,6 +123,25 @@ def expire_if_due(session: Session, approval: Approval, actor: Actor) -> Approva
     return store.update(session, approval, {"status": "expired"}, actor, action="approval.expired")
 
 
+def _refused(
+    session: Session,
+    approval: Approval,
+    decider: Actor,
+    why: str,
+    exc: type[ApprovalError] = ApprovalError,
+) -> None:
+    events.emit(
+        session,
+        "approval.refused",
+        approval,
+        None,
+        {"reason": why},
+        decider,
+        approval_id=approval.id,
+    )
+    raise exc(why)
+
+
 def decide(
     session: Session,
     approval_id: str,
@@ -131,8 +150,12 @@ def decide(
     reason: str | None = None,
     *,
     channel: str = "app",
+    aal: str = "aal2",
+    stepped_up_at: datetime | None = None,
 ) -> Approval:
-    """Record a decision. Raises ApprovalError when any approval rule is broken."""
+    """Record a decision. Raises ApprovalError when any approval rule is broken; an app_only
+    approval also needs the app channel, aal2 and a PIN step-up in the last five minutes
+    (StepUpRequired), each refusal written as `approval.refused`."""
     if outcome not in ("approved", "rejected"):
         raise ValueError("outcome must be approved or rejected")
     approval = session.get(Approval, approval_id)
@@ -147,8 +170,12 @@ def decide(
         raise ApprovalError("nobody approves a request they made or triggered")
     if not _holds_role(decider, approval.approver_roles):
         raise ApprovalError("decider does not hold an approver role")
-    if approval.channel == "app_only" and channel != "app":
-        raise ApprovalError("this approval can only be decided in the Mia app")
+    if approval.channel == "app_only":
+        if channel != "app":
+            _refused(session, approval, decider, "this approval can only be decided in the Mia app")
+        fresh = stepped_up_at is not None and utcnow() - stepped_up_at <= STEP_UP_TTL
+        if aal != "aal2" or not fresh:
+            _refused(session, approval, decider, "step_up_required", StepUpRequired)
     approval = store.update(
         session,
         approval,

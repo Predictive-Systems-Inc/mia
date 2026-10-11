@@ -18,8 +18,11 @@ from mia.core.approvals import STEP_UP_TTL, StepUpRequired
 from mia.core.models import (
     Actor,
     AuthAttempt,
+    AuthClient,
     AuthCode,
     AuthCredential,
+    AuthDevice,
+    AuthSession,
     Person,
     Principal,
 )
@@ -590,3 +593,264 @@ def unlock_pin(session: Session, actor: Actor, person: Person, now: dt.datetime)
             actor,
             action="auth.pin_unlocked",
         )
+
+
+# ---- sessions ----------------------------------------------------------------------------
+
+ACCESS_TTL = dt.timedelta(minutes=15)
+OFFICE_IDLE, OFFICE_MAX = dt.timedelta(hours=12), dt.timedelta(days=7)
+STAFF_IDLE, STAFF_MAX = dt.timedelta(days=30), dt.timedelta(days=90)
+CLIENT_TTL = dt.timedelta(hours=1)
+
+
+@dataclass(frozen=True)
+class Tokens:
+    access: str
+    refresh: str | None
+    row: AuthSession
+
+
+def client_actor(client: AuthClient) -> Actor:
+    """An outside client acts as agent `client:<client_id>` with its registered roles."""
+    return Actor(
+        principal=Principal(
+            type="agent", id=f"client:{client.client_id}", roles=list(client.roles)
+        ),
+        branch_id=client.branch_id,
+    )
+
+
+def _subject_actor(subject: Person | AuthClient) -> Actor:
+    return Actor.person(subject) if isinstance(subject, Person) else client_actor(subject)
+
+
+def issue_session(
+    session: Session,
+    subject: Person | AuthClient,
+    *,
+    method: str,
+    aal: str,
+    ip: str,
+    now: dt.datetime,
+    device: AuthDevice | None = None,
+) -> Tokens:
+    """A new session. People get a rotating refresh token (office lifetimes, or staff
+    lifetimes on a bound mobile device); clients get one hour and no refresh. The event is
+    `auth.login_succeeded` (`auth.client_token_issued` for clients)."""
+    person = isinstance(subject, Person)
+    access, refresh = keys.new_token(), keys.new_token() if person else None
+    mobile = device is not None and device.kind == "mobile"
+    idle, longest = (STAFF_IDLE, STAFF_MAX) if mobile else (OFFICE_IDLE, OFFICE_MAX)
+    row = AuthSession(
+        branch_id=subject.branch_id,
+        subject_type="person" if person else "client",
+        subject_id=subject.id,
+        device_id=device.id if device else None,
+        method=method,
+        aal=aal,
+        access_hash=keys.token_hash(access),
+        access_expires_at=now + (ACCESS_TTL if person else CLIENT_TTL),
+        refresh_hash=keys.token_hash(refresh) if refresh else None,
+        refresh_expires_at=now + idle if person else None,
+        absolute_expires_at=now + longest if person else None,
+        ip=ip,
+    )
+    store.insert(
+        session,
+        row,
+        _subject_actor(subject),
+        action="auth.login_succeeded" if person else "auth.client_token_issued",
+    )
+    return Tokens(access, refresh, row)
+
+
+def verify_access(session: Session, token: str, now: dt.datetime) -> AuthSession | None:
+    """The active, unexpired session behind an access token. A read, never a write."""
+    row = session.exec(
+        select(AuthSession).where(AuthSession.access_hash == keys.token_hash(token))
+    ).first()
+    if row is None or row.status != "active" or row.access_expires_at <= now:
+        return None
+    return row
+
+
+def _session_actor(session: Session, row: AuthSession) -> Actor:
+    if row.subject_type == "client":
+        client = session.get(AuthClient, row.subject_id)
+        return client_actor(client) if client else auth_actor(row.branch_id)
+    person = session.get(Person, row.subject_id)
+    return Actor.person(person) if person else auth_actor(row.branch_id)
+
+
+def refresh_session(session: Session, token: str, now: dt.datetime) -> Tokens:
+    """Rotate the tokens of a session. A refresh token presented twice revokes the session
+    (`auth.refresh_reused`); an idle or absolute expiry revokes it too."""
+    digest = keys.token_hash(token)
+    row = session.exec(select(AuthSession).where(AuthSession.refresh_hash == digest)).first()
+    if row is None:
+        reused = session.exec(
+            select(AuthSession).where(AuthSession.prev_refresh_hash == digest)
+        ).first()
+        if reused is not None and reused.status == "active":
+            store.update(
+                session,
+                reused,
+                {"status": "revoked"},
+                _session_actor(session, reused),
+                action="auth.refresh_reused",
+            )
+        raise AuthError(INVALID)
+    actor = _session_actor(session, row)
+    expired = (row.refresh_expires_at or now) <= now or (row.absolute_expires_at or now) <= now
+    if row.status != "active" or expired:
+        if row.status == "active":
+            store.update(session, row, {"status": "revoked"}, actor, action="auth.session_expired")
+        raise AuthError(INVALID)
+    access, refresh = keys.new_token(), keys.new_token()
+    device = session.get(AuthDevice, row.device_id) if row.device_id else None
+    idle = STAFF_IDLE if device is not None and device.kind == "mobile" else OFFICE_IDLE
+    assert row.absolute_expires_at is not None
+    store.update(
+        session,
+        row,
+        {
+            "access_hash": keys.token_hash(access),
+            "access_expires_at": now + ACCESS_TTL,
+            "prev_refresh_hash": row.refresh_hash,
+            "refresh_hash": keys.token_hash(refresh),
+            "refresh_expires_at": min(now + idle, row.absolute_expires_at),
+        },
+        actor,
+        action="auth.session_refreshed",
+    )
+    if device is not None:
+        store.update(session, device, {"last_seen_at": now}, actor, action="auth.device_seen")
+    return Tokens(access, refresh, row)
+
+
+def revoke_session(
+    session: Session, actor: Actor, row: AuthSession, now: dt.datetime
+) -> AuthSession:
+    """End one session."""
+    return store.update(session, row, {"status": "revoked"}, actor, action="auth.session_revoked")
+
+
+def revoke_sessions(
+    session: Session,
+    actor: Actor,
+    subject_id: str,
+    now: dt.datetime,
+    *,
+    keep: str | None = None,
+    device_id: str | None = None,
+) -> int:
+    """End every active session of a person or client (optionally only on one device,
+    optionally keeping one). Returns how many ended."""
+    stmt = (
+        select(AuthSession)
+        .where(AuthSession.subject_id == subject_id)
+        .where(AuthSession.status == "active")
+    )
+    if device_id is not None:
+        stmt = stmt.where(AuthSession.device_id == device_id)
+    rows = [r for r in session.exec(stmt).all() if r.id != keep]
+    for row in rows:
+        revoke_session(session, actor, row, now)
+    return len(rows)
+
+
+def step_up(session: Session, row: AuthSession, now: dt.datetime) -> AuthSession:
+    """Mark a session stepped up (PIN entered) at `now`."""
+    return store.update(
+        session, row, {"stepped_up_at": now}, _session_actor(session, row), action="auth.step_up"
+    )
+
+
+# ---- devices -----------------------------------------------------------------------------
+
+
+def bind_device(
+    session: Session, actor: Actor, person: Person, kind: str, name: str, now: dt.datetime
+) -> tuple[AuthDevice, str | None]:
+    """A new device row. Mobile devices get a device secret, returned once."""
+    secret = keys.new_token() if kind == "mobile" else None
+    row = store.insert(
+        session,
+        AuthDevice(
+            branch_id=person.branch_id,
+            person_id=person.id,
+            kind=kind,
+            name=name[:80],
+            secret_hash=keys.token_hash(secret) if secret else None,
+            last_seen_at=now,
+        ),
+        actor,
+        action="auth.device_bound",
+    )
+    return row, secret
+
+
+def check_device(
+    session: Session, device_id: str, secret: str, ip: str, now: dt.datetime
+) -> AuthDevice:
+    """The active device when the secret matches. Limits per device and IP apply."""
+    key = attempt_key(device_id, ip)
+    if throttled(session, "device", key, now):
+        raise Locked(INVALID)
+    row = session.get(AuthDevice, device_id)
+    ok = (
+        row is not None
+        and row.status == "active"
+        and row.secret_hash is not None
+        and secrets.compare_digest(row.secret_hash, keys.token_hash(secret))
+    )
+    record_attempt(session, "device", key, ok, now)
+    if not ok or row is None:
+        raise AuthError(INVALID)
+    return row
+
+
+def revoke_device(
+    session: Session, actor: Actor, device: AuthDevice, now: dt.datetime
+) -> AuthDevice:
+    """Revoke a device and end its sessions at once."""
+    revoke_sessions(session, actor, device.person_id, now, device_id=device.id)
+    return store.update(
+        session,
+        device,
+        {"status": "revoked", "revoked_at": now, "revoked_by": actor.principal.id},
+        actor,
+        action="auth.device_revoked",
+    )
+
+
+def revoke_everything(session: Session, actor: Actor, person: Person, now: dt.datetime) -> int:
+    """Every device and session of the person ends. Returns the number of sessions ended."""
+    ended = 0
+    for device in session.exec(
+        select(AuthDevice)
+        .where(AuthDevice.person_id == person.id)
+        .where(AuthDevice.status == "active")
+    ).all():
+        ended += revoke_sessions(session, actor, person.id, now, device_id=device.id)
+        revoke_device(session, actor, device, now)
+    return ended + revoke_sessions(session, actor, person.id, now)
+
+
+def start_enrolment(
+    session: Session,
+    actor: Actor,
+    person: Person,
+    now: dt.datetime,
+    *,
+    reason: str = "enrol",
+    via: str = "app",
+) -> str:
+    """A 24-hour enrolment token (set password, enrol TOTP). Every session of the person
+    ends. `reason="reset"` also writes `auth.reset` with both actors."""
+    revoke_everything(session, actor, person, now)
+    if reason == "reset":
+        events.emit(
+            session, "auth.reset", person, None, {"by": actor.principal.id, "via": via}, actor
+        )
+    return create_code(session, actor, person, "enrol", now, token=True)

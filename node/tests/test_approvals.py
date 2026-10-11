@@ -69,7 +69,12 @@ def test_money_approvals_are_app_only(session: Session, people: dict[str, Person
             session, row.id, Actor.person(people["Helena"]), "approved", channel="whatsapp"
         )
     ok = approvals.decide(
-        session, row.id, Actor.person(people["Helena"]), "approved", channel="app"
+        session,
+        row.id,
+        Actor.person(people["Helena"]),
+        "approved",
+        channel="app",
+        stepped_up_at=utcnow(),
     )
     assert ok.status == "approved" and ok.decided_by == people["Helena"].id
 
@@ -194,7 +199,9 @@ def test_money_tool_without_approval_raises_and_does_not_execute(
         Person(branch_id=branch.id, name="Otto Osakas", roles=["owner"]),
         Actor.system(branch.id),
     )
-    approvals.decide(session, approval.id, Actor.person(co_owner), "approved")
+    approvals.decide(
+        session, approval.id, Actor.person(co_owner), "approved", stepped_up_at=utcnow()
+    )
     deps.approved.add(approval.id)
     assert call_tool(
         deps, ToolBinding("payer.pay", pay, PayInput, "pay"), PayInput(amount_minor=5000), "c3"
