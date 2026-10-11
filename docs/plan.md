@@ -63,7 +63,10 @@ Remaining work in this order, because each step unblocks the next:
    Check-in, check-out and visit details (address, instructions, access notes, checklist)
    work over chat since 2026-10-12 (docs/superpowers/specs/2026-10-12-field-work-chat-design.md);
    open: location sharing as check-in, photos, ticking checklist items, the missed-check-in alert.
-6. **Alerts, billing export, rollout** (Sprint 5).
+6. **Alerts, billing export, rollout** (Sprint 5). Built 2026-10-12: the missed-check-in
+   alert, the unstaffed-visits card and the daily plan on the ticker, and `mia billing export`
+   (completed work per client and site, no amounts until service agreements exist, D21).
+   Open: missing check-out and overtime alerts (need timesheets, Q20), the payroll export, rollout.
 
 Sprint numbers keep their order and milestones; hour figures are removed (D24).
 

@@ -126,7 +126,7 @@ intents:
   system_of_record: Mia
   country: both
   phase: 1
-  built: 'no'
+  built: 'yes'
 - id: dispatcher.unstaffed_visits
   agent: dispatcher
   process: Contract-to-Service
@@ -142,7 +142,7 @@ intents:
   system_of_record: Mia
   country: both
   phase: 1
-  built: 'no'
+  built: 'yes'
 - id: dispatcher.daily_plan
   agent: dispatcher
   process: Contract-to-Service
@@ -158,7 +158,7 @@ intents:
   system_of_record: Mia
   country: both
   phase: 1
-  built: 'no'
+  built: 'yes'
 - id: dispatcher.check_in
   agent: dispatcher
   process: Contract-to-Service
