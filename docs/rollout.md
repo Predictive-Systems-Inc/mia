@@ -19,16 +19,12 @@ once Ollama runs on the mini, `MIA_EGRESS_LEVEL=none` for real data), build, sta
 `/health`, then the first backup and restore test (install.md 5 and 6). The update procedure
 is install.md "Updates".
 
-## 2. Keys and the first owner
+## 2. Keys and the database
 
 ```
-uv run mia keys init            # the master key file (ADR 011); back it up separately
+uv run mia keys init            # the master key file (ADR 011, or the install guide's way); back it up separately
 uv run mia migrate
-uv run mia auth bootstrap --email owner@hype.example --name "Owner Name"
 ```
-
-The owner opens the enrolment link once (password and TOTP app) and can then sign in on the
-office page.
 
 ## 3. Master data
 
@@ -72,9 +68,20 @@ jobs:
 
 ```
 uv run mia import hype.yaml
-uv run mia geocode                    # home bases and sites (needs MIA_GEOCODER_KEY, egress)
+MIA_EGRESS_LEVEL=pseudonymised uv run mia geocode   # addresses leave the node once (MIA_GEOCODER_KEY)
 uv run mia schedule generate          # the next 28 days of visits; the node keeps them ahead
 ```
+
+The first import creates the organisation and the branch; `mia auth bootstrap` needs that
+branch, so the owner comes after the data:
+
+```
+uv run mia auth bootstrap --email owner@hype.example --name "Owner Name"
+```
+
+The owner opens the enrolment link once (password and TOTP app) and can then sign in on the
+office page. Changes to a row that already exists (a new address, a changed start time) are not
+applied by a re-run: edit them through the API or `mia person`, the import only adds.
 
 Assign the first visits from the office page or the API (`POST /visits/{id}/assign`); from
 then on generation copies the last assignment of each job on the same weekday.
@@ -95,8 +102,8 @@ reply confirms the link. Supervisors sign in on the office page the same way as 
 - Evening: the daily plan goes out at 17:00 (`alerts.daily_plan_time`), unstaffed visits for
   tomorrow at 15:00.
 - Friday: `uv run mia billing export --month YYYY-MM` and the timesheets of the week on
-  `/timesheets` (correct, approve); `uv run mia payroll export --from --to` for the approved
-  rows.
+  `/timesheets` (correct, approve); `uv run mia payroll export --from YYYY-MM-DD --to YYYY-MM-DD`
+  for the approved rows.
 - Every day: `/health` shows the events chain, the channels and the skill models; the backup
   runs on its own (Litestream), the restore test weekly.
 

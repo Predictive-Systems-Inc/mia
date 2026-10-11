@@ -65,7 +65,8 @@ def import_data(args: argparse.Namespace) -> int:
                 branch = importer.bootstrap(session, data)
             else:
                 found = session.get(Branch, _only_branch_id(session, args.branch))
-                assert found is not None
+                if found is None:
+                    raise SystemExit(f"no branch {args.branch}")
                 branch = found
             counts = importer.load(session, data, branch)
         except ValueError as exc:

@@ -8,10 +8,13 @@ gateway route to evaluate a real model through the egress layer.
 """
 
 import asyncio
+import datetime as dt
 import os
 import shutil
 from pathlib import Path
 from typing import Any
+from unittest import mock
+from zoneinfo import ZoneInfo
 
 import pytest
 import yaml
@@ -19,6 +22,7 @@ from pydantic_ai import models
 from pydantic_ai.exceptions import AgentRunError
 from sqlmodel import Session, select
 
+from mia.agents.dispatcher import tools
 from mia.agents.dispatcher.agent import AGENT_DIR, MANIFEST, create_agent
 from mia.agents.dispatcher.classifier import detect_language
 from mia.chat.service import run_turn
@@ -68,9 +72,46 @@ def _subset(expected: dict[str, Any], actual: dict[str, Any]) -> bool:
     return all(same(v, actual.get(k)) for k, v in expected.items())
 
 
+def _eval_clock() -> dt.datetime:
+    """Today at 09:30 in the seed's time zone: Juha's Kamppi visit (09:00) is current, so the
+    field-work scenarios meet a visit whatever the wall clock says (the suite was passing only
+    through its "no visit" alternatives outside working hours, and failing after midnight)."""
+    now = dt.datetime.now(ZoneInfo("Europe/Helsinki"))
+    return now.replace(hour=9, minute=30, second=0, microsecond=0)
+
+
+def _judge(
+    expected: list[dict[str, Any]],
+    calls: list[dict[str, Any]],
+    scenario: dict[str, Any],
+    reply_text: str,
+) -> list[str]:
+    failures: list[str] = []
+    if [c["tool"] for c in calls] != [e["tool"] for e in expected]:
+        failures.append(
+            f"tools {[c['tool'] for c in calls]} != {[e['tool'] for e in expected]}"
+            f" (reply: {reply_text[:160]!r})"
+        )
+        return failures
+    for exp, call in zip(expected, calls, strict=True):
+        status = call["output"].get("status", "ok")
+        if status not in ("denied", "invalid", "approval_required"):
+            status = "ok"
+        if status != exp.get("status", "ok"):
+            failures.append(f"{exp['tool']} status {status} != {exp.get('status', 'ok')}")
+        if not _subset(exp.get("args", {}), call["args"]):
+            failures.append(f"{exp['tool']} args {call['args']} lack {exp['args']}")
+        if "first_candidate" in scenario and call["tool"] == "find_replacements":
+            names = [c["name"] for c in call["output"].get("candidates", [])]
+            if not names or names[0] != scenario["first_candidate"]:
+                failures.append(f"first candidate {names[:1]} != {scenario['first_candidate']}")
+    return failures
+
+
 async def _run_once(scenario: dict[str, Any], db_path: Path) -> list[str]:
     """Run one scenario; return a list of failures (empty means pass)."""
     agent = create_agent(os.environ.get("MIA_EVAL_MODEL", "test"))
+    clock = _eval_clock()
     engine = db.get_engine(f"sqlite:///{db_path}")
     failures: list[str] = []
     with Session(engine, expire_on_commit=False) as session:
@@ -84,7 +125,8 @@ async def _run_once(scenario: dict[str, Any], db_path: Path) -> list[str]:
             session.commit()
         thread_id = threads.get(sender.id)
         mark = session.exec(select(Event).order_by(Event.id.desc())).first()  # type: ignore[union-attr]
-        reply = await run_turn(session, agent, sender, scenario["message"], thread_id)
+        with mock.patch.object(tools, "utcnow", lambda: clock):
+            reply = await run_turn(session, agent, sender, scenario["message"], thread_id)
         session.commit()
         after = select(Event).where(Event.action == "tool.called").where(Event.id > mark.id)  # type: ignore[operator, union-attr]
         calls = [
@@ -95,30 +137,16 @@ async def _run_once(scenario: dict[str, Any], db_path: Path) -> list[str]:
             }
             for e in session.exec(after.order_by(Event.id))  # type: ignore[arg-type]
         ]
-    expected = scenario["tools"]
-    alternative = scenario.get("or_tools")
-    if alternative is not None and [c["tool"] for c in calls] == [a["tool"] for a in alternative]:
-        expected = alternative
-    if [c["tool"] for c in calls] != [e["tool"] for e in expected]:
-        failures.append(
-            f"tools {[c['tool'] for c in calls]} != {[e['tool'] for e in expected]}"
-            f" (reply: {reply.text()[:160]!r})"
-        )
-    else:
-        for exp, call in zip(expected, calls, strict=True):
-            status = call["output"].get("status", "ok")
-            if status not in ("denied", "invalid", "approval_required"):
-                status = "ok"
-            if status != exp.get("status", "ok"):
-                failures.append(f"{exp['tool']} status {status} != {exp.get('status', 'ok')}")
-            if not _subset(exp.get("args", {}), call["args"]):
-                failures.append(f"{exp['tool']} args {call['args']} lack {exp['args']}")
-            if "first_candidate" in scenario and call["tool"] == "find_replacements":
-                names = [c["name"] for c in call["output"].get("candidates", [])]
-                if not names or names[0] != scenario["first_candidate"]:
-                    failures.append(f"first candidate {names[:1]} != {scenario['first_candidate']}")
     text = reply.text()
-    if "reply_lang" in scenario and detect_language(text, "?") != scenario["reply_lang"]:
+    # The expected tools first; `or_tools` is the accepted alternative only when they fail.
+    failures = _judge(scenario["tools"], calls, scenario, text)
+    alternative = scenario.get("or_tools")
+    if failures and alternative is not None and not _judge(alternative, calls, scenario, text):
+        failures = []
+    # A reply the hint words cannot place ("?", a card of site and item names) is not a wrong
+    # language; only a reply that reads as the other language fails.
+    found = detect_language(text, "?")
+    if "reply_lang" in scenario and found not in ("?", scenario["reply_lang"]):
         # The whole reply (cards too): a model may answer with blocks and no separate text.
         failures.append(f"reply language is not {scenario['reply_lang']}: {text[:160]!r}")
     for kind in scenario.get("reply_blocks", []):

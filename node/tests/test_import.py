@@ -111,3 +111,63 @@ def test_import_creates_the_organisation_on_an_empty_database(
     bare = tmp_path / "bare.yaml"
     bare.write_text(FILE, encoding="utf-8")
     assert main(["import", str(bare)]) == 0  # the only branch is the default from then on
+
+
+def test_import_rejects_duplicates_bad_zones_and_midnight_jobs(
+    session: Session, branch: Branch
+) -> None:
+    twice = FILE.replace("clients:", "  - name: Pekka Uusi\n    roles: [supervisor]\nclients:")
+    with pytest.raises(ValueError, match="twice"):
+        importer.parse(twice)
+    two_jobs = FILE + (
+        "  - name: Uusi toimisto, iltasiivous\n    location: Uusi toimisto\n"
+        '    recurrence: FREQ=DAILY\n    start_time: "08:00"\n    duration_minutes: 60\n'
+    )
+    with pytest.raises(ValueError, match="twice"):
+        importer.parse(two_jobs)
+    with pytest.raises(ValueError, match="time zone"):
+        importer.parse("branch: {name: X, timezone: Europe/Helsinky}\n" + FILE)
+    with pytest.raises(ValueError, match="midnight"):
+        importer.parse(FILE.replace('start_time: "17:00"', 'start_time: "23:00"'))
+    with pytest.raises(ValueError, match="before"):
+        importer.parse(
+            FILE.replace('{start: "07:00", end: "16:00"', '{start: "17:00", end: "16:00"')
+        )
+    with pytest.raises(ValueError):
+        importer.parse("people:\n\t- name: tab\n")  # malformed YAML is a plain error, no traceback
+    data = importer.parse(FILE.replace("name: Pekka Uusi", "name: Pekka   Uusi"))
+    assert data.people[0].name == "Pekka Uusi"  # whitespace normalised, as `mia person add` does
+
+
+def test_sites_are_keyed_per_client_and_the_branch_name_must_match(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], session: Session, branch: Branch
+) -> None:
+    two = FILE.replace(
+        "jobs:",
+        "  - name: Toinen Asiakas Oy\n    locations:\n"
+        "      - name: Uusi toimisto\n        address: Toinenkatu 3, 00100 Helsinki\njobs:",
+    )
+    path = tmp_path / "two.yaml"
+    path.write_text(two, encoding="utf-8")
+    with pytest.raises(SystemExit, match="two clients"):
+        main(["import", str(path)])
+    path.write_text("branch: {name: Tampere}\n" + FILE, encoding="utf-8")
+    with pytest.raises(SystemExit, match="Tampere"):
+        main(["import", str(path)])
+    session.expire_all()
+    assert session.exec(select(Person).where(Person.name == "Pekka Uusi")).first() is None
+    with pytest.raises(SystemExit, match="branch"):
+        main(["import", str(path), "--branch", "nope"])
+
+
+def test_access_notes_never_enter_the_event_log(
+    tmp_path: Path, session: Session, branch: Branch
+) -> None:
+    path = tmp_path / "hype.yaml"
+    path.write_text(FILE, encoding="utf-8")
+    assert main(["import", str(path)]) == 0
+    session.expire_all()
+    for ev in session.exec(select(Event)).all():
+        assert "Koodi 1234" not in str(ev.after) + str(ev.before), ev.action
+    loc = session.exec(select(Location).where(Location.name == "Uusi toimisto")).one()
+    assert loc.access_notes == "Koodi 1234"  # the row keeps it; the chain never does
