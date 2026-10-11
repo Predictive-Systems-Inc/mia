@@ -89,6 +89,15 @@ def _loopback_test_client(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(testclient.TestClient, "__init__", init)
 
 
+@pytest.fixture(autouse=True)
+def dispatcher_role() -> None:
+    """The dispatcher's manifest grants are in RBAC for every test, so tool tests do not
+    depend on which test built an agent first."""
+    from mia.agents.dispatcher.agent import create_agent
+
+    create_agent("test")
+
+
 @pytest.fixture
 def engine() -> Engine:
     eng = db.get_engine()

@@ -55,7 +55,7 @@ def _people(session: Session, branch_id: str, role: str) -> list[Person]:
     return [p for p in rows if role in p.roles]
 
 
-def _supervisors(session: Session, branch_id: str) -> list[Person]:
+def supervisors(session: Session, branch_id: str) -> list[Person]:
     """The branch's supervisors, or its admins and owners when it has none; each once."""
     found = _people(session, branch_id, "supervisor")
     if not found:
@@ -118,7 +118,7 @@ def _missed_in(session: Session, branch: Branch, now: dt.datetime) -> int:
                 "alert.missed_check_in", person.language, location=info.location, time=info.start
             )
             _send(session, person, [TextBlock(text=text)], urgent=True)
-        for sup in _supervisors(session, branch.id):
+        for sup in supervisors(session, branch.id):
             text = t(
                 "alert.missed_check_in_supervisor",
                 sup.language,
@@ -157,7 +157,7 @@ def _unstaffed_in(session: Session, branch: Branch, now: dt.datetime) -> int:
     data = {"date": local.date().isoformat(), "visits": len(rows)}
     _mark(session, branch.id, UNSTAFFED, ("branch", branch.id), data)
     infos = [visit_info(session, v, branch.timezone).model_dump(mode="json") for v in rows]
-    for sup in _supervisors(session, branch.id):
+    for sup in supervisors(session, branch.id):
         lang = sup.language
         blocks: list[Block] = [
             TextBlock(text=t("alert.unstaffed_intro", lang, count=len(rows))),

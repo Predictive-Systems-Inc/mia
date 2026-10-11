@@ -158,6 +158,13 @@ def decide(intent: Intent, messages: list[ModelMessage], info: AgentInfo) -> Mod
         return _call("assign_cover", {"visit_id": visit_id, "candidate_name": intent.person_hint})
     if intent.name == "cover_reply":
         return _call("respond_to_cover", {"accept": bool(intent.accept)})
+    if intent.name in ("cannot_access_site", "site_problem"):
+        kind = "cannot_access" if intent.name == "cannot_access_site" else "site_problem"
+        text = _last_user_text(messages)[:500]  # the tool's bound; the rest stays in the thread
+        args = {"kind": kind, "text": text}
+        if intent.location_hint:
+            args["location_name"] = intent.location_hint
+        return _call("report_site_problem", args)
     if intent.name in ("check_in", "check_out", "visit_details"):
         args = {"location_name": intent.location_hint} if intent.location_hint else {}
         return _call(intent.name, args)
@@ -177,6 +184,10 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
         return [TextBlock(text=t("respond.none", lang))]
     if part.tool_name in ("check_in", "check_out", "visit_details"):
         return _field_work(part.tool_name, out, lang)
+    if part.tool_name == "report_site_problem":
+        if out.get("status") != "ok":
+            return [TextBlock(text=t("problem.no_visit", lang))]
+        return [TextBlock(text=t("problem.reported", lang, location=out["visit"]["location"]))]
     if status == "invalid":
         return [TextBlock(text=out.get("message", ""))]
     if part.tool_name == "record_absence":

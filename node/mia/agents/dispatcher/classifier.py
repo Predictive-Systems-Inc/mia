@@ -21,6 +21,8 @@ IntentName = Literal[
     "check_in",
     "check_out",
     "visit_details",
+    "cannot_access_site",
+    "site_problem",
     "other",
 ]
 
@@ -91,6 +93,24 @@ CHECK_OUT = re.compile(
     r"^\W*(?:(?:i'?m |i am )?(?:all done|done here|finished here|done|finished)|"
     r"check(?:ing|ed)? out|leaving now)\W*(?:here|now|(?:at|in) \S+)?\W*$|"
     r"^\W*(?:valmis|valmista|lopetin)\b|\blähden nyt\b",
+    re.IGNORECASE,
+)
+# A problem report pages the supervisors: only a phrase at the start of the message counts,
+# and anything about home, lateness or tomorrow is an absence, not a site problem.
+NOT_AT_SITE = (
+    r"(?!.*\b(?:home|kotona|kotoa|late|myöhäs\w*|tomorrow|huomenna|next week|ensi viikolla)\b)"
+)
+CANNOT_ACCESS = re.compile(
+    r"^\W*(?:en pääse sisään|ovi on lukossa|ovikoodi ei toimi|koodi ei toimi|väärä koodi|"
+    r"hälytin laukesi|i can'?t get in|i cannot get in|the door is locked|"
+    r"the (?:door )?code (?:is wrong|doesn'?t work|does not work)|the alarm went off)\b"
+    + NOT_AT_SITE,
+    re.IGNORECASE,
+)
+SITE_PROBLEM = re.compile(
+    r"^\W*(?:täällä )?(?:ei (?:ole )?(?:vettä|sähköä|lämpöä)|asiakas on (?:vielä|yhä) paikalla|"
+    r"no (?:water|power|electricity|heating)\b|the (?:power|water) is (?:out|off)|"
+    r"the (?:client|customer) is still (?:here|there))" + NOT_AT_SITE,
     re.IGNORECASE,
 )
 DETAILS = re.compile(
@@ -227,6 +247,10 @@ def classify(text: str, today: dt.date, default_lang: str = "en") -> Intent:
             time=parse_time(text),
             location_hint=words[0] if words else None,
         )
+    if CANNOT_ACCESS.search(text):  # before absence: "en pääse sisään" is not "en pääse"
+        return Intent(name="cannot_access_site", lang=lang, location_hint=_place(text))
+    if SITE_PROBLEM.search(text):
+        return Intent(name="site_problem", lang=lang, location_hint=_place(text))
     if ABSENCE.search(text):
         reason = "late" if LATE.search(text) else "leaving_early" if EARLY.search(text) else "sick"
         return Intent(
