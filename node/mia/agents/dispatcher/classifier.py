@@ -39,7 +39,7 @@ INJECTION = re.compile(
     re.IGNORECASE,
 )
 FINNISH_HINT = re.compile(
-    r"[äöå]|\b(olen|en|ei|ja|tai|kun|klo|että|mikä|mitä|voin|sinun|huomenna|tänään|kuka|"
+    r"\w*[äöå]\w*|\b(olen|en|ei|ja|tai|kun|klo|että|mikä|mitä|voin|sinun|huomenna|tänään|kuka|"
     r"voi|näytä|minun|kaikki|vain|aamu|valitse|anna|tuurata|kiitos|moi|hei|parhaat)\b",
     re.IGNORECASE,
 )
@@ -125,10 +125,15 @@ class Intent(BaseModel):
 
 
 def detect_language(text: str, default: str = "en") -> str:
-    """'fi' when the text looks Finnish, 'en' when it looks English, otherwise the default."""
-    if FINNISH_HINT.search(text):
-        return "fi"
-    return "en" if ENGLISH_HINT.search(text) else default
+    """The language with more hint words ('fi' or 'en'); the default on a tie.
+
+    Counting, not first match: an English message that names a Finnish place (Töölö) or person
+    stays English.
+    """
+    fi, en = len(FINNISH_HINT.findall(text)), len(ENGLISH_HINT.findall(text))
+    if fi == en:
+        return default
+    return "fi" if fi > en else "en"
 
 
 def parse_date(text: str, today: dt.date) -> dt.date | None:
@@ -206,7 +211,7 @@ def classify(text: str, today: dt.date, default_lang: str = "en") -> Intent:
         person = None
         if (m := POSSESSIVE_EN.search(text)) or (m := POSSESSIVE_FI.search(text)):
             person = m[1]
-        if person and person.lower() in ("my", "minun", "mina", "minu"):
+        if person and person.lower() in ("my", "minun", "mina", "minu", *STOP_WORDS):
             person = None
         return Intent(name="my_visits", lang=lang, date=parse_date(text, today), person_hint=person)
     return Intent(name="other", lang=lang)

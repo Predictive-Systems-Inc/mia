@@ -5,7 +5,7 @@ import datetime as dt
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, ToolBinding
@@ -137,6 +137,13 @@ class RecordAbsenceInput(BaseModel):
         None, description="None means the whole day"
     )
     person_name: str | None = Field(None, description="Only when reporting for someone else")
+
+    @model_validator(mode="after")
+    def late_means_morning(self) -> "RecordAbsenceInput":
+        """Running late affects the morning (rule 7: code decides, not the model)."""
+        if self.reason == "late" and self.partial_day is None:
+            self.partial_day = "morning"
+        return self
 
 
 class RecordAbsenceOutput(BaseModel):
@@ -360,6 +367,7 @@ class AssignCoverOutput(BaseModel):
     visit: VisitInfo
     approval_id: str | None = None
     next_action_at: dt.datetime | None = None
+    note: str | None = None  # what the reply must tell the user (for the model, not shown as is)
 
 
 def assign_cover(deps: AgentDeps, args: AssignCoverInput, tool_call_id: str) -> AssignCoverOutput:
@@ -408,6 +416,12 @@ def assign_cover(deps: AgentDeps, args: AssignCoverInput, tool_call_id: str) -> 
         visit=visit_info(session, visit, deps.branch.timezone),
         approval_id=request.approval_id,
         next_action_at=request.next_action_at,
+        note=(
+            f"{person.name} breaks a scheduling rule for this visit, so an admin or owner must "
+            "approve first; tell the user that."
+            if request.status == "awaiting_approval"
+            else None
+        ),
     )
 
 

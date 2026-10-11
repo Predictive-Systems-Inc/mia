@@ -31,3 +31,12 @@ route needs no code change.
   yet, and there is no general personal data filter; both are needed before real client data
   goes to a cloud model.
 - No local model fallback yet: if the gateway fails, the turn fails.
+
+## Update (Oct 5, 2026): local routes
+- `MIA_MODEL=local/<model>` runs on MIA_LOCAL_URL, an OpenAI-compatible server on the node or
+  its private network (llama.cpp, Ollama). It skips egress because nothing leaves the node, so
+  it also works with egress level `none`; a URL that is not loopback or a private address is
+  refused.
+- node/config/ollama/ holds the Modelfiles that set a context long enough for Mia's prompt
+  (Ollama's default 4096 tokens silently cuts it) and low sampling temperature. llama.cpp
+  scored higher than Ollama for the same model in the evaluation runs; see docs/plan.md.

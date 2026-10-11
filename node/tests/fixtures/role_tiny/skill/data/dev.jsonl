@@ -1,0 +1,10 @@
+{"id": "tiny/dev/1", "role": "tiny", "intent": "tiny.absence", "lang": "en", "text": "stomach bug, cant work today", "counterpart": "cleaner", "style": "terse", "split": "dev", "source": "fixture", "slots": {"partial_day": "none"}}
+{"id": "tiny/dev/2", "role": "tiny", "intent": "tiny.absence", "lang": "en", "text": "late today, car trouble", "counterpart": "cleaner", "style": "terse", "split": "dev", "source": "fixture", "slots": {"partial_day": "morning"}}
+{"id": "tiny/dev/3", "role": "tiny", "intent": "tiny.absence", "lang": "fi", "text": "vatsatauti, en voi tulla", "counterpart": "cleaner", "style": "terse", "split": "dev", "source": "fixture", "slots": {"partial_day": "none"}}
+{"id": "tiny/dev/4", "role": "tiny", "intent": "tiny.absence", "lang": "fi", "text": "auto rikki, myöhästyn", "counterpart": "cleaner", "style": "terse", "split": "dev", "source": "fixture", "slots": {"partial_day": "morning"}}
+{"id": "tiny/dev/5", "role": "tiny", "intent": "tiny.visits", "lang": "en", "text": "show tomorrow's shifts", "counterpart": "cleaner", "style": "terse", "split": "dev", "source": "fixture"}
+{"id": "tiny/dev/6", "role": "tiny", "intent": "tiny.visits", "lang": "en", "text": "what time is my first visit", "counterpart": "cleaner", "style": "terse", "split": "dev", "source": "fixture"}
+{"id": "tiny/dev/7", "role": "tiny", "intent": "tiny.visits", "lang": "fi", "text": "näytä huomisen vuorot", "counterpart": "cleaner", "style": "terse", "split": "dev", "source": "fixture"}
+{"id": "tiny/dev/8", "role": "tiny", "intent": "tiny.visits", "lang": "fi", "text": "mihin aikaan ensimmäinen keikka", "counterpart": "cleaner", "style": "terse", "split": "dev", "source": "fixture"}
+{"id": "tiny/dev/greeting1", "role": "tiny", "intent": "conversation.greeting", "lang": "en", "text": "hi", "counterpart": "cleaner", "style": "terse", "split": "dev", "source": "fixture"}
+{"id": "tiny/dev/greeting2", "role": "tiny", "intent": "conversation.greeting", "lang": "fi", "text": "hei vaan", "counterpart": "cleaner", "style": "terse", "split": "dev", "source": "fixture"}

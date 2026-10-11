@@ -105,11 +105,6 @@ def egress_context(ctx: EgressContext) -> Iterator[EgressContext]:
         _context.reset(token)
 
 
-def bind_context(ctx: EgressContext) -> None:
-    """Set the context for the rest of the current task (for streamed responses)."""
-    _context.set(ctx)
-
-
 def current_context() -> EgressContext:
     """The active egress context. Raises EgressBlocked when none is set."""
     ctx = _context.get()

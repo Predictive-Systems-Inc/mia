@@ -670,7 +670,7 @@ flowchart LR
 | Area | Choice |
 | --- | --- |
 | Language and API | Python 3.12, FastAPI, Uvicorn |
-| Agents | Pydantic AI (agents, subagents, typed tools); MCP for connectors later |
+| Agents | Pydantic AI (agents, subagents, typed tools); A2A 1.0 between agents (ADR 008); MCP for connectors later |
 | Models and validation | Pydantic v2, SQLModel on SQLAlchemy 2 |
 | Database | SQLite in WAL mode, one file per branch |
 | Migrations | Alembic, with separate migration folders per agent package |

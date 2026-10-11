@@ -33,7 +33,7 @@ The package lives in node/mia; paths below are relative to node/ (mia/core means
     hash) must take the write lock first; see _last_hash in mia/core/events.py.
 12. No blocking I/O on the event loop. Sync DB work in async code runs via asyncio.to_thread
     (one Session is never used by two threads at once; agent tools are sequential).
-13. API routes get their session through Depends (DbSession, or StreamSession for streams), never
+13. API routes get their session through Depends (DbSession), never
     by opening one themselves.
 14. Schema changes need an Alembic migration in node/migrations/versions; create_all is for tests.
 

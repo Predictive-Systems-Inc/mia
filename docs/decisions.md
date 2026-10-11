@@ -89,3 +89,188 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
 - Changes the Phase 1 plan: outside channels move from deferred to in scope. Cloud model access
   through core/egress.py stays; that is the model gateway, not Mia Cloud.
 - First channel: WhatsApp (WhatsApp Business Platform), following the spec build order.
+
+## D14: Agents follow the A2A standard
+- Decision: agent-to-agent communication follows A2A (Agent2Agent) 1.0. Mia agents publish
+  signed Agent Cards and accept A2A tasks; AG-UI stays for apps, MCP for connectors, channel
+  adapters for messaging apps. See ADR 008.
+
+## D15: (answers the AG-UI thread id question) Thread ids stay ULIDs
+- Decision: chat thread ids stay ULIDs (rule 10), also when an AG-UI client starts a thread with
+  its own threadId. AG-UI's threadId is an opaque string, so Mia's apps send a ULID; other ids
+  are rejected. No external-id column and no data standard change.
+
+## D16: Agents are human roles; processes are for design and testing
+- Decision: every agent is a hired role that mirrors a human job in the client's departments
+  (dispatcher, client service, bookkeeper, recruiter and so on), with a job description, its own
+  RBAC role and approvers. End-to-end processes (Lead-to-Contract, Contract-to-Service,
+  Service-to-Cash, Hire-to-Retire, Procure-to-Pay, Record-to-Report) are how workflows are
+  designed and tested across those agents; a process is never an agent. See docs/plan.md.
+
+## D17: (answers Q10 to Q16) Authentication as designed
+- Decision: accept docs/superpowers/specs/2026-10-05-authentication-design.md and ADR 011:
+  data standard 1.3 adds auth_credentials, auth_devices, auth_sessions and auth_clients and
+  renames channel_link_codes and channel_link_attempts to auth_codes and auth_attempts (Q10);
+  no email in Phase 1, admin resets and `mia auth reset` for a locked-out owner (Q11); A2A clients
+  act only as themselves, a claimed on_behalf_of is logged, not used (Q12); one 6-digit PIN as the
+  step-up for money, external and delete approvals (Q13); staff codes over WhatsApp, no SMS
+  provider until needed (Q14); standard library only, webauthn later for passkeys (Q15); MFA
+  required for owner, admin and accountant and offered to supervisors, office sessions 12 h idle
+  and 7 days at most, staff 30 days idle and 90 days at most (Q16).
+
+## D18: Phase 1 runs a local model only
+- Decision: real Hype data is handled by Gemma 4 12B on Ollama on the node; no cloud model route
+  for real data in Phase 1. Cloud models are used for development and as the distillation
+  teacher, with synthetic or demo data only. The pilot starts when the evaluation suite passes
+  its target with the local model (85% on Oct 5; target 95%).
+
+## D19: Node hardware for Hype
+- Decision: an Apple Silicon Mac mini with 24 GB or more of unified memory, on site.
+
+## D20: No cleaner mobile app in Phase 1
+- Decision: cleaners work over WhatsApp: chat, absences, cover, check-in and check-out by
+  location share, checklists with interactive lists and buttons, photos as media messages. The
+  office uses the web app. Changes the proposal (an app was promised); agree it with Hype first.
+
+## D21: Service agreements in the data standard
+- Decision: add service agreements in Sprint 1 (client, sites, scope, frequency, price per visit
+  or per square metre, index clause, start and end, versions), linked to the jobs and visits they
+  generate. Master data with an owner; changes need approval.
+
+## D22: A turn stops after 8 model calls
+- Decision: a chat turn may make at most 8 model requests. On the cap the user gets a short
+  translated reply that a supervisor will follow up, and the event is logged.
+
+## D23: Restore tests are recorded; the tunnel exposes only webhooks before login
+- Decision: `mia restore-test --record` writes each restore test as an event through a service
+  function. Until authentication is built, the Cloudflare Tunnel publishes only the channel
+  webhook paths.
+
+## D24: The plan lists all necessary work, not an hour budget
+- Decision: hour estimates are not a constraint; docs/plan.md includes all work Phase 1 needs.
+
+## D25: (amends D20) The mobile app is a separate project; Mia focuses on chat
+- Decision: the cleaner and office apps are built as a separate project. This repository
+  focuses on the chat interface: the web chat over AG-UI and messaging channels (WhatsApp).
+  Field work in Phase 1 stays over WhatsApp as in D20.
+
+## D26: Language is a separate layer; the core is measured in English
+- Decision: messages are translated to English before the model and replies translated back,
+  by a separate, measurable translation layer. Intents, tools and evaluations are defined and
+  measured in English first; translation quality is measured on its own. Revisit if the
+  translation layer costs more accuracy than a multilingual model loses.
+- Note (role skill models): understanding uses the multilingual encoder; translation applies
+  only to free-text replies, pending the bake-off.
+
+## D27: (refines D18) Where learning happens is the owner's choice
+- Decision: retraining and label review run on the node by default. An owner may choose cloud
+  training and review (stronger models, GPUs) in the organisation settings, if the data
+  processing agreement covers it and the egress level allows it. The training set then leaves
+  only through the egress component, pseudonymised with stricter scrubbing (identifying free
+  text dropped), processed in the EU, not kept after the job; only the trained model returns.
+  D18 still holds for answering: real messages are handled by the local model.
+
+## D28: Role classifier in chat: regex fallback, one routing step, original text on clarify
+- Decision A: the dispatcher keeps the regex classifier's hint (including the injection line)
+  as a fallback whenever the role model gives no confident intent (no package, low band, other).
+  A confident role-model intent replaces the regex hint; an injection is flagged as data in both
+  cases.
+- Decision B: the web chat over AG-UI and the /chat endpoint share one classify-and-route step.
+  For emergency, template and "Did you mean" routes the AG-UI run sends the reply as one
+  assistant text message (options as text lines) and finishes without running the agent.
+- Decision C: when a person taps a "Did you mean" option, the agent runs on the original
+  message (found through original_message_id) with the chosen intent as a hint, not on the
+  button label. A chosen template conversation intent gets its template reply instead.
+
+## D29: Role skill models and their dependencies
+- Decision: build docs/superpowers/specs/2026-10-06-skill-models-design.md; onnxruntime and
+  tokenizers become node dependencies and training libraries an optional `learning` group
+  (ADR 013).
+- Approval: the dependency approval required by CLAUDE.md was given on 2026-10-06 by the Fable
+  decision agent on the owner's behalf (the owner asked for Fable to decide while asleep).
+- Reasons: onnxruntime (MIT) runs the role classifier on the node CPU in about 20 ms; tokenizers
+  (Apache 2.0) is the encoder's tokenizer at inference without PyTorch on the node; group
+  `learning` is torch (BSD), transformers (Apache 2.0), onnx (Apache 2.0) and accelerate
+  (Apache 2.0) for training and ONNX export, installed only where training runs.
+- Approved with six changes: transformers>=5,<6; onnxruntime>=1.22 and tokenizers>=0.22; mypy
+  ignore_missing_imports for onnxruntime; an architecture test that mia/skills never imports
+  huggingface_hub, and HF_HUB_OFFLINE=1 by default at node startup; a sha256 field on ModelCard
+  artifacts (lands in Tasks 14 and 15); a uv index so torch uses CPU wheels on Linux.
+- Footprint: installing tokenizers pulls huggingface-hub (with hf-xet, fsspec, tqdm, typer, rich) into the node install, and onnxruntime adds numpy and protobuf; the architecture test and HF_HUB_OFFLINE keep the node from fetching.
+
+## D30: (answers Q18) Roles site_manager and admin; no chat role
+- Decision: two roles join the roster. `site_manager` (Site manager) supports site quality,
+  safety and compliance work and keeps the human supervisor in charge of decisions; it is not
+  the human role `supervisor` (S), which stays as is. `admin` (Admin) owns master data, users and
+  access, administration and management reporting. The proposed ids quality.* and office.*
+  become site_manager.* and admin.*.
+- No chat role: generic conversation is handled by Mia itself for every role through the shared
+  conversation catalogue (node/mia/learning/catalogue/conversation.yaml), which every role
+  inherits. The chat.* intents map as: greeting, thanks, help and change_language keep their
+  names under conversation.*; talk_to_human -> conversation.request_human; cancel ->
+  conversation.undo; clarify -> conversation.confusion; request_status ->
+  conversation.are_you_there; app_feedback -> conversation.feedback_about_mia;
+  privacy_question -> conversation.privacy_what_do_you_know; who_am_i and link_account ->
+  admin.who_am_i and admin.link_account (account and access).
+- One intent per message: site_manager.emergency, report_hazard, work_instructions and
+  privacy_request merge into conversation.emergency, hazard_report, kb_cleaning_howto and
+  privacy_rights_request (first contact by Mia, follow-up by the site manager); report_injury
+  and chemical_safety stay separate because they cover more than injury_minor and
+  kb_chemical_safety (serious and supervisor-reported injuries; exposures that already happened).
+- Addendum (6 Oct 2026): one message, one label, because the classifier sees text and not the
+  sender. (1) Questions about rules or company knowledge are the shared conversation kb_*
+  intents. (2) Doing something stays with the role intent, which keeps only action messages.
+  (3) The same message separated only by sender role is one intent with one owner (client
+  details: admin.update_client; site access: admin.update_site; damage: site_manager.report_damage).
+  report_injury keeps only reports about someone else; chemical_safety is split into the
+  conversation intents. Review: docs/research/intent-overlap-review-2026-10-06.md.
+- Consequences: docs/capabilities.md lists no chat area; intents.jsonl is relabelled; the
+  classification eval accepts conversation.* ids as labels beside the catalogue ids and `other`.
+
+## D31: Conversation intents merged after the embedding overlap review
+- Context: the overlap review (docs/research/overlap-report-conversation.md and
+  docs/research/intent-overlap-reference.md) showed conversation intents that one message could
+  fairly get either of. One message, one label (D30): the owner decided on 2026-10-07 to merge
+  five groups, so the catalogue goes from 93 to 87 conversation intents.
+
+  | Removed | Survives as | Handling |
+  | --- | --- | --- |
+  | conversation.compliment | conversation.thanks | template (one reply fits both) |
+  | conversation.rephrase_simpler | conversation.confusion | template |
+  | conversation.kb_surface_care, conversation.kb_chemical_safety | conversation.kb_cleaning_howto | kb_cleaning |
+  | conversation.self_harm_risk | conversation.distress | emergency |
+  | conversation.personal_threat | conversation.emergency | emergency |
+
+- Merges among intents with the same handling cost nothing at runtime: the reply was the same
+  either way, and the classifier no longer has to split one meaning in two. The removed intents'
+  examples and records moved to the survivor; survivor descriptions cover both.
+- distress now runs the emergency script (crisis line, 112 or 911, supervisor told) by the
+  owner's decision, so stress and despair get the stronger script rather than risk a missed
+  self-harm message; distress joins safety_ids(). Exposures that already happened stay
+  conversation.chemical_exposure.
+- Kept apart, descriptions sharpened with one clause each saying what the other intent is not:
+  goodbye / thanks, goodbye / greeting, the laughter pairs (affirm, greeting, emoji_only),
+  kb_expenses_travel / kb_payment_invoicing and kb_household_tax_deduction / tax_personal_advice.
+- Consequences: i18n drops conversation.compliment and its label, and the thanks and confusion
+  replies are reworded to fit both meanings; intents.jsonl relabels 42 records; the merged pairs
+  move to "## Merged (D31)" in the overlap reference so recall is not measured on them.
+- Addendum (2026-10-08): the owner keeps distress merged with the emergency handling after
+  seeing the script it triggers; a later layer will split distress from self-harm risk. The
+  merged confusion intent keeps rephrase_simpler's model_brief handling (the model rephrases
+  its last answer), not the template, so "say it more simply" still works; its template
+  reply key is removed.
+
+## D32: Embedding overlap review and the three-contender bake-off
+- Context: the D30 review found overlapping intents by reading. The embedding review
+  (docs/superpowers/specs/2026-10-06-embedding-review-design.md) measures it, and a bake-off tests
+  whether embedding classifiers can match the fine-tuned encoder.
+- Decision: the default embedding model is intfloat/multilingual-e5-small; no new dependency
+  (transformers, torch and numpy from the learning group). `mia skills overlap` is a ranked review
+  aid, not a gate: owner-judged precision 6/10 at the top 10, recall@40/80/120 = 0.39/0.46/0.57
+  against 46 reference pairs (docs/research/overlap-calibration-2026-10-06.md). The trained
+  classifier's confusion list is the authoritative overlap signal. `mia skills bakeoff <role>`
+  trains the encoder, nearest-examples and contrastive contenders; the winner is the gate passer
+  with the best macro F1, then coverage, and the encoder only for roles with slots. Nothing is
+  promoted by the bake-off; Gate 2 and `promote` stay with the developer.
+- Consequences: the skill and guidelines carry the "same action?" test; the reviewer lists suspect
+  labels and paraphrases and never relabels; nothing is merged automatically.

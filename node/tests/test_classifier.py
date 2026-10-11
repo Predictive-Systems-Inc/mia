@@ -42,6 +42,7 @@ def test_possessives() -> None:
     assert classify("Show me Maria's visits.", TODAY).person_hint == "Maria"
     assert classify("Näytä Marian käynnit", TODAY).person_hint == "Marian"
     assert classify("Näytä minun käynnit", TODAY).person_hint is None
+    assert classify("What's my schedule this week?", TODAY).person_hint is None
 
 
 def test_late_is_a_morning_absence() -> None:
@@ -76,3 +77,9 @@ def test_dates() -> None:
 
 def test_language_default() -> None:
     assert detect_language("12345", "fi") == "fi"
+
+
+def test_language_is_the_majority_not_the_first_finnish_letter() -> None:
+    """Finnish places and names in an English sentence do not make it Finnish."""
+    assert detect_language("I'm sick, can't do the Töölö visit with Mäkinen", "fi") == "en"
+    assert detect_language("Olen kipeä, en pääse Töölöön", "en") == "fi"

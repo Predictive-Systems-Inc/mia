@@ -1,0 +1,14 @@
+{"id": "tiny/test/1", "role": "tiny", "intent": "tiny.absence", "lang": "en", "text": "Im ill and cant come tomorrow", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture", "slots": {"partial_day": "none"}}
+{"id": "tiny/test/2", "role": "tiny", "intent": "tiny.absence", "lang": "en", "text": "sick leave today please", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture", "slots": {"partial_day": "none"}}
+{"id": "tiny/test/3", "role": "tiny", "intent": "tiny.absence", "lang": "en", "text": "not well, off work", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture", "slots": {"partial_day": "none"}}
+{"id": "tiny/test/4", "role": "tiny", "intent": "tiny.absence", "lang": "fi", "text": "oon sairas huomennakin", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture", "slots": {"partial_day": "none"}}
+{"id": "tiny/test/5", "role": "tiny", "intent": "tiny.absence", "lang": "fi", "text": "sairasloma tänään kiitos", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture", "slots": {"partial_day": "none"}}
+{"id": "tiny/test/6", "role": "tiny", "intent": "tiny.absence", "lang": "fi", "text": "en ole töissä, kipeä", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture", "slots": {"partial_day": "none"}}
+{"id": "tiny/test/7", "role": "tiny", "intent": "tiny.visits", "lang": "en", "text": "send me my rota", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture"}
+{"id": "tiny/test/8", "role": "tiny", "intent": "tiny.visits", "lang": "en", "text": "any shifts on monday", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture"}
+{"id": "tiny/test/9", "role": "tiny", "intent": "tiny.visits", "lang": "en", "text": "my work list for today", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture"}
+{"id": "tiny/test/10", "role": "tiny", "intent": "tiny.visits", "lang": "fi", "text": "lähetä mulle työvuorolista", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture"}
+{"id": "tiny/test/11", "role": "tiny", "intent": "tiny.visits", "lang": "fi", "text": "onko maanantaina vuoroja", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture"}
+{"id": "tiny/test/12", "role": "tiny", "intent": "tiny.visits", "lang": "fi", "text": "tämän päivän työlista", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture"}
+{"id": "tiny/test/greeting1", "role": "tiny", "intent": "conversation.greeting", "lang": "en", "text": "hey hello", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture"}
+{"id": "tiny/test/greeting2", "role": "tiny", "intent": "conversation.greeting", "lang": "fi", "text": "terve", "counterpart": "cleaner", "style": "terse", "split": "test", "source": "fixture"}

@@ -89,6 +89,7 @@ def test_invite_without_whatsapp_number_prints_code_not_a_broken_link(
     assert "wa.me/?" not in out and "MIA_WA_NUMBER" in out and re.search(r"LINK \d{6}", out)
 
 
+@pytest.mark.usefixtures("daytime")
 def test_cover_ask_from_the_cli_reaches_the_simulated_channel(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

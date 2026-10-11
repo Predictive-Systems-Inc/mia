@@ -3,6 +3,8 @@
 import re
 from pathlib import Path
 
+import pytest
+
 MIA = Path(__file__).resolve().parent.parent / "mia"
 
 
@@ -76,3 +78,51 @@ def test_channel_adapters_reach_http_only_through_channel_transport() -> None:
         text = p.read_text()
         if "httpx.AsyncClient(" in text:
             assert "transport=ChannelTransport(" in text, p
+
+
+def test_skills_runtime_never_imports_huggingface_hub() -> None:
+    """The node runtime reads local model files only; nothing under mia/skills may fetch from HF."""
+    import ast
+
+    offenders = []
+    for p in (MIA / "skills").rglob("*.py"):
+        for node in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            else:
+                continue
+            if any(n.split(".")[0] == "huggingface_hub" for n in names):
+                offenders.append(f"{p.relative_to(MIA)}:{node.lineno}")
+    assert offenders == []
+
+
+def test_serve_defaults_hf_hub_offline_and_keeps_an_explicit_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`mia serve` defaults HF_HUB_OFFLINE to 1 before uvicorn starts; an explicit value wins."""
+    import argparse
+    import os
+
+    import uvicorn
+
+    from mia import cli
+
+    seen: list[str | None] = []
+    monkeypatch.setattr(
+        uvicorn, "run", lambda *a, **k: seen.append(os.environ.get("HF_HUB_OFFLINE"))
+    )
+    args = argparse.Namespace(host="127.0.0.1", port=1, reload=False)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "x")  # so teardown removes what serve sets
+    monkeypatch.delenv("HF_HUB_OFFLINE")
+    cli.serve(args)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "0")
+    cli.serve(args)
+    assert seen == ["1", "0"]
+
+
+def test_dockerfile_sets_hf_hub_offline() -> None:
+    """The node image runs offline for Hugging Face by default."""
+    dockerfile = (MIA.parent.parent / "Dockerfile").read_text()
+    assert "HF_HUB_OFFLINE=1" in dockerfile
