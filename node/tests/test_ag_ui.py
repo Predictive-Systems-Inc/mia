@@ -555,8 +555,11 @@ def test_clarify_streamed_run_lists_the_options_as_text(
     assert delta == "Tarkoititko:\n- Näytä käyntini\n- Jotain muuta"
 
 
-def test_a_capped_run_ends_with_a_translated_run_error(
-    client: TestClient, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+def test_a_capped_run_ends_with_the_translated_reply(
+    client: TestClient,
+    session: Session,
+    people: dict[str, Person],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from pydantic_ai.messages import ModelResponse, ToolCallPart
 
@@ -580,5 +583,14 @@ def test_a_capped_run_ends_with_a_translated_run_error(
     res = post(client, "/ag-ui", people["Juha"], body("Olen kipeä huomenna."))
     events = parse(res.text)
     assert_well_formed(events)
-    assert events[-1]["type"] == "RUN_ERROR" and events[-1]["code"] == "turn_capped"
-    assert "esihenkilö" in events[-1]["message"].casefold()
+    assert events[-1]["type"] == "RUN_FINISHED"  # a reply, not a failed run
+    text = "".join(e.get("delta", "") for e in events if e["type"] == "TEXT_MESSAGE_CONTENT")
+    assert "esihenkilö" in text.casefold()
+    from sqlmodel import select
+
+    from mia.core.models import Event
+
+    session.expire_all()
+    assert session.exec(select(Event).where(Event.action == "chat.turn_capped")).one()
+    stored = session.exec(select(Message).where(Message.role == "assistant")).all()
+    assert stored and "esihenkilö" in stored[-1].text.casefold()

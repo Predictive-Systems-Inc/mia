@@ -336,18 +336,36 @@ MAX_MODEL_CALLS = 8  # D22: a turn stops after this many model requests
 USAGE_LIMITS = UsageLimits(request_limit=MAX_MODEL_CALLS)
 
 
-def reply_capped(session: Session, deps: AgentDeps, thread: Thread) -> ChatReply:
-    """The reply when the turn hit the model-call cap (D22): a short translated text that a
-    supervisor will follow up, and the event `chat.turn_capped` on the thread."""
+def reply_capped(session: Session, deps: AgentDeps, thread: Thread, text: str) -> ChatReply:
+    """The reply when the turn hit the model-call cap (D22): a short translated text, the event
+    `chat.turn_capped` on the thread (with the tools that ran and committed before the cap),
+    and a notice to the supervisors so "a supervisor will follow up" is true."""
+    tools = [e.tool for e in deps.tool_log]
     events.emit(
         session,
         "chat.turn_capped",
         thread,
         None,
-        {"model_calls": MAX_MODEL_CALLS},
+        {"model_calls": MAX_MODEL_CALLS, "tools": tools},  # USAGE_LIMITS caps requests only
         deps.actor,
     )
+    _tell_supervisors(
+        session,
+        deps,
+        "chat.capped_notice",
+        name=deps.person.name,
+        text=text[:200],
+        tools=", ".join(tools) or "-",
+    )
     return _reply_text(session, deps, thread, t("chat.capped", deps.lang))
+
+
+def _tell_supervisors(session: Session, deps: AgentDeps, key: str, **params: str) -> None:
+    """One urgent notification to every supervisor of the branch, in their language."""
+    people = session.exec(select(Person).where(Person.branch_id == deps.branch.id)).all()
+    for sup in (p for p in people if "supervisor" in p.roles):
+        notice = t(key, sup.language, **params)
+        notify(session, sup, [TextBlock(text=notice)], deps.actor, MANIFEST.id, urgent=True)
 
 
 def _reply_text(session: Session, deps: AgentDeps, thread: Thread, text: str) -> ChatReply:
@@ -419,10 +437,9 @@ def _reply_emergency(session: Session, deps: AgentDeps, thread: Thread, text: st
     country = org.country.upper() if org is not None else guess
     if f"safety.emergency_{country}" not in STRINGS["en"]:
         country = "FI"
-    people = session.exec(select(Person).where(Person.branch_id == deps.branch.id)).all()
-    for sup in (p for p in people if "supervisor" in p.roles):
-        notice = t("safety.supervisor_notice", sup.language, name=deps.person.name, text=text[:200])
-        notify(session, sup, [TextBlock(text=notice)], deps.actor, MANIFEST.id, urgent=True)
+    _tell_supervisors(
+        session, deps, "safety.supervisor_notice", name=deps.person.name, text=text[:200]
+    )
     return _reply_text(session, deps, thread, t(f"safety.emergency_{country}", deps.lang))
 
 
@@ -483,5 +500,5 @@ async def run_turn(
                 usage_limits=USAGE_LIMITS,
             )
     except UsageLimitExceeded:
-        return await asyncio.to_thread(reply_capped, session, deps, thread)
+        return await asyncio.to_thread(reply_capped, session, deps, thread, text)
     return await asyncio.to_thread(_finish, session, deps, thread, result)

@@ -346,6 +346,17 @@ def test_a_turn_stops_after_eight_model_calls(session: Session, people: dict[str
     assert calls == service.MAX_MODEL_CALLS == 8
     assert reply.blocks[0].type == "text" and "esihenkilö" in reply.blocks[0].text.casefold()
     ev = session.exec(select(Event).where(Event.action == "chat.turn_capped")).one()
-    assert ev.entity_id == reply.thread_id and ev.after == {"model_calls": 8}
+    assert ev.entity_id == reply.thread_id and ev.after == {"model_calls": 8, "tools": []}
     stored = session.exec(select(Message).where(Message.role == "assistant")).all()
     assert stored[-1].text == reply.blocks[0].text
+    # "A supervisor will follow up" is true: the supervisors get a notice with the message.
+    from mia.chat.channels import NOTIFICATION
+    from mia.core.models import Thread
+
+    notes = session.exec(
+        select(Message)
+        .join(Thread, Thread.id == Message.thread_id)  # type: ignore[arg-type]
+        .where(Thread.person_id == people["Sanna"].id)
+        .where(Message.role == NOTIFICATION)
+    ).all()
+    assert notes and "Juha" in notes[-1].text and "kipeä" in notes[-1].text

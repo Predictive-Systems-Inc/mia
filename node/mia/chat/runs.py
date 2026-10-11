@@ -211,8 +211,8 @@ def _plain_reply_events(reply: ChatReply) -> list[BaseEvent]:
     ]
 
 
-def _error(code: str, lang: str, key: str = "chat.error") -> RunErrorEvent:
-    return RunErrorEvent(message=t(key, lang), code=code)
+def _error(code: str, lang: str) -> RunErrorEvent:
+    return RunErrorEvent(message=t("chat.error", lang), code=code)
 
 
 async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
@@ -286,11 +286,17 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
                 if event.type in TEXT_EVENTS and not replying:
                     continue
                 if isinstance(event, RunErrorEvent) and capped:
-                    await asyncio.to_thread(session.rollback)
-                    await asyncio.to_thread(reply_capped, session, deps, thread)
+                    # D22: the cap is a reply, not a failed run; the adapter's error event is
+                    # its last, so the run ends here with the stored reply (every tool write
+                    # before the cap is already committed, on this path as on run_turn).
+                    reply = await asyncio.to_thread(reply_capped, session, deps, thread, text)
                     await asyncio.to_thread(session.commit)
-                    event = _error("turn_capped", lang, "chat.capped")
-                elif isinstance(event, RunErrorEvent):
+                    for plain in _plain_reply_events(reply):
+                        await run.push(plain)
+                    await run.push(RunFinishedEvent(thread_id=run.thread_id, run_id=run.run_id))
+                    last = EventType.RUN_FINISHED
+                    continue
+                if isinstance(event, RunErrorEvent):
                     log.error("AG-UI run %s failed: %s", run.run_id, event.message)
                     event = _error("agent_error", lang)
                 last = event.type
