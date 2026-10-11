@@ -39,6 +39,8 @@ class AlertSettings(BaseModel):
     """When the ticker's alerts fire (local times)."""
 
     check_in_grace_minutes: int = 15
+    check_out_grace_minutes: int = 30
+    overtime_minutes: int = 30  # past the planned end before the supervisors hear
     unstaffed_check_time: dt.time = dt.time(15, 0)
     daily_plan_time: dt.time = dt.time(17, 0)
 

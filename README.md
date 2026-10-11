@@ -152,6 +152,10 @@ availability, absences, double booking, daily and weekly hour limits, skills.
 - `POST /visits/{id}/check-in` and `/check-out`: the cleaner on their own visit (from two
   hours before the start), or the office for them.
 - `GET /approvals`: the inbox, the approvals the signed-in person may decide.
+- `GET /timesheets`, `POST /timesheets/{id}/correct` and `/approve`: drafts built from completed
+  visits (actual times after a check-out), corrected by the person or the office, approved by a
+  supervisor who did not enter them. `mia payroll export --from --to` writes the approved rows
+  as CSV; the ticker alerts a missing check-out and overtime.
 - Over chat, a cleaner checks in ("Olen perillä"), asks the door code, gets the checklist
   ("Mikä on tarkistuslista?") and ticks items with the quick replies ("Tehty: Empty bins"),
   reports a problem ("En pääse sisään"), sends a photo as proof of work (saved under

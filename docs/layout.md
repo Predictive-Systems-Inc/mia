@@ -28,7 +28,9 @@ mia/
       agents/               base.py (manifest, guard, model factory)
         dispatcher/         manifest.yaml, job.md, prompts/, models.py, classifier.py,
                             scoring.py, cover.py (confirmation flow), alerts.py (missed
-                            check-in, unstaffed visits, daily plan), rules.py, tools.py (incl. site problems),
+                            check-in and check-out, overtime, unstaffed visits, daily plan),
+                            timesheets.py (drafts, corrections, approval, payroll rows),
+                            rules.py, tools.py (incl. site problems),
                             agent.py, tests/scenarios.yaml (and scenarios_en.yaml)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
       learning/             offline pipeline for role skill models (ADR 013)
@@ -42,7 +44,8 @@ mia/
         whatsapp/           adapter.py (Meta Cloud API), templates.py
       api/                  main.py, deps.py (session and auth dependencies), auth.py (login routes),
                             schedule.py (week view, assignment, check-in, inbox), supervisor.py
-                            (the summary, resolving site problems)
+                            (the summary, resolving site problems), timesheets.py (list, correct,
+                            approve)
       i18n/                 Finnish and English strings
       static/index.html     dev chat page
     migrations/             alembic.ini, env.py, versions/

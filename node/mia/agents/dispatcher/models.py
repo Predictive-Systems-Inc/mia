@@ -64,3 +64,27 @@ class ChecklistTick(BranchScoped, table=True):
     item: str  # the item text as on the job's checklist
     ticked_by: str
     ticked_at: dt.datetime = Field(sa_type=TZDateTime)
+
+
+class Timesheet(BranchScoped, table=True):
+    """One person's time on one visit (Q20: agent-owned until the data standard decides).
+
+    source: check_out (from the visit's actual times), planned (a completed visit without
+    them), correction. status: draft, approved. Whoever entered it never approves it.
+    """
+
+    __tablename__: ClassVar[str] = "dispatcher_timesheets"
+    __table_args__ = (UniqueConstraint("visit_id", "person_id"),)
+
+    visit_id: str = Field(foreign_key="visit.id", index=True)
+    person_id: str = Field(foreign_key="person.id", index=True)
+    date: dt.date = Field(index=True)
+    start: dt.datetime = Field(sa_type=TZDateTime)
+    end: dt.datetime = Field(sa_type=TZDateTime)
+    minutes: int
+    source: str = "check_out"
+    status: str = Field(default="draft", index=True)
+    entered_by: str
+    note: str = ""
+    approved_by: str | None = None
+    approved_at: dt.datetime | None = Field(default=None, sa_type=TZDateTime)

@@ -13,7 +13,9 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, col, select
 
+from mia.agents.dispatcher import timesheets
 from mia.agents.dispatcher.agent import MANIFEST
+from mia.agents.dispatcher.models import Timesheet
 from mia.agents.dispatcher.rules import _visit_card
 from mia.agents.dispatcher.tools import visit_info
 from mia.chat.blocks import Block, TextBlock
@@ -25,6 +27,8 @@ from mia.i18n import t
 
 log = logging.getLogger(__name__)
 MISSED = "visit.missed_check_in"
+MISSED_OUT = "visit.missed_check_out"
+OVERTIME = "timesheet.overtime"
 UNSTAFFED = "alert.unstaffed_visits"
 PLAN = "notification.daily_plan"
 BranchAlert = Callable[[Session, Branch, dt.datetime], int]
@@ -138,6 +142,96 @@ def missed_check_ins(session: Session, now: dt.datetime) -> int:
     return _each_branch(session, now, _missed_in)
 
 
+def _missed_out_in(session: Session, branch: Branch, now: dt.datetime) -> int:
+    grace = dt.timedelta(minutes=load_org().alerts.check_out_grace_minutes)
+    local_today = now.astimezone(ZoneInfo(branch.timezone)).date()
+    rows = session.exec(
+        select(Visit)
+        .where(Visit.branch_id == branch.id)
+        .where(Visit.status == "in_progress")
+        .where(col(Visit.date) >= local_today - dt.timedelta(days=1))
+        .where(col(Visit.date) <= local_today)
+        .order_by(col(Visit.planned_start))
+    ).all()
+    count = 0
+    for visit in rows:
+        if visit.planned_end > now - grace or _marked(session, MISSED_OUT, visit.id):
+            continue
+        info = visit_info(session, visit, branch.timezone)
+        _mark(session, branch.id, MISSED_OUT, ("visit", visit.id), {"planned_end": info.end})
+        names = []
+        for pid in visit.assigned_person_ids:
+            person = session.get(Person, pid)
+            if person is None:
+                continue
+            names.append(person.name)
+            if person.status != "active":
+                continue
+            text = t(
+                "alert.missed_check_out", person.language, location=info.location, time=info.end
+            )
+            _send(session, person, [TextBlock(text=text)], urgent=True)
+        for sup in supervisors(session, branch.id):
+            text = t(
+                "alert.missed_check_out_supervisor",
+                sup.language,
+                name=", ".join(names) or "?",
+                location=info.location,
+                time=info.end,
+            )
+            _send(session, sup, [TextBlock(text=text)], urgent=True)
+        count += 1
+    return count
+
+
+def missed_check_outs(session: Session, now: dt.datetime) -> int:
+    """Visits in progress past their planned end by more than the grace period: ask the
+    cleaner, tell the supervisors; once per visit. Returns how many visits were alerted."""
+    return _each_branch(session, now, _missed_out_in)
+
+
+def _overtime_in(session: Session, branch: Branch, now: dt.datetime) -> int:
+    limit = load_org().alerts.overtime_minutes
+    since = (now - timesheets.LOOKBACK).date()
+    rows = session.exec(
+        select(Timesheet)
+        .where(Timesheet.branch_id == branch.id)
+        .where(Timesheet.source == "check_out")
+        .where(col(Timesheet.date) >= since)
+        .order_by(col(Timesheet.id))
+    ).all()
+    count = 0
+    for ts in rows:
+        visit = session.get(Visit, ts.visit_id)
+        if visit is None:
+            continue
+        planned = int((visit.planned_end - visit.planned_start).total_seconds() // 60)
+        over = ts.minutes - planned
+        if over <= limit or _marked(session, OVERTIME, ts.id):
+            continue
+        _mark(session, branch.id, OVERTIME, ("timesheet", ts.id), {"over_minutes": over})
+        person = session.get(Person, ts.person_id)
+        info = visit_info(session, visit, branch.timezone)
+        for sup in supervisors(session, branch.id):
+            text = t(
+                "alert.overtime_supervisor",
+                sup.language,
+                name=person.name if person else "?",
+                minutes=str(over),
+                location=info.location,
+                date=ts.date.isoformat(),
+            )
+            _send(session, sup, [TextBlock(text=text)], urgent=False)
+        count += 1
+    return count
+
+
+def overtime(session: Session, now: dt.datetime) -> int:
+    """Timesheets from a check-out that run more than the overtime limit past the plan: tell
+    the supervisors once per timesheet. Returns how many."""
+    return _each_branch(session, now, _overtime_in)
+
+
 def _unstaffed_in(session: Session, branch: Branch, now: dt.datetime) -> int:
     local = now.astimezone(ZoneInfo(branch.timezone))
     if local.time() < load_org().alerts.unstaffed_check_time:
@@ -216,7 +310,12 @@ def daily_plan(session: Session, now: dt.datetime) -> int:
 
 
 def run_due(session: Session, now: dt.datetime) -> int:
-    """All three alerts; returns how many messages or cards went out."""
+    """Every alert, after the timesheet drafts are built; returns how many went out."""
+    timesheets.build_due(session, now)
     return (
-        missed_check_ins(session, now) + unstaffed_visits(session, now) + daily_plan(session, now)
+        missed_check_ins(session, now)
+        + missed_check_outs(session, now)
+        + overtime(session, now)
+        + unstaffed_visits(session, now)
+        + daily_plan(session, now)
     )
