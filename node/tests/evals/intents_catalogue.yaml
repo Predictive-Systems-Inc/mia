@@ -264,7 +264,7 @@ intents:
   system_of_record: Mia
   country: both
   phase: 1
-  built: 'no'
+  built: 'yes'
 - id: dispatcher.send_photos
   agent: dispatcher
   process: Contract-to-Service

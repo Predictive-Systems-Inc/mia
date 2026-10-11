@@ -287,3 +287,29 @@ def test_demo_5_cleaner_arrives_asks_the_door_code_and_finishes(
         select(Visit).where(Visit.status == "completed").where(Visit.date == today)
     ).first()
     assert visit is not None and juha.id in visit.assigned_person_ids
+
+
+def test_demo_6_cleaner_ticks_the_checklist(
+    client: TestClient, people: dict[str, Person], session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mia.agents.dispatcher import tools
+    from mia.core.models import Job
+
+    juha = people["Juha"]
+    job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
+    today = dt.datetime.now(dt.UTC).date()
+    visit = session.exec(
+        select(Visit).where(Visit.job_id == job.id).where(Visit.date == today)
+    ).one()
+    monkeypatch.setattr(tools, "utcnow", lambda: visit.planned_start)
+    first = say(client, juha, "Mikä on tarkistuslista?")
+    card = blocks_of(first, "card")[0]
+    assert [f["label"] for f in card["fields"]] == ["Empty bins", "Wipe surfaces"]
+    options = blocks_of(first, "quick_replies")[0]["options"]
+    assert options == ["Tehty: Empty bins", "Tehty: Wipe surfaces"]
+    second = say(client, juha, options[0], first["thread_id"])
+    card = blocks_of(second, "card")[0]
+    assert (
+        card["fields"][0]["value"].startswith("✓")
+        and "Tehty: Wipe surfaces" in blocks_of(second, "quick_replies")[0]["options"]
+    )

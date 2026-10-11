@@ -165,6 +165,13 @@ def decide(intent: Intent, messages: list[ModelMessage], info: AgentInfo) -> Mod
         if intent.location_hint:
             args["location_name"] = intent.location_hint
         return _call("report_site_problem", args)
+    if intent.name == "checklist":
+        args = {}
+        if intent.item:
+            args["item"] = intent.item
+        if intent.location_hint and not intent.item:
+            args["location_name"] = intent.location_hint
+        return _call("checklist", args)
     if intent.name in ("check_in", "check_out", "visit_details"):
         args = {"location_name": intent.location_hint} if intent.location_hint else {}
         return _call(intent.name, args)
@@ -184,6 +191,8 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
         return [TextBlock(text=t("respond.none", lang))]
     if part.tool_name in ("check_in", "check_out", "visit_details"):
         return _field_work(part.tool_name, out, lang)
+    if part.tool_name == "checklist":
+        return _checklist(out, lang)
     if part.tool_name == "report_site_problem":
         if out.get("status") != "ok":
             return [TextBlock(text=t("problem.no_visit", lang))]
@@ -261,6 +270,32 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
         params = {"location": v["location"], "date": _fmt_date(v["date"], lang), "time": v["start"]}
         return [TextBlock(text=t("respond.accepted", lang, **params))]
     return [TextBlock(text=t("fallback.help", lang))]
+
+
+def _checklist(out: dict[str, Any], lang: str) -> list[Block]:
+    """The checklist card (done items marked) and a quick reply per open item."""
+    if out.get("status") != "ok":
+        return [TextBlock(text=t(f"checklist.{out.get('reason', 'no_visit')}", lang))]
+    blocks: list[Block] = []
+    if out.get("unknown"):
+        blocks.append(TextBlock(text=t("checklist.unknown", lang, item=out["unknown"])))
+    elif out.get("ticked"):
+        blocks.append(TextBlock(text=t("checklist.ticked", lang, item=out["ticked"])))
+    done_mark, open_mark = t("checklist.done_mark", lang), t("checklist.open_mark", lang)
+    fields = [
+        CardField(label=i["text"], value=done_mark if i["done"] else open_mark)
+        for i in out["items"]
+    ]
+    blocks.append(
+        CardBlock(title=f"{out['visit']['location']}: {t('checklist.title', lang)}", fields=fields)
+    )
+    open_items = [i["text"] for i in out["items"] if not i["done"]]
+    if open_items:
+        prefix = t("checklist.tick_prefix", lang)
+        blocks.append(QuickRepliesBlock(options=[f"{prefix}{i}" for i in open_items]))
+    else:
+        blocks.append(TextBlock(text=t("checklist.all_done", lang)))
+    return blocks
 
 
 def _field_work(tool: str, out: dict[str, Any], lang: str) -> list[Block]:

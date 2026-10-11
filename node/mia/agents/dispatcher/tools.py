@@ -642,6 +642,110 @@ def report_site_problem(
     return ProblemOutput(status="ok", visit=info, problem_id=row.id)
 
 
+# ---- checklist -----------------------------------------------------------------------------
+
+
+class ChecklistInput(BaseModel):
+    item: str | None = Field(
+        None, max_length=200, description="An item to tick off, when the user says one is done"
+    )
+    location_name: str | None = Field(None, description="The site, when the user names it")
+
+
+class ChecklistItem(BaseModel):
+    text: str
+    done: bool
+
+
+class ChecklistOutput(BaseModel):
+    status: Literal["ok", "invalid"]
+    reason: str | None = None  # no_visit, no_checklist
+    visit: VisitInfo | None = None
+    items: list[ChecklistItem] = Field(default_factory=list)
+    ticked: str | None = None  # the item just ticked
+    unknown: str | None = None  # the item asked for that matched nothing
+
+
+def _current_visit(deps: AgentDeps, location_name: str | None, now: dt.datetime) -> Visit | None:
+    """The acting person's visit in progress, else the current or next one today."""
+    rows = [
+        v
+        for v in _own_visits_today(deps, location_name)
+        if v.date == deps.today and v.status in ("planned", "in_progress")
+    ]
+    running = [v for v in rows if v.status == "in_progress"]
+    if running:
+        return running[0]
+    ahead = [v for v in rows if v.planned_end >= now]
+    return min(ahead, key=lambda v: abs((v.planned_start - now).total_seconds())) if ahead else None
+
+
+def checklist(deps: AgentDeps, args: ChecklistInput, tool_call_id: str) -> ChecklistOutput:
+    """The current visit's checklist with its ticks; with `item`, tick that item (prefix match,
+    case-insensitive). Ticking twice is a no-op; an unknown item is reported back."""
+    from mia.agents.dispatcher.models import ChecklistTick
+    from mia.templates.cleaning.models import CleaningChecklist
+
+    owner = Resource(kind="data", name="core.visit", owner_id=deps.person.id)
+    _check(deps, owner, "read", tool_call_id)
+    now = utcnow()
+    visit = _current_visit(deps, args.location_name, now)
+    if visit is None:
+        return ChecklistOutput(status="invalid", reason="no_visit")
+    sheet = deps.session.exec(
+        select(CleaningChecklist).where(CleaningChecklist.job_id == visit.job_id)
+    ).first()
+    texts = [str(i.get("text", "")) for i in (sheet.items if sheet else []) if i.get("text")]
+    if not texts:
+        return ChecklistOutput(
+            status="invalid",
+            reason="no_checklist",
+            visit=visit_info(deps.session, visit, deps.branch.timezone),
+        )
+    ticks = deps.session.exec(select(ChecklistTick).where(ChecklistTick.visit_id == visit.id)).all()
+    done = {t_.item for t_ in ticks}
+    ticked = unknown = None
+    if args.item:
+        wanted = args.item.strip().lower()
+        matches = [t for t in texts if t.lower().startswith(wanted) or wanted.startswith(t.lower())]
+        if not matches:
+            matches = [t for t in texts if wanted in t.lower()]
+        if matches:
+            ticked = min(matches, key=len)
+            if ticked not in done:
+                _check(
+                    deps,
+                    Resource(
+                        kind="data", name="dispatcher_checklist_ticks", owner_id=deps.person.id
+                    ),
+                    "write",
+                    tool_call_id,
+                )
+                store.insert(
+                    deps.session,
+                    ChecklistTick(
+                        branch_id=deps.branch.id,
+                        visit_id=visit.id,
+                        item=ticked,
+                        ticked_by=deps.person.id,
+                        ticked_at=now,
+                    ),
+                    deps.actor,
+                    action="checklist.ticked",
+                    tool_call_id=tool_call_id,
+                )
+                done.add(ticked)
+        else:
+            unknown = args.item
+    return ChecklistOutput(
+        status="ok",
+        visit=visit_info(deps.session, visit, deps.branch.timezone),
+        items=[ChecklistItem(text=t, done=t in done) for t in texts],
+        ticked=ticked,
+        unknown=unknown,
+    )
+
+
 BINDINGS = [
     ToolBinding(
         "dispatcher.get_my_visits",
@@ -702,5 +806,11 @@ BINDINGS = [
         ReportProblemInput,
         "The user cannot get into the site, or the site is unusable: record it and tell the "
         "supervisors. Pass the user's own words as text.",
+    ),
+    ToolBinding(
+        "dispatcher.checklist",
+        checklist,
+        ChecklistInput,
+        "The checklist of the user's current visit; give item when the user says one is done.",
     ),
 ]
