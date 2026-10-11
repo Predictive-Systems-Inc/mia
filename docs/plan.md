@@ -47,9 +47,13 @@ Remaining work in this order, because each step unblocks the next:
    Qwen3.5 9B and Gemma 4 12B; translation (Finnish, Filipino to and from English) as a
    separate layer measured on its own. Then: Gemma 4 12B on Ollama on an Apple Silicon Mac mini, no
    cloud route for real data. It passes 85% today (Oct 5 evaluation: Sonnet 5.5 100%, Haiku 4.5
-   88%, Gemma 4 12B 85%, Qwen3.5 9B on llama.cpp 76%), so before the pilot: the turn cap (D22),
-   the reply contract for small models (the model writes text, code builds the blocks), a
-   parallel intent by language suite, and a distilled intent classifier where Gemma is weak.
+   88%, Gemma 4 12B 85%, Qwen3.5 9B on llama.cpp 76%), so before the pilot: the turn cap (D22,
+   built 2026-10-12: eight model calls, then a translated reply and the event
+   `chat.turn_capped`), the reply contract for small models (built: the agent accepts plain
+   text and code builds the blocks, `text_reply`), a parallel intent by language suite (waits
+   for the translation layer measurement on the node hardware, D19 and D26; the chat scenarios
+   exist in Finnish and English), and a distilled intent classifier where Gemma is weak (the
+   role skill models, built; measuring them on Gemma needs the Mac mini, D19).
    Cloud models are used only for development and as the distillation teacher, with synthetic
    or demo data.
 3. **Install and backup** (Sprint 0 items still open): Docker Compose, Litestream, health page,

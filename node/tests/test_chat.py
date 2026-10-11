@@ -313,3 +313,50 @@ def test_demo_6_cleaner_ticks_the_checklist(
         card["fields"][0]["value"].startswith("✓")
         and "Tehty: Wipe surfaces" in blocks_of(second, "quick_replies")[0]["options"]
     )
+
+
+def test_a_turn_stops_after_eight_model_calls(session: Session, people: dict[str, Person]) -> None:
+    """D22: the cap ends the turn with a translated reply and an event, never an error."""
+    import asyncio
+    from typing import Any
+
+    from pydantic_ai import Agent
+    from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+    from mia.agents.base import AgentDeps
+    from mia.chat import service
+    from mia.chat.blocks import AgentReply
+    from mia.chat.service import run_turn
+
+    calls = 0
+
+    def loop(_messages: list[ModelMessage], _info: AgentInfo) -> Any:
+        nonlocal calls
+        calls += 1
+        return ModelResponse(parts=[ToolCallPart(tool_name="ping", args={})])
+
+    agent = Agent(FunctionModel(loop), deps_type=AgentDeps, output_type=AgentReply)
+
+    @agent.tool_plain
+    def ping() -> str:
+        return "pong"
+
+    reply = asyncio.run(run_turn(session, agent, people["Juha"], "Olen kipeä huomenna."))
+    assert calls == service.MAX_MODEL_CALLS == 8
+    assert reply.blocks[0].type == "text" and "esihenkilö" in reply.blocks[0].text.casefold()
+    ev = session.exec(select(Event).where(Event.action == "chat.turn_capped")).one()
+    assert ev.entity_id == reply.thread_id and ev.after == {"model_calls": 8, "tools": []}
+    stored = session.exec(select(Message).where(Message.role == "assistant")).all()
+    assert stored[-1].text == reply.blocks[0].text
+    # "A supervisor will follow up" is true: the supervisors get a notice with the message.
+    from mia.chat.channels import NOTIFICATION
+    from mia.core.models import Thread
+
+    notes = session.exec(
+        select(Message)
+        .join(Thread, Thread.id == Message.thread_id)  # type: ignore[arg-type]
+        .where(Thread.person_id == people["Sanna"].id)
+        .where(Message.role == NOTIFICATION)
+    ).all()
+    assert notes and "Juha" in notes[-1].text and "kipeä" in notes[-1].text

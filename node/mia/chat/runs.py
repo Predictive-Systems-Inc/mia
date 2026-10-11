@@ -42,12 +42,20 @@ from ag_ui.core import (
     Message as AguiMessage,
 )
 from pydantic_ai import AgentRunResult, CancellationToken
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from sqlmodel import Session, col, select
 
 from mia.agents.dispatcher.agent import get_agent
 from mia.chat.blocks import AgentReply, ApprovalCardBlock, ChatReply
-from mia.chat.service import _finish, _prepare, resolve_turn, wrap_user_text
+from mia.chat.service import (
+    USAGE_LIMITS,
+    _finish,
+    _prepare,
+    reply_capped,
+    resolve_turn,
+    wrap_user_text,
+)
 from mia.core.db import get_engine
 from mia.core.egress import egress_context
 from mia.core.ids import new_id
@@ -248,15 +256,23 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
             for event in _reply_events(reply):
                 yield event
 
+        capped = False
+
         async def native() -> AsyncIterator[Any]:
-            async with agent.run_stream_events(
-                wrap_user_text(agent_text, person),
-                message_history=past,
-                deps=deps,
-                cancellation_token=run.token,
-            ) as events:
-                async for item in events:
-                    yield item
+            nonlocal capped
+            try:
+                async with agent.run_stream_events(
+                    wrap_user_text(agent_text, person),
+                    message_history=past,
+                    deps=deps,
+                    cancellation_token=run.token,
+                    usage_limits=USAGE_LIMITS,
+                ) as events:
+                    async for item in events:
+                        yield item
+            except UsageLimitExceeded:
+                capped = True  # D22: the adapter turns this into its error event below
+                raise
 
         with egress_context(ctx):
             stream = adapter.transform_stream(native(), on_complete=on_complete)
@@ -268,6 +284,17 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
                 # A plain-text answer (text_reply fallback) streams as model text; the client
                 # gets only the checked, stored reply that on_complete sends.
                 if event.type in TEXT_EVENTS and not replying:
+                    continue
+                if isinstance(event, RunErrorEvent) and capped:
+                    # D22: the cap is a reply, not a failed run; the adapter's error event is
+                    # its last, so the run ends here with the stored reply (every tool write
+                    # before the cap is already committed, on this path as on run_turn).
+                    reply = await asyncio.to_thread(reply_capped, session, deps, thread, text)
+                    await asyncio.to_thread(session.commit)
+                    for plain in _plain_reply_events(reply):
+                        await run.push(plain)
+                    await run.push(RunFinishedEvent(thread_id=run.thread_id, run_id=run.run_id))
+                    last = EventType.RUN_FINISHED
                     continue
                 if isinstance(event, RunErrorEvent):
                     log.error("AG-UI run %s failed: %s", run.run_id, event.message)
