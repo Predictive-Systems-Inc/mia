@@ -74,6 +74,20 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     dispatcher_agent.get_agent.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _loopback_test_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TestClient requests come from 127.0.0.1 (the dev header needs a loopback peer), unless a
+    test passes its own `client=` address."""
+    from starlette import testclient
+
+    original = testclient.TestClient.__init__
+
+    def init(self, app, *args, client=("127.0.0.1", 50000), **kwargs):  # type: ignore[no-untyped-def]
+        original(self, app, *args, client=client, **kwargs)
+
+    monkeypatch.setattr(testclient.TestClient, "__init__", init)
+
+
 @pytest.fixture
 def engine() -> Engine:
     eng = db.get_engine()

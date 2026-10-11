@@ -3,6 +3,10 @@ devices and clients. Every write goes through store and emits an event; secrets 
 
 Failures raise AuthError with one message, `invalid credentials`, whatever was wrong; Locked
 when a limit holds. Times come in as arguments so tests can move the clock.
+
+Writes that record a failure (attempt rows, code tries, lockouts, revocations on reuse) are
+committed before the failure is raised: a request that rolls back on the error must not erase
+the evidence, or limits would never accumulate.
 """
 
 import datetime as dt
@@ -154,16 +158,19 @@ def record_attempt(
     """One attempt row and one event (`auth.<kind>_succeeded` or `_failed`)."""
     name = EVENT_NAME.get(kind, kind)
     row = AuthAttempt(kind=kind, key=key, ok=ok, created_at=now, updated_at=now)
-    return store.insert(
+    store.insert(
         session,
         row,
         actor or auth_actor(),
         action=action or f"auth.{name}_{'succeeded' if ok else 'failed'}",
     )
+    session.commit()  # survives the AuthError the caller raises next
+    return row
 
 
 def _locked_event(session: Session, kind: str, subject: str) -> None:
     events.emit(session, "auth.locked", ("login", subject), None, {"kind": kind}, auth_actor())
+    session.commit()
 
 
 # ---- one-time codes ---------------------------------------------------------------------
@@ -274,6 +281,7 @@ def fail_code(
             auth_actor(row.branch_id),
             action="auth.code_try",
         )
+        session.commit()  # survives the AuthError the caller raises next
 
 
 def sends_in_last_hour(session: Session, purpose: str, address: str, now: dt.datetime) -> int:
@@ -579,6 +587,7 @@ def check_pin(session: Session, person: Person, pin: str, ip: str, now: dt.datet
         store.update(
             session, cred, {"status": "locked"}, Actor.person(person), action="auth.pin_locked"
         )
+        session.commit()
     return False
 
 
@@ -699,12 +708,14 @@ def refresh_session(session: Session, token: str, now: dt.datetime) -> Tokens:
                 _session_actor(session, reused),
                 action="auth.refresh_reused",
             )
+            session.commit()
         raise AuthError(INVALID)
     actor = _session_actor(session, row)
     expired = (row.refresh_expires_at or now) <= now or (row.absolute_expires_at or now) <= now
     if row.status != "active" or expired:
         if row.status == "active":
             store.update(session, row, {"status": "revoked"}, actor, action="auth.session_expired")
+            session.commit()
         raise AuthError(INVALID)
     access, refresh = keys.new_token(), keys.new_token()
     device = session.get(AuthDevice, row.device_id) if row.device_id else None

@@ -1,0 +1,228 @@
+"""Authentication routes (ADR 011): office login with password and TOTP, enrolment, refresh,
+logout, and (later tasks) staff codes, devices, PIN step-up, clients and administration.
+
+Web clients (header `X-Mia-Client: web`) get HttpOnly cookies and no tokens in the body;
+everything else gets bearer tokens. Every failure is 401 `invalid credentials`.
+"""
+
+from fastapi import APIRouter, HTTPException, Request, Response
+from pydantic import BaseModel, Field
+
+from mia.api.deps import (
+    REFRESH_COOKIE,
+    AuthContext,
+    CurrentAuth,
+    DbSession,
+    clear_cookies,
+    client_ip,
+    public_origin,
+    set_cookies,
+)
+from mia.core import auth
+from mia.core.db import utcnow
+from mia.core.models import Actor, AuthDevice, AuthSession, Person
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+class LoginIn(BaseModel):
+    email: str = Field(max_length=200)
+    password: str = Field(max_length=200)
+
+
+class MfaIn(BaseModel):
+    mfa_token: str = Field(max_length=100)
+    code: str = Field(max_length=20)
+
+
+class CodeIn(BaseModel):
+    code: str = Field(max_length=20)
+
+
+class PasswordIn(BaseModel):
+    password: str = Field(max_length=200)
+    email: str | None = Field(default=None, max_length=200)
+
+
+class RefreshIn(BaseModel):
+    refresh: str | None = Field(default=None, max_length=100)
+
+
+class TokensOut(BaseModel):
+    access: str | None = None
+    refresh: str | None = None
+    aal: str
+    enrol: bool = False
+
+
+def _web(request: Request) -> bool:
+    return request.headers.get("x-mia-client", "").lower() == "web"
+
+
+def _tokens_response(request: Request, response: Response, tokens: auth.Tokens) -> TokensOut:
+    """Cookies for the web, tokens in the body for everyone else."""
+    enrol = tokens.row.aal == "enrol"
+    if _web(request):
+        set_cookies(response, tokens)
+        return TokensOut(aal=tokens.row.aal, enrol=enrol)
+    return TokensOut(access=tokens.access, refresh=tokens.refresh, aal=tokens.row.aal, enrol=enrol)
+
+
+def _person(ctx: AuthContext) -> Person:
+    if ctx.person is None:
+        raise HTTPException(403, "a person must be signed in")
+    return ctx.person
+
+
+def _invalid() -> HTTPException:
+    return HTTPException(401, auth.INVALID)
+
+
+@router.post("/login")
+def login(
+    request: Request, response: Response, session: DbSession, body: LoginIn
+) -> dict[str, object]:
+    """Password first. People with MFA get an mfa_token for POST /auth/mfa; a person who must
+    have MFA but has none gets an enrolment session; everyone else is signed in (aal1)."""
+    now, ip = utcnow(), client_ip(request)
+    try:
+        person = auth.check_password(session, body.email, body.password, ip, now)
+    except auth.AuthError:
+        raise _invalid() from None
+    actor = Actor.person(person)
+    if auth.has_mfa(session, person):
+        token = auth.create_code(session, actor, person, "mfa", now, address=ip, token=True)
+        return {"mfa_required": True, "mfa_token": token}
+    if auth.needs_mfa(session, person):
+        tokens = auth.issue_session(session, person, method="enrol", aal="enrol", ip=ip, now=now)
+    else:
+        tokens = auth.issue_session(session, person, method="password", aal="aal1", ip=ip, now=now)
+    return _tokens_response(request, response, tokens).model_dump()
+
+
+@router.post("/mfa", response_model=TokensOut)
+def mfa(request: Request, response: Response, session: DbSession, body: MfaIn) -> TokensOut:
+    """Second step: a TOTP code or a recovery code against the mfa_token."""
+    now, ip = utcnow(), client_ip(request)
+    found = auth.check_code(session, "mfa", body.mfa_token, now)
+    if found.status != "ok" or found.row is None:
+        raise _invalid()
+    person = session.get(Person, found.row.person_id)
+    if person is None or person.status != "active":
+        raise _invalid()
+    actor = Actor.person(person)
+    ok = auth.check_totp(session, person, body.code, now) or auth.check_recovery(
+        session, actor, person, body.code, now
+    )
+    auth.record_attempt(session, "mfa", auth.attempt_key(found.row.id, ip), ok, now, actor=actor)
+    if not ok:
+        auth.fail_code(session, "mfa", now, person_id=person.id)
+        raise _invalid()
+    auth.use_code(session, actor, found.row, now)
+    auth.unlock_pin(session, actor, person, now)
+    tokens = auth.issue_session(session, person, method="password_totp", aal="aal2", ip=ip, now=now)
+    return _tokens_response(request, response, tokens)
+
+
+@router.post("/mfa/enrol")
+def mfa_enrol(session: DbSession, ctx: CurrentAuth) -> dict[str, str]:
+    """Start TOTP enrolment (from a full session or an enrolment session)."""
+    person = _person(ctx)
+    _, uri = auth.enrol_totp(session, ctx.actor, person, utcnow())
+    return {"uri": uri}
+
+
+@router.post("/mfa/confirm")
+def mfa_confirm(
+    request: Request, response: Response, session: DbSession, ctx: CurrentAuth, body: CodeIn
+) -> dict[str, object]:
+    """Confirm TOTP with a first code: recovery codes come back once, and an enrolment session
+    becomes a full aal2 session."""
+    person = _person(ctx)
+    now = utcnow()
+    cred = auth.credential(session, person.id, "totp", ("pending",))
+    if cred is None:
+        raise HTTPException(400, "start enrolment first")
+    try:
+        codes = auth.confirm_totp(session, ctx.actor, cred, body.code, now)
+    except auth.AuthError:
+        raise _invalid() from None
+    out: dict[str, object] = {"recovery_codes": codes}
+    if ctx.aal == "enrol":
+        auth.revoke_sessions(session, ctx.actor, person.id, now)
+        tokens = auth.issue_session(
+            session, person, method="password_totp", aal="aal2", ip=client_ip(request), now=now
+        )
+        out.update(_tokens_response(request, response, tokens).model_dump())
+    return out
+
+
+@router.post("/password")
+def set_password(session: DbSession, ctx: CurrentAuth, body: PasswordIn) -> dict[str, bool]:
+    """Set the password (and email on first set). Every other session of the person ends."""
+    person = _person(ctx)
+    now = utcnow()
+    current = auth.credential(session, person.id, "password")
+    email = body.email or (current.login if current else None)
+    if not email:
+        raise HTTPException(400, "email required")
+    try:
+        auth.set_password(session, ctx.actor, person, email, body.password, now)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    auth.revoke_sessions(session, ctx.actor, person.id, now, keep=ctx.session_id)
+    return {"ok": True}
+
+
+@router.post("/refresh", response_model=TokensOut)
+def refresh(
+    request: Request, response: Response, session: DbSession, body: RefreshIn | None = None
+) -> TokensOut:
+    """Rotate tokens with the refresh token (body, or the mia_rt cookie for the web)."""
+    from_body = body.refresh if body else None
+    token = from_body or request.cookies.get(REFRESH_COOKIE)
+    if not token:
+        raise _invalid()
+    if not from_body and request.headers.get("origin") != public_origin():
+        raise HTTPException(403, "origin not allowed")  # cookie refresh needs the site's Origin
+    try:
+        tokens = auth.refresh_session(session, token, utcnow())
+    except auth.AuthError:
+        clear_cookies(response)
+        raise _invalid() from None
+    return _tokens_response(request, response, tokens)
+
+
+@router.post("/logout")
+def logout(response: Response, session: DbSession, ctx: CurrentAuth) -> dict[str, bool]:
+    """End this session; a mobile device signing out is revoked with it."""
+    now = utcnow()
+    row = session.get(AuthSession, ctx.session_id) if ctx.session_id else None
+    if row is not None:
+        device = session.get(AuthDevice, row.device_id) if row.device_id else None
+        if device is not None and device.kind == "mobile":
+            auth.revoke_device(session, ctx.actor, device, now)
+        else:
+            auth.revoke_session(session, ctx.actor, row, now)
+    clear_cookies(response)
+    return {"ok": True}
+
+
+@router.get("/me")
+def me(session: DbSession, ctx: CurrentAuth) -> dict[str, object]:
+    """Who is signed in and how."""
+    if ctx.person is None:
+        client_id = ctx.client.client_id if ctx.client else None
+        return {"client_id": client_id, "aal": ctx.aal, "method": ctx.method}
+    person = ctx.person
+    fresh = ctx.stepped_up_at is not None and utcnow() - ctx.stepped_up_at <= auth.STEP_UP_TTL
+    return {
+        "person_id": person.id,
+        "name": person.name,
+        "roles": person.roles,
+        "aal": ctx.aal,
+        "method": ctx.method,
+        "stepped_up": fresh,
+        "mfa": auth.has_mfa(session, person),
+        "pin": auth.has_pin(session, person),
+    }

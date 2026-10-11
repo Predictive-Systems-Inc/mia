@@ -15,6 +15,7 @@ from sqlmodel import Session, col, select
 
 import mia
 from mia.agents.dispatcher import cover
+from mia.api.auth import router as auth_router
 from mia.api.deps import DbSession, PersonAuth, check_mode
 from mia.channels import inbound as channel_service
 from mia.channels import outbox, registry
@@ -72,6 +73,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Mia Node", version=mia.__version__, lifespan=lifespan)
+app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(channels_router)
 

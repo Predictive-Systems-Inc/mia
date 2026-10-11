@@ -139,6 +139,7 @@ def _refused(
         decider,
         approval_id=approval.id,
     )
+    session.commit()  # raised inside a request: a rollback must not lose the refusal event
     raise exc(why)
 
 

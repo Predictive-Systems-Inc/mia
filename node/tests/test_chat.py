@@ -31,7 +31,8 @@ def blocks_of(reply: dict, kind: str) -> list[dict]:  # type: ignore[type-arg]
 def test_health_and_page(client: TestClient) -> None:
     body = client.get("/health").json()
     assert body["status"] == "ok" and body["events_chain"] is True and body["model"] == "test"
-    assert "<title>Mia chat" in client.get("/").text
+    page = client.get("/").text
+    assert "<title>Mia chat" in page and 'id="login"' in page and "auth/me" in page
     assert body["auth_mode"] == "dev" and len(client.get("/persons").json()) == 7
 
 

@@ -223,3 +223,49 @@ def test_app_only_approval_needs_aal2_and_a_fresh_step_up(
     assert len(denied) == 4
     approvals.decide(session, row.id, helena, "approved", aal="aal2", stepped_up_at=now)
     assert row.status == "approved"
+
+
+def test_dev_header_refused_from_a_non_loopback_peer(
+    branch: object, people: dict[str, Person]
+) -> None:
+    """The peer address decides, not a name: only loopback peers may use the header."""
+    far = TestClient(app, client=("10.0.0.5", 4000))
+    assert (
+        far.post(
+            "/chat", json={"text": "hi"}, headers={"X-Mia-Actor": people["Juha"].id}
+        ).status_code
+        == 401
+    )
+    named = TestClient(app, client=("testclient", 4000))
+    assert (
+        named.post(
+            "/chat", json={"text": "hi"}, headers={"X-Mia-Actor": people["Juha"].id}
+        ).status_code
+        == 401
+    )
+
+
+def test_refused_decision_over_http_keeps_its_event(
+    client: TestClient, session: Session, people: dict[str, Person], login
+) -> None:  # type: ignore[no-untyped-def]
+    """A refusal raised inside a request must not roll its approval.refused event back."""
+    from mia.core import approvals
+
+    row = approvals.request(
+        session,
+        "dispatcher.cover_override",
+        ("visit", "V"),
+        "x",
+        Actor.person(people["Sanna"]),
+        ["admin"],
+        "app_only",
+    )
+    session.commit()
+    login(client, people["Helena"])
+    res = client.post(f"/approvals/{row.id}/decide", json={"outcome": "approved"})
+    assert res.status_code == 403 and res.json()["detail"] == "step_up_required"
+    from mia.core.db import session_scope
+
+    with session_scope() as s:
+        refused = s.exec(select(Event).where(Event.action == "approval.refused")).all()
+        assert len(refused) == 1 and refused[0].approval_id == row.id

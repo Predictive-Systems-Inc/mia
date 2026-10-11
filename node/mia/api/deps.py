@@ -69,8 +69,6 @@ def client_ip(request: Request) -> str:
 
 def _loopback(request: Request) -> bool:
     host = request.client.host if request.client else ""
-    if host == "testclient":  # Starlette's TestClient
-        return True
     try:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
