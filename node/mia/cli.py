@@ -4,6 +4,7 @@ invite, channels, backup, verify-db."""
 import argparse
 import asyncio
 import os
+from pathlib import Path
 
 from alembic.config import Config
 from sqlmodel import Session, col, select
@@ -356,6 +357,20 @@ def verify_db(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def keys_init(args: argparse.Namespace) -> int:
+    from mia.core import keys
+
+    path = args.path or get_settings().MIA_MASTER_KEY_FILE
+    if path is None:
+        raise SystemExit("give a path or set MIA_MASTER_KEY_FILE")
+    try:
+        keys.generate(Path(path))
+    except keys.MasterKeyError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"master key written to {path} (mode 400). Back it up outside the data folder.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mia", description="Mia Node command line")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -416,6 +431,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lang", default="fi", choices=["fi", "en"])
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=person_add)
+    keys_p = sub.add_parser("keys", help="key material").add_subparsers(
+        dest="keys_command", required=True
+    )
+    p = keys_p.add_parser("init", help="create the master key file")
+    p.add_argument("path", nargs="?")
+    p.set_defaults(func=keys_init)
     from mia.learning.commands import register as register_skills
 
     register_skills(sub)

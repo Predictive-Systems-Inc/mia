@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     # Channels (ADR 007). MIA_NODE_SECRET keys link-code HMACs; MIA_PUBLIC_URL builds app links.
     MIA_NODE_SECRET: str = ""
     MIA_PUBLIC_URL: str = "http://localhost:8000"
+    # Authentication (ADR 011). The master key file (mia keys init) derives every subkey;
+    # without it MIA_NODE_SECRET is the key, so invites made before it keep working.
+    MIA_MASTER_KEY_FILE: Path | None = None
+    MIA_AUTH_MODE: Literal["required", "dev"] = "required"
+    # Peers allowed to set CF-Connecting-IP (the cloudflared container), comma separated.
+    MIA_TRUSTED_PROXIES: str = ""
     MIA_WA_TOKEN: str = ""
     MIA_WA_APP_SECRET: str = ""
     MIA_WA_VERIFY_TOKEN: str = ""

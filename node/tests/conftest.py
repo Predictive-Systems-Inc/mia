@@ -20,7 +20,7 @@ from pydantic_ai import models
 
 from mia.agents.dispatcher import agent as dispatcher_agent
 from mia.channels import registry
-from mia.core import db
+from mia.core import db, keys
 from mia.core.models import Actor, Branch, Person
 from mia.schema import create_all
 from mia.settings import get_settings
@@ -54,6 +54,12 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     monkeypatch.setenv("MIA_GEOCODER", "static")
     monkeypatch.setenv("MIA_NODE_SECRET", "test-node-secret")
     monkeypatch.setenv("MIA_WA_NUMBER", "358401110000")
+    key_file = tmp_path / "master.key"
+    keys.generate(key_file)
+    monkeypatch.setenv("MIA_MASTER_KEY_FILE", str(key_file))
+    monkeypatch.setenv("MIA_AUTH_MODE", "dev")
+    monkeypatch.setattr(keys, "SCRYPT_N", 2**8)  # the real 2**17 makes every login slow
+    keys.reset_cache()
     get_settings.cache_clear()
     dispatcher_agent.get_agent.cache_clear()
     db.reset_engines()
@@ -62,6 +68,7 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     registry._adapters.clear()
     registry._adapters.update(saved_adapters)
     db.reset_engines()
+    keys.reset_cache()
     get_settings.cache_clear()
     dispatcher_agent.get_agent.cache_clear()
 
