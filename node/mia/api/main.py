@@ -23,7 +23,7 @@ from mia.channels.router import router as channels_router
 from mia.channels.setup import register_configured
 from mia.chat.channels import NOTIFICATION
 from mia.chat.router import router as chat_router
-from mia.core import approvals
+from mia.core import approvals, scheduling
 from mia.core.db import session_scope, utcnow
 from mia.core.events import verify_chain
 from mia.core.models import ChannelOutbox, Message, Person, Thread
@@ -40,8 +40,17 @@ def tick() -> int:
         return cover.process_due(session, utcnow())
 
 
+def _generate_visits() -> int:
+    with session_scope() as session:
+        return scheduling.generate_due(session, utcnow())
+
+
 async def run_due_work() -> tuple[int, int]:
-    """One round of due work: cover escalation, then the channel outbox. Returns both counts."""
+    """One round of due work: visit generation (once a day), cover escalation, then the
+    channel outbox. Returns the cover and outbox counts."""
+    generated = await asyncio.to_thread(_generate_visits)
+    if generated:
+        log.info("generated %d visit(s)", generated)
     advanced = await asyncio.to_thread(tick)  # sync DB work off the event loop
     stale = utcnow() - dt.timedelta(minutes=1)
     for inbound_id in await asyncio.to_thread(channel_service.pending_inbound, stale):

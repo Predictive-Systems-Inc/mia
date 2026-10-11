@@ -370,6 +370,19 @@ def _enrol_link(code: str) -> str:
     return f"{get_settings().MIA_PUBLIC_URL.rstrip('/')}/auth/enrol/{code}"
 
 
+def schedule_generate(args: argparse.Namespace) -> int:
+    from mia.core import scheduling
+    from mia.core.db import session_scope
+    from mia.core.models import Actor, Branch
+
+    with session_scope() as session:
+        branch = session.get(Branch, _only_branch_id(session, args.branch))
+        assert branch is not None
+        new = scheduling.generate(session, Actor.system(branch.id), branch, days=args.days)
+    print(f"generated {len(new)} visit(s) for the next {args.days} days")
+    return 0
+
+
 def auth_bootstrap(args: argparse.Namespace) -> int:
     from mia.core import auth, people
     from mia.core.db import session_scope, utcnow
@@ -550,6 +563,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lang", default="fi", choices=["fi", "en"])
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=person_add)
+    sched = sub.add_parser("schedule", help="visits and assignments").add_subparsers(
+        dest="schedule_command", required=True
+    )
+    p = sched.add_parser("generate", help="create the missing visits from the job recurrences")
+    p.add_argument("--days", type=int, default=28)
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=schedule_generate)
     auth_p = sub.add_parser("auth", help="authentication").add_subparsers(
         dest="auth_command", required=True
     )

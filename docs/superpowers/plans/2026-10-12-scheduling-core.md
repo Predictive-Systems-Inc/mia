@@ -128,13 +128,22 @@ def test_generate_copies_the_last_assignee_when_eligible_else_unfilled(
     assert loc is not None
     job = store.insert(
         session,
-        Job(branch_id=branch.id, location_id=loc.id, name="New site", recurrence="FREQ=DAILY",
-            start_time="10:00", duration_minutes=60, required_skills=["general"]),
+        Job(
+            branch_id=branch.id,
+            location_id=loc.id,
+            name="New site",
+            recurrence="FREQ=DAILY",
+            start_time="10:00",
+            duration_minutes=60,
+            required_skills=["general"],
+        ),
         actor,
     )
     new = scheduling.generate(session, actor, branch, days=28)
     fresh = [v for v in new if v.job_id == job.id]
-    assert len(fresh) == 28 and all(v.status == "unfilled" and v.assigned_person_ids == [] for v in fresh)
+    assert len(fresh) == 28 and all(
+        v.status == "unfilled" and v.assigned_person_ids == [] for v in fresh
+    )
 
 
 def test_generate_skips_a_bad_rule_and_warns(
@@ -145,8 +154,14 @@ def test_generate_skips_a_bad_rule_and_warns(
     assert loc is not None
     store.insert(
         session,
-        Job(branch_id=branch.id, location_id=loc.id, name="Odd", recurrence="FREQ=MONTHLY",
-            start_time="10:00", duration_minutes=60),
+        Job(
+            branch_id=branch.id,
+            location_id=loc.id,
+            name="Odd",
+            recurrence="FREQ=MONTHLY",
+            start_time="10:00",
+            duration_minutes=60,
+        ),
         actor,
     )
     new = scheduling.generate(session, actor, branch, days=7)
@@ -289,7 +304,7 @@ def occurs_on(rule: str, anchor: dt.date, day: dt.date) -> bool:
         return (day - anchor).days % interval == 0
     if WEEKDAYS[day.weekday()] not in parts["BYDAY"].split(","):
         return False
-    week_of = lambda d: (d - dt.timedelta(days=d.weekday()))  # noqa: E731 - the Monday
+    week_of = lambda d: d - dt.timedelta(days=d.weekday())  # noqa: E731 - the Monday
     return ((week_of(day) - week_of(anchor)).days // 7) % interval == 0
 
 
@@ -438,15 +453,23 @@ def _visit(session: Session, branch: Branch, name: str, offset: int = 1) -> Visi
         start = scheduling.local_dt(day, job.start_time, branch.timezone)
         row = store.insert(
             session,
-            Visit(branch_id=branch.id, job_id=job.id, location_id=job.location_id, date=day,
-                  planned_start=start, planned_end=start + dt.timedelta(minutes=job.duration_minutes),
-                  status="unfilled"),
+            Visit(
+                branch_id=branch.id,
+                job_id=job.id,
+                location_id=job.location_id,
+                date=day,
+                planned_start=start,
+                planned_end=start + dt.timedelta(minutes=job.duration_minutes),
+                status="unfilled",
+            ),
             Actor.system(branch.id),
         )
     return row
 
 
-def test_assign_eligible_replaces_and_add_keeps(session: Session, branch: Branch, people: dict[str, Person]) -> None:
+def test_assign_eligible_replaces_and_add_keeps(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
     sanna = Actor.person(people["Sanna"])
     visit = _visit(session, branch, "Kamppi shop clean", offset=2)
     out = scheduling.assign(session, sanna, visit, people["Aino"])
@@ -459,7 +482,9 @@ def test_assign_eligible_replaces_and_add_keeps(session: Session, branch: Branch
     assert session.exec(select(Event).where(Event.action == "visit.assigned")).first()
 
 
-def test_assign_twice_is_a_no_op(session: Session, branch: Branch, people: dict[str, Person]) -> None:
+def test_assign_twice_is_a_no_op(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
     sanna = Actor.person(people["Sanna"])
     visit = _visit(session, branch, "Kamppi shop clean", offset=2)
     scheduling.assign(session, sanna, visit, people["Aino"])
@@ -485,36 +510,60 @@ def test_rule_breaking_assignment_needs_an_approval_then_applies(
     assert approval.evidence["person_id"] == people["Liisa"].id and approval.evidence["reasons"]
     with pytest.raises(approvals.ApprovalError):
         approvals.decide(session, approval.id, sanna, "approved", stepped_up_at=utcnow())
-    approvals.decide(session, approval.id, Actor.person(people["Helena"]), "approved", stepped_up_at=utcnow())
+    approvals.decide(
+        session, approval.id, Actor.person(people["Helena"]), "approved", stepped_up_at=utcnow()
+    )
     session.refresh(visit)
     assert visit.assigned_person_ids == [people["Liisa"].id] and visit.status == "planned"
 
 
-def test_assign_reasons_cover_each_rule(session: Session, branch: Branch, people: dict[str, Person]) -> None:
+def test_assign_reasons_cover_each_rule(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
     sanna = Actor.person(people["Sanna"])
     visit = _visit(session, branch, "Kamppi shop clean", offset=2)
     # Double-booked: Juha already has the same slot elsewhere? Give Aino the Kamppi slot, then
     # a second visit at the same time at Kalasatama.
     scheduling.assign(session, sanna, visit, people["Aino"])
     other = _visit(session, branch, "Kalasatama office clean", offset=2)
-    store.update(session, other, {"planned_start": visit.planned_start, "planned_end": visit.planned_end}, sanna)
+    store.update(
+        session,
+        other,
+        {"planned_start": visit.planned_start, "planned_end": visit.planned_end},
+        sanna,
+    )
     reasons = scheduling.ineligibility(session, branch, other, people["Aino"])
     assert any("double" in r or "booked" in r for r in reasons)
     # Skills: a job needing a skill the person lacks.
     store.update(session, other, {"required_skills": ["windows"]}, sanna)
-    assert any("skill" in r for r in scheduling.ineligibility(session, branch, other, people["Mikael"]))
+    assert any(
+        "skill" in r for r in scheduling.ineligibility(session, branch, other, people["Mikael"])
+    )
     # Absent: recorded through the dispatcher's table.
     from mia.agents.dispatcher.models import Absence
 
-    store.insert(session, Absence(branch_id=branch.id, person_id=people["Mikael"].id, date=other.date, reported_by=people["Mikael"].id), sanna)
-    assert any("absent" in r for r in scheduling.ineligibility(session, branch, other, people["Mikael"]))
+    store.insert(
+        session,
+        Absence(
+            branch_id=branch.id,
+            person_id=people["Mikael"].id,
+            date=other.date,
+            reported_by=people["Mikael"].id,
+        ),
+        sanna,
+    )
+    assert any(
+        "absent" in r for r in scheduling.ineligibility(session, branch, other, people["Mikael"])
+    )
     # Inactive people are never eligible.
     store.update(session, people["Mikael"], {"status": "inactive"}, sanna)
     with pytest.raises(scheduling.ScheduleError, match="not active"):
         scheduling.assign(session, sanna, other, people["Mikael"])
 
 
-def test_unassign_empties_to_unfilled(session: Session, branch: Branch, people: dict[str, Person]) -> None:
+def test_unassign_empties_to_unfilled(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
     sanna = Actor.person(people["Sanna"])
     visit = _visit(session, branch, "Kamppi shop clean", offset=2)
     scheduling.assign(session, sanna, visit, people["Aino"])
@@ -543,7 +592,9 @@ def _slot(session: Session, visit: Visit, tz: str) -> scoring.Slot:
     zone = ZoneInfo(tz)
     loc = session.get(Location, visit.location_id)
     where = (loc.lat, loc.lon) if loc and loc.lat is not None and loc.lon is not None else None
-    return scoring.Slot(visit.planned_start.astimezone(zone), visit.planned_end.astimezone(zone), where)
+    return scoring.Slot(
+        visit.planned_start.astimezone(zone), visit.planned_end.astimezone(zone), where
+    )
 
 
 def candidate_data(
@@ -577,7 +628,9 @@ def candidate_data(
     ]
     slots = {v.id: _slot(session, v, tz) for v in week_visits}
     past_here = session.exec(
-        select(Visit).where(Visit.location_id == visit.location_id).where(Visit.status == "completed")
+        select(Visit)
+        .where(Visit.location_id == visit.location_id)
+        .where(Visit.status == "completed")
     ).all()
     result = []
     for p in persons:
@@ -591,7 +644,9 @@ def candidate_data(
         }
         limit = session.exec(select(WorkLimit).where(WorkLimit.person_id == p.id)).first()
         absences = session.exec(select(Absence).where(Absence.person_id == p.id)).all()
-        home = (p.home_lat, p.home_lon) if p.home_lat is not None and p.home_lon is not None else None
+        home = (
+            (p.home_lat, p.home_lon) if p.home_lat is not None and p.home_lon is not None else None
+        )
         result.append(
             scoring.CandidateData(
                 person_id=p.id,
@@ -637,14 +692,20 @@ class Assignment:
     reasons: list[str]
 
 
-def _apply(session: Session, actor: Actor, visit: Visit, person: Person, add: bool, **kw: str | None) -> Visit:
+def _apply(
+    session: Session, actor: Actor, visit: Visit, person: Person, add: bool, **kw: str | None
+) -> Visit:
     ids = list(visit.assigned_person_ids) if add else []
     if person.id in ids:
         return visit
     ids.append(person.id)
     return store.update(
-        session, visit, {"assigned_person_ids": ids, "status": "planned"}, actor,
-        action="visit.assigned", approval_id=kw.get("approval_id"),
+        session,
+        visit,
+        {"assigned_person_ids": ids, "status": "planned"},
+        actor,
+        action="visit.assigned",
+        approval_id=kw.get("approval_id"),
     )
 
 
@@ -679,7 +740,12 @@ def assign(
             actor,
             OVERRIDE_ROLES,
             "app_only",
-            evidence={"person_id": person.id, "person": person.name, "reasons": reasons, "add": add},
+            evidence={
+                "person_id": person.id,
+                "person": person.name,
+                "reasons": reasons,
+                "add": add,
+            },
         )
         return Assignment(visit, approval.id, reasons)
     return Assignment(_apply(session, actor, visit, person, add), None, [])
@@ -692,7 +758,11 @@ def unassign(session: Session, actor: Actor, visit: Visit, person: Person) -> Vi
     ids = [i for i in visit.assigned_person_ids if i != person.id]
     status = visit.status if ids else "unfilled"
     return store.update(
-        session, visit, {"assigned_person_ids": ids, "status": status}, actor, action="visit.unassigned"
+        session,
+        visit,
+        {"assigned_person_ids": ids, "status": status},
+        actor,
+        action="visit.unassigned",
     )
 
 
@@ -702,7 +772,9 @@ def on_override_approved(session: Session, approval: Approval, decider: Actor) -
     person = session.get(Person, str(approval.evidence.get("person_id")))
     if visit is None or person is None or visit.status not in ("planned", "unfilled"):
         return
-    _apply(session, decider, visit, person, bool(approval.evidence.get("add")), approval_id=approval.id)
+    _apply(
+        session, decider, visit, person, bool(approval.evidence.get("add")), approval_id=approval.id
+    )
 
 
 approvals.register_handler(OVERRIDE_TYPE, on_override_approved)
@@ -763,7 +835,9 @@ def test_check_in_window(session: Session, branch: Branch, people: dict[str, Per
     assert {"visit.checked_in", "visit.checked_out"} <= actions
 
 
-def test_check_out_needs_in_progress(session: Session, branch: Branch, people: dict[str, Person]) -> None:
+def test_check_out_needs_in_progress(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
     juha = people["Juha"]
     visit = _visit(session, branch, "Kamppi shop clean", offset=1)
     scheduling.assign(session, Actor.person(people["Sanna"]), visit, juha)
@@ -789,10 +863,17 @@ def test_inbox_filters_by_role_and_escalation(
     from mia.core import approvals
 
     sanna, helena = Actor.person(people["Sanna"]), Actor.person(people["Helena"])
-    money = approvals.request(session, "payout", ("visit", "V"), "money", sanna, ["admin", "owner"], risk="money")
-    ops = approvals.request(session, "swap", ("visit", "V"), "swap", Actor.person(people["Juha"]), ["supervisor"])
+    money = approvals.request(
+        session, "payout", ("visit", "V"), "money", sanna, ["admin", "owner"], risk="money"
+    )
+    ops = approvals.request(
+        session, "swap", ("visit", "V"), "swap", Actor.person(people["Juha"]), ["supervisor"]
+    )
     assert [a.id for a in scheduling.inbox(session, sanna)] == [ops.id]
-    assert {a.id for a in scheduling.inbox(session, helena)} == {money.id, ops.id}  # owner outranks all
+    assert {a.id for a in scheduling.inbox(session, helena)} == {
+        money.id,
+        ops.id,
+    }  # owner outranks all
     # Escalated: the escalate_to roles see it too.
     store.update(session, ops, {"status": "escalated", "escalate_to": ["owner"]}, sanna)
     assert ops.id in {a.id for a in scheduling.inbox(session, helena)}
@@ -810,7 +891,9 @@ Expected: AttributeError `check_in`.
 # ---- check-in and check-out ------------------------------------------------------------
 
 
-def check_in(session: Session, actor: Actor, visit: Visit, person: Person, now: dt.datetime) -> Visit:
+def check_in(
+    session: Session, actor: Actor, visit: Visit, person: Person, now: dt.datetime
+) -> Visit:
     """Mark the visit in progress for an assigned person, from 2 hours before the planned
     start until 4 hours after the planned end."""
     if person.id not in visit.assigned_person_ids:
@@ -822,18 +905,28 @@ def check_in(session: Session, actor: Actor, visit: Visit, person: Person, now: 
     if now > visit.planned_end + CHECK_IN_LATE:
         raise ScheduleError("too late to check in")
     return store.update(
-        session, visit, {"actual_start": now, "status": "in_progress"}, actor, action="visit.checked_in"
+        session,
+        visit,
+        {"actual_start": now, "status": "in_progress"},
+        actor,
+        action="visit.checked_in",
     )
 
 
-def check_out(session: Session, actor: Actor, visit: Visit, person: Person, now: dt.datetime) -> Visit:
+def check_out(
+    session: Session, actor: Actor, visit: Visit, person: Person, now: dt.datetime
+) -> Visit:
     """Complete a visit in progress for an assigned person."""
     if person.id not in visit.assigned_person_ids:
         raise ScheduleError("person is not assigned to this visit")
     if visit.status != "in_progress":
         raise ScheduleError(f"visit is {visit.status}")
     return store.update(
-        session, visit, {"actual_end": now, "status": "completed"}, actor, action="visit.checked_out"
+        session,
+        visit,
+        {"actual_end": now, "status": "completed"},
+        actor,
+        action="visit.checked_out",
     )
 
 
@@ -940,13 +1033,25 @@ def _visit_id(session: Session, branch: Branch, offset: int = 2) -> str:
     return row.id
 
 
-def test_week_view_and_permissions(client: TestClient, session: Session, branch: Branch, people: dict[str, Person], login) -> None:  # type: ignore[no-untyped-def]
+def test_week_view_and_permissions(
+    client: TestClient, session: Session, branch: Branch, people: dict[str, Person], login
+) -> None:  # type: ignore[no-untyped-def]
     login(client, people["Juha"])
     res = client.get("/schedule")
     assert res.status_code == 200
     cards = res.json()
     assert cards and all(people["Juha"].id in [a["id"] for a in c["assignees"]] for c in cards)
-    assert {"id", "date", "start", "end", "job", "location", "address", "assignees", "status"} <= set(cards[0])
+    assert {
+        "id",
+        "date",
+        "start",
+        "end",
+        "job",
+        "location",
+        "address",
+        "assignees",
+        "status",
+    } <= set(cards[0])
     assert client.get(f"/schedule?person_id={people['Aino'].id}").status_code == 403
     sup = TestClient(app)
     login(sup, people["Sanna"])
@@ -955,10 +1060,15 @@ def test_week_view_and_permissions(client: TestClient, session: Session, branch:
     assert sup.get("/schedule?start=2026-13-01").status_code == 422
 
 
-def test_assign_unassign_and_override_over_http(client: TestClient, session: Session, branch: Branch, people: dict[str, Person], login) -> None:  # type: ignore[no-untyped-def]
+def test_assign_unassign_and_override_over_http(
+    client: TestClient, session: Session, branch: Branch, people: dict[str, Person], login
+) -> None:  # type: ignore[no-untyped-def]
     visit_id = _visit_id(session, branch)
     login(client, people["Juha"])
-    assert client.post(f"/visits/{visit_id}/assign", json={"person_id": people["Aino"].id}).status_code == 403
+    assert (
+        client.post(f"/visits/{visit_id}/assign", json={"person_id": people["Aino"].id}).status_code
+        == 403
+    )
     sup = TestClient(app)
     login(sup, people["Sanna"])
     res = sup.post(f"/visits/{visit_id}/assign", json={"person_id": people["Aino"].id})
@@ -969,16 +1079,33 @@ def test_assign_unassign_and_override_over_http(client: TestClient, session: Ses
     admin = TestClient(app)
     login(admin, people["Helena"], stepped_up=True)
     inbox = admin.get("/approvals").json()
-    assert [a["id"] for a in inbox] == [res.json()["approval_id"]] and inbox[0]["type"] == "schedule.assignment_override"
-    assert admin.post(f"/approvals/{inbox[0]['id']}/decide", json={"outcome": "approved"}).status_code == 200
-    assert [a["id"] for a in sup.get(f"/schedule?person_id={people['Liisa'].id}").json()[0]["assignees"]] == [people["Liisa"].id]
-    assert sup.post(f"/visits/{visit_id}/unassign", json={"person_id": people["Liisa"].id}).status_code == 200
+    assert [a["id"] for a in inbox] == [res.json()["approval_id"]] and inbox[0][
+        "type"
+    ] == "schedule.assignment_override"
+    assert (
+        admin.post(f"/approvals/{inbox[0]['id']}/decide", json={"outcome": "approved"}).status_code
+        == 200
+    )
+    assert [
+        a["id"] for a in sup.get(f"/schedule?person_id={people['Liisa'].id}").json()[0]["assignees"]
+    ] == [people["Liisa"].id]
+    assert (
+        sup.post(f"/visits/{visit_id}/unassign", json={"person_id": people["Liisa"].id}).status_code
+        == 200
+    )
     res = sup.post(f"/visits/{visit_id}/unassign", json={"person_id": people["Liisa"].id})
     assert res.status_code == 409 and "not assigned" in res.json()["detail"]
     assert sup.post("/visits/nope/assign", json={"person_id": people["Aino"].id}).status_code == 404
 
 
-def test_check_in_and_out_over_http(client: TestClient, session: Session, branch: Branch, people: dict[str, Person], login, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+def test_check_in_and_out_over_http(
+    client: TestClient,
+    session: Session,
+    branch: Branch,
+    people: dict[str, Person],
+    login,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # type: ignore[no-untyped-def]
     visit_id = _visit_id(session, branch, offset=1)
     from mia.core.models import Visit as V
 
@@ -1081,7 +1208,10 @@ def _person(ctx: AuthContext) -> Person:
 def _require(session: Session, ctx: AuthContext, action: str, owner_id: str | None) -> None:
     try:
         get_rbac().require(
-            ctx.actor, Resource(kind="data", name="core.visit", owner_id=owner_id), action, session=session
+            ctx.actor,
+            Resource(kind="data", name="core.visit", owner_id=owner_id),
+            action,
+            session=session,
         )
     except PermissionDenied as exc:
         raise HTTPException(403, "not allowed") from exc
@@ -1157,7 +1287,9 @@ def assign(session: DbSession, ctx: PersonAuth, visit_id: str, body: AssignIn) -
     except scheduling.ScheduleError as exc:
         raise HTTPException(409, str(exc)) from exc
     tz = _branch(session, ctx).timezone
-    return AssignOut(visit=_card(session, out.visit, tz), approval_id=out.approval_id, reasons=out.reasons)
+    return AssignOut(
+        visit=_card(session, out.visit, tz), approval_id=out.approval_id, reasons=out.reasons
+    )
 
 
 @router.post("/visits/{visit_id}/unassign", response_model=VisitCard)
@@ -1173,7 +1305,9 @@ def unassign(session: DbSession, ctx: PersonAuth, visit_id: str, body: AssignIn)
     return _card(session, row, _branch(session, ctx).timezone)
 
 
-def _attendance(session: Session, ctx: AuthContext, visit_id: str, body: PersonIn | None, fn: str) -> VisitCard:
+def _attendance(
+    session: Session, ctx: AuthContext, visit_id: str, body: PersonIn | None, fn: str
+) -> VisitCard:
     visit = _visit(session, ctx, visit_id)
     me = _person(ctx)
     person = _target(session, ctx, body.person_id) if body and body.person_id else me
@@ -1188,13 +1322,17 @@ def _attendance(session: Session, ctx: AuthContext, visit_id: str, body: PersonI
 
 
 @router.post("/visits/{visit_id}/check-in", response_model=VisitCard)
-def check_in(session: DbSession, ctx: PersonAuth, visit_id: str, body: PersonIn | None = None) -> VisitCard:
+def check_in(
+    session: DbSession, ctx: PersonAuth, visit_id: str, body: PersonIn | None = None
+) -> VisitCard:
     """The acting person (or, for the office, `person_id`) arrives at the site."""
     return _attendance(session, ctx, visit_id, body, "check_in")
 
 
 @router.post("/visits/{visit_id}/check-out", response_model=VisitCard)
-def check_out(session: DbSession, ctx: PersonAuth, visit_id: str, body: PersonIn | None = None) -> VisitCard:
+def check_out(
+    session: DbSession, ctx: PersonAuth, visit_id: str, body: PersonIn | None = None
+) -> VisitCard:
     """The visit is finished."""
     return _attendance(session, ctx, visit_id, body, "check_out")
 
@@ -1204,8 +1342,15 @@ def approvals_inbox(session: DbSession, ctx: PersonAuth) -> list[ApprovalCard]:
     """The approvals the signed-in person may decide, oldest first."""
     return [
         ApprovalCard(
-            id=a.id, type=a.type, summary=a.summary, evidence=a.evidence, requester_id=a.requester_id,
-            created_at=a.created_at, expires_at=a.expires_at, status=a.status, channel=a.channel,
+            id=a.id,
+            type=a.type,
+            summary=a.summary,
+            evidence=a.evidence,
+            requester_id=a.requester_id,
+            created_at=a.created_at,
+            expires_at=a.expires_at,
+            status=a.status,
+            channel=a.channel,
         )
         for a in scheduling.inbox(session, ctx.actor)
     ]
