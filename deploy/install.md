@@ -81,6 +81,10 @@ within 24 hours to set the password and the authenticator app:
 docker compose exec node mia auth bootstrap --email owner@example.fi
 ```
 
+One-time enrolment and login links carry their token in the URL path, so they appear in
+access logs until used (minutes). Keep uvicorn's access log off on a server (the image does)
+and do not forward Cloudflare request logs for `/auth/` paths anywhere they outlive the link.
+
 Later: `mia auth reset NAME` (a locked-out person), `mia auth unlock LOGIN`, `mia auth link NAME`
 (a one-time login link over WhatsApp), `mia auth client add NAME --role ROLE` (an outside agent
 or service, credentials shown once).

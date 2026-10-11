@@ -153,7 +153,10 @@ def current_auth(request: Request, session: DbSession) -> AuthContext:
         raise HTTPException(401, auth.INVALID)
     if row.subject_type == "client":
         client = session.get(AuthClient, row.subject_id)
-        if client is None or client.status != "active":
+        expired = (
+            client is not None and client.expires_at is not None and client.expires_at <= utcnow()
+        )
+        if client is None or client.status != "active" or expired:
             raise HTTPException(401, auth.INVALID)
         return AuthContext(
             actor=auth.client_actor(client),

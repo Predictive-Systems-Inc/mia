@@ -56,6 +56,8 @@ def master_key() -> bytes:
             mode = path.stat().st_mode
         except FileNotFoundError as exc:
             raise MasterKeyError(f"master key file not found: {path}") from exc
+        if not path.is_file():
+            raise MasterKeyError(f"{path} is not a file (a missing bind mount becomes a folder)")
         if mode & 0o077:
             raise MasterKeyError(f"{path} is readable by group or others; chmod 400 it")
         data = path.read_bytes()

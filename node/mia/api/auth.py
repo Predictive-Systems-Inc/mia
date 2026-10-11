@@ -8,6 +8,8 @@ everything else gets bearer tokens. Every failure is 401 `invalid credentials`.
 import asyncio
 import base64
 import html
+import re
+from datetime import datetime
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -87,6 +89,17 @@ def _invalid() -> HTTPException:
     return HTTPException(401, auth.INVALID)
 
 
+RECOVERY_SHAPE = re.compile(r"\d{4}-\d{4}")
+
+
+def _use_or_401(session: Session, actor: Actor, row: AuthCode, now: datetime) -> None:
+    """Consume a single-use code; the loser of a race gets 401, not 500."""
+    try:
+        auth.use_code(session, actor, row, now)
+    except auth.AuthError:
+        raise _invalid() from None
+
+
 def _office_credentials_allowed(ctx: AuthContext) -> None:
     """Setting a password or enrolling TOTP needs an office-grade session (aal2, an enrolment
     link, or a password login that is enrolling its first factor). A phone or device session
@@ -131,14 +144,15 @@ def mfa(request: Request, response: Response, session: DbSession, body: MfaIn) -
     key = auth.attempt_key(person.id, ip)  # per person, so fresh tokens do not reset the count
     if auth.throttled(session, "mfa", key, now):
         raise _invalid()
-    ok = auth.check_totp(session, person, body.code, now) or auth.check_recovery(
-        session, actor, person, body.code, now
+    ok = auth.check_totp(session, person, body.code, now) or (
+        RECOVERY_SHAPE.fullmatch(body.code) is not None
+        and auth.check_recovery(session, actor, person, body.code, now)
     )
     auth.record_attempt(session, "mfa", key, ok, now, actor=actor)
     if not ok:
         auth.fail_code(session, "mfa", now, person_id=person.id)
         raise _invalid()
-    auth.use_code(session, actor, found.row, now)
+    _use_or_401(session, actor, found.row, now)
     auth.unlock_pin(session, actor, person, now)
     tokens = auth.issue_session(session, person, method="password_totp", aal="aal2", ip=ip, now=now)
     return _tokens_response(request, response, tokens)
@@ -288,7 +302,7 @@ def enrol(request: Request, response: Response, session: DbSession, code: str) -
     person = session.get(Person, found.row.person_id)
     if person is None or person.status != "active":
         raise _invalid()
-    auth.use_code(session, Actor.person(person), found.row, now)
+    _use_or_401(session, Actor.person(person), found.row, now)
     tokens = auth.issue_session(
         session, person, method="enrol", aal="enrol", ip=client_ip(request), now=now
     )
@@ -402,7 +416,7 @@ def link_login(request: Request, response: Response, session: DbSession, code: s
     person, row = found
     now, ip = utcnow(), client_ip(request)
     actor = Actor.person(person)
-    auth.use_code(session, actor, row, now)
+    _use_or_401(session, actor, row, now)
     agent = request.headers.get("user-agent", "browser")[:80]
     device, _ = auth.bind_device(session, actor, person, "browser", agent, now)
     tokens = auth.issue_session(
@@ -439,15 +453,18 @@ def set_pin(session: DbSession, ctx: PersonAuth, body: PinIn) -> dict[str, bool]
 def stepup(request: Request, session: DbSession, ctx: PersonAuth, body: PinIn) -> dict[str, bool]:
     """Enter the PIN: the session counts as stepped up for five minutes."""
     now = utcnow()
+    row = session.get(AuthSession, ctx.session_id) if ctx.session_id else None
+    if row is None:
+        raise HTTPException(403, "no session to step up")
+    device = session.get(AuthDevice, row.device_id) if row.device_id else None
+    if row.aal != "aal2" and not (device is not None and device.kind == "mobile"):
+        raise HTTPException(403, "step-up needs an MFA login or a bound device")
     try:
         ok = auth.check_pin(session, _person(ctx), body.pin, client_ip(request), now)
     except auth.Locked:
         raise HTTPException(401, "pin locked") from None
     if not ok:
         raise _invalid()
-    row = session.get(AuthSession, ctx.session_id) if ctx.session_id else None
-    if row is None:
-        raise HTTPException(403, "no session to step up")
     auth.step_up(session, row, now)
     return {"stepped_up": True}
 

@@ -331,3 +331,58 @@ def test_refresh_rotation_is_single_use_under_a_race(
     row = session.get(auth.AuthSession, t.row.id)
     assert row is not None and row.status == "revoked"
     assert session.exec(select(Event).where(Event.action == "auth.refresh_reused")).first()
+
+
+def test_enrol_sessions_have_no_refresh_and_end_with_the_link(
+    session: Session, people: dict[str, Person]
+) -> None:
+    now = utcnow()
+    t = auth.issue_session(session, people["Helena"], method="enrol", aal="enrol", ip=IP, now=now)
+    assert t.refresh is None and t.row.refresh_hash is None
+    assert t.row.absolute_expires_at == now + auth.CODE_TTL["enrol"]
+
+
+def test_client_token_dies_with_the_client_expiry(
+    client: TestClient, session: Session, people: dict[str, Person]
+) -> None:
+    helena = Actor.person(people["Helena"])
+    now = utcnow()
+    row, _secret = auth.create_client(
+        session, helena, "x", ["dispatcher"], now, expires_at=now + dt.timedelta(minutes=1)
+    )
+    t = auth.issue_session(session, row, method="client", aal="client", ip=IP, now=now)
+    session.commit()
+    assert (
+        client.get("/auth/me", headers={"Authorization": f"Bearer {t.access}"}).status_code == 200
+    )
+    from mia.core import store
+
+    store.update(session, row, {"expires_at": now - dt.timedelta(seconds=1)}, helena)
+    session.commit()
+    assert (
+        client.get("/auth/me", headers={"Authorization": f"Bearer {t.access}"}).status_code == 401
+    )
+
+
+def test_dev_header_actor_can_decide_app_only_approvals(
+    client: TestClient, session: Session, people: dict[str, Person]
+) -> None:
+    """Dev mode has no session to step up; loopback dev counts as stepped up."""
+    from mia.core import approvals
+
+    row = approvals.request(
+        session,
+        "dispatcher.cover_override",
+        ("visit", "V"),
+        "x",
+        Actor.person(people["Sanna"]),
+        ["admin"],
+        "app_only",
+    )
+    session.commit()
+    res = client.post(
+        f"/approvals/{row.id}/decide",
+        json={"outcome": "approved"},
+        headers={"X-Mia-Actor": people["Helena"].id},
+    )
+    assert res.status_code == 200, res.text

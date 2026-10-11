@@ -169,3 +169,25 @@ def test_use_code_is_single_use_across_sessions(
         a.commit()
         with pytest.raises(auth.AuthError):
             auth.use_code(b, actor, rb.row, now)
+
+
+def test_phone_normalisation_keeps_local_zero_and_drops_the_international_prefix() -> None:
+    assert auth.normalise_phone("+358 40 123 4567") == "358401234567"
+    assert auth.normalise_phone("00358401234567") == "358401234567"
+    assert auth.normalise_phone("0401234567") == "0401234567"  # a local number is not E.164
+
+
+def test_master_key_path_that_is_a_directory_is_a_master_key_error(
+    tmp_path: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pathlib import Path
+
+    from mia.settings import get_settings
+
+    folder = Path(str(tmp_path)) / "master.key.d"
+    folder.mkdir()
+    monkeypatch.setenv("MIA_MASTER_KEY_FILE", str(folder))
+    get_settings.cache_clear()
+    keys.reset_cache()
+    with pytest.raises(keys.MasterKeyError, match="not a file"):
+        keys.master_key()

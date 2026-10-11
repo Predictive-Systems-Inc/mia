@@ -155,8 +155,9 @@ def decide(
             body.outcome,
             body.reason,
             channel=auth.channel,
-            aal=auth.aal,
-            stepped_up_at=auth.stepped_up_at,
+            aal="aal2" if auth.via == "header" else auth.aal,
+            # Dev mode has no session to step up; the loopback header counts as fresh.
+            stepped_up_at=utcnow() if auth.via == "header" else auth.stepped_up_at,
         )
     except approvals.StepUpRequired as exc:
         raise HTTPException(403, "step_up_required") from exc

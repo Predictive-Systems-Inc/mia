@@ -87,3 +87,16 @@ def test_staff_device_steps_up_to_aal2(
     assert client.get("/auth/me").json()["aal"] == "aal1"
     client.post("/auth/stepup", json={"pin": "273916"})
     assert client.get("/auth/me").json()["aal"] == "aal2"
+
+
+def test_browser_link_session_cannot_step_up(
+    client: TestClient, session: Session, people: dict[str, Person], login
+) -> None:  # type: ignore[no-untyped-def]
+    """A wa_link session on a browser device never reaches aal2: say so instead of looping."""
+    juha = people["Juha"]
+    auth.set_pin(session, Actor.person(juha), juha, "273916", utcnow())
+    browser, _ = auth.bind_device(session, Actor.person(juha), juha, "browser", "Safari", utcnow())
+    session.commit()
+    login(client, juha, aal="aal1", method="wa_link", device=browser)
+    res = client.post("/auth/stepup", json={"pin": "273916"})
+    assert res.status_code == 403 and "bound device" in res.json()["detail"]

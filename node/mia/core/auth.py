@@ -217,6 +217,9 @@ def create_code(
     while True:
         code = keys.new_token() if token else keys.numeric_code()
         digest = keys.code_hmac(code)
+        # code_hmac is unique in the table (used rows included), so a code is never reissued.
+        # ponytail: with 6-digit codes the loop slows as the table fills; prune old codes
+        # before that matters.
         if session.exec(select(AuthCode).where(AuthCode.code_hmac == digest)).first() is None:
             break
     store.insert(
@@ -672,9 +675,13 @@ def issue_session(
     lifetimes on a bound mobile device); clients get one hour and no refresh. The event is
     `auth.login_succeeded` (`auth.client_token_issued` for clients)."""
     person = isinstance(subject, Person)
-    access, refresh = keys.new_token(), keys.new_token() if person else None
+    enrol = aal == "enrol"
+    access = keys.new_token()
+    refresh = keys.new_token() if person and not enrol else None
     mobile = device is not None and device.kind == "mobile"
     idle, longest = (STAFF_IDLE, STAFF_MAX) if mobile else (OFFICE_IDLE, OFFICE_MAX)
+    if enrol:  # an enrolment session ends with its link
+        idle = longest = CODE_TTL["enrol"]
     row = AuthSession(
         branch_id=subject.branch_id,
         subject_type="person" if person else "client",
@@ -919,8 +926,10 @@ OTP_TEMPLATE = "mia_login_code"
 
 
 def normalise_phone(phone: str) -> str:
-    """Digits only, without leading zeros or a plus (E.164 digits, like channel addresses)."""
-    return "".join(c for c in phone if c.isdigit()).lstrip("0")
+    """Digits only, like channel addresses: `+358 40 ...` and `00358...` become `358...`; a
+    local number keeps its leading zero (and will not match an identity)."""
+    digits = "".join(c for c in phone if c.isdigit())
+    return digits.removeprefix("00")
 
 
 def _person_for_address(session: Session, address: str) -> Person | None:
@@ -975,7 +984,6 @@ def send_otp(session: Session, phone: str, now: dt.datetime) -> None:
         template=TemplateCall(name=OTP_TEMPLATE, lang=person.language, params=[code]),
         urgent=True,
         now=now,
-        redact=True,
     )
     events.emit(session, "auth.otp_sent", person, None, {"address": address}, actor)
 
@@ -1017,7 +1025,6 @@ def send_login_link(session: Session, actor: Actor, person: Person, now: dt.date
         kind="otp",
         urgent=True,
         now=now,
-        redact=True,
     )
     events.emit(session, "auth.link_sent", person, None, None, actor)
     return url

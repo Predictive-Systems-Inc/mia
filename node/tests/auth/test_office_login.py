@@ -309,3 +309,41 @@ def test_non_ascii_code_is_refused_not_a_crash(
     assert res.status_code == 401
     session.expire_all()
     assert session.exec(select(Event).where(Event.action == "auth.mfa_failed")).first()
+
+
+def test_lost_single_use_race_answers_401_not_500(
+    client: TestClient, session: Session, owner: Person, login, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    login(client, owner)
+    _enrol(client, session, owner)
+    client.headers.pop("Authorization")
+    token = client.post("/auth/login", json={"email": EMAIL, "password": PW}).json()["mfa_token"]
+
+    def lost(*args: object, **kwargs: object) -> object:
+        raise auth.AuthError(auth.INVALID)
+
+    monkeypatch.setattr(auth, "use_code", lost)
+    res = client.post("/auth/mfa", json={"mfa_token": token, "code": _totp_now(session, owner)})
+    assert res.status_code == 401
+
+
+def test_recovery_codes_are_tried_only_for_their_shape(
+    client: TestClient, session: Session, owner: Person, login, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    login(client, owner)
+    recovery = _enrol(client, session, owner)
+    client.headers.pop("Authorization")
+    calls: list[str] = []
+    real = auth.check_recovery
+
+    def spy(session_: Session, actor: Actor, person: Person, code: str, now: object) -> bool:
+        calls.append(code)
+        return real(session_, actor, person, code, now)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(auth, "check_recovery", spy)
+    token = client.post("/auth/login", json={"email": EMAIL, "password": PW}).json()["mfa_token"]
+    client.post("/auth/mfa", json={"mfa_token": token, "code": "000000"})
+    assert calls == []  # six digits: TOTP only, no ten scrypt runs
+    token = client.post("/auth/login", json={"email": EMAIL, "password": PW}).json()["mfa_token"]
+    res = client.post("/auth/mfa", json={"mfa_token": token, "code": recovery[0]})
+    assert res.status_code == 200 and calls == [recovery[0]]
