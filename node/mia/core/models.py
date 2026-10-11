@@ -372,6 +372,9 @@ class ChannelInbound(Stamped, table=True):
     """One inbound channel message, unique per channel message id (Meta resends webhooks)."""
 
     __tablename__: ClassVar[str] = "channel_inbound"
+    # The body is replayable channel data (text goes to messages, a shared location is dropped
+    # once handled); it never enters the append-only events.
+    __redact__: ClassVar[frozenset[str]] = frozenset({"body"})
     __table_args__ = (UniqueConstraint("channel", "channel_message_id"),)
 
     channel: str
