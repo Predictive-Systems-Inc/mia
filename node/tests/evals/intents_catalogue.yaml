@@ -176,7 +176,7 @@ intents:
   system_of_record: Mia
   country: both
   phase: 1
-  built: 'no'
+  built: 'yes'
 - id: dispatcher.check_out
   agent: dispatcher
   process: Service-to-Cash
@@ -194,7 +194,7 @@ intents:
   system_of_record: Mia
   country: both
   phase: 1
-  built: 'no'
+  built: 'yes'
 - id: dispatcher.cannot_access_site
   agent: dispatcher
   process: Contract-to-Service
@@ -247,7 +247,7 @@ intents:
   system_of_record: Mia
   country: both
   phase: 1
-  built: 'no'
+  built: 'yes'
 - id: dispatcher.checklist
   agent: dispatcher
   process: Contract-to-Service

@@ -60,6 +60,9 @@ Remaining work in this order, because each step unblocks the next:
    the board (apps project, Q19) and timesheets (Q20).
 5. **Field work over WhatsApp** (Sprint 3, D20): check-in and check-out, checklists and photos
    over WhatsApp; no mobile app. Needs Hype's agreement, since the proposal promised an app.
+   Check-in, check-out and visit details (address, instructions, access notes, checklist)
+   work over chat since 2026-10-12 (docs/superpowers/specs/2026-10-12-field-work-chat-design.md);
+   open: location sharing as check-in, photos, ticking checklist items, the missed-check-in alert.
 6. **Alerts, billing export, rollout** (Sprint 5).
 
 Sprint numbers keep their order and milestones; hour figures are removed (D24).

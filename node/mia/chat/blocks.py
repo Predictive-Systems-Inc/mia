@@ -26,6 +26,7 @@ class CardBlock(BaseModel):
     title: str
     subtitle: str | None = None
     fields: list[CardField] = Field(default_factory=list)
+    sensitive: bool = False  # access notes and the like: a link, not plain text, on channels
 
 
 class ApprovalCardBlock(BaseModel):

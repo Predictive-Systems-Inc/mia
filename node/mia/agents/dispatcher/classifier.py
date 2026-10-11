@@ -18,6 +18,9 @@ IntentName = Literal[
     "find_cover",
     "assign",
     "cover_reply",
+    "check_in",
+    "check_out",
+    "visit_details",
     "other",
 ]
 
@@ -74,6 +77,21 @@ COVER = re.compile(
 )
 ASSIGN = re.compile(
     r"^\W*(assign|give it to|valitse|anna|laita)\s+(?P<name>[\wÄÖÅäöå-]+)", re.IGNORECASE
+)
+CHECK_IN = re.compile(
+    r"\b(i'?ve arrived|i have arrived|arrived|i'?m here|i am here|at the site|checking in|"
+    r"check in|olen perillä|perillä|olen paikalla|paikalla|saavuin|aloitan)\b",
+    re.IGNORECASE,
+)
+CHECK_OUT = re.compile(
+    r"\b(i'?m done|all done|done here|finished|checking out|check out|leaving now|"
+    r"valmis|valmista|lähden|lopetin|tehty)\b",
+    re.IGNORECASE,
+)
+DETAILS = re.compile(
+    r"\b(door code|address|instructions|where is|how do i get in|ovikoodi|osoite|ohjeet|"
+    r"ohje|missä on|miten pääsen)\b",
+    re.IGNORECASE,
 )
 VISITS = re.compile(
     r"\b(visits?|schedule|shifts?|rota|käyn\w*|vuor\w*|työvuor\w*|aikataulu\w*)\b",
@@ -172,6 +190,12 @@ def _capitalised_words(text: str) -> list[str]:
     return [w for w in words if w.lower() not in STOP_WORDS]
 
 
+def _place(text: str) -> str | None:
+    """A capitalised site name in the message (not the first word of the sentence)."""
+    words = _capitalised_words(text[1:]) if text[:1].isupper() else _capitalised_words(text)
+    return words[-1] if words else None
+
+
 def classify(text: str, today: dt.date, default_lang: str = "en") -> Intent:
     """Classify one message. Deterministic; unit tested in tests/test_classifier.py."""
     lang = detect_language(text, default_lang)
@@ -207,6 +231,12 @@ def classify(text: str, today: dt.date, default_lang: str = "en") -> Intent:
             reason=reason,
             partial_day="morning" if reason == "late" else None,
         )
+    if CHECK_OUT.search(text):
+        return Intent(name="check_out", lang=lang, location_hint=_place(text))
+    if CHECK_IN.search(text):
+        return Intent(name="check_in", lang=lang, location_hint=_place(text))
+    if DETAILS.search(text):
+        return Intent(name="visit_details", lang=lang, location_hint=_place(text))
     if VISITS.search(text):
         person = None
         if (m := POSSESSIVE_EN.search(text)) or (m := POSSESSIVE_FI.search(text)):

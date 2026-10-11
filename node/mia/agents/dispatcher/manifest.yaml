@@ -17,6 +17,10 @@ roles:
     - tool:dispatcher.find_replacements:execute
     - tool:dispatcher.assign_cover:execute
     - tool:dispatcher.respond_to_cover:execute
+    - tool:dispatcher.check_in:execute
+    - tool:dispatcher.check_out:execute
+    - tool:dispatcher.visit_details:execute
+    - data:core.visit:write
   denies: [tool:*:approve]
   # An explicit instruction is the approval (decision D1). Approvals are needed only when no
   # rule allows the instruction (cover override) or for money, external and delete tools.
@@ -27,4 +31,7 @@ tools:
   - {id: dispatcher.find_replacements, kind: agent, risk: read, approval: never, reads: [visit, person, location, availability, work_limits, dispatcher_absences]}
   - {id: dispatcher.assign_cover, kind: agent, risk: write_internal, approval: never, reads: [visit, person, availability, work_limits, dispatcher_absences], writes: [dispatcher_cover_requests, chat_messages, approval]}
   - {id: dispatcher.respond_to_cover, kind: agent, risk: write_internal, approval: never, reads: [dispatcher_cover_requests], writes: [visit, dispatcher_cover_requests, chat_messages]}
+  - {id: dispatcher.check_in, kind: agent, risk: write_internal, approval: never, reads: [visit, location], writes: [visit]}
+  - {id: dispatcher.check_out, kind: agent, risk: write_internal, approval: never, reads: [visit, location], writes: [visit]}
+  - {id: dispatcher.visit_details, kind: agent, risk: read, approval: never, reads: [visit, location, job, cleaning_checklists]}
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.95}

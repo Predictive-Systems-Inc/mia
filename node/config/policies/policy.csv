@@ -16,6 +16,9 @@ p, staff, *, data:dispatcher_absences, write_own, allow
 p, staff, *, tool:dispatcher.get_my_visits, execute, allow
 p, staff, *, tool:dispatcher.record_absence, execute, allow
 p, staff, *, tool:dispatcher.respond_to_cover, execute, allow
+p, staff, *, tool:dispatcher.check_in, execute, allow
+p, staff, *, tool:dispatcher.check_out, execute, allow
+p, staff, *, tool:dispatcher.visit_details, execute, allow
 p, staff, *, data:core.visit, write_own, allow
 p, staff, *, data:core.auth_devices, read_own, allow
 p, staff, *, data:core.auth_devices, write_own, allow

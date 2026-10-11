@@ -55,11 +55,11 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | dispatcher.missed_check_in | - | No check-in some minutes after a visit starts: ask the cleaner, alert the supervisor | - | event | write | p | - | n | Mia | both | 1 | no | C2S |
 | dispatcher.unstaffed_visits | - | Daily check for tomorrow's visits without a cleaner | - | sched | read | n | - | n | Mia | both | 1 | no | C2S |
 | dispatcher.daily_plan | - | Evening message to each cleaner with tomorrow's visits | - | sched | write | p | - | n | Mia | both | 1 | no | C2S |
-| dispatcher.check_in | I've arrived | Cleaner says they arrived at the site (or shares location) | C | msg, event | write | p | - | n | Mia | both | 1 | no | C2S |
-| dispatcher.check_out | I'm done here | Cleaner says the visit is finished and they are leaving | C | msg, event | write | p | - | n | Mia | both | 1 | no | S2C |
+| dispatcher.check_in | I've arrived | Cleaner says they arrived at the site (or shares location) | C | msg, event | write | p | - | n | Mia | both | 1 | yes | C2S |
+| dispatcher.check_out | I'm done here | Cleaner says the visit is finished and they are leaving | C | msg, event | write | p | - | n | Mia | both | 1 | yes | S2C |
 | dispatcher.cannot_access_site | Can't get in | Cleaner is at a site and cannot get in physically (locked door, no key, wrong door code, alarm). Logging in to Mia is admin.reset_login | C | msg | write | n | - | n | Mia | both | 1 | no | C2S |
 | dispatcher.site_problem | Problem at the site | Site conditions stop or change the work (no water or power, renovation, event, client still there) | C | msg | write | n | - | n | Mia | both | 1 | no | C2S |
-| dispatcher.visit_details | Job details | Ask practical details of a visit: address, door code, where things are, special instructions | C | msg | read | p | - | n | Mia | both | 1 | no | C2S |
+| dispatcher.visit_details | Job details | Ask practical details of a visit: address, door code, where things are, special instructions | C | msg | read | p | - | n | Mia | both | 1 | yes | C2S |
 | dispatcher.checklist | My checklist | Ask for or tick off the visit checklist | C | msg | write | n | - | n | Mia | both | 1 | no | C2S |
 | dispatcher.send_photos | Send photos | Send before or after photos as proof of work | C | msg | write | p | - | n | Mia | both | 1 | no | C2S |
 | dispatcher.extra_time | Need more time | Ask to stay longer than planned to finish the job | C | msg | write | n | supervisor | n | Mia | both | 2 | no | S2C |

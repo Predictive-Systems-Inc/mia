@@ -83,3 +83,28 @@ def test_language_is_the_majority_not_the_first_finnish_letter() -> None:
     """Finnish places and names in an English sentence do not make it Finnish."""
     assert detect_language("I'm sick, can't do the Töölö visit with Mäkinen", "fi") == "en"
     assert detect_language("Olen kipeä, en pääse Töölöön", "en") == "fi"
+
+
+@pytest.mark.parametrize(
+    ("text", "intent", "lang"),
+    [
+        ("Olen perillä", "check_in", "fi"),
+        ("Olen paikalla Kampissa", "check_in", "fi"),
+        ("I've arrived at Kalasatama", "check_in", "en"),
+        ("I'm here", "check_in", "en"),
+        ("Valmis, lähden nyt", "check_out", "fi"),
+        ("I'm done here", "check_out", "en"),
+        ("All done at Kamppi", "check_out", "en"),
+        ("Mikä on ovikoodi?", "visit_details", "fi"),
+        ("What's the address of the Töölö visit?", "visit_details", "en"),
+        ("Mitkä ovat ohjeet Kampissa?", "visit_details", "fi"),
+    ],
+)
+def test_field_work_intents(text: str, intent: str, lang: str) -> None:
+    got = classify(text, TODAY)
+    assert (got.name, got.lang) == (intent, lang)
+
+
+def test_field_work_location_hint() -> None:
+    assert classify("I've arrived at Kalasatama", TODAY).location_hint == "Kalasatama"
+    assert classify("Mikä on ovikoodi Kampissa?", TODAY).location_hint == "Kampissa"
