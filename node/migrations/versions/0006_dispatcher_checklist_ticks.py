@@ -38,6 +38,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["branch_id"], ["branch.id"]),
         sa.ForeignKeyConstraint(["visit_id"], ["visit.id"]),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("visit_id", "item"),
     )
     with op.batch_alter_table("dispatcher_checklist_ticks", schema=None) as b:
         b.create_index(b.f("ix_dispatcher_checklist_ticks_branch_id"), ["branch_id"], unique=False)

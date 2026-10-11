@@ -3,7 +3,7 @@
 import datetime as dt
 from typing import ClassVar
 
-from sqlalchemy import JSON
+from sqlalchemy import JSON, UniqueConstraint
 from sqlmodel import Field
 
 from mia.core.db import TZDateTime
@@ -58,6 +58,7 @@ class ChecklistTick(BranchScoped, table=True):
     """One ticked checklist item of one visit (the checklist itself belongs to the job)."""
 
     __tablename__: ClassVar[str] = "dispatcher_checklist_ticks"
+    __table_args__ = (UniqueConstraint("visit_id", "item"),)
 
     visit_id: str = Field(foreign_key="visit.id", index=True)
     item: str  # the item text as on the job's checklist

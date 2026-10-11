@@ -581,6 +581,20 @@ class ProblemOutput(BaseModel):
     problem_id: str | None = None
 
 
+def _current_visit(deps: AgentDeps, location_name: str | None, now: dt.datetime) -> Visit | None:
+    """The acting person's visit in progress, else the current or next one today."""
+    rows = [
+        v
+        for v in _own_visits_today(deps, location_name)
+        if v.date == deps.today and v.status in ("planned", "in_progress")
+    ]
+    running = [v for v in rows if v.status == "in_progress"]
+    if running:
+        return running[0]
+    ahead = [v for v in rows if v.planned_end >= now]
+    return min(ahead, key=lambda v: abs((v.planned_start - now).total_seconds())) if ahead else None
+
+
 def report_site_problem(
     deps: AgentDeps, args: ReportProblemInput, tool_call_id: str
 ) -> ProblemOutput:
@@ -599,21 +613,9 @@ def report_site_problem(
         tool_call_id,
     )
     now = utcnow()
-    rows = [
-        v
-        for v in _own_visits_today(deps, args.location_name)
-        if v.date == deps.today and v.status in ("planned", "in_progress")
-    ]  # today only: never tomorrow's visit
-    running = [v for v in rows if v.status == "in_progress"]
-    if not rows:
+    visit = _current_visit(deps, args.location_name, now)  # today only: never tomorrow's
+    if visit is None:
         return ProblemOutput(status="invalid", reason="no_visit")
-    if running:
-        visit = running[0]
-    else:
-        ahead = [v for v in rows if v.planned_end >= now]  # the current or next one today
-        if not ahead:
-            return ProblemOutput(status="invalid", reason="no_visit")
-        visit = min(ahead, key=lambda v: abs((v.planned_start - now).total_seconds()))
     row = store.insert(
         deps.session,
         SiteProblem(
@@ -666,20 +668,6 @@ class ChecklistOutput(BaseModel):
     unknown: str | None = None  # the item asked for that matched nothing
 
 
-def _current_visit(deps: AgentDeps, location_name: str | None, now: dt.datetime) -> Visit | None:
-    """The acting person's visit in progress, else the current or next one today."""
-    rows = [
-        v
-        for v in _own_visits_today(deps, location_name)
-        if v.date == deps.today and v.status in ("planned", "in_progress")
-    ]
-    running = [v for v in rows if v.status == "in_progress"]
-    if running:
-        return running[0]
-    ahead = [v for v in rows if v.planned_end >= now]
-    return min(ahead, key=lambda v: abs((v.planned_start - now).total_seconds())) if ahead else None
-
-
 def checklist(deps: AgentDeps, args: ChecklistInput, tool_call_id: str) -> ChecklistOutput:
     """The current visit's checklist with its ticks; with `item`, tick that item (prefix match,
     case-insensitive). Ticking twice is a no-op; an unknown item is reported back."""
@@ -705,11 +693,19 @@ def checklist(deps: AgentDeps, args: ChecklistInput, tool_call_id: str) -> Check
     ticks = deps.session.exec(select(ChecklistTick).where(ChecklistTick.visit_id == visit.id)).all()
     done = {t_.item for t_ in ticks}
     ticked = unknown = None
-    if args.item:
+    if args.item is not None:
         wanted = args.item.strip().lower()
-        matches = [t for t in texts if t.lower().startswith(wanted) or wanted.startswith(t.lower())]
-        if not matches:
-            matches = [t for t in texts if wanted in t.lower()]
+        lowered = {t: t.lower() for t in texts}
+        if len(wanted) < 2:  # nothing, or one letter: never a write
+            matches: list[str] = []
+        elif wanted in lowered.values():  # exact first, then prefix, then substring
+            matches = [t for t, low in lowered.items() if low == wanted]
+        else:
+            matches = [
+                t for t, low in lowered.items() if low.startswith(wanted) or wanted.startswith(low)
+            ]
+            if not matches:
+                matches = [t for t, low in lowered.items() if wanted in low]
         if matches:
             ticked = min(matches, key=len)
             if ticked not in done:

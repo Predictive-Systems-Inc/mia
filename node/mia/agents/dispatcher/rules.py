@@ -168,7 +168,7 @@ def decide(intent: Intent, messages: list[ModelMessage], info: AgentInfo) -> Mod
     if intent.name == "checklist":
         args = {}
         if intent.item:
-            args["item"] = intent.item
+            args["item"] = intent.item[:200]  # the tool's bound
         if intent.location_hint and not intent.item:
             args["location_name"] = intent.location_hint
         return _call("checklist", args)
@@ -292,7 +292,7 @@ def _checklist(out: dict[str, Any], lang: str) -> list[Block]:
     open_items = [i["text"] for i in out["items"] if not i["done"]]
     if open_items:
         prefix = t("checklist.tick_prefix", lang)
-        blocks.append(QuickRepliesBlock(options=[f"{prefix}{i}" for i in open_items]))
+        blocks.append(QuickRepliesBlock(options=[f"{prefix}{i}" for i in open_items[:6]]))
     else:
         blocks.append(TextBlock(text=t("checklist.all_done", lang)))
     return blocks

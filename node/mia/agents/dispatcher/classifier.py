@@ -119,7 +119,8 @@ CHECKLIST = re.compile(
     r"mitä (pitää|täytyy) tehdä)\b",
     re.IGNORECASE,
 )
-TICK = re.compile(r"^\W*(?:done|tehty|valmis)\s*:\s*(?P<item>.+?)\W*$", re.IGNORECASE)
+TICK = re.compile(r"^\W*(?P<word>done|tehty|valmis)\s*:\s*(?P<item>\w.*?)\W*$", re.IGNORECASE)
+EMPTY_TICK = re.compile(r"^\W*(?:done|tehty|valmis)\s*:\W*$", re.IGNORECASE)
 DETAILS = re.compile(
     r"\b(door code|address|instructions|where is|how do i get in|ovikoodi|osoite|ohjeet|"
     r"ohje|missä on|miten pääsen)\b",
@@ -234,6 +235,14 @@ def classify(text: str, today: dt.date, default_lang: str = "en") -> Intent:
     lang = detect_language(text, default_lang)
     if INJECTION.search(text):
         return Intent(name="other", lang=lang, injection=True)
+    if EMPTY_TICK.search(text):  # "Done:" with nothing after it: an aborted tick, not a check-out
+        return Intent(name="other", lang=lang)
+    if m := TICK.search(text):
+        # The bot's own quick reply ("Tehty: Korvaa pyyhkeet"): before every other intent, so
+        # a cover or absence word inside the item never routes it elsewhere; the prefix word
+        # says the language.
+        lang = "en" if m["word"].lower() == "done" else "fi"
+        return Intent(name="checklist", lang=lang, item=m["item"][:200])
     if ACCEPT.search(text):
         return Intent(name="cover_reply", lang=lang, accept=True)
     if DECLINE.search(text):
@@ -268,8 +277,6 @@ def classify(text: str, today: dt.date, default_lang: str = "en") -> Intent:
             reason=reason,
             partial_day="morning" if reason == "late" else None,
         )
-    if m := TICK.search(text):  # "Tehty: roskat" before check-out ("Valmis, lähden")
-        return Intent(name="checklist", lang=lang, item=m["item"])
     if CHECKLIST.search(text):
         return Intent(name="checklist", lang=lang, location_hint=_place(text))
     if CHECK_OUT.search(text):
