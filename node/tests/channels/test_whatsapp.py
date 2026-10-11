@@ -313,3 +313,9 @@ def test_fetch_media_refuses_a_crafted_id_and_an_oversized_body(wa: WhatsAppAdap
     with transport.fetching("i"):
         assert asyncio.run(adapter.fetch_media("../PNID/messages")) is None
         assert asyncio.run(adapter.fetch_media("MEDIA_ID")) is None  # the body lied about its size
+
+
+def test_location_message_carries_coordinates(wa: WhatsAppAdapter) -> None:
+    (m,) = wa.receive(SAMPLES.joinpath("inbound_location.json").read_bytes())
+    assert isinstance(m, InboundMessage)
+    assert (m.lat, m.lon, m.has_media, m.text) == (60.169, 24.932, False, "")

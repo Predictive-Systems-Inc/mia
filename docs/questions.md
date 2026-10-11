@@ -200,3 +200,13 @@ Format for each entry:
 - Assumed answer: an approval `schedule.assignment_override`, approver roles admin and owner,
   app only, same as the cover override; the supervisor's instruction alone is not enough.
 - Blocking: no
+
+## Q23: A second location share during a visit
+- Where: D20 (check-in and check-out by location share); spec 2026-10-12-location-check-in
+- Question: when a cleaner shares their location while their visit is in progress, is that the
+  check-out, or should the node ask first (a share by mistake would end the visit)?
+- Assumed answer: it is the check-out, as D20 names both by location share; a wrong one is
+  corrected by the office (`POST /visits/{id}/check-in` again is not possible, so a timesheet
+  correction once Q20 lands). The site's geofence radius comes from `location.geofence`
+  (`radius_m`, 100 m when unset); the shared coordinates are never stored, only the distance.
+- Blocking: no

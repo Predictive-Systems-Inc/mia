@@ -10,6 +10,7 @@ import asyncio
 import datetime as dt
 import logging
 import os
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 from sqlalchemy import text as sql
@@ -21,7 +22,7 @@ from mia.channels.base import InboundMessage
 from mia.channels.service import deliver
 from mia.chat.blocks import ChatReply, TextBlock
 from mia.chat.service import run_turn
-from mia.core import store
+from mia.core import events, store
 from mia.core.db import get_engine, session_scope, utcnow
 from mia.core.ids import new_id
 from mia.core.models import (
@@ -34,6 +35,7 @@ from mia.core.models import (
     Principal,
     Thread,
 )
+from mia.core.rbac import Resource, get_rbac
 from mia.i18n import SUPPORTED, t
 from mia.settings import get_settings
 
@@ -100,6 +102,10 @@ def _begin(session: Session, inbound_id: str, now: dt.datetime) -> _Step | None:
         return _Step(person=person)
     if msg.has_media and msg.media_id:
         return _Step(person=person, media=msg)
+    if msg.lat is not None and msg.lon is not None:
+        _attend(session, person, (msg.lat, msg.lon), now)
+        _finish(session, row, "done")
+        return _Step(person=person)
     text = (msg.button or msg.text).strip()
     if not text:
         reply = t("channel.text_only", person.language)
@@ -115,6 +121,69 @@ def _begin(session: Session, inbound_id: str, now: dt.datetime) -> _Step | None:
         .order_by(col(Thread.id).desc())
     ).first()
     return _Step(person=person, text=text, thread_id=thread.id if thread else None)
+
+
+DEFAULT_RADIUS_M = 100
+OUTSIDE_FENCE = "visit.attendance_outside_fence"
+
+
+def _attend(session: Session, person: Person, point: tuple[float, float], now: dt.datetime) -> None:
+    """A shared location checks the person in to their current visit (planned, in its window)
+    or out of it (in progress). Code compares the point with the site's geofence (rule 7): a
+    point outside it is flagged with one event (distance only, never the coordinates) and
+    named in the reply; the check-in or check-out stands. Replies to the person."""
+    from mia.agents.dispatcher.scoring import distance_km
+    from mia.core import scheduling  # core imports channels for linking; keep this one lazy
+
+    actor = Actor.person(person)
+    get_rbac().require(
+        actor,
+        Resource(kind="data", name="core.visit", owner_id=person.id),
+        "write",
+        session=session,
+    )
+    branch = session.get(Branch, person.branch_id)
+    visit = scheduling.current_visit(session, branch, person, now) if branch else None
+    if visit is None or branch is None:
+        text = t("check_in.no_visit", person.language)
+        deliver(session, person, [TextBlock(text=text)], actor, urgent=True)
+        return
+    loc = session.get(Location, visit.location_id)
+    name = loc.name if loc else "?"
+    kind = "check_out" if visit.status == "in_progress" else "check_in"
+    try:
+        if kind == "check_out":
+            scheduling.check_out(session, actor, visit, person, now)
+        else:
+            scheduling.check_in(session, actor, visit, person, now)
+    except scheduling.ScheduleError as exc:
+        reason = "too_early" if "too early" in str(exc) else "too_late"
+        deliver(
+            session,
+            person,
+            [TextBlock(text=t(f"check_in.{reason}", person.language))],
+            actor,
+            urgent=True,
+        )
+        return
+    when = now.astimezone(ZoneInfo(branch.timezone)).strftime("%H:%M")
+    text = t(f"{kind}.done", person.language, location=name, time=when)
+    if loc is not None and loc.lat is not None and loc.lon is not None:
+        distance_m = round(distance_km((loc.lat, loc.lon), point) * 1000)
+        radius_m = int(loc.geofence.get("radius_m", DEFAULT_RADIUS_M))
+        if distance_m > radius_m:
+            data = {
+                "kind": kind,
+                "person_id": person.id,
+                "distance_m": distance_m,
+                "radius_m": radius_m,
+                "date": visit.date.isoformat(),
+            }
+            events.emit(session, OUTSIDE_FENCE, visit, None, data, actor)
+            text += "\n" + t(
+                "attendance.outside_fence", person.language, distance=str(distance_m), location=name
+            )
+    deliver(session, person, [TextBlock(text=text)], actor, urgent=True)
 
 
 EXT = {"image": "jpg", "video": "mp4", "audio": "ogg", "document": "bin"}

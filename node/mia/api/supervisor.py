@@ -11,9 +11,10 @@ from sqlmodel import col, select
 from mia.agents.dispatcher.models import SiteProblem
 from mia.api.deps import DbSession, PersonAuth
 from mia.api.schedule import VisitCard, branch_of, require_visit, visit_card
+from mia.channels.inbound import OUTSIDE_FENCE
 from mia.core import scheduling, store
 from mia.core.db import utcnow
-from mia.core.models import Location, Person, Visit
+from mia.core.models import Event, Location, Person, Visit
 from mia.core.orgconfig import load as load_org
 
 router = APIRouter(tags=["supervisor"])
@@ -29,9 +30,19 @@ class ProblemCard(BaseModel):
     reported_at: dt.datetime
 
 
+class FenceCard(BaseModel):
+    """A check-in or check-out by location share outside the site's geofence."""
+
+    kind: str  # check_in or check_out
+    person: str
+    distance_m: int
+    visit: VisitCard
+
+
 class Summary(BaseModel):
     unfilled: list[VisitCard]
     late_check_ins: list[VisitCard]
+    outside_fence: list[FenceCard]
     open_problems: list[ProblemCard]
     pending_approvals: int
 
@@ -61,6 +72,24 @@ def summary(session: DbSession, ctx: PersonAuth) -> Summary:
         .where(SiteProblem.status == "open")
         .order_by(col(SiteProblem.id))
     ).all()
+    flagged = session.exec(
+        select(Event).where(Event.branch_id == branch.id).where(Event.action == OUTSIDE_FENCE)
+    ).all()
+    fence = []
+    for ev in flagged:
+        data = ev.after or {}
+        visit = session.get(Visit, ev.entity_id)
+        if visit is None or data.get("date") != today.isoformat():
+            continue
+        person = session.get(Person, str(data.get("person_id")))
+        fence.append(
+            FenceCard(
+                kind=str(data.get("kind")),
+                person=person.name if person else "?",
+                distance_m=int(data.get("distance_m", 0)),
+                visit=visit_card(session, visit, tz),
+            )
+        )
     cards = []
     for p in problems:
         person = session.get(Person, p.person_id)
@@ -80,6 +109,7 @@ def summary(session: DbSession, ctx: PersonAuth) -> Summary:
     return Summary(
         unfilled=[visit_card(session, v, tz) for v in week if v.status == "unfilled"],
         late_check_ins=[visit_card(session, v, tz) for v in late],
+        outside_fence=fence,
         open_problems=cards,
         pending_approvals=len(scheduling.inbox(session, ctx.actor)),
     )

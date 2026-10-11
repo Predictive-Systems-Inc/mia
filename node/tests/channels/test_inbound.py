@@ -312,3 +312,123 @@ def test_failed_download_marks_the_row_failed(
     session.expire_all()
     row = session.exec(select(ChannelInbound)).one()
     assert row.status == "failed"
+
+
+def _location(msg_id: str, lat: float, lon: float, address: str = ADDR) -> bytes:
+    m = {"from": address, "id": msg_id, "text": "", "location": [lat, lon]}
+    return json.dumps({"messages": [m]}).encode()
+
+
+def _kamppi_visit(session: Session) -> Visit:
+    import datetime as dt
+
+    from mia.core.models import Job
+
+    today = dt.datetime.now(dt.UTC).date()
+    job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
+    return session.exec(
+        select(Visit).where(Visit.job_id == job.id).where(Visit.date == today)
+    ).one()
+
+
+def test_location_share_at_the_site_checks_in(
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    people: dict[str, Person],
+    link: LinkFn,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mia.channels import inbound as inbound_module
+    from mia.core.models import Message
+
+    link(people["Juha"], ADDR)
+    visit = _kamppi_visit(session)
+    monkeypatch.setattr(inbound_module, "utcnow", lambda: visit.planned_start)
+    assert post(client, sim, _location("l1", 60.1691, 24.9321)) == 200  # ~15 m from the site
+    session.expire_all()
+    session.refresh(visit)
+    assert visit.status == "in_progress" and visit.actual_start == visit.planned_start
+    assert any("Kamppi shop" in t and "saapumisesi" in t for t in texts_to(sim))
+    assert session.exec(select(Message).where(Message.role == "user")).all() == []  # no turn
+    assert session.exec(select(Event).where(Event.action == "visit.checked_in")).one()
+    assert not session.exec(
+        select(Event).where(Event.action == "visit.attendance_outside_fence")
+    ).all()
+    assert session.exec(select(ChannelInbound)).one().status == "done"
+
+
+def test_location_share_outside_the_fence_checks_in_and_is_flagged(
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    people: dict[str, Person],
+    link: LinkFn,
+    monkeypatch: pytest.MonkeyPatch,
+    login,  # type: ignore[no-untyped-def]
+) -> None:
+    import datetime as dt
+
+    from mia.api import supervisor as api
+    from mia.channels import inbound as inbound_module
+
+    juha = people["Juha"]
+    link(juha, ADDR)
+    visit = _kamppi_visit(session)
+    monkeypatch.setattr(inbound_module, "utcnow", lambda: visit.planned_start)
+    assert post(client, sim, _location("l2", 60.1875, 24.9770)) == 200  # Kalasatama, ~3 km
+    session.expire_all()
+    session.refresh(visit)
+    assert visit.status == "in_progress"  # flagged, not rejected
+    ev = session.exec(select(Event).where(Event.action == "visit.attendance_outside_fence")).one()
+    assert ev.entity_id == visit.id and ev.actor_id == juha.id
+    assert ev.after is not None and ev.after["kind"] == "check_in" and ev.after["radius_m"] == 100
+    assert 2500 < ev.after["distance_m"] < 3500
+    assert "60.18" not in str(ev.after) and "24.97" not in str(ev.after)  # no coordinates kept
+    assert any("saapumisesi" in t and " m " in t for t in texts_to(sim))
+    monkeypatch.setattr(api, "utcnow", lambda: visit.planned_start + dt.timedelta(minutes=5))
+    office = TestClient(app)
+    login(office, people["Sanna"])
+    body = office.get("/supervisor/summary").json()
+    assert [(f["visit"]["id"], f["kind"], f["person"]) for f in body["outside_fence"]] == [
+        (visit.id, "check_in", juha.name)
+    ]
+    assert body["outside_fence"][0]["distance_m"] == ev.after["distance_m"]
+
+
+def test_location_share_during_a_visit_checks_out(
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    people: dict[str, Person],
+    link: LinkFn,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import datetime as dt
+
+    from mia.channels import inbound as inbound_module
+    from mia.core import scheduling
+
+    juha = people["Juha"]
+    link(juha, ADDR)
+    visit = _kamppi_visit(session)
+    scheduling.check_in(session, Actor.person(juha), visit, juha, visit.planned_start)
+    session.commit()
+    leaving = visit.planned_start + dt.timedelta(hours=1)
+    monkeypatch.setattr(inbound_module, "utcnow", lambda: leaving)
+    assert post(client, sim, _location("l3", 60.1690, 24.9320)) == 200
+    session.expire_all()
+    session.refresh(visit)
+    assert visit.status == "completed" and visit.actual_end == leaving
+    assert any("Kamppi shop" in t and "Kiitos" in t for t in texts_to(sim))
+
+
+def test_location_share_without_a_visit_replies(
+    client: TestClient, sim: SimAdapter, session: Session, people: dict[str, Person], link: LinkFn
+) -> None:
+    link(people["Sanna"], ADDR)  # a supervisor with no visits
+    assert post(client, sim, _location("l4", 60.1690, 24.9320)) == 200
+    assert any("käyntiäsi" in t for t in texts_to(sim))
+    session.expire_all()
+    assert session.exec(select(ChannelInbound)).one().status == "done"
+    assert all(v.status != "in_progress" for v in session.exec(select(Visit)))

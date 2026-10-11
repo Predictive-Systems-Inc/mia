@@ -36,6 +36,8 @@ class InboundMessage(BaseModel):
     has_media: bool = False
     media_id: str | None = None  # the channel's id of the attachment, for fetch_media
     media_kind: str | None = None  # image, document, video, audio
+    lat: float | None = None  # a shared location (check-in or check-out by location share)
+    lon: float | None = None
     received_at: datetime
 
 

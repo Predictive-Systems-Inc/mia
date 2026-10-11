@@ -82,6 +82,8 @@ class SimAdapter:
                     has_media=bool(m.get("media")),
                     media_id=m["media"] if isinstance(m.get("media"), str) else None,
                     media_kind="image" if m.get("media") else None,
+                    lat=(m.get("location") or [None, None])[0],
+                    lon=(m.get("location") or [None, None])[1],
                     received_at=datetime.now(UTC),
                 )
             )
