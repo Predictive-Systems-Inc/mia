@@ -183,8 +183,11 @@ Format for each entry:
   approved_by) with separation of duties (the approver is never the person who entered it).
   Is that the shape, and is it core or the cleaning template? Note: until timesheets exist,
   check-in and check-out are per visit, so a two-person visit records one pair of times.
-- Assumed answer: core, shape as above, built after the answer (changes the data standard).
-- Blocking: yes (for timesheets only; the rest of scheduling proceeds)
+- Assumed answer (updated 2026-10-12): built as an agent-owned table `dispatcher_timesheets`
+  with the shape above (rule 9), so the data standard is untouched; when the answer is "core",
+  the table moves with a migration and the service stays. The enterer of a check-out row is
+  the cleaner; a correction makes the corrector the enterer.
+- Blocking: no (the placement is open, the behaviour is built)
 
 ## Q21: A job's default assignee
 - Where: spec.md data standard (job has no assignee field); the seed assigns by name
@@ -211,4 +214,12 @@ Format for each entry:
   (`radius_m`, 100 m when unset); the shared coordinates are never stored, only the distance.
   A shared point is the cleaner's claim (WhatsApp lets anyone send a chosen place), so a chosen
   place is flagged like a point outside the fence and a point inside it proves nothing.
+- Blocking: no
+
+## Q24: The payroll export format
+- Where: docs/plan.md Sprint 5 (payroll export in the format of Hype's payroll system)
+- Question: which payroll or accounting system does Hype use, and what file does it import?
+- Assumed answer: a generic CSV of approved timesheets (person, date, site, start, end,
+  minutes) from `mia payroll export`; the system-specific layout is a second writer once the
+  system is named. Mia never runs payroll (plan Sprint 5).
 - Blocking: no

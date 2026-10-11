@@ -23,6 +23,8 @@ p, staff, *, tool:dispatcher.report_site_problem, execute, allow
 p, staff, *, data:dispatcher_site_problems, write_own, allow
 p, staff, *, tool:dispatcher.checklist, execute, allow
 p, staff, *, data:dispatcher_checklist_ticks, write_own, allow
+p, staff, *, data:dispatcher_timesheets, read_own, allow
+p, staff, *, data:dispatcher_timesheets, write_own, allow
 p, staff, *, data:core.visit, write_own, allow
 p, staff, *, data:core.auth_devices, read_own, allow
 p, staff, *, data:core.auth_devices, write_own, allow
@@ -30,6 +32,7 @@ p, staff, *, data:core.auth_devices, write_own, allow
 # supervisor: schedules and approvals for daily operations
 p, supervisor, *, data:core.*, read, allow
 p, supervisor, *, data:dispatcher_*, write, allow
+p, supervisor, *, data:dispatcher_*, read, allow
 p, supervisor, *, tool:dispatcher.find_replacements, execute, allow
 p, supervisor, *, tool:dispatcher.assign_cover, execute, allow
 p, supervisor, *, data:core.visit, write, allow

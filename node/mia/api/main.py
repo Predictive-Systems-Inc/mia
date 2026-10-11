@@ -19,6 +19,7 @@ from mia.api.auth import router as auth_router
 from mia.api.deps import DbSession, PersonAuth, check_mode
 from mia.api.schedule import router as schedule_router
 from mia.api.supervisor import router as supervisor_router
+from mia.api.timesheets import router as timesheets_router
 from mia.channels import inbound as channel_service
 from mia.channels import outbox, registry
 from mia.channels.router import router as channels_router
@@ -99,6 +100,7 @@ app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(schedule_router)
 app.include_router(supervisor_router)
+app.include_router(timesheets_router)
 app.include_router(channels_router)
 
 

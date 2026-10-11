@@ -406,6 +406,43 @@ def billing_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def payroll_export(args: argparse.Namespace) -> int:
+    import sys
+
+    from mia.agents.dispatcher import timesheets
+    from mia.core import events
+    from mia.core.db import session_scope
+    from mia.core.models import Actor
+
+    try:
+        start, end = dt.date.fromisoformat(args.start), dt.date.fromisoformat(args.end)
+    except ValueError as exc:
+        raise SystemExit("--from and --to must be YYYY-MM-DD") from exc
+    if end < start:
+        raise SystemExit("--to must not be before --from")
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        rows = timesheets.payroll_rows(session, branch_id, start, end)
+        if args.out:
+            with open(args.out, "w", encoding="utf-8", newline="") as f:
+                timesheets.write_csv(rows, f)
+        else:
+            timesheets.write_csv(rows, sys.stdout)
+        events.emit(
+            session,
+            "payroll.exported",
+            ("payroll", f"{start.isoformat()}_{end.isoformat()}"),
+            None,
+            {"from": start.isoformat(), "to": end.isoformat(), "rows": len(rows)},
+            Actor.system(branch_id),
+        )
+    print(
+        f"exported {len(rows)} row(s) for {start.isoformat()} to {end.isoformat()}"
+        + (f" to {args.out}" if args.out else "")
+    )
+    return 0
+
+
 def schedule_generate(args: argparse.Namespace) -> int:
     from mia.core import scheduling
     from mia.core.db import session_scope
@@ -607,6 +644,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", help="file path (default: stdout)")
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=billing_export)
+    pay = sub.add_parser("payroll", help="payroll exports").add_subparsers(
+        dest="payroll_command", required=True
+    )
+    p = pay.add_parser("export", help="approved timesheets for a period, as CSV")
+    p.add_argument("--from", dest="start", required=True, help="YYYY-MM-DD")
+    p.add_argument("--to", dest="end", required=True, help="YYYY-MM-DD")
+    p.add_argument("--out", help="file path (default: stdout)")
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=payroll_export)
     sched = sub.add_parser("schedule", help="visits and assignments").add_subparsers(
         dest="schedule_command", required=True
     )

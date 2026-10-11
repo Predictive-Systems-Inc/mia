@@ -58,7 +58,9 @@ Remaining work in this order, because each step unblocks the next:
    Core built 2026-10-12 (D34): generation, assignment with the eligibility rules and the
    override approval, check-in and check-out, the inbox and week view over the API, and the
    supervisor summary (unfilled visits, late check-ins, open site problems, pending approvals).
-   Open: the board (apps project, Q19) and timesheets (Q20).
+   Timesheets built 2026-10-12 as an agent-owned table until Q20 places them (spec
+   2026-10-12-timesheets): drafts from completed visits, corrections, approval with separation
+   of duties. Open: the board (apps project, Q19).
 5. **Field work over WhatsApp** (Sprint 3, D20): check-in and check-out, checklists and photos
    over WhatsApp; no mobile app. Needs Hype's agreement, since the proposal promised an app.
    Check-in, check-out, visit details (address, instructions, access notes), the checklist
@@ -70,7 +72,9 @@ Remaining work in this order, because each step unblocks the next:
 6. **Alerts, billing export, rollout** (Sprint 5). Built 2026-10-12: the missed-check-in
    alert, the unstaffed-visits card and the daily plan on the ticker, and `mia billing export`
    (completed work per client and site, no amounts until service agreements exist, D21).
-   Open: missing check-out and overtime alerts (need timesheets, Q20), the payroll export, rollout.
+   The missing check-out and overtime alerts and `mia payroll export` (approved timesheets as
+   CSV, generic layout until Q24) built 2026-10-12. Open: rollout at Hype (a real-world step:
+   install on the Mac mini, D19, link the staff phones, run the pilot).
 
 Sprint numbers keep their order and milestones; hour figures are removed (D24).
 
