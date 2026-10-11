@@ -64,7 +64,13 @@ def test_report() -> None:
 
 
 def test_catalogue_has_the_built_dispatcher_intents_exactly() -> None:
-    built = {i.id for i in CATALOGUE.values() if i.agent == "dispatcher" and i.built == "yes"}
+    # Message-triggered intents map one to one onto the rules classifier; the alerts (event
+    # and schedule triggers) are built too, but they are not chat intents.
+    built = {
+        i.id
+        for i in CATALOGUE.values()
+        if i.agent == "dispatcher" and i.built == "yes" and i.by_message
+    }
     assert built == {f"dispatcher.{n}" for n in get_args(IntentName) if n != OTHER}
     assert 150 <= len(CATALOGUE) <= 250
     for i in CATALOGUE.values():

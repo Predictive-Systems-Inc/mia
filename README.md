@@ -58,6 +58,7 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run mia serve` | FastAPI on port 8000: chat page `/`, `/health`, `/chat`, `/chat/stream`, `/ag-ui` (plus `/ag-ui/connect` to catch up and `/ag-ui/stop`), `/notifications`, `/approvals/{id}/decide`, `/channels/{id}/webhook` |
 | `uv run mia chat "..." [--as NAME] [--thread ID]` | One chat turn from the terminal |
 | `uv run mia decide ID approved\|rejected --as NAME` | Decide an approval (stand-in for the inbox) |
+| `uv run mia billing export --month YYYY-MM [--out FILE]` | Completed work per client and site for a month, as CSV |
 | `uv run mia schedule generate [--days N]` | Create the missing visits from the job recurrences (the node also does this daily) |
 | `uv run mia keys init [PATH]` | Create the master key file (ADR 011) |
 | `uv run mia auth bootstrap --email EMAIL` | First owner: prints an enrolment link (password and TOTP) |
@@ -153,6 +154,12 @@ availability, absences, double booking, daily and weekly hour limits, skills.
 - `GET /approvals`: the inbox, the approvals the signed-in person may decide.
 
 The schedule board belongs to the office app (Q19); timesheets wait for Q20.
+
+The ticker also sends three alerts, each once (the marker is an event): a cleaner who has not
+checked in 15 minutes after the planned start is asked, and the supervisors told; from 15:00
+local the supervisors get a card of tomorrow's visits without a cleaner; from 17:00 each cleaner
+gets a card of tomorrow's visits. The times are organisation settings (`alerts:` in
+`node/config/org/<org>/settings.yaml`).
 
 ## Installing on a server
 

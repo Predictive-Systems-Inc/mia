@@ -22,11 +22,13 @@ mia/
                             geocoding (pluggable providers), orgconfig (organisation settings),
                             keys (master key, HKDF, scrypt, TOTP), auth (sessions, codes,
                             credentials, devices, clients; ADR 011), scheduling (recurrence,
-                            visit generation, assignment rules, check-in, inbox)
+                            visit generation, assignment rules, check-in, inbox), billing
+                            (the monthly summary export)
       templates/cleaning/   models (sites, checklists), seed
       agents/               base.py (manifest, guard, model factory)
         dispatcher/         manifest.yaml, job.md, prompts/, models.py, classifier.py,
-                            scoring.py, cover.py (confirmation flow), rules.py, tools.py,
+                            scoring.py, cover.py (confirmation flow), alerts.py (missed
+                            check-in, unstaffed visits, daily plan), rules.py, tools.py,
                             agent.py, tests/scenarios.yaml (and scenarios_en.yaml)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
       learning/             offline pipeline for role skill models (ADR 013)

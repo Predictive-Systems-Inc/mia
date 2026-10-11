@@ -52,9 +52,9 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | dispatcher.find_cover | Find cover | Supervisor asks who could take over a visit or shift | S, O | msg | read | p | - | n | Mia | both | 1 | yes | C2S |
 | dispatcher.assign | Assign cover | Supervisor names whom to assign as cover after candidates were shown | S, O | msg | write | p | instr.; rule break: admin or owner | n | Mia | both | 1 | yes | C2S |
 | dispatcher.cover_reply | Answer cover request | Cleaner accepts or declines a cover request sent to them | C | msg | write | n | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.missed_check_in | - | No check-in some minutes after a visit starts: ask the cleaner, alert the supervisor | - | event | write | p | - | n | Mia | both | 1 | no | C2S |
-| dispatcher.unstaffed_visits | - | Daily check for tomorrow's visits without a cleaner | - | sched | read | n | - | n | Mia | both | 1 | no | C2S |
-| dispatcher.daily_plan | - | Evening message to each cleaner with tomorrow's visits | - | sched | write | p | - | n | Mia | both | 1 | no | C2S |
+| dispatcher.missed_check_in | - | No check-in some minutes after a visit starts: ask the cleaner, alert the supervisor | - | event | write | p | - | n | Mia | both | 1 | yes | C2S |
+| dispatcher.unstaffed_visits | - | Daily check for tomorrow's visits without a cleaner | - | sched | read | n | - | n | Mia | both | 1 | yes | C2S |
+| dispatcher.daily_plan | - | Evening message to each cleaner with tomorrow's visits | - | sched | write | p | - | n | Mia | both | 1 | yes | C2S |
 | dispatcher.check_in | I've arrived | Cleaner says they arrived at the site (or shares location) | C | msg, event | write | p | - | n | Mia | both | 1 | yes | C2S |
 | dispatcher.check_out | I'm done here | Cleaner says the visit is finished and they are leaving | C | msg, event | write | p | - | n | Mia | both | 1 | yes | S2C |
 | dispatcher.cannot_access_site | Can't get in | Cleaner is at a site and cannot get in physically (locked door, no key, wrong door code, alarm). Logging in to Mia is admin.reset_login | C | msg | write | n | - | n | Mia | both | 1 | no | C2S |
