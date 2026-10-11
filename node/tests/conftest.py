@@ -20,7 +20,7 @@ from pydantic_ai import models
 
 from mia.agents.dispatcher import agent as dispatcher_agent
 from mia.channels import registry
-from mia.core import db, keys
+from mia.core import db, keys, scheduling
 from mia.core.models import Actor, Branch, Person
 from mia.schema import create_all
 from mia.settings import get_settings
@@ -61,6 +61,7 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     monkeypatch.setenv("MIA_AUTH_MODE", "dev")
     monkeypatch.setattr(keys, "SCRYPT_N", 2**8)  # the real 2**17 makes every login slow
     keys.reset_cache()
+    scheduling.reset_generation()
     get_settings.cache_clear()
     dispatcher_agent.get_agent.cache_clear()
     db.reset_engines()

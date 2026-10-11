@@ -55,6 +55,9 @@ Remaining work in this order, because each step unblocks the next:
 3. **Install and backup** (Sprint 0 items still open): Docker Compose, Litestream, health page,
    install guide; needed before anything runs at Hype.
 4. **Scheduling and approvals inbox** (Sprint 2), then the **office web app** screens it needs.
+   Core built 2026-10-12 (D34): generation, assignment with the eligibility rules and the
+   override approval, check-in and check-out, the inbox and week view over the API. Open:
+   the board (apps project, Q19) and timesheets (Q20).
 5. **Field work over WhatsApp** (Sprint 3, D20): check-in and check-out, checklists and photos
    over WhatsApp; no mobile app. Needs Hype's agreement, since the proposal promised an app.
 6. **Alerts, billing export, rollout** (Sprint 5).

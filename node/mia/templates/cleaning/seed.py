@@ -24,9 +24,8 @@ from mia.core.models import (
     Visit,
     WorkLimit,
 )
+from mia.core.scheduling import local_dt, occurs_on
 from mia.templates.cleaning.models import CleaningChecklist, CleaningSite
-
-WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
 
 PERSONS = [
     # name, roles, skills, language, availability (start, end), weekly limit minutes
@@ -152,21 +151,6 @@ JOBS = [
 ]
 
 
-def occurs_on(rrule: str, day: dt.date) -> bool:
-    """True when a simple RRULE (FREQ=DAILY or FREQ=WEEKLY;BYDAY=..) has an occurrence on day."""
-    parts = dict(p.split("=", 1) for p in rrule.split(";"))
-    if parts.get("FREQ") == "DAILY":
-        return True
-    if parts.get("FREQ") == "WEEKLY":
-        return WEEKDAYS[day.weekday()] in parts.get("BYDAY", "").split(",")
-    raise ValueError(f"unsupported recurrence {rrule!r}")
-
-
-def local_dt(day: dt.date, hhmm: str, tz: str) -> dt.datetime:
-    hour, minute = map(int, hhmm.split(":"))
-    return dt.datetime.combine(day, dt.time(hour, minute), tzinfo=ZoneInfo(tz))
-
-
 def _cache(
     session: Session, branch_id: str, address: str, lat: float, lon: float, actor: Actor
 ) -> None:
@@ -274,7 +258,7 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
         )
         for offset in range(-14, 8):
             day = today + dt.timedelta(days=offset)
-            if not occurs_on(rrule, day):
+            if not occurs_on(rrule, today - dt.timedelta(days=14), day):
                 continue
             person = people[assignee]
             if offset < 0 and cover and offset % 4 == 0:

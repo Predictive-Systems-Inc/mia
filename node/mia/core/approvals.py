@@ -88,7 +88,8 @@ def request(
     )
 
 
-def _requester_ids(approval: Approval) -> set[str]:
+def requester_ids(approval: Approval) -> set[str]:
+    """The principal ids that made or triggered the request (never its approvers)."""
     ids = {approval.requester_id}
     if approval.requester_on_behalf_of:
         ids.add(approval.requester_on_behalf_of)
@@ -167,7 +168,7 @@ def decide(
         raise ApprovalError(f"approval is {approval.status}")
     if decider.principal.type != "person":
         raise ApprovalError("only people decide approvals")
-    if decider.ids & _requester_ids(approval):
+    if decider.ids & requester_ids(approval):
         raise ApprovalError("nobody approves a request they made or triggered")
     if not _holds_role(decider, approval.approver_roles):
         raise ApprovalError("decider does not hold an approver role")

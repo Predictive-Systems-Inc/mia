@@ -11,9 +11,9 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.dispatcher import cover, scoring
 from mia.agents.dispatcher.models import Absence
-from mia.core import store
+from mia.core import scheduling, store
 from mia.core.db import utcnow
-from mia.core.models import Availability, Job, Location, Person, Visit, WorkLimit
+from mia.core.models import Job, Location, Person, Visit
 from mia.core.rbac import Resource, get_rbac
 
 MORNING_ENDS = dt.time(12, 0)
@@ -259,75 +259,18 @@ def resolve_visit(session: Session, deps: AgentDeps, args: FindReplacementsInput
     return visits[0]
 
 
-def _slot(session: Session, visit: Visit, tz: str) -> scoring.Slot:
-    zone = ZoneInfo(tz)
-    loc = session.get(Location, visit.location_id)
-    where = (loc.lat, loc.lon) if loc and loc.lat is not None and loc.lon is not None else None
-    return scoring.Slot(
-        visit.planned_start.astimezone(zone), visit.planned_end.astimezone(zone), where
-    )
-
-
 def candidate_data(
     session: Session, deps: AgentDeps, visit: Visit, *, include_assigned: bool = False
 ) -> list[scoring.CandidateData]:
     """Gather everything scoring needs, for every active staff member not on the visit."""
-    branch_id, tz = deps.branch.id, deps.branch.timezone
-    week_start = visit.date - dt.timedelta(days=visit.date.weekday())
-    week_end = week_start + dt.timedelta(days=6)
-    persons = session.exec(
-        select(Person).where(Person.branch_id == branch_id).where(Person.status == "active")
-    ).all()
-    week_visits = session.exec(
-        select(Visit)
-        .where(Visit.branch_id == branch_id)
-        .where(col(Visit.date) >= week_start)
-        .where(col(Visit.date) <= week_end)
-        .where(Visit.status != "cancelled")
-    ).all()
-    slots = {v.id: _slot(session, v, tz) for v in week_visits}
-    past_here = session.exec(
-        select(Visit)
-        .where(Visit.location_id == visit.location_id)
-        .where(Visit.status == "completed")
-    ).all()
-    result = []
-    for p in persons:
-        if "staff" not in p.roles:
-            continue
-        if p.id in visit.assigned_person_ids and not include_assigned:
-            continue
-        windows = {
-            a.weekday: (dt.time.fromisoformat(a.start), dt.time.fromisoformat(a.end))
-            for a in session.exec(select(Availability).where(Availability.person_id == p.id))
-        }
-        limit = session.exec(select(WorkLimit).where(WorkLimit.person_id == p.id)).first()
-        absences = session.exec(select(Absence).where(Absence.person_id == p.id)).all()
-        home = (
-            (p.home_lat, p.home_lon) if p.home_lat is not None and p.home_lon is not None else None
-        )
-        result.append(
-            scoring.CandidateData(
-                person_id=p.id,
-                name=p.name,
-                skills=list(p.skills),
-                windows=windows,
-                max_daily_minutes=limit.max_daily_minutes if limit else 600,
-                max_weekly_minutes=limit.max_weekly_minutes if limit else 2400,
-                booked=[slots[v.id] for v in week_visits if p.id in v.assigned_person_ids],
-                absent_dates={a.date for a in absences},
-                site_visits=sum(1 for v in past_here if p.id in v.assigned_person_ids),
-                home=home,
-            )
-        )
-    return result
+    return scheduling.candidate_data(session, deps.branch, visit, include_assigned=include_assigned)
 
 
 def _ranked(deps: AgentDeps, visit: Visit) -> list[scoring.Ranked]:
     job = deps.session.get(Job, visit.job_id)
     return scoring.rank_candidates(
         candidate_data(deps.session, deps, visit),
-        _slot(deps.session, visit, deps.branch.timezone),
+        scheduling.slot_of(deps.session, visit, deps.branch.timezone),
         job.required_skills if job else [],
     )
 
@@ -402,7 +345,7 @@ def assign_cover(deps: AgentDeps, args: AssignCoverInput, tool_call_id: str) -> 
         session,
         deps.actor,
         visit,
-        _slot(session, visit, deps.branch.timezone),
+        scheduling.slot_of(session, visit, deps.branch.timezone),
         pool[person.id],
         queue,
         replace,

@@ -167,3 +167,36 @@ Format for each entry:
 - Answered: D30 (`quality` is renamed `site_manager` and `office` is renamed `admin`; no chat
   role, generic conversation is the shared conversation catalogue).
 - Blocking: no
+
+## Q19: Scope of the scheduling build (plan item 4)
+- Where: docs/plan.md Sprint 2; D25 (apps are a separate project)
+- Question: Sprint 2 lists a drag-and-drop schedule board and a supervisor dashboard. Are they
+  part of the node build or of the separate apps project?
+- Assumed answer: the node exposes the schedule, assignment, check-in and inbox API and a
+  read-only week table on the dev page; the board and dashboard belong to the apps project.
+- Blocking: no
+
+## Q20: Timesheets in the data standard
+- Where: docs/plan.md Sprint 2 (time and attendance chain)
+- Question: timesheets are a new core entity: `timesheet` (id, branch_id, person_id, visit_id,
+  start, end, minutes, source: check_in | correction, status: draft | approved, entered_by,
+  approved_by) with separation of duties (the approver is never the person who entered it).
+  Is that the shape, and is it core or the cleaning template? Note: until timesheets exist,
+  check-in and check-out are per visit, so a two-person visit records one pair of times.
+- Assumed answer: core, shape as above, built after the answer (changes the data standard).
+- Blocking: yes (for timesheets only; the rest of scheduling proceeds)
+
+## Q21: A job's default assignee
+- Where: spec.md data standard (job has no assignee field); the seed assigns by name
+- Question: should `job` get `default_person_ids` so generated visits come assigned?
+- Assumed answer: no new field. Generation copies the assignment of the job's most recent
+  visit on the same weekday when that person is still eligible, else the visit is unfilled.
+- Blocking: no
+
+## Q22: Approval for a rule-breaking assignment by the office
+- Where: spec.md Approvals; D1 (an instruction is the approval) covers the dispatcher's cover
+- Question: when the office assigns someone outside their availability or hour limits, is that
+  an approval (like the dispatcher's cover override) or the office's own call?
+- Assumed answer: an approval `schedule.assignment_override`, approver roles admin and owner,
+  app only, same as the cover override; the supervisor's instruction alone is not enough.
+- Blocking: no

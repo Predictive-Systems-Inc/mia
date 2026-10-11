@@ -58,6 +58,7 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run mia serve` | FastAPI on port 8000: chat page `/`, `/health`, `/chat`, `/chat/stream`, `/ag-ui` (plus `/ag-ui/connect` to catch up and `/ag-ui/stop`), `/notifications`, `/approvals/{id}/decide`, `/channels/{id}/webhook` |
 | `uv run mia chat "..." [--as NAME] [--thread ID]` | One chat turn from the terminal |
 | `uv run mia decide ID approved\|rejected --as NAME` | Decide an approval (stand-in for the inbox) |
+| `uv run mia schedule generate [--days N]` | Create the missing visits from the job recurrences (the node also does this daily) |
 | `uv run mia keys init [PATH]` | Create the master key file (ADR 011) |
 | `uv run mia auth bootstrap --email EMAIL` | First owner: prints an enrolment link (password and TOTP) |
 | `uv run mia auth reset NAME` / `unlock LOGIN` / `link NAME` | Recovery: new enrolment link, clear a lockout, send a login link over WhatsApp |
@@ -134,6 +135,24 @@ to start in dev mode with a public URL. A server runs `required`.
   (client credentials, one-hour bearer tokens); clients never hold `approve`.
 - Keys: `mia keys init` writes the master key (mode 400); subkeys come from HKDF. Without a key
   file, `MIA_NODE_SECRET` keys the one-time codes, so old invites keep working.
+
+## Scheduling
+
+Visits come from each job's recurrence rule (`FREQ=DAILY` or `FREQ=WEEKLY;BYDAY=..`, optional
+`INTERVAL` and `UNTIL`), generated 28 days ahead once a day and by `mia schedule generate`.
+A new visit copies the last assignment on the same weekday when that person is still eligible,
+otherwise it is `unfilled`. Eligibility is code, the same rules the dispatcher uses for cover:
+availability, absences, double booking, daily and weekly hour limits, skills.
+
+- `GET /schedule?start=&person_id=&location_id=`: seven days of visits (staff see their own).
+- `POST /visits/{id}/assign {person_id, add}` and `/unassign`: the office assigns; a
+  rule-breaking assignment creates an approval (`schedule.assignment_override`, admin or owner,
+  app only with a PIN) and the visit changes only when it is approved.
+- `POST /visits/{id}/check-in` and `/check-out`: the cleaner on their own visit (from two
+  hours before the start), or the office for them.
+- `GET /approvals`: the inbox, the approvals the signed-in person may decide.
+
+The schedule board belongs to the office app (Q19); timesheets wait for Q20.
 
 ## Installing on a server
 
