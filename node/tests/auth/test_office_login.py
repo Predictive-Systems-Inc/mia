@@ -193,8 +193,9 @@ def test_password_change_ends_other_sessions(
     first = login(client, owner)
     other = TestClient(app)
     login(other, owner)
-    res = client.post("/auth/password", json={"password": "a brand new long password"})
-    assert res.status_code == 200
+    body = {"password": "a brand new long password", "current": PW}
+    res = client.post("/auth/password", json=body)
+    assert res.status_code == 200, res.text
     assert client.get("/auth/me").status_code == 200  # the session that changed it stays
     assert other.get("/auth/me").status_code == 401
     assert session.exec(select(Event).where(Event.action == "auth.password_set")).all()
@@ -219,3 +220,44 @@ def test_no_secret_in_events_or_responses(
         assert secret not in text
         assert keys.token_hash(secret) not in text
     assert not re.search(r"scrypt\$", text)
+
+
+def test_password_change_needs_the_current_password(
+    client: TestClient, owner: Person, login
+) -> None:  # type: ignore[no-untyped-def]
+    login(client, owner)
+    new = {"password": "a brand new long password"}
+    assert client.post("/auth/password", json=new).status_code == 401
+    assert client.post("/auth/password", json={**new, "current": "nope"}).status_code == 401
+    assert client.post("/auth/password", json={**new, "current": PW}).status_code == 200
+    client.headers.pop("Authorization")
+    res = client.post("/auth/login", json={"email": EMAIL, "password": "a brand new long password"})
+    assert res.status_code == 200
+
+
+def test_staff_session_cannot_set_password_or_enrol_mfa(
+    client: TestClient, people: dict[str, Person], login
+) -> None:  # type: ignore[no-untyped-def]
+    """A phone or device session (aal1) must not become an office login."""
+    login(client, people["Juha"], aal="aal1", method="phone_otp")
+    body = {"password": "a long enough password", "email": "juha@example.fi"}
+    assert client.post("/auth/password", json=body).status_code == 403
+    assert client.post("/auth/mfa/enrol").status_code == 403
+
+
+def test_mfa_guesses_are_limited_per_person_not_per_token(
+    client: TestClient, session: Session, owner: Person, login
+) -> None:  # type: ignore[no-untyped-def]
+    login(client, owner)
+    _enrol(client, session, owner)
+    client.headers.pop("Authorization")
+    for _ in range(5):
+        token = client.post("/auth/login", json={"email": EMAIL, "password": PW}).json()[
+            "mfa_token"
+        ]
+        client.post("/auth/mfa", json={"mfa_token": token, "code": "000000"})
+    token = client.post("/auth/login", json={"email": EMAIL, "password": PW}).json()["mfa_token"]
+    res = client.post("/auth/mfa", json={"mfa_token": token, "code": _totp_now(session, owner)})
+    assert (
+        res.status_code == 401
+    )  # five wrong guesses in five minutes: blocked, fresh tokens or not

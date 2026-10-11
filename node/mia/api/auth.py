@@ -19,7 +19,7 @@ from mia.api.deps import (
     public_origin,
     set_cookies,
 )
-from mia.core import auth
+from mia.core import auth, keys
 from mia.core.db import utcnow
 from mia.core.models import Actor, AuthDevice, AuthSession, Person
 
@@ -43,6 +43,7 @@ class CodeIn(BaseModel):
 class PasswordIn(BaseModel):
     password: str = Field(max_length=200)
     email: str | None = Field(default=None, max_length=200)
+    current: str | None = Field(default=None, max_length=200)  # required once a password exists
 
 
 class RefreshIn(BaseModel):
@@ -79,6 +80,14 @@ def _invalid() -> HTTPException:
     return HTTPException(401, auth.INVALID)
 
 
+def _office_credentials_allowed(ctx: AuthContext) -> None:
+    """Setting a password or enrolling TOTP needs an office-grade session (aal2, an enrolment
+    link, or a password login that is enrolling its first factor). A phone or device session
+    must not turn into an office login."""
+    if ctx.aal not in ("aal2", "enrol") and ctx.method != "password":
+        raise HTTPException(403, "sign in with your password or an enrolment link first")
+
+
 @router.post("/login")
 def login(
     request: Request, response: Response, session: DbSession, body: LoginIn
@@ -112,10 +121,13 @@ def mfa(request: Request, response: Response, session: DbSession, body: MfaIn) -
     if person is None or person.status != "active":
         raise _invalid()
     actor = Actor.person(person)
+    key = auth.attempt_key(person.id, ip)  # per person, so fresh tokens do not reset the count
+    if auth.throttled(session, "mfa", key, now):
+        raise _invalid()
     ok = auth.check_totp(session, person, body.code, now) or auth.check_recovery(
         session, actor, person, body.code, now
     )
-    auth.record_attempt(session, "mfa", auth.attempt_key(found.row.id, ip), ok, now, actor=actor)
+    auth.record_attempt(session, "mfa", key, ok, now, actor=actor)
     if not ok:
         auth.fail_code(session, "mfa", now, person_id=person.id)
         raise _invalid()
@@ -127,8 +139,9 @@ def mfa(request: Request, response: Response, session: DbSession, body: MfaIn) -
 
 @router.post("/mfa/enrol")
 def mfa_enrol(session: DbSession, ctx: CurrentAuth) -> dict[str, str]:
-    """Start TOTP enrolment (from a full session or an enrolment session)."""
+    """Start TOTP enrolment (from an office session or an enrolment session)."""
     person = _person(ctx)
+    _office_credentials_allowed(ctx)
     _, uri = auth.enrol_totp(session, ctx.actor, person, utcnow())
     return {"uri": uri}
 
@@ -159,14 +172,24 @@ def mfa_confirm(
 
 
 @router.post("/password")
-def set_password(session: DbSession, ctx: CurrentAuth, body: PasswordIn) -> dict[str, bool]:
-    """Set the password (and email on first set). Every other session of the person ends."""
+def set_password(
+    request: Request, session: DbSession, ctx: CurrentAuth, body: PasswordIn
+) -> dict[str, bool]:
+    """Set the password (and email on first set). Changing an existing password needs the
+    current one, except from an enrolment link. Every other session of the person ends."""
     person = _person(ctx)
+    _office_credentials_allowed(ctx)
     now = utcnow()
     current = auth.credential(session, person.id, "password")
     email = body.email or (current.login if current else None)
     if not email:
         raise HTTPException(400, "email required")
+    if current is not None and current.secret_hash and ctx.aal != "enrol":
+        key = auth.attempt_key(auth.login_key(email), client_ip(request))
+        ok = body.current is not None and keys.verify_secret(body.current, current.secret_hash)
+        auth.record_attempt(session, "password", key, ok, now, actor=ctx.actor)
+        if not ok:
+            raise _invalid()
     try:
         auth.set_password(session, ctx.actor, person, email, body.password, now)
     except ValueError as exc:
