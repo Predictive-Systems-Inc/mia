@@ -60,6 +60,9 @@ def deliver(
     """Queue the message for every enabled channel the person has linked. Returns new rows."""
     now = now or utcnow()
     source = source_id or new_id()
+    # A block that carries access notes or the like makes the whole message sensitive, whoever
+    # calls: channels get the app link, never the text.
+    sensitive = sensitive or any(getattr(b, "sensitive", False) for b in blocks)
     branch = session.get(Branch, person.branch_id)
     send_after = None if urgent else quiet_until(now, branch.timezone if branch else "UTC")
     rows: list[ChannelOutbox] = []

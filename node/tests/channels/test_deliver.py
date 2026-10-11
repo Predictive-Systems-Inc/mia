@@ -174,3 +174,19 @@ def test_notify_keeps_the_app_copy_and_delivers(
     )
     assert session.exec(select(Message).where(Message.text == "Hei")).one()
     assert len(_rows(session)) == 1
+
+
+def test_deliver_marks_a_sensitive_block_itself(
+    session: Session, sim: SimAdapter, people: dict[str, Person], link: LinkFn
+) -> None:
+    """Every caller gets the guarantee: a sensitive block becomes the app link in deliver()."""
+    from mia.chat.blocks import CardBlock, CardField
+
+    juha = people["Juha"]
+    link(juha, "358401234567", last_inbound_at=utcnow())
+    card = CardBlock(
+        title="Kamppi", fields=[CardField(label="Access", value="Door 4711")], sensitive=True
+    )
+    rows = deliver(session, juha, [card], Actor.person(juha), urgent=True)
+    assert rows and all("4711" not in str(r.payload) for r in rows)
+    assert any("http" in str(r.payload) for r in rows)

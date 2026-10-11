@@ -257,3 +257,27 @@
   tools: []
   or_tools: [{tool: get_my_visits, status: denied}]
   llm_only: true
+
+# Check-in and check-out depend on the clock (the window around the planned visit), so the
+# closed-window answer is accepted too; the tool choice is what these scenarios pin.
+- id: fi_arrived
+  as: Juha
+  message: "Olen perillä Kampissa"
+  tools: [{tool: check_in, status: ok}]
+  or_tools: [{tool: check_in, status: invalid}]
+  reply_lang: fi
+
+- id: en_done_here
+  as: Juha
+  setup: ["Olen perillä Kampissa"]
+  message: "I'm done here"
+  tools: [{tool: check_out, status: ok}]
+  or_tools: [{tool: check_out, status: invalid}]
+  reply_lang: en
+
+# The card carries the site's own instructions (seed data in English); no language check.
+- id: fi_door_code
+  as: Juha
+  message: "Mikä on ovikoodi Kampissa?"
+  tools: [{tool: visit_details, status: ok}]
+  reply_blocks: [card]

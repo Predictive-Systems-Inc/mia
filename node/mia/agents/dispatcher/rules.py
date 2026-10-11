@@ -158,6 +158,9 @@ def decide(intent: Intent, messages: list[ModelMessage], info: AgentInfo) -> Mod
         return _call("assign_cover", {"visit_id": visit_id, "candidate_name": intent.person_hint})
     if intent.name == "cover_reply":
         return _call("respond_to_cover", {"accept": bool(intent.accept)})
+    if intent.name in ("check_in", "check_out", "visit_details"):
+        args = {"location_name": intent.location_hint} if intent.location_hint else {}
+        return _call(intent.name, args)
     return _final(info, _help(lang))
 
 
@@ -172,6 +175,8 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
         return [TextBlock(text=t("cover.visit_not_found", lang))]
     if status == "invalid" and part.tool_name == "respond_to_cover":
         return [TextBlock(text=t("respond.none", lang))]
+    if part.tool_name in ("check_in", "check_out", "visit_details"):
+        return _field_work(part.tool_name, out, lang)
     if status == "invalid":
         return [TextBlock(text=out.get("message", ""))]
     if part.tool_name == "record_absence":
@@ -245,6 +250,27 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
         params = {"location": v["location"], "date": _fmt_date(v["date"], lang), "time": v["start"]}
         return [TextBlock(text=t("respond.accepted", lang, **params))]
     return [TextBlock(text=t("fallback.help", lang))]
+
+
+def _field_work(tool: str, out: dict[str, Any], lang: str) -> list[Block]:
+    """Replies for check-in, check-out and visit details."""
+    if out.get("status") != "ok":
+        reason = out.get("reason") or ("not_checked_in" if tool == "check_out" else "no_visit")
+        return [TextBlock(text=t(f"{tool}.{reason}", lang))]
+    v = out["visit"]
+    if tool == "visit_details":
+        fields = [CardField(label=t("field.address", lang), value=out["address"] or "-")]
+        if out["instructions"]:
+            fields.append(CardField(label=t("field.instructions", lang), value=out["instructions"]))
+        if out["access_notes"]:
+            fields.append(CardField(label=t("field.access", lang), value=out["access_notes"]))
+        if out["checklist"]:
+            fields.append(
+                CardField(label=t("field.checklist", lang), value="; ".join(out["checklist"]))
+            )
+        title = f"{v['location']} {v['start']}"
+        return [CardBlock(title=title, fields=fields, sensitive=bool(out["access_notes"]))]
+    return [TextBlock(text=t(f"{tool}.done", lang, location=v["location"], time=out["time"]))]
 
 
 def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:

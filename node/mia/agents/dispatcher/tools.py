@@ -2,6 +2,7 @@
 through mia.core services. Scheduling decisions live in scoring.py, not in the model."""
 
 import datetime as dt
+import re
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -222,11 +223,17 @@ class FindReplacementsOutput(BaseModel):
     escalated: bool
 
 
+def _degrade(word: str) -> str:
+    """Finnish consonant gradation: Kamppi, Kampissa; Tiitta, Tiitan. Doubled consonants
+    collapse so an inflected site name still matches its nominative."""
+    return re.sub(r"([bcdfghjklmnpqrstvwxz])\1", r"\1", word.lower())
+
+
 def _location_matches(loc: Location, hint: str) -> bool:
-    hint_low = hint.lower()
+    hint_low = _degrade(hint)
     return any(
         hint_low.startswith(word) or word.startswith(hint_low)
-        for word in loc.name.lower().split()
+        for word in (_degrade(w) for w in loc.name.split())
         if len(word) >= 4
     )
 
@@ -396,6 +403,165 @@ def respond_to_cover(
     )
 
 
+# ---- field work: check-in, check-out, visit details ---------------------------------------
+
+
+class CheckInInput(BaseModel):
+    location_name: str | None = Field(None, description="The site, when the user names it")
+
+
+class CheckOutInput(BaseModel):
+    location_name: str | None = Field(None, description="The site, when the user names it")
+
+
+class VisitDetailsInput(BaseModel):
+    location_name: str | None = Field(None, description="The site, when the user names it")
+
+
+class AttendanceOutput(BaseModel):
+    status: Literal["ok", "invalid"]
+    reason: str | None = None  # no_visit, too_early, too_late, already, not_checked_in
+    visit: VisitInfo | None = None
+    time: str = ""
+
+
+class VisitDetailsOutput(BaseModel):
+    status: Literal["ok", "invalid"]
+    reason: str | None = None
+    visit: VisitInfo | None = None
+    address: str = ""
+    instructions: str = ""
+    access_notes: str = ""
+    checklist: list[str] = Field(default_factory=list)
+
+
+def _own_visits_today(deps: AgentDeps, location_name: str | None) -> list[Visit]:
+    """The acting person's visits around today (yesterday to tomorrow, so a visit that crosses
+    midnight is still found), by start; narrowed to a named site."""
+    day = dt.timedelta(days=1)
+    rows = visits_for(
+        deps.session, deps.branch.id, deps.person.id, deps.today - day, deps.today + day
+    )
+    if location_name:
+        rows = [
+            v
+            for v in rows
+            if (loc := deps.session.get(Location, v.location_id)) is not None
+            and _location_matches(loc, location_name)
+        ]
+    return rows
+
+
+def _reason(exc: scheduling.ScheduleError) -> str:
+    text = str(exc)
+    if "too early" in text:
+        return "too_early"
+    if "too late" in text:
+        return "too_late"
+    if "in_progress" in text or "completed" in text:
+        return "already"
+    return "no_visit"
+
+
+def _local_time(when: dt.datetime, tz: str) -> str:
+    return when.astimezone(ZoneInfo(tz)).strftime("%H:%M")
+
+
+def check_in(deps: AgentDeps, args: CheckInInput, tool_call_id: str) -> AttendanceOutput:
+    """Check the acting person in to their planned visit whose window holds now."""
+    _check(
+        deps,
+        Resource(kind="data", name="core.visit", owner_id=deps.person.id),
+        "write",
+        tool_call_id,
+    )
+    now = utcnow()
+    rows = _own_visits_today(deps, args.location_name)
+    if any(v.status == "in_progress" for v in rows):
+        return AttendanceOutput(status="invalid", reason="already")
+    planned = [v for v in rows if v.status == "planned"]
+    if not planned:
+        return AttendanceOutput(status="invalid", reason="no_visit")
+    open_now = [
+        v
+        for v in planned
+        if v.planned_start - scheduling.CHECK_IN_EARLY
+        <= now
+        <= v.planned_end + scheduling.CHECK_IN_LATE
+    ]
+    if not open_now:
+        nearest = min(planned, key=lambda v: abs((v.planned_start - now).total_seconds()))
+        reason = "too_early" if now < nearest.planned_start else "too_late"
+        return AttendanceOutput(status="invalid", reason=reason)
+    visit = min(open_now, key=lambda v: abs((v.planned_start - now).total_seconds()))
+    try:
+        scheduling.check_in(deps.session, deps.actor, visit, deps.person, now)
+    except scheduling.ScheduleError as exc:
+        return AttendanceOutput(status="invalid", reason=_reason(exc))
+    tz = deps.branch.timezone
+    return AttendanceOutput(
+        status="ok", visit=visit_info(deps.session, visit, tz), time=_local_time(now, tz)
+    )
+
+
+def check_out(deps: AgentDeps, args: CheckOutInput, tool_call_id: str) -> AttendanceOutput:
+    """Check the acting person out of their visit in progress."""
+    _check(
+        deps,
+        Resource(kind="data", name="core.visit", owner_id=deps.person.id),
+        "write",
+        tool_call_id,
+    )
+    now = utcnow()
+    running = [v for v in _own_visits_today(deps, args.location_name) if v.status == "in_progress"]
+    if not running:
+        return AttendanceOutput(status="invalid", reason="not_checked_in")
+    visit = running[0]
+    try:
+        scheduling.check_out(deps.session, deps.actor, visit, deps.person, now)
+    except scheduling.ScheduleError as exc:
+        return AttendanceOutput(status="invalid", reason=_reason(exc))
+    tz = deps.branch.timezone
+    return AttendanceOutput(
+        status="ok", visit=visit_info(deps.session, visit, tz), time=_local_time(now, tz)
+    )
+
+
+def visit_details(
+    deps: AgentDeps, args: VisitDetailsInput, tool_call_id: str
+) -> VisitDetailsOutput:
+    """Address, instructions, access notes and checklist of the acting person's current or
+    next visit today (or of the named site's visit)."""
+    _check(
+        deps,
+        Resource(kind="data", name="core.visit", owner_id=deps.person.id),
+        "read",
+        tool_call_id,
+    )
+    now = utcnow()
+    rows = [v for v in _own_visits_today(deps, args.location_name) if v.status != "cancelled"]
+    if not rows:
+        return VisitDetailsOutput(status="invalid", reason="no_visit")
+    current = [v for v in rows if v.status == "in_progress" or v.planned_end >= now]
+    visit = current[0] if current else rows[-1]
+    loc = deps.session.get(Location, visit.location_id)
+    _check(deps, Resource(kind="data", name="core.location"), "read", tool_call_id)
+    from mia.templates.cleaning.models import CleaningChecklist
+
+    checklist = deps.session.exec(
+        select(CleaningChecklist).where(CleaningChecklist.job_id == visit.job_id)
+    ).first()
+    items = [str(i.get("text", "")) for i in (checklist.items if checklist else [])]
+    return VisitDetailsOutput(
+        status="ok",
+        visit=visit_info(deps.session, visit, deps.branch.timezone),
+        address=loc.address if loc else "",
+        instructions=loc.instructions if loc else "",
+        access_notes=loc.access_notes if loc else "",
+        checklist=items,
+    )
+
+
 BINDINGS = [
     ToolBinding(
         "dispatcher.get_my_visits",
@@ -430,5 +596,24 @@ BINDINGS = [
         respond_to_cover,
         RespondToCoverInput,
         "Record the user's yes or no to a cover request Mia sent them.",
+    ),
+    ToolBinding(
+        "dispatcher.check_in",
+        check_in,
+        CheckInInput,
+        "The user says they arrived at a site: check them in to their visit that is due now.",
+    ),
+    ToolBinding(
+        "dispatcher.check_out",
+        check_out,
+        CheckOutInput,
+        "The user says they finished and are leaving: check them out of the visit in progress.",
+    ),
+    ToolBinding(
+        "dispatcher.visit_details",
+        visit_details,
+        VisitDetailsInput,
+        "Address, instructions, access notes and checklist of the user's current or next "
+        "visit today (or of the site they name).",
     ),
 ]

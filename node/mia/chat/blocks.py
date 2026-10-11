@@ -26,6 +26,7 @@ class CardBlock(BaseModel):
     title: str
     subtitle: str | None = None
     fields: list[CardField] = Field(default_factory=list)
+    sensitive: bool = False  # access notes and the like: a link, not plain text, on channels
 
 
 class ApprovalCardBlock(BaseModel):
@@ -147,6 +148,7 @@ class ChatReply(BaseModel):
     message_id: str
     agent_id: str
     blocks: list[Block]
+    sensitive: bool = False  # the turn exposed access notes or the like: channels get a link
 
     def text(self) -> str:
         """Plain text rendering, for the terminal and for text-only channels."""

@@ -83,3 +83,51 @@ def test_language_is_the_majority_not_the_first_finnish_letter() -> None:
     """Finnish places and names in an English sentence do not make it Finnish."""
     assert detect_language("I'm sick, can't do the Töölö visit with Mäkinen", "fi") == "en"
     assert detect_language("Olen kipeä, en pääse Töölöön", "en") == "fi"
+
+
+@pytest.mark.parametrize(
+    ("text", "intent", "lang"),
+    [
+        ("Olen perillä", "check_in", "fi"),
+        ("Olen paikalla Kampissa", "check_in", "fi"),
+        ("I've arrived at Kalasatama", "check_in", "en"),
+        ("I'm here", "check_in", "en"),
+        ("Valmis, lähden nyt", "check_out", "fi"),
+        ("I'm done here", "check_out", "en"),
+        ("All done at Kamppi", "check_out", "en"),
+        ("Mikä on ovikoodi?", "visit_details", "fi"),
+        ("What's the address of the Töölö visit?", "visit_details", "en"),
+        ("Mitkä ovat ohjeet Kampissa?", "visit_details", "fi"),
+    ],
+)
+def test_field_work_intents(text: str, intent: str, lang: str) -> None:
+    got = classify(text, TODAY)
+    assert (got.name, got.lang) == (intent, lang)
+
+
+def test_field_work_location_hint() -> None:
+    assert classify("I've arrived at Kalasatama", TODAY).location_hint == "Kalasatama"
+    assert classify("Mikä on ovikoodi Kampissa?", TODAY).location_hint == "Kampissa"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Just checking in, is the Kamppi visit still on?",
+        "Can you check out my schedule for Monday?",
+        "Finished the kitchen, where is the vacuum?",
+        "I'm done with the report",
+        "Olen valmis aloittamaan",
+        "Lähden lomalle ensi viikolla",
+        "Aloitan huomenna klo 8",
+        "Olen paikalla huomenna klo 8",
+        "The delivery arrived",
+        "Who is at the site today?",
+        "Onko Maria paikalla?",
+        "Mitä on tehty tänään?",
+        "I'm done, show my visits",
+    ],
+)
+def test_everyday_messages_never_check_in_or_out(text: str) -> None:
+    """A check-in or check-out is a write: only an anchored phrase triggers it."""
+    assert classify(text, TODAY).name not in ("check_in", "check_out"), text

@@ -1,5 +1,6 @@
 """Chat endpoints and the four demo conversations, over HTTP with MIA_MODEL=test."""
 
+import datetime as dt
 import json
 
 import pytest
@@ -259,3 +260,30 @@ def test_reply_blocks_still_reject_what_cannot_be_read() -> None:
         AgentReply.model_validate({"blocks": [{"type": "chart", "data": [1, 2]}]})
     with pytest.raises(ValidationError):
         AgentReply.model_validate({"blocks": [{"approval_id": "x"}]})  # missing title, summary
+
+
+def test_demo_5_cleaner_arrives_asks_the_door_code_and_finishes(
+    client: TestClient, people: dict[str, Person], session: Session, daytime: object
+) -> None:
+    from mia.core import store
+    from mia.core.models import Actor, Location
+
+    juha = people["Juha"]
+    kamppi = session.exec(select(Location).where(Location.name == "Kamppi shop")).one()
+    store.update(session, kamppi, {"access_notes": "Door code 4711"}, Actor.person(people["Sanna"]))
+    session.commit()
+    arrived = say(client, juha, "Olen perillä Kampissa")
+    assert "Kirjasin saapumisesi" in blocks_of(arrived, "text")[0]["text"]
+    details = say(client, juha, "Mikä on ovikoodi?", arrived["thread_id"])
+    card = blocks_of(details, "card")[0]
+    assert any(f["label"] == "Osoite" for f in card["fields"])
+    assert details["sensitive"] is True  # the tool returned access notes: the whole reply is
+    later = say(client, juha, "Kiitos", arrived["thread_id"])
+    assert later["sensitive"] is True  # the notes stay in the thread's model history
+    done = say(client, juha, "Valmis, lähden nyt", arrived["thread_id"])
+    assert "Kirjasin lähtösi" in blocks_of(done, "text")[0]["text"]
+    today = dt.datetime.now(dt.UTC).date()
+    visit = session.exec(
+        select(Visit).where(Visit.status == "completed").where(Visit.date == today)
+    ).first()
+    assert visit is not None and juha.id in visit.assigned_person_ids

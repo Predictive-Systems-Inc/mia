@@ -177,8 +177,40 @@ def _finish(
         deps.actor,
     )
     return ChatReply(
-        thread_id=thread.id, message_id=message.id, agent_id=MANIFEST.id, blocks=blocks
+        thread_id=thread.id,
+        message_id=message.id,
+        agent_id=MANIFEST.id,
+        blocks=blocks,
+        sensitive=_sensitive(session, deps, thread, blocks),
     )
+
+
+EXPOSING_TOOLS = ("dispatcher.visit_details", "visit_details")
+
+
+def _sensitive(session: Session, deps: AgentDeps, thread: Thread, blocks: list[Block]) -> bool:
+    """The reply is sensitive when a block says so, a tool handed the model access notes in
+    this turn, or an earlier turn of the thread did (the notes stay in the model history, so
+    any later free-text reply may repeat them)."""
+    if any(getattr(b, "sensitive", False) for b in blocks):
+        return True
+    if any(e.tool in EXPOSING_TOOLS and e.output.get("access_notes") for e in deps.tool_log):
+        return True
+    return _thread_exposed(session, thread)
+
+
+def _thread_exposed(session: Session, thread: Thread) -> bool:
+    for row in session.exec(select(Message).where(Message.thread_id == thread.id)):
+        for mm in row.model_messages:
+            for part in mm.get("parts", []):
+                if part.get("part_kind") != "tool-return":
+                    continue
+                if part.get("tool_name") not in EXPOSING_TOOLS:
+                    continue
+                content = part.get("content")
+                if isinstance(content, dict) and content.get("access_notes"):
+                    return True
+    return False
 
 
 def _latest_message(session: Session, thread: Thread, role: str) -> Message | None:
@@ -290,7 +322,11 @@ def _store_reply(
         deps.actor,
     )
     return ChatReply(
-        thread_id=thread.id, message_id=message.id, agent_id=MANIFEST.id, blocks=blocks
+        thread_id=thread.id,
+        message_id=message.id,
+        agent_id=MANIFEST.id,
+        blocks=blocks,
+        sensitive=_sensitive(session, deps, thread, blocks),
     )
 
 

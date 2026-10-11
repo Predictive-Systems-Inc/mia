@@ -249,3 +249,133 @@ def test_running_late_affects_the_morning() -> None:
         date=day, reason="late", partial_day="afternoon"
     ).partial_day == ("afternoon")
     assert tools.RecordAbsenceInput(date=day, reason="sick").partial_day is None
+
+
+# ---- field work: check-in, check-out, visit details ---------------------------------------
+
+
+def _today_visit(session: Session, deps: AgentDeps, name: str) -> Visit:
+    from mia.core.models import Job
+
+    job = session.exec(select(Job).where(Job.name == name)).one()
+    row = session.exec(
+        select(Visit).where(Visit.job_id == job.id).where(Visit.date == deps.today)
+    ).first()
+    assert row is not None
+    return row
+
+
+def test_check_in_picks_the_visit_in_window(
+    session: Session, branch: Branch, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deps = deps_for(session, branch, people["Juha"])
+    visit = _today_visit(session, deps, "Kamppi shop clean")  # 09:00 to 10:00 for Juha
+    monkeypatch.setattr(tools, "utcnow", lambda: visit.planned_start + dt.timedelta(hours=3))
+    out = tools.check_in(deps, tools.CheckInInput(), "c1")
+    assert out.status == "ok" and out.visit and out.visit.visit_id == visit.id
+    session.refresh(visit)
+    assert visit.status == "in_progress"
+    again = tools.check_in(deps, tools.CheckInInput(location_name="Kamppi"), "c2")
+    assert again.status == "invalid" and again.reason == "already"
+    monkeypatch.setattr(tools, "utcnow", lambda: visit.planned_end + dt.timedelta(hours=5))
+    done = tools.check_out(deps, tools.CheckOutInput(), "c3")
+    assert done.status == "ok" and done.visit and done.visit.visit_id == visit.id
+    assert tools.check_out(deps, tools.CheckOutInput(), "c4").reason == "not_checked_in"
+
+
+def test_check_in_too_early_and_by_site(
+    session: Session, branch: Branch, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deps = deps_for(session, branch, people["Juha"])
+    visit = _today_visit(session, deps, "Kamppi shop clean")
+    monkeypatch.setattr(tools, "utcnow", lambda: visit.planned_start - dt.timedelta(hours=3))
+    assert (
+        tools.check_in(deps, tools.CheckInInput(location_name="Kamppi"), "c1").reason == "too_early"
+    )
+    monkeypatch.setattr(tools, "utcnow", lambda: visit.planned_end + dt.timedelta(hours=5))
+    assert (
+        tools.check_in(deps, tools.CheckInInput(location_name="Kamppi"), "c2").reason == "too_late"
+    )
+    assert (
+        tools.check_in(deps, tools.CheckInInput(location_name="Nowhere"), "c3").reason == "no_visit"
+    )
+    inflected = tools.check_in(deps, tools.CheckInInput(location_name="Kampissa"), "c4")
+    assert inflected.reason == "too_late"  # Kampissa matches Kamppi (consonant gradation)
+
+
+def test_check_in_only_own_visits(
+    session: Session, branch: Branch, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deps = deps_for(session, branch, people["Sanna"])  # a supervisor with no visits
+    juha = deps_for(session, branch, people["Juha"])
+    visit = _today_visit(session, juha, "Kamppi shop clean")
+    monkeypatch.setattr(tools, "utcnow", lambda: visit.planned_start)
+    assert (
+        tools.check_in(deps, tools.CheckInInput(location_name="Kamppi"), "c1").reason == "no_visit"
+    )
+    session.refresh(visit)
+    assert visit.status == "planned"
+
+
+def test_visit_details_card(session: Session, branch: Branch, people: dict[str, Person]) -> None:
+    deps = deps_for(session, branch, people["Juha"])
+    out = tools.visit_details(deps, tools.VisitDetailsInput(location_name="Kamppi"), "c1")
+    assert out.status == "ok" and out.visit and out.visit.location == "Kamppi shop"
+    assert out.address and out.checklist == ["Empty bins", "Wipe surfaces"]
+    none = tools.visit_details(deps, tools.VisitDetailsInput(location_name="Nowhere"), "c2")
+    assert none.status == "invalid" and none.reason == "no_visit"
+    other = deps_for(session, branch, people["Liisa"])  # no Kamppi visits
+    assert (
+        tools.visit_details(other, tools.VisitDetailsInput(location_name="Kamppi"), "c3").reason
+        == "no_visit"
+    )
+
+
+def test_field_work_tools_need_permission(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    """A viewer holds none of the three tools; the denial is logged like any other."""
+    from mia.core import people as people_service
+
+    viewer = people_service.add_person(
+        session,
+        Actor.person(people["Helena"]),
+        branch_id=branch.id,
+        name="Vilma Viewer",
+        roles=["viewer"],
+    )
+    deps = deps_for(session, branch, viewer)
+    for fn, args in (
+        (tools.check_in, tools.CheckInInput()),
+        (tools.check_out, tools.CheckOutInput()),
+        (tools.visit_details, tools.VisitDetailsInput()),
+    ):
+        with pytest.raises(PermissionDenied):
+            fn(deps, args, "c1")  # type: ignore[arg-type]
+    assert session.exec(select(Event).where(Event.action == "rbac.deny")).all()
+
+
+def test_check_in_and_out_span_midnight(
+    session: Session, branch: Branch, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An evening visit ending after midnight can be checked out on the next calendar day."""
+    deps = deps_for(session, branch, people["Juha"])
+    visit = _today_visit(session, deps, "Kamppi shop clean")
+    from mia.core import store
+
+    late_start = visit.planned_start.replace(
+        hour=19, minute=0
+    )  # 22:00 local in summer, 21:00 in winter
+    store.update(
+        session,
+        visit,
+        {"planned_start": late_start, "planned_end": late_start + dt.timedelta(hours=4)},
+        deps.actor,
+    )
+    monkeypatch.setattr(tools, "utcnow", lambda: late_start + dt.timedelta(minutes=5))
+    assert tools.check_in(deps, tools.CheckInInput(location_name="Kamppi"), "c1").status == "ok"
+    tomorrow = deps.today + dt.timedelta(days=1)
+    deps.today = tomorrow  # the clock has passed local midnight
+    monkeypatch.setattr(tools, "utcnow", lambda: late_start + dt.timedelta(hours=4, minutes=10))
+    out = tools.check_out(deps, tools.CheckOutInput(), "c2")
+    assert out.status == "ok" and out.visit and out.visit.visit_id == visit.id

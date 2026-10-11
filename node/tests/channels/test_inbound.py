@@ -185,3 +185,20 @@ def test_error_during_a_turn_marks_failed_and_apologises_once(
     row = session.exec(select(ChannelInbound)).one()
     assert row.status == "failed" and "model down" in (row.error or "")
     assert sum("jokin meni vikaan" in t for t in texts_to(sim)) == 1
+
+
+def test_details_are_sensitive_on_channels(
+    client: TestClient, sim: SimAdapter, session: Session, people: dict[str, Person], link: LinkFn
+) -> None:
+    """A door code never goes out as plain text on a channel: the reply becomes an app link."""
+    from mia.core import store
+    from mia.core.models import Actor, Location
+
+    loc = session.exec(select(Location).where(Location.name == "Kamppi shop")).one()
+    store.update(session, loc, {"access_notes": "Door code 4711"}, Actor.person(people["Sanna"]))
+    session.commit()
+    link(people["Juha"], ADDR)
+    assert post(client, sim, msg("Mikä on ovikoodi Kampissa?", "m1")) == 200
+    texts = texts_to(sim)
+    assert texts and all("4711" not in t for t in texts)
+    assert any("http" in t for t in texts)  # the link to the app
