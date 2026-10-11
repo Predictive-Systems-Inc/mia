@@ -126,6 +126,7 @@ def test_no_node_secret_refuses_to_create_codes(
     from mia.settings import get_settings
 
     monkeypatch.setenv("MIA_NODE_SECRET", "")
+    monkeypatch.delenv("MIA_MASTER_KEY_FILE")  # a key file would do instead (ADR 011)
     get_settings.cache_clear()
     with pytest.raises(linking.LinkingError):
         _code(session, people["Juha"], people["Sanna"])

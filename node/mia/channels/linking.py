@@ -1,44 +1,39 @@
 """Linking a channel address to a person with a one-time code (spec, Channel rules).
 
-Guarantees: codes are 6 digits, stored only as an HMAC keyed by MIA_NODE_SECRET, single use and
-time limited; one active address belongs to one person and is never overwritten; 5 failed
-attempts from an address within an hour block it for an hour; every attempt is an event.
+Guarantees (codes, limits and attempts live in core/auth.py): codes are 6 digits, stored only
+as an HMAC, single use and time limited; one active address belongs to one person and is never
+overwritten; 5 failed attempts from an address within an hour block it for an hour; every
+attempt is an event.
 """
 
 import datetime as dt
-import hashlib
-import hmac
 import re
-import secrets
 from typing import Literal
 
 from pydantic import BaseModel
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
 from mia.chat.blocks import TextBlock
-from mia.core import store
+from mia.core import auth, keys, store
 from mia.core.db import utcnow
-from mia.core.models import (
-    Actor,
-    AuthAttempt,
-    AuthCode,
-    ChannelIdentity,
-    Person,
-    Principal,
-)
+from mia.core.models import Actor, AuthCode, ChannelIdentity, Person, Principal
 from mia.i18n import t
 from mia.settings import get_settings
 
 Purpose = Literal["invite", "self"]
 Status = Literal["linked", "invalid", "expired", "used", "taken", "blocked"]
-VALID_FOR = {"invite": dt.timedelta(days=7), "self": dt.timedelta(minutes=10)}
-MAX_FAILURES = 5
-LOCKOUT = dt.timedelta(hours=1)
+STATUS_OF: dict[str, Status] = {
+    "ok": "linked",
+    "invalid": "invalid",
+    "expired": "expired",
+    "used": "used",
+    "exhausted": "invalid",
+}
 LINK_TEXT = re.compile(r"^\s*LINK\s+(\d{6})\s*$", re.IGNORECASE)
 
 
 class LinkingError(RuntimeError):
-    """Linking is not configured (no MIA_NODE_SECRET)."""
+    """Linking is not configured (no master key file and no MIA_NODE_SECRET)."""
 
 
 class RedeemResult(BaseModel):
@@ -46,35 +41,12 @@ class RedeemResult(BaseModel):
     person: Person | None = None
 
 
-def _hmac(code: str) -> str:
-    secret = get_settings().MIA_NODE_SECRET
-    if not secret:
-        raise LinkingError("set MIA_NODE_SECRET before creating or redeeming link codes")
-    return hmac.new(secret.encode(), code.encode(), hashlib.sha256).hexdigest()
-
-
 def create_code(session: Session, actor: Actor, person: Person, purpose: Purpose) -> str:
     """A new code for the person. The plain code is returned once and never stored."""
-    while True:
-        code = f"{secrets.randbelow(10**6):06d}"
-        digest = _hmac(code)
-        taken = session.exec(select(AuthCode).where(AuthCode.code_hmac == digest))
-        if taken.first() is None:
-            break
-    store.insert(
-        session,
-        AuthCode(
-            branch_id=person.branch_id,
-            person_id=person.id,
-            code_hmac=digest,
-            purpose=purpose,
-            expires_at=utcnow() + VALID_FOR[purpose],
-            created_by=actor.principal.id,
-        ),
-        actor,
-        action="channel.code_created",
-    )
-    return code
+    try:
+        return auth.create_code(session, actor, person, purpose, utcnow())
+    except keys.MasterKeyError as exc:
+        raise LinkingError(str(exc)) from exc
 
 
 def invite_link(code: str) -> str:
@@ -104,39 +76,34 @@ def _channel_actor(channel: str) -> Actor:
     return Actor(principal=Principal(type="system", id=f"channel:{channel}"), branch_id="")
 
 
-def _blocked(session: Session, channel: str, address: str, now: dt.datetime) -> bool:
-    failures = session.exec(
-        select(AuthAttempt)
-        .where(AuthAttempt.kind == "link_code")
-        .where(AuthAttempt.key == f"{channel}:{address}@-")
-        .where(AuthAttempt.ok == False)
-        .where(col(AuthAttempt.created_at) > now - LOCKOUT)
-    ).all()
-    return len(failures) >= MAX_FAILURES
+def _key(channel: str, address: str) -> str:
+    return auth.attempt_key(f"{channel}:{address}", None)
 
 
 def _record(session: Session, channel: str, address: str, ok: bool, now: dt.datetime) -> None:
-    attempt = AuthAttempt(kind="link_code", key=f"{channel}:{address}@-", ok=ok, created_at=now)
-    store.insert(session, attempt, _channel_actor(channel), action="channel.link_attempt")
+    auth.record_attempt(
+        session,
+        "link_code",
+        _key(channel, address),
+        ok,
+        now,
+        actor=_channel_actor(channel),
+        action="channel.link_attempt",
+    )
 
 
 def redeem(
     session: Session, channel: str, address: str, code: str, now: dt.datetime
 ) -> RedeemResult:
     """Link the address to the code's person, or say why not. Never overwrites a link."""
-    if _blocked(session, channel, address, now):
+    if auth.throttled(session, "link_code", _key(channel, address), now):
         _record(session, channel, address, False, now)
         return RedeemResult(status="blocked")
-    row = session.exec(select(AuthCode).where(AuthCode.code_hmac == _hmac(code))).first()
-    status: Status
-    if row is None:
-        status = "invalid"
-    elif row.used_at is not None:
-        status = "used"
-    elif row.expires_at <= now:
-        status = "expired"
-    else:
-        status = "linked"
+    result = auth.check_code(session, "invite", code, now)
+    if result.status == "invalid":
+        result = auth.check_code(session, "self", code, now)
+    status: Status = STATUS_OF[result.status]
+    row = result.row
     if status != "linked" or row is None:
         _record(session, channel, address, False, now)
         return RedeemResult(status=status)
@@ -150,7 +117,7 @@ def redeem(
         _tell_inviter(session, row, person)
         return RedeemResult(status="taken", person=None)
     actor = Actor.person(person)
-    store.update(session, row, {"used_at": now}, actor, action="channel.code_used")
+    auth.use_code(session, actor, row, now)
     if existing is None:
         store.insert(
             session,

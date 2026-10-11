@@ -36,6 +36,13 @@ class ApprovalError(Exception):
     """A decision was refused (self-approval, wrong role, wrong channel, not pending)."""
 
 
+STEP_UP_TTL = timedelta(minutes=5)
+
+
+class StepUpRequired(ApprovalError):
+    """An app_only approval needs aal2 and a PIN entered in the last five minutes."""
+
+
 def register_handler(approval_type: str, handler: Handler) -> None:
     """Register the service function that applies an approved request of this type."""
     _handlers[approval_type] = handler
