@@ -19,6 +19,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from mia.agents.base import build_model
 from mia.agents.dispatcher.rules import rules_model
@@ -114,7 +115,8 @@ async def translate_file(
 ) -> tuple[int, int]:
     """Append the `lang` translations of the English records that have none yet (matched by
     `source_id`), optionally one `split` only. Returns (added, skipped): skipped are empty,
-    missing or doubled translations. Each batch is flushed, so a stopped run resumes."""
+    missing or doubled translations, or a whole batch whose answer never validated. Each
+    batch is flushed, so a stopped run resumes."""
     if batch < 1:
         raise ValueError("batch must be at least 1")
     rows = _rows(path)
@@ -140,7 +142,12 @@ async def translate_file(
     with path.open("a", encoding="utf-8") as out:
         for start in range(0, len(todo), batch):
             chunk = todo[start : start + batch]
-            result = await agent.run(ask(lang, [(r["id"], r["text"]) for r in chunk]))
+            try:
+                result = await agent.run(ask(lang, [(r["id"], r["text"]) for r in chunk]))
+            except UnexpectedModelBehavior as exc:  # a malformed answer costs this batch only
+                log.warning("batch at %d skipped: %s", start, exc)
+                skipped += len(chunk)
+                continue
             got = _answers(result.output.items)
             for src in chunk:
                 text = got.get(src["id"], "")

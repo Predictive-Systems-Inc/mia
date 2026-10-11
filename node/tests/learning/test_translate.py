@@ -169,3 +169,44 @@ def test_translate_command_routes_through_egress_for_gateway_models(
     assert commands.translate_cmd(argparse.Namespace(model="gateway/x", **base)) == 0
     assert seen == [False, True]
     assert commands.translate_cmd(argparse.Namespace(model="local/m", **{**base, "batch": 0})) == 1
+
+
+def test_a_malformed_batch_is_skipped_not_fatal(tmp_path: Path) -> None:
+    """One batch whose output never validates costs that batch only; the run goes on."""
+    src = _source(tmp_path)
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls <= 2:  # the first chunk: a broken answer, twice (one retry)
+            message = {"role": "assistant", "content": "not a tool call", "tool_calls": []}
+        else:
+            args = json.dumps(
+                {"items": [{"id": "dispatcher.check_in/en/002", "text": "Oon paikalla"}]}
+            )
+            call = {
+                "id": "c",
+                "type": "function",
+                "function": {"name": "final_result", "arguments": args},
+            }
+            message = {"role": "assistant", "content": None, "tool_calls": [call]}
+        body = {
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "m",
+            "choices": [{"index": 0, "finish_reason": "stop", "message": message}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        return httpx.Response(200, json=body)
+
+    with models.override_allow_model_requests(True):
+        added, skipped = asyncio.run(
+            translate.translate_file(
+                src, "fi", "local/m", transport=httpx.MockTransport(handler), batch=1
+            )
+        )
+    assert (added, skipped) == (1, 1)
+    rows = [json.loads(line) for line in src.read_text(encoding="utf-8").splitlines()]
+    assert rows[-1]["source_id"] == "dispatcher.check_in/en/002"
