@@ -1,6 +1,7 @@
 """Site problems over chat and the supervisor summary."""
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -114,7 +115,7 @@ def test_supervisor_summary_and_resolve(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:  # type: ignore[no-untyped-def]
     juha, sanna = people["Juha"], people["Sanna"]
-    today = dt.datetime.now(dt.UTC).date()
+    today = dt.datetime.now(ZoneInfo("Europe/Helsinki")).date()
     job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
     tomorrow = session.exec(
         select(Visit)
@@ -190,7 +191,7 @@ def test_long_problem_message_does_not_crash_the_turn(
     login,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:  # type: ignore[no-untyped-def]
-    today = dt.datetime.now(dt.UTC).date()
+    today = dt.datetime.now(ZoneInfo("Europe/Helsinki")).date()
     job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
     visit = session.exec(
         select(Visit).where(Visit.job_id == job.id).where(Visit.date == today)
@@ -248,7 +249,7 @@ def test_reporting_supervisor_is_not_paged_about_themselves(
 
     sanna = people["Sanna"]
     job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
-    today = dt.datetime.now(dt.UTC).date()
+    today = dt.datetime.now(ZoneInfo("Europe/Helsinki")).date()
     visit = session.exec(
         select(Visit).where(Visit.job_id == job.id).where(Visit.date == today)
     ).one()

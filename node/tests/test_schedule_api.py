@@ -17,9 +17,14 @@ def test_cli_generate(capsys: pytest.CaptureFixture[str]) -> None:
     assert "generated 0" in capsys.readouterr().out
 
 
-def test_ticker_generates_once_a_day(session: Session, branch: object) -> None:
+def test_ticker_generates_once_a_day(
+    session: Session, branch: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mia.api import main as api_main
     from mia.api.main import run_due_work
 
+    noon = dt.datetime.now(ZoneInfo("Europe/Helsinki")).replace(hour=12, minute=0)
+    monkeypatch.setattr(api_main, "utcnow", lambda: noon)  # generation runs from 03:00 local
     before = len(session.exec(select(Visit)).all())
     asyncio.run(run_due_work())
     session.expire_all()
@@ -31,6 +36,7 @@ def test_ticker_generates_once_a_day(session: Session, branch: object) -> None:
 
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 
@@ -38,7 +44,7 @@ from mia.api.main import app
 from mia.core import scheduling
 from mia.core.models import Actor, Branch, Job, Person
 
-TODAY = dt.datetime.now(dt.UTC).date()
+TODAY = dt.datetime.now(ZoneInfo("Europe/Helsinki")).date()
 
 
 @pytest.fixture

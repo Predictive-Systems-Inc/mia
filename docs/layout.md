@@ -24,7 +24,7 @@ mia/
                             credentials, devices, clients; ADR 011), scheduling (recurrence,
                             visit generation, assignment rules, check-in, inbox), billing
                             (the monthly summary export)
-      templates/cleaning/   models (sites, checklists), seed
+      templates/cleaning/   models (sites, checklists), seed, importer (master data from YAML)
       agents/               base.py (manifest, guard, model factory)
         dispatcher/         manifest.yaml, job.md, prompts/, models.py, classifier.py,
                             scoring.py, cover.py (confirmation flow), alerts.py (missed

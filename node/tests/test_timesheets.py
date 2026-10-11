@@ -6,6 +6,7 @@ import csv
 import datetime as dt
 import io
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,7 +23,7 @@ from tests.test_alerts import _notes
 
 
 def _kamppi_today(session: Session) -> Visit:
-    today = dt.datetime.now(dt.UTC).date()
+    today = dt.datetime.now(ZoneInfo("Europe/Helsinki")).date()
     job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
     return session.exec(
         select(Visit).where(Visit.job_id == job.id).where(Visit.date == today)
