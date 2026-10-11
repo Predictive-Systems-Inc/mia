@@ -99,6 +99,7 @@ def test_upgrade_from_1_2_keeps_link_codes_and_attempts() -> None:
         assert not {"channel_link_codes", "channel_link_attempts"} & tables
     command.downgrade(cfg, "0003")
     with get_engine().connect() as conn:
-        assert conn.execute(
-            text("SELECT channel, address FROM channel_link_attempts")
-        ).one() == ("whatsapp", "358401")
+        assert conn.execute(text("SELECT channel, address FROM channel_link_attempts")).one() == (
+            "whatsapp",
+            "358401",
+        )

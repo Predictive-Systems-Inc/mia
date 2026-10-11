@@ -84,7 +84,11 @@ def test_snapshot_redacts_declared_and_requested_fields(branch: Branch) -> None:
     snap = snapshot(cred)
     assert snap is not None and snap["secret_hash"] == "<redacted>" and snap["login"] == "a@b.fi"
     row = ChannelOutbox(
-        branch_id=branch.id, person_id="P", channel="sim", address="1", payload={"text": "123456"},
+        branch_id=branch.id,
+        person_id="P",
+        channel="sim",
+        address="1",
+        payload={"text": "123456"},
         idempotency_key="k",
     )
     assert snapshot(row, redact={"payload"})["payload"] == "<redacted>"  # type: ignore[index]
@@ -98,30 +102,55 @@ def test_upgrade_from_1_2_keeps_link_codes_and_attempts() -> None:
     cfg = _alembic_config()
     command.upgrade(cfg, "0003")
     with get_engine().begin() as conn:
-        conn.execute(text("INSERT INTO organisation VALUES ('O', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'Org', 'FI', 'fi')"))
-        conn.execute(text("INSERT INTO branch VALUES ('B', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'O', 'Hki', 'Europe/Helsinki')"))
-        conn.execute(text(
-            "INSERT INTO person VALUES ('P', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', "
-            "'B', 'Pia', 'active', '[\"staff\"]', '[]', 'employee', 'fi', '', NULL, NULL, 1)"
-        ))
-        conn.execute(text(
-            "INSERT INTO channel_link_codes VALUES ('C', '2026-01-01T00:00:00+00:00', "
-            "'2026-01-01T00:00:00+00:00', 'B', 'P', 'abc', 'invite', '2026-01-08T00:00:00+00:00', NULL, 'P')"
-        ))
-        conn.execute(text(
-            "INSERT INTO channel_link_attempts VALUES ('A', '2026-01-01T00:00:00+00:00', "
-            "'2026-01-01T00:00:00+00:00', 'whatsapp', '358401', 0)"
-        ))
+        conn.execute(
+            text(
+                "INSERT INTO organisation VALUES ('O', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'Org', 'FI', 'fi')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO branch VALUES ('B', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'O', 'Hki', 'Europe/Helsinki')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO person VALUES ('P', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', "
+                "'B', 'Pia', 'active', '[\"staff\"]', '[]', 'employee', 'fi', '', NULL, NULL, 1)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO channel_link_codes VALUES ('C', '2026-01-01T00:00:00+00:00', "
+                "'2026-01-01T00:00:00+00:00', 'B', 'P', 'abc', 'invite', '2026-01-08T00:00:00+00:00', NULL, 'P')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO channel_link_attempts VALUES ('A', '2026-01-01T00:00:00+00:00', "
+                "'2026-01-01T00:00:00+00:00', 'whatsapp', '358401', 0)"
+            )
+        )
     command.upgrade(cfg, "head")
     with get_engine().connect() as conn:
-        assert conn.execute(text("SELECT purpose, address, tries FROM auth_codes")).one() == ("invite", None, 0)
-        assert conn.execute(text("SELECT kind, key, ok FROM auth_attempts")).one() == ("link_code", "whatsapp:358401@-", 0)
+        assert conn.execute(text("SELECT purpose, address, tries FROM auth_codes")).one() == (
+            "invite",
+            None,
+            0,
+        )
+        assert conn.execute(text("SELECT kind, key, ok FROM auth_attempts")).one() == (
+            "link_code",
+            "whatsapp:358401@-",
+            0,
+        )
         tables = set(inspect(conn).get_table_names())
         assert {"auth_credentials", "auth_devices", "auth_sessions", "auth_clients"} <= tables
         assert not {"channel_link_codes", "channel_link_attempts"} & tables
     command.downgrade(cfg, "0003")
     with get_engine().connect() as conn:
-        assert conn.execute(text("SELECT channel, address FROM channel_link_attempts")).one() == ("whatsapp", "358401")
+        assert conn.execute(text("SELECT channel, address FROM channel_link_attempts")).one() == (
+            "whatsapp",
+            "358401",
+        )
 ```
 
 In `node/tests/channels/test_linking.py` replace `ChannelLinkCode` with `AuthCode` everywhere (import and uses), and where the test reads attempt rows, `ChannelLinkAttempt` with `AuthAttempt` (its `key` is `f"{channel}:{address}@-"`, its `kind` is `"link_code"`).
@@ -523,7 +552,9 @@ def test_without_key_file_node_secret_is_the_fallback(monkeypatch: pytest.Monkey
 
     assert keys.master_key() == hashlib.sha256(b"old-secret").digest()
     # Link codes created before the key file existed keep working: same HMAC as before.
-    assert keys.code_hmac("123456") == hmac.new(b"old-secret", b"123456", hashlib.sha256).hexdigest()
+    assert (
+        keys.code_hmac("123456") == hmac.new(b"old-secret", b"123456", hashlib.sha256).hexdigest()
+    )
     monkeypatch.setenv("MIA_NODE_SECRET", "")
     get_settings.cache_clear()
     keys.reset_cache()
@@ -734,7 +765,12 @@ def verify_secret(secret: str, stored: str) -> bool:
     try:
         _, n, r, p, salt, digest = stored.split("$")
         expected = hashlib.scrypt(
-            secret.encode(), salt=_unb64(salt), n=int(n), r=int(r), p=int(p), maxmem=256 * 1024 * 1024
+            secret.encode(),
+            salt=_unb64(salt),
+            n=int(n),
+            r=int(r),
+            p=int(p),
+            maxmem=256 * 1024 * 1024,
         )
     except (ValueError, TypeError):
         return False
@@ -884,12 +920,21 @@ def test_password_round_trip_and_generic_failure(
     helena, actor = _owner(people)
     now = utcnow()
     cred = auth.set_password(session, actor, helena, " Helena@Example.FI ", "correct horse 1", now)
-    assert cred.login == "helena@example.fi" and cred.secret_hash and cred.secret_hash != "correct horse 1"
-    assert auth.check_password(session, "HELENA@example.fi", "correct horse 1", IP, now).id == helena.id
+    assert (
+        cred.login == "helena@example.fi"
+        and cred.secret_hash
+        and cred.secret_hash != "correct horse 1"
+    )
+    assert (
+        auth.check_password(session, "HELENA@example.fi", "correct horse 1", IP, now).id
+        == helena.id
+    )
     for login, pw in (("helena@example.fi", "nope"), ("nobody@example.fi", "nope")):
         with pytest.raises(auth.AuthError, match="invalid credentials"):
             auth.check_password(session, login, pw, IP, now)
-    actions = [e.action for e in session.exec(select(Event).where(Event.action.startswith("auth.")))]  # type: ignore[attr-defined]
+    actions = [
+        e.action for e in session.exec(select(Event).where(Event.action.startswith("auth.")))
+    ]  # type: ignore[attr-defined]
     assert actions.count("auth.login_failed") == 2 and "auth.login_succeeded" in actions
     assert "auth.password_set" in actions
     for e in session.exec(select(Event)):
@@ -904,7 +949,9 @@ def test_password_rules(session: Session, people: dict[str, Person]) -> None:
         auth.set_password(session, actor, helena, "not-an-email", "long enough password", utcnow())
     auth.set_password(session, actor, helena, "h@e.fi", "long enough password", utcnow())
     with pytest.raises(ValueError, match="in use"):
-        auth.set_password(session, actor, people["Sanna"], "h@e.fi", "another long password", utcnow())
+        auth.set_password(
+            session, actor, people["Sanna"], "h@e.fi", "another long password", utcnow()
+        )
 
 
 def test_lockout_per_pair_login_and_ip(session: Session, people: dict[str, Person]) -> None:
@@ -914,7 +961,9 @@ def test_lockout_per_pair_login_and_ip(session: Session, people: dict[str, Perso
     for _ in range(5):
         with pytest.raises(auth.AuthError):
             auth.check_password(session, "h@e.fi", "wrong", IP, now)
-    with pytest.raises(auth.Locked):  # the (login, IP) pair is blocked, even with the right password
+    with pytest.raises(
+        auth.Locked
+    ):  # the (login, IP) pair is blocked, even with the right password
         auth.check_password(session, "h@e.fi", "long enough password", IP, now)
     assert auth.check_password(session, "h@e.fi", "long enough password", "198.51.100.1", now)
     later = now + dt.timedelta(minutes=16)
@@ -934,7 +983,9 @@ def test_lockout_per_pair_login_and_ip(session: Session, people: dict[str, Perso
     assert not auth.throttled(session, "password", auth.attempt_key("x", "9.9.9.8"), ip_now)
 
 
-def test_codes_single_use_expiry_tries_and_sends(session: Session, people: dict[str, Person]) -> None:
+def test_codes_single_use_expiry_tries_and_sends(
+    session: Session, people: dict[str, Person]
+) -> None:
     juha, actor = people["Juha"], Actor.person(people["Juha"])
     now = utcnow()
     code = auth.create_code(session, actor, juha, "otp_login", now, address="358401")
@@ -943,7 +994,10 @@ def test_codes_single_use_expiry_tries_and_sends(session: Session, people: dict[
     assert row.code_hmac == keys.code_hmac(code) and row.address == "358401" and row.tries == 0
     assert auth.check_code(session, "otp_login", "000000", now).status == "invalid"
     assert auth.check_code(session, "mfa", code, now).status == "invalid"  # wrong purpose
-    assert auth.check_code(session, "otp_login", code, now + dt.timedelta(minutes=6)).status == "expired"
+    assert (
+        auth.check_code(session, "otp_login", code, now + dt.timedelta(minutes=6)).status
+        == "expired"
+    )
     for _ in range(5):
         auth.fail_code(session, "otp_login", now, address="358401")
     assert auth.check_code(session, "otp_login", code, now).status == "exhausted"
@@ -966,7 +1020,9 @@ def test_totp_enrol_confirm_window_and_reuse(session: Session, people: dict[str,
     cred, uri = auth.enrol_totp(session, actor, helena, now)
     assert cred.status == "pending" and uri.startswith("otpauth://totp/Mia:")
     seed = keys.totp_seed(cred.id, cred.data["nonce"])
-    assert not auth.check_totp(session, helena, keys.hotp(seed, keys.totp_step(now)), now)  # pending
+    assert not auth.check_totp(
+        session, helena, keys.hotp(seed, keys.totp_step(now)), now
+    )  # pending
     with pytest.raises(auth.AuthError):
         auth.confirm_totp(session, actor, cred, "000000", now)
     recovery = auth.confirm_totp(session, actor, cred, keys.hotp(seed, keys.totp_step(now)), now)
@@ -1114,7 +1170,11 @@ def _recent(
     prefix: str | None = None,
     suffix: str | None = None,
 ) -> list[AuthAttempt]:
-    stmt = select(AuthAttempt).where(AuthAttempt.ok == False).where(col(AuthAttempt.created_at) > since)  # noqa: E712
+    stmt = (
+        select(AuthAttempt)
+        .where(AuthAttempt.ok == False)
+        .where(col(AuthAttempt.created_at) > since)
+    )  # noqa: E712
     if kind is not None:
         stmt = stmt.where(AuthAttempt.kind == kind)
     if key is not None:
@@ -1267,7 +1327,13 @@ def fail_code(
 ) -> None:
     """A wrong guess against the live code of an address or person: one more try used."""
     for row in _live_codes(session, purpose, now, address=address, person_id=person_id)[:1]:
-        store.update(session, row, {"tries": row.tries + 1}, auth_actor(row.branch_id), action="auth.code_try")
+        store.update(
+            session,
+            row,
+            {"tries": row.tries + 1},
+            auth_actor(row.branch_id),
+            action="auth.code_try",
+        )
 
 
 def sends_in_last_hour(session: Session, purpose: str, address: str, now: dt.datetime) -> int:
@@ -1320,7 +1386,9 @@ def set_password(
     if row is None:
         return store.insert(
             session,
-            AuthCredential(branch_id=person.branch_id, person_id=person.id, kind="password", **changes),
+            AuthCredential(
+                branch_id=person.branch_id, person_id=person.id, kind="password", **changes
+            ),
             actor,
             action="auth.password_set",
         )
@@ -1360,7 +1428,13 @@ def check_password(
             _locked_event(session, "password", subject, now)
         raise AuthError(INVALID)
     assert found is not None
-    store.update(session, found[1], {"last_used_at": now}, Actor.person(found[0]), action="auth.credential_used")
+    store.update(
+        session,
+        found[1],
+        {"last_used_at": now},
+        Actor.person(found[0]),
+        action="auth.credential_used",
+    )
     return found[0]
 
 
@@ -1384,7 +1458,9 @@ def enrol_totp(
         .where(AuthCredential.kind == "totp")
         .where(AuthCredential.status == "pending")
     ):
-        store.update(session, old, {"status": "revoked"}, actor, action="auth.mfa_enrolment_dropped")
+        store.update(
+            session, old, {"status": "revoked"}, actor, action="auth.mfa_enrolment_dropped"
+        )
     cred = store.insert(
         session,
         AuthCredential(
@@ -1435,7 +1511,9 @@ def confirm_totp(
         .where(AuthCredential.kind == "recovery_code")
         .where(AuthCredential.status == "active")
     ):
-        store.update(session, old, {"status": "revoked"}, actor, action="auth.recovery_code_revoked")
+        store.update(
+            session, old, {"status": "revoked"}, actor, action="auth.recovery_code_revoked"
+        )
     codes = [f"{secrets.randbelow(10**4):04d}-{secrets.randbelow(10**4):04d}" for _ in range(10)]
     for plain in codes:
         store.insert(
@@ -1483,7 +1561,11 @@ def check_recovery(
     for row in rows:
         if row.secret_hash and keys.verify_secret(code, row.secret_hash):
             store.update(
-                session, row, {"status": "used", "last_used_at": now}, actor, action="auth.recovery_code_used"
+                session,
+                row,
+                {"status": "used", "last_used_at": now},
+                actor,
+                action="auth.recovery_code_used",
             )
             return True
     return False
@@ -1496,7 +1578,9 @@ def trivial_pin(pin: str) -> bool:
     return len(set(digits)) == 1 or steps == {1} or steps == {-1}
 
 
-def set_pin(session: Session, actor: Actor, person: Person, pin: str, now: dt.datetime) -> AuthCredential:
+def set_pin(
+    session: Session, actor: Actor, person: Person, pin: str, now: dt.datetime
+) -> AuthCredential:
     """Set or replace the 6-digit PIN. Raises ValueError for a non-numeric or trivial PIN."""
     if len(pin) != 6 or not pin.isdigit():
         raise ValueError("the PIN is 6 digits")
@@ -1530,14 +1614,20 @@ def check_pin(session: Session, person: Person, pin: str, ip: str, now: dt.datet
     ok = bool(cred.secret_hash) and keys.verify_secret(pin, cred.secret_hash or "")
     record_attempt(session, "pin", key, ok, now, actor=Actor.person(person))
     if ok:
-        store.update(session, cred, {"last_used_at": now}, Actor.person(person), action="auth.credential_used")
+        store.update(
+            session,
+            cred,
+            {"last_used_at": now},
+            Actor.person(person),
+            action="auth.credential_used",
+        )
         return True
     since = cred.last_used_at or cred.created_at
-    failures = [
-        r for r in _recent(session, since, kind="pin", prefix=f"{person.id}@")
-    ]
+    failures = [r for r in _recent(session, since, kind="pin", prefix=f"{person.id}@")]
     if len(failures) >= PIN_FAILURES:
-        store.update(session, cred, {"status": "locked"}, Actor.person(person), action="auth.pin_locked")
+        store.update(
+            session, cred, {"status": "locked"}, Actor.person(person), action="auth.pin_locked"
+        )
     return False
 
 
@@ -1545,7 +1635,13 @@ def unlock_pin(session: Session, actor: Actor, person: Person, now: dt.datetime)
     """After a login with MFA or a phone code: a locked PIN is active again."""
     cred = _credential(session, person.id, "pin", ("locked",))
     if cred is not None:
-        store.update(session, cred, {"status": "active", "last_used_at": now}, actor, action="auth.pin_unlocked")
+        store.update(
+            session,
+            cred,
+            {"status": "active", "last_used_at": now},
+            actor,
+            action="auth.pin_unlocked",
+        )
 ```
 
 `_recent` and `_over` take `since`/`now` as timezone-aware datetimes; `AuthAttempt.created_at` comes back aware through `TZDateTime`.
@@ -1674,16 +1770,22 @@ def test_issue_verify_rotate_and_reuse(session: Session, people: dict[str, Perso
 
 def test_refresh_after_absolute_expiry_revokes(session: Session, people: dict[str, Person]) -> None:
     now = utcnow()
-    t = auth.issue_session(session, people["Helena"], method="password_totp", aal="aal2", ip=IP, now=now)
+    t = auth.issue_session(
+        session, people["Helena"], method="password_totp", aal="aal2", ip=IP, now=now
+    )
     assert t.refresh
     at = now + auth.OFFICE_MAX + dt.timedelta(seconds=1)
     with pytest.raises(auth.AuthError):
         auth.refresh_session(session, t.refresh, at)
     assert t.row.status == "revoked"
-    idle = auth.issue_session(session, people["Helena"], method="password_totp", aal="aal2", ip=IP, now=now)
+    idle = auth.issue_session(
+        session, people["Helena"], method="password_totp", aal="aal2", ip=IP, now=now
+    )
     assert idle.refresh
     with pytest.raises(auth.AuthError):
-        auth.refresh_session(session, idle.refresh, now + auth.OFFICE_IDLE + dt.timedelta(seconds=1))
+        auth.refresh_session(
+            session, idle.refresh, now + auth.OFFICE_IDLE + dt.timedelta(seconds=1)
+        )
 
 
 def test_staff_device_lifetimes_and_revoke(session: Session, people: dict[str, Person]) -> None:
@@ -1691,7 +1793,9 @@ def test_staff_device_lifetimes_and_revoke(session: Session, people: dict[str, P
     now = utcnow()
     device, secret = auth.bind_device(session, actor, juha, "mobile", "iPhone", now)
     assert secret and len(secret) == 43 and device.secret_hash != secret
-    t = auth.issue_session(session, juha, method="phone_otp", aal="aal1", ip=IP, now=now, device=device)
+    t = auth.issue_session(
+        session, juha, method="phone_otp", aal="aal1", ip=IP, now=now, device=device
+    )
     assert t.row.refresh_expires_at == now + auth.STAFF_IDLE
     assert t.row.absolute_expires_at == now + auth.STAFF_MAX
     assert auth.check_device(session, device.id, secret, IP, now) is device
@@ -1713,7 +1817,12 @@ def test_client_sessions_have_no_refresh(session: Session, people: dict[str, Per
 
     helena = people["Helena"]
     client = AuthClient(
-        branch_id=helena.branch_id, name="n", client_id="mia_x", secret_hash="s", roles=["dispatcher"], created_by=helena.id
+        branch_id=helena.branch_id,
+        name="n",
+        client_id="mia_x",
+        secret_hash="s",
+        roles=["dispatcher"],
+        created_by=helena.id,
     )
     session.add(client)  # a bare row for this unit test; Task 9 adds the service
     session.flush()
@@ -1747,7 +1856,9 @@ def test_dev_header_needs_a_loopback_peer_without_cloudflare(
     client: TestClient, people: dict[str, Person]
 ) -> None:
     juha = people["Juha"].id
-    assert client.post("/chat", json={"text": "hi"}, headers={"X-Mia-Actor": juha}).status_code == 200
+    assert (
+        client.post("/chat", json={"text": "hi"}, headers={"X-Mia-Actor": juha}).status_code == 200
+    )
     via_cf = {"X-Mia-Actor": juha, "CF-Connecting-IP": "198.51.100.7"}
     assert client.post("/chat", json={"text": "hi"}, headers=via_cf).status_code == 401
     assert client.post("/auth/logout", headers={"X-Mia-Actor": juha}).status_code == 401
@@ -1780,7 +1891,9 @@ def test_inactive_person_gets_403_and_roles_are_read_fresh(
     assert client.get("/notifications").status_code == 403
 
 
-def test_enrol_session_reaches_only_auth_routes(client: TestClient, people: dict[str, Person], login) -> None:  # type: ignore[no-untyped-def]
+def test_enrol_session_reaches_only_auth_routes(
+    client: TestClient, people: dict[str, Person], login
+) -> None:  # type: ignore[no-untyped-def]
     login(client, people["Helena"], aal="enrol", method="enrol")
     assert client.post("/chat", json={"text": "hi"}).status_code == 403
     assert client.get("/auth/me").status_code == 200
@@ -1798,12 +1911,16 @@ def test_dev_mode_refuses_a_public_url(monkeypatch: pytest.MonkeyPatch) -> None:
     check_mode(get_settings())
 
 
-def test_client_ip_trusts_cf_header_only_from_a_trusted_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_client_ip_trusts_cf_header_only_from_a_trusted_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from types import SimpleNamespace
 
     from mia.api.deps import client_ip
 
-    req = SimpleNamespace(client=SimpleNamespace(host="172.18.0.9"), headers={"cf-connecting-ip": "198.51.100.7"})
+    req = SimpleNamespace(
+        client=SimpleNamespace(host="172.18.0.9"), headers={"cf-connecting-ip": "198.51.100.7"}
+    )
     assert client_ip(req) == "172.18.0.9"  # type: ignore[arg-type]
     monkeypatch.setenv("MIA_TRUSTED_PROXIES", "172.18.0.9, 10.0.0.1")
     get_settings.cache_clear()
@@ -1820,8 +1937,15 @@ def test_app_only_approval_needs_aal2_and_a_fresh_step_up(
 
     helena = Actor.person(people["Helena"])
     row = approvals.request(
-        session, Actor.person(people["Sanna"]), "dispatcher.cover_override", "visit", "V",
-        "x", {}, ["admin"], channel="app_only",
+        session,
+        Actor.person(people["Sanna"]),
+        "dispatcher.cover_override",
+        "visit",
+        "V",
+        "x",
+        {},
+        ["admin"],
+        channel="app_only",
     )
     now = utcnow()
     for kw in (
@@ -1868,7 +1992,9 @@ class Tokens:
 def client_actor(client: AuthClient) -> Actor:
     """An outside client acts as agent `client:<client_id>` with its registered roles."""
     return Actor(
-        principal=Principal(type="agent", id=f"client:{client.client_id}", roles=list(client.roles)),
+        principal=Principal(
+            type="agent", id=f"client:{client.client_id}", roles=list(client.roles)
+        ),
         branch_id=client.branch_id,
     )
 
@@ -1946,7 +2072,11 @@ def refresh_session(session: Session, token: str, now: dt.datetime) -> Tokens:
         ).first()
         if reused is not None and reused.status == "active":
             store.update(
-                session, reused, {"status": "revoked"}, _session_actor(session, reused), action="auth.refresh_reused"
+                session,
+                reused,
+                {"status": "revoked"},
+                _session_actor(session, reused),
+                action="auth.refresh_reused",
             )
         raise AuthError(INVALID)
     actor = _session_actor(session, row)
@@ -1977,7 +2107,9 @@ def refresh_session(session: Session, token: str, now: dt.datetime) -> Tokens:
     return Tokens(access, refresh, row)
 
 
-def revoke_session(session: Session, actor: Actor, row: AuthSession, now: dt.datetime) -> AuthSession:
+def revoke_session(
+    session: Session, actor: Actor, row: AuthSession, now: dt.datetime
+) -> AuthSession:
     """End one session."""
     return store.update(session, row, {"status": "revoked"}, actor, action="auth.session_revoked")
 
@@ -2008,7 +2140,9 @@ def revoke_sessions(
 
 def step_up(session: Session, row: AuthSession, now: dt.datetime) -> AuthSession:
     """Mark a session stepped up (PIN entered) at `now`."""
-    return store.update(session, row, {"stepped_up_at": now}, _session_actor(session, row), action="auth.step_up")
+    return store.update(
+        session, row, {"stepped_up_at": now}, _session_actor(session, row), action="auth.step_up"
+    )
 
 
 # ---- devices -----------------------------------------------------------------------------
@@ -2055,7 +2189,9 @@ def check_device(
     return row
 
 
-def revoke_device(session: Session, actor: Actor, device: AuthDevice, now: dt.datetime) -> AuthDevice:
+def revoke_device(
+    session: Session, actor: Actor, device: AuthDevice, now: dt.datetime
+) -> AuthDevice:
     """Revoke a device and end its sessions at once."""
     revoke_sessions(session, actor, device.person_id, now, device_id=device.id)
     return store.update(
@@ -2070,7 +2206,9 @@ def revoke_device(session: Session, actor: Actor, device: AuthDevice, now: dt.da
 def revoke_everything(session: Session, actor: Actor, person: Person, now: dt.datetime) -> int:
     """Every device and session of the person ends. Returns the number of sessions ended."""
     for device in session.exec(
-        select(AuthDevice).where(AuthDevice.person_id == person.id).where(AuthDevice.status == "active")
+        select(AuthDevice)
+        .where(AuthDevice.person_id == person.id)
+        .where(AuthDevice.status == "active")
     ).all():
         revoke_device(session, actor, device, now)
     return revoke_sessions(session, actor, person.id, now)
@@ -2192,7 +2330,11 @@ def _dev_header(request: Request, session: Session) -> AuthContext | None:
     actor_id = request.headers.get("x-mia-actor")
     if settings.MIA_AUTH_MODE != "dev" or not actor_id or request.url.path.startswith("/auth/"):
         return None
-    if not _loopback(request) or "cf-connecting-ip" in request.headers or "cf-ray" in request.headers:
+    if (
+        not _loopback(request)
+        or "cf-connecting-ip" in request.headers
+        or "cf-ray" in request.headers
+    ):
         return None
     person = session.get(Person, actor_id)
     if person is None or person.status != "active":
@@ -2202,7 +2344,9 @@ def _dev_header(request: Request, session: Session) -> AuthContext | None:
 
         _dev_header_seen.add(person.id)
         events.emit(session, "auth.dev_header_used", person, None, None, Actor.person(person))
-    return AuthContext(actor=Actor.person(person), person=person, method="dev", aal="dev", via="header")
+    return AuthContext(
+        actor=Actor.person(person), person=person, method="dev", aal="dev", via="header"
+    )
 
 
 def current_auth(request: Request, session: DbSession) -> AuthContext:
@@ -2225,15 +2369,24 @@ def current_auth(request: Request, session: DbSession) -> AuthContext:
         if client is None or client.status != "active":
             raise HTTPException(401, auth.INVALID)
         return AuthContext(
-            actor=auth.client_actor(client), client=client, method=row.method, aal=row.aal,
-            session_id=row.id, via=via,
+            actor=auth.client_actor(client),
+            client=client,
+            method=row.method,
+            aal=row.aal,
+            session_id=row.id,
+            via=via,
         )
     person = session.get(Person, row.subject_id)
     if person is None or person.status != "active":
         raise HTTPException(403, "person is not active")
     return AuthContext(
-        actor=Actor.person(person), person=person, method=row.method, aal=row.aal,
-        session_id=row.id, via=via, stepped_up_at=row.stepped_up_at,
+        actor=Actor.person(person),
+        person=person,
+        method=row.method,
+        aal=row.aal,
+        session_id=row.id,
+        via=via,
+        stepped_up_at=row.stepped_up_at,
     )
 
 
@@ -2266,13 +2419,23 @@ def set_cookies(response: Response, tokens: auth.Tokens) -> None:
     """Access and refresh cookies: HttpOnly, SameSite=Strict, Secure when the node is https."""
     secure = public_origin().startswith("https://")
     response.set_cookie(
-        ACCESS_COOKIE, tokens.access, max_age=int(auth.ACCESS_TTL.total_seconds()), path="/",
-        httponly=True, secure=secure, samesite="strict",
+        ACCESS_COOKIE,
+        tokens.access,
+        max_age=int(auth.ACCESS_TTL.total_seconds()),
+        path="/",
+        httponly=True,
+        secure=secure,
+        samesite="strict",
     )
     if tokens.refresh:
         response.set_cookie(
-            REFRESH_COOKIE, tokens.refresh, max_age=int(auth.OFFICE_MAX.total_seconds()),
-            path="/auth/refresh", httponly=True, secure=secure, samesite="strict",
+            REFRESH_COOKIE,
+            tokens.refresh,
+            max_age=int(auth.OFFICE_MAX.total_seconds()),
+            path="/auth/refresh",
+            httponly=True,
+            secure=secure,
+            samesite="strict",
         )
 
 
@@ -2304,8 +2467,22 @@ def clear_cookies(response: Response) -> None:
 with `STEP_UP_TTL = timedelta(minutes=5)` in approvals.py (auth imports it from there: in `core/auth.py` replace its own `STEP_UP_TTL` with `from mia.core.approvals import STEP_UP_TTL, StepUpRequired` if that import is cycle-free; approvals does not import auth, so it is) and
 
 ```python
-def _refused(session: Session, approval: Approval, decider: Actor, why: str, exc: type[ApprovalError] = ApprovalError) -> None:
-    events.emit(session, "approval.refused", approval, None, {"reason": why}, decider, approval_id=approval.id)
+def _refused(
+    session: Session,
+    approval: Approval,
+    decider: Actor,
+    why: str,
+    exc: type[ApprovalError] = ApprovalError,
+) -> None:
+    events.emit(
+        session,
+        "approval.refused",
+        approval,
+        None,
+        {"reason": why},
+        decider,
+        approval_id=approval.id,
+    )
     raise exc(why)
 ```
 
@@ -2324,9 +2501,19 @@ def login(session: Session):  # type: ignore[no-untyped-def]
     from mia.core import auth as auth_service
     from mia.core.db import utcnow
 
-    def _login(client, person, *, aal: str = "aal2", method: str = "password_totp", stepped_up: bool = False, device=None):  # type: ignore[no-untyped-def]
+    def _login(
+        client,
+        person,
+        *,
+        aal: str = "aal2",
+        method: str = "password_totp",
+        stepped_up: bool = False,
+        device=None,
+    ):  # type: ignore[no-untyped-def]
         now = utcnow()
-        tokens = auth_service.issue_session(session, person, method=method, aal=aal, ip="127.0.0.1", now=now, device=device)
+        tokens = auth_service.issue_session(
+            session, person, method=method, aal=aal, ip="127.0.0.1", now=now, device=device
+        )
         if stepped_up:
             auth_service.step_up(session, tokens.row, now)
         session.commit()
@@ -2344,7 +2531,9 @@ def login(session: Session):  # type: ignore[no-untyped-def]
 def test_x_mia_actor_is_read_only_by_the_dev_dependency() -> None:
     """ADR 011: the header is accepted in one place, in dev mode."""
     offenders = [
-        str(p) for p in _py_files() if "x-mia-actor" in p.read_text().lower() and p != MIA / "api" / "deps.py"
+        str(p)
+        for p in _py_files()
+        if "x-mia-actor" in p.read_text().lower() and p != MIA / "api" / "deps.py"
     ]
     assert offenders == []
 
@@ -2434,7 +2623,9 @@ def owner(session: Session, people: dict[str, Person]) -> Person:
 
 def _totp_now(session: Session, person: Person) -> str:
     cred = session.exec(
-        select(AuthCredential).where(AuthCredential.person_id == person.id).where(AuthCredential.kind == "totp")
+        select(AuthCredential)
+        .where(AuthCredential.person_id == person.id)
+        .where(AuthCredential.kind == "totp")
     ).one()
     session.refresh(cred)
     return keys.hotp(keys.totp_seed(cred.id, cred.data["nonce"]), keys.totp_step(utcnow()) + 1)
@@ -2482,11 +2673,15 @@ def test_password_then_totp_then_refresh_then_logout(
     client.headers.pop("Authorization")
     res = client.post("/auth/login", json={"email": "helena@example.fi", "password": PW})
     mfa_token = res.json()["mfa_token"]
-    assert client.post("/auth/mfa", json={"mfa_token": mfa_token, "code": "000000"}).status_code == 401
+    assert (
+        client.post("/auth/mfa", json={"mfa_token": mfa_token, "code": "000000"}).status_code == 401
+    )
     res = client.post("/auth/mfa", json={"mfa_token": mfa_token, "code": _totp_now(session, owner)})
     assert res.status_code == 200 and res.json()["aal"] == "aal2"
     tokens = res.json()
-    assert client.post("/auth/mfa", json={"mfa_token": mfa_token, "code": "1"}).status_code == 401  # used
+    assert (
+        client.post("/auth/mfa", json={"mfa_token": mfa_token, "code": "1"}).status_code == 401
+    )  # used
     client.headers["Authorization"] = f"Bearer {tokens['access']}"
     me = client.get("/auth/me").json()
     assert me["person_id"] == owner.id and me["method"] == "password_totp"
@@ -2501,10 +2696,17 @@ def test_password_then_totp_then_refresh_then_logout(
     res = client.post("/auth/mfa", json={"mfa_token": res.json()["mfa_token"], "code": recovery[0]})
     assert res.status_code == 200
     res = client.post("/auth/login", json={"email": "helena@example.fi", "password": PW})
-    assert client.post("/auth/mfa", json={"mfa_token": res.json()["mfa_token"], "code": recovery[0]}).status_code == 401
+    assert (
+        client.post(
+            "/auth/mfa", json={"mfa_token": res.json()["mfa_token"], "code": recovery[0]}
+        ).status_code
+        == 401
+    )
 
 
-def test_wrong_password_unknown_login_and_lockout_look_the_same(client: TestClient, owner: Person) -> None:
+def test_wrong_password_unknown_login_and_lockout_look_the_same(
+    client: TestClient, owner: Person
+) -> None:
     bad = client.post("/auth/login", json={"email": "helena@example.fi", "password": "nope"})
     unknown = client.post("/auth/login", json={"email": "x@example.fi", "password": "nope"})
     assert bad.status_code == unknown.status_code == 401 and bad.json() == unknown.json()
@@ -2514,14 +2716,23 @@ def test_wrong_password_unknown_login_and_lockout_look_the_same(client: TestClie
     assert locked.status_code == 401 and locked.json() == bad.json()
 
 
-def test_mfa_token_void_after_five_tries(client: TestClient, session: Session, owner: Person, login) -> None:  # type: ignore[no-untyped-def]
+def test_mfa_token_void_after_five_tries(
+    client: TestClient, session: Session, owner: Person, login
+) -> None:  # type: ignore[no-untyped-def]
     login(client, owner)
     _enrol(client, session, owner)
     client.headers.pop("Authorization")
-    token = client.post("/auth/login", json={"email": "helena@example.fi", "password": PW}).json()["mfa_token"]
+    token = client.post("/auth/login", json={"email": "helena@example.fi", "password": PW}).json()[
+        "mfa_token"
+    ]
     for _ in range(5):
         client.post("/auth/mfa", json={"mfa_token": token, "code": "000000"})
-    assert client.post("/auth/mfa", json={"mfa_token": token, "code": _totp_now(session, owner)}).status_code == 401
+    assert (
+        client.post(
+            "/auth/mfa", json={"mfa_token": token, "code": _totp_now(session, owner)}
+        ).status_code
+        == 401
+    )
 
 
 def test_cookie_flags_follow_public_url_and_csrf_origin(
@@ -2530,35 +2741,65 @@ def test_cookie_flags_follow_public_url_and_csrf_origin(
     login(client, owner)
     _enrol(client, session, owner)
     client.headers.pop("Authorization")
-    res = client.post("/auth/login", json={"email": "helena@example.fi", "password": PW}, headers={"X-Mia-Client": "web"})
     res = client.post(
-        "/auth/mfa", json={"mfa_token": res.json()["mfa_token"], "code": _totp_now(session, owner)},
+        "/auth/login",
+        json={"email": "helena@example.fi", "password": PW},
+        headers={"X-Mia-Client": "web"},
+    )
+    res = client.post(
+        "/auth/mfa",
+        json={"mfa_token": res.json()["mfa_token"], "code": _totp_now(session, owner)},
         headers={"X-Mia-Client": "web"},
     )
     cookies = res.headers.get_list("set-cookie")
     at = next(c for c in cookies if c.startswith("mia_at="))
     rt = next(c for c in cookies if c.startswith("mia_rt="))
-    assert "HttpOnly" in at and "SameSite=strict" in at.lower().replace("samesite=strict", "SameSite=strict") and "Secure" not in at
+    assert (
+        "HttpOnly" in at
+        and "SameSite=strict" in at.lower().replace("samesite=strict", "SameSite=strict")
+        and "Secure" not in at
+    )
     assert "Path=/auth/refresh" in rt
     assert "access" not in res.json()  # web clients get cookies, not tokens in the body
     # Cookie auth on an unsafe method needs the right Origin.
     assert client.get("/auth/me").status_code == 200
     assert client.post("/chat", json={"text": "hi"}).status_code == 403
-    assert client.post("/chat", json={"text": "hi"}, headers={"Origin": "https://evil.example"}).status_code == 403
-    assert client.post("/chat", json={"text": "hi"}, headers={"Origin": "http://localhost:8000"}).status_code == 200
-    assert client.post("/auth/refresh", headers={"Origin": "http://localhost:8000"}).status_code == 200
+    assert (
+        client.post(
+            "/chat", json={"text": "hi"}, headers={"Origin": "https://evil.example"}
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            "/chat", json={"text": "hi"}, headers={"Origin": "http://localhost:8000"}
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post("/auth/refresh", headers={"Origin": "http://localhost:8000"}).status_code == 200
+    )
     monkeypatch.setenv("MIA_PUBLIC_URL", "https://mia.example.fi")
     monkeypatch.setenv("MIA_AUTH_MODE", "required")
     get_settings.cache_clear()
-    res = client.post("/auth/login", json={"email": "helena@example.fi", "password": PW}, headers={"X-Mia-Client": "web"})
     res = client.post(
-        "/auth/mfa", json={"mfa_token": res.json()["mfa_token"], "code": _totp_now(session, owner)},
+        "/auth/login",
+        json={"email": "helena@example.fi", "password": PW},
         headers={"X-Mia-Client": "web"},
     )
-    assert "Secure" in next(c for c in res.headers.get_list("set-cookie") if c.startswith("mia_at="))
+    res = client.post(
+        "/auth/mfa",
+        json={"mfa_token": res.json()["mfa_token"], "code": _totp_now(session, owner)},
+        headers={"X-Mia-Client": "web"},
+    )
+    assert "Secure" in next(
+        c for c in res.headers.get_list("set-cookie") if c.startswith("mia_at=")
+    )
 
 
-def test_password_change_ends_other_sessions(client: TestClient, session: Session, owner: Person, login) -> None:  # type: ignore[no-untyped-def]
+def test_password_change_ends_other_sessions(
+    client: TestClient, session: Session, owner: Person, login
+) -> None:  # type: ignore[no-untyped-def]
     first = login(client, owner)
     other = TestClient(app)
     login(other, owner)
@@ -2570,13 +2811,17 @@ def test_password_change_ends_other_sessions(client: TestClient, session: Sessio
     assert first.row.status == "active"
 
 
-def test_no_secret_in_events_or_responses(client: TestClient, session: Session, owner: Person, login) -> None:  # type: ignore[no-untyped-def]
+def test_no_secret_in_events_or_responses(
+    client: TestClient, session: Session, owner: Person, login
+) -> None:  # type: ignore[no-untyped-def]
     login(client, owner)
     recovery = _enrol(client, session, owner)
     client.headers.pop("Authorization")
     res = client.post("/auth/login", json={"email": "helena@example.fi", "password": PW})
     body = res.json()
-    res = client.post("/auth/mfa", json={"mfa_token": body["mfa_token"], "code": _totp_now(session, owner)})
+    res = client.post(
+        "/auth/mfa", json={"mfa_token": body["mfa_token"], "code": _totp_now(session, owner)}
+    )
     tokens = res.json()
     text = " ".join(str(e.after) + str(e.before) for e in session.exec(select(Event)))
     for secret in (PW, body["mfa_token"], tokens["access"], tokens["refresh"], *recovery):
@@ -2673,7 +2918,9 @@ def _invalid() -> HTTPException:
 
 
 @router.post("/login")
-def login(request: Request, response: Response, session: DbSession, body: LoginIn) -> dict[str, object]:
+def login(
+    request: Request, response: Response, session: DbSession, body: LoginIn
+) -> dict[str, object]:
     """Password first. People who need MFA get an mfa_token for POST /auth/mfa; a person who
     must have MFA but has none gets an enrolment session; everyone else is signed in."""
     now, ip = utcnow(), client_ip(request)
@@ -2767,7 +3014,9 @@ def set_password(session: DbSession, ctx: CurrentAuth, body: PasswordIn) -> dict
 
 
 @router.post("/refresh", response_model=TokensOut)
-def refresh(request: Request, response: Response, session: DbSession, body: RefreshIn | None = None) -> TokensOut:
+def refresh(
+    request: Request, response: Response, session: DbSession, body: RefreshIn | None = None
+) -> TokensOut:
     """Rotate tokens with the refresh token (body, or the mia_rt cookie for the web)."""
     token = (body.refresh if body else None) or request.cookies.get(REFRESH_COOKIE)
     if not token:
@@ -2807,7 +3056,11 @@ def logout(response: Response, session: DbSession, ctx: CurrentAuth) -> dict[str
 def me(session: DbSession, ctx: CurrentAuth) -> dict[str, object]:
     """Who is signed in and how."""
     if ctx.person is None:
-        return {"client_id": ctx.client.client_id if ctx.client else None, "aal": ctx.aal, "method": ctx.method}
+        return {
+            "client_id": ctx.client.client_id if ctx.client else None,
+            "aal": ctx.aal,
+            "method": ctx.method,
+        }
     person = ctx.person
     fresh = ctx.stepped_up_at is not None and utcnow() - ctx.stepped_up_at <= auth.STEP_UP_TTL
     return {
@@ -2909,7 +3162,11 @@ def test_bootstrap_then_enrol_over_http(
 
 
 def test_reset_ends_sessions_and_unlock_clears_the_lockout(
-    capsys: pytest.CaptureFixture[str], engine: object, session: Session, people: dict[str, Person], login
+    capsys: pytest.CaptureFixture[str],
+    engine: object,
+    session: Session,
+    people: dict[str, Person],
+    login,
 ) -> None:  # type: ignore[no-untyped-def]
     helena = people["Helena"]
     auth.set_password(session, Actor.person(helena), helena, "helena@example.fi", PW, utcnow())
@@ -2926,10 +3183,16 @@ def test_reset_ends_sessions_and_unlock_clears_the_lockout(
     assert TestClient(app).post(f"/auth/enrol/{code}").status_code == 200
     for _ in range(20):
         client.post("/auth/login", json={"email": "helena@example.fi", "password": "nope"})
-    assert client.post("/auth/login", json={"email": "helena@example.fi", "password": PW}).status_code == 401
+    assert (
+        client.post("/auth/login", json={"email": "helena@example.fi", "password": PW}).status_code
+        == 401
+    )
     assert main(["auth", "unlock", "helena@example.fi"]) == 0
     assert "unlocked" in capsys.readouterr().out
-    assert client.post("/auth/login", json={"email": "helena@example.fi", "password": PW}).status_code == 200
+    assert (
+        client.post("/auth/login", json={"email": "helena@example.fi", "password": PW}).status_code
+        == 200
+    )
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -2968,7 +3231,9 @@ def enrol(request: Request, response: Response, session: DbSession, code: str) -
     if person is None or person.status != "active":
         raise _invalid()
     auth.use_code(session, Actor.person(person), found.row, now)
-    tokens = auth.issue_session(session, person, method="enrol", aal="enrol", ip=client_ip(request), now=now)
+    tokens = auth.issue_session(
+        session, person, method="enrol", aal="enrol", ip=client_ip(request), now=now
+    )
     return _tokens_response(request, response, tokens)
 ```
 
@@ -2988,13 +3253,26 @@ def auth_bootstrap(args: argparse.Namespace) -> int:
 
     with session_scope() as session:
         branch_id = _only_branch_id(session, args.branch)
-        owners = [p for p in session.exec(select(Person).where(Person.branch_id == branch_id)) if "owner" in p.roles and p.status == "active"]
+        owners = [
+            p
+            for p in session.exec(select(Person).where(Person.branch_id == branch_id))
+            if "owner" in p.roles and p.status == "active"
+        ]
         if owners:
             print(f"an owner already exists ({owners[0].name}); use `mia auth reset` instead")
             return 1
-        person = people.add_person(session, Actor.system(branch_id), branch_id=branch_id, name=args.name or args.email.split("@")[0], roles=["owner"], language=args.lang)
+        person = people.add_person(
+            session,
+            Actor.system(branch_id),
+            branch_id=branch_id,
+            name=args.name or args.email.split("@")[0],
+            roles=["owner"],
+            language=args.lang,
+        )
         code = auth.start_enrolment(session, Actor.system(branch_id), person, utcnow(), via="cli")
-    print(f"owner {person.name} created. Set the password and TOTP through this link (24 hours, single use):\n  {_enrol_link(code)}")
+    print(
+        f"owner {person.name} created. Set the password and TOTP through this link (24 hours, single use):\n  {_enrol_link(code)}"
+    )
     return 0
 ```
 
@@ -3008,8 +3286,12 @@ def auth_reset(args: argparse.Namespace) -> int:
 
     with session_scope() as session:
         person = _match_one(session, args.name)
-        code = auth.start_enrolment(session, Actor.system(person.branch_id), person, utcnow(), reason="reset", via="cli")
-    print(f"sessions of {person.name} ended. Enrolment link (24 hours, single use):\n  {_enrol_link(code)}")
+        code = auth.start_enrolment(
+            session, Actor.system(person.branch_id), person, utcnow(), reason="reset", via="cli"
+        )
+    print(
+        f"sessions of {person.name} ended. Enrolment link (24 hours, single use):\n  {_enrol_link(code)}"
+    )
     return 0
 
 
@@ -3032,7 +3314,9 @@ def unlock_login(session: Session, login: str, now: dt.datetime) -> None:
     from mia.core import events
 
     subject = login_key(login)
-    for row in _recent(session, now - LIMITS["password_login"].window, kind="password", prefix=f"{subject}@"):
+    for row in _recent(
+        session, now - LIMITS["password_login"].window, kind="password", prefix=f"{subject}@"
+    ):
         store.update(session, row, {"ok": True}, auth_actor(), action="auth.attempt_cleared")
     events.emit(session, "auth.unlocked", ("login", subject), None, {"via": "cli"}, auth_actor())
 ```
@@ -3125,23 +3409,49 @@ def test_otp_flow_binds_a_device_and_device_login_works(
     code = _sent_code(session)
     for e in session.exec(select(Event)):
         assert code not in str(e.after) and code not in str(e.before)
-    bad = client.post("/auth/otp/verify", json={"phone": ADDR, "code": "000000", "device": {"name": "iPhone", "platform": "ios"}})
+    bad = client.post(
+        "/auth/otp/verify",
+        json={"phone": ADDR, "code": "000000", "device": {"name": "iPhone", "platform": "ios"}},
+    )
     assert bad.status_code == 401
-    res = client.post("/auth/otp/verify", json={"phone": ADDR, "code": code, "device": {"name": "iPhone", "platform": "ios"}})
+    res = client.post(
+        "/auth/otp/verify",
+        json={"phone": ADDR, "code": code, "device": {"name": "iPhone", "platform": "ios"}},
+    )
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["aal"] == "aal1" and len(body["device_secret"]) == 43
-    assert client.post("/auth/otp/verify", json={"phone": ADDR, "code": code, "device": {"name": "x", "platform": "ios"}}).status_code == 401
+    assert (
+        client.post(
+            "/auth/otp/verify",
+            json={"phone": ADDR, "code": code, "device": {"name": "x", "platform": "ios"}},
+        ).status_code
+        == 401
+    )
     client.headers["Authorization"] = f"Bearer {body['access']}"
     assert client.get("/auth/me").json()["method"] == "phone_otp"
     assert client.post("/chat", json={"text": "hi"}).status_code == 200
     client.headers.pop("Authorization")
-    res = client.post("/auth/device", json={"device_id": body["device_id"], "device_secret": body["device_secret"]})
+    res = client.post(
+        "/auth/device",
+        json={"device_id": body["device_id"], "device_secret": body["device_secret"]},
+    )
     assert res.status_code == 200 and res.json()["aal"] == "aal1"
-    assert client.post("/auth/device", json={"device_id": body["device_id"], "device_secret": "x"}).status_code == 401
+    assert (
+        client.post(
+            "/auth/device", json={"device_id": body["device_id"], "device_secret": "x"}
+        ).status_code
+        == 401
+    )
     client.headers["Authorization"] = f"Bearer {res.json()['access']}"
     assert client.post("/auth/logout").json() == {"ok": True}
-    assert client.post("/auth/device", json={"device_id": body["device_id"], "device_secret": body["device_secret"]}).status_code == 401
+    assert (
+        client.post(
+            "/auth/device",
+            json={"device_id": body["device_id"], "device_secret": body["device_secret"]},
+        ).status_code
+        == 401
+    )
 
 
 def test_unknown_number_same_response_nothing_sent_and_send_limit(
@@ -3154,18 +3464,32 @@ def test_unknown_number_same_response_nothing_sent_and_send_limit(
         client.post("/auth/otp/start", json={"phone": ADDR})
     sent = len(session.exec(select(ChannelOutbox)).all())
     assert client.post("/auth/otp/start", json={"phone": ADDR}).json() == {"ok": True}
-    assert len(session.exec(select(ChannelOutbox)).all()) == sent  # fourth in the hour: silently not sent
+    assert (
+        len(session.exec(select(ChannelOutbox)).all()) == sent
+    )  # fourth in the hour: silently not sent
     assert len(session.exec(select(AuthCode).where(AuthCode.purpose == "otp_login")).all()) == 3
 
 
-def test_code_tries_expiry_and_wrong_number(client: TestClient, session: Session, linked: Person) -> None:
+def test_code_tries_expiry_and_wrong_number(
+    client: TestClient, session: Session, linked: Person
+) -> None:
     client.post("/auth/otp/start", json={"phone": ADDR})
     code = _sent_code(session)
     dev = {"name": "p", "platform": "android"}
-    assert client.post("/auth/otp/verify", json={"phone": "358409999999", "code": code, "device": dev}).status_code == 401
+    assert (
+        client.post(
+            "/auth/otp/verify", json={"phone": "358409999999", "code": code, "device": dev}
+        ).status_code
+        == 401
+    )
     for _ in range(5):
         client.post("/auth/otp/verify", json={"phone": ADDR, "code": "111111", "device": dev})
-    assert client.post("/auth/otp/verify", json={"phone": ADDR, "code": code, "device": dev}).status_code == 401
+    assert (
+        client.post(
+            "/auth/otp/verify", json={"phone": ADDR, "code": code, "device": dev}
+        ).status_code
+        == 401
+    )
 
 
 def test_login_link_get_does_not_consume_and_post_logs_in(
@@ -3196,14 +3520,23 @@ def test_deactivation_revokes_devices_sessions_and_identity(
 
     client.post("/auth/otp/start", json={"phone": ADDR})
     code = _sent_code(session)
-    res = client.post("/auth/otp/verify", json={"phone": ADDR, "code": code, "device": {"name": "p", "platform": "ios"}})
+    res = client.post(
+        "/auth/otp/verify",
+        json={"phone": ADDR, "code": code, "device": {"name": "p", "platform": "ios"}},
+    )
     body = res.json()
     people_service.deactivate(session, Actor.person(people["Helena"]), linked)
     session.commit()
     client.headers["Authorization"] = f"Bearer {body['access']}"
     assert client.get("/auth/me").status_code == 403
     client.headers.pop("Authorization")
-    assert client.post("/auth/device", json={"device_id": body["device_id"], "device_secret": body["device_secret"]}).status_code == 401
+    assert (
+        client.post(
+            "/auth/device",
+            json={"device_id": body["device_id"], "device_secret": body["device_secret"]},
+        ).status_code
+        == 401
+    )
     assert linking.identity_for(session, "sim", ADDR) is None
 ```
 
@@ -3259,7 +3592,10 @@ def send_otp(session: Session, phone: str, now: dt.datetime) -> None:
 
     address = normalise_phone(phone)
     found = _person_for_address(session, address)
-    if found is None or sends_in_last_hour(session, "otp_login", address, now) >= OTP_SENDS_PER_HOUR:
+    if (
+        found is None
+        or sends_in_last_hour(session, "otp_login", address, now) >= OTP_SENDS_PER_HOUR
+    ):
         return
     person, _channel = found
     actor = Actor.person(person)
@@ -3298,9 +3634,7 @@ def check_otp(session: Session, phone: str, code: str, ip: str, now: dt.datetime
     return found[0]
 
 
-def send_login_link(
-    session: Session, actor: Actor, person: Person, now: dt.datetime
-) -> str | None:
+def send_login_link(session: Session, actor: Actor, person: Person, now: dt.datetime) -> str | None:
     """A one-time login link to the person's active identity. None without one."""
     from mia.channels.service import deliver
     from mia.chat.blocks import TextBlock
@@ -3375,7 +3709,9 @@ def otp_start(request: Request, session: DbSession, body: PhoneIn) -> dict[str, 
 
 
 @router.post("/otp/verify")
-def otp_verify(request: Request, response: Response, session: DbSession, body: OtpVerifyIn) -> dict[str, object]:
+def otp_verify(
+    request: Request, response: Response, session: DbSession, body: OtpVerifyIn
+) -> dict[str, object]:
     """Check the code, bind the device and sign in (aal1). The device secret is shown once."""
     now, ip = utcnow(), client_ip(request)
     try:
@@ -3383,15 +3719,21 @@ def otp_verify(request: Request, response: Response, session: DbSession, body: O
     except auth.AuthError:
         raise _invalid() from None
     actor = Actor.person(person)
-    device, secret = auth.bind_device(session, actor, person, "mobile", f"{body.device.name} ({body.device.platform})", now)
-    tokens = auth.issue_session(session, person, method="phone_otp", aal="aal1", ip=ip, now=now, device=device)
+    device, secret = auth.bind_device(
+        session, actor, person, "mobile", f"{body.device.name} ({body.device.platform})", now
+    )
+    tokens = auth.issue_session(
+        session, person, method="phone_otp", aal="aal1", ip=ip, now=now, device=device
+    )
     out = _tokens_response(request, response, tokens).model_dump()
     out.update({"device_id": device.id, "device_secret": secret})
     return out
 
 
 @router.post("/device", response_model=TokensOut)
-def device_login(request: Request, response: Response, session: DbSession, body: DeviceLoginIn) -> TokensOut:
+def device_login(
+    request: Request, response: Response, session: DbSession, body: DeviceLoginIn
+) -> TokensOut:
     """Sign in on a bound device with its secret (aal1; the PIN steps it up)."""
     now, ip = utcnow(), client_ip(request)
     try:
@@ -3401,7 +3743,9 @@ def device_login(request: Request, response: Response, session: DbSession, body:
     person = session.get(Person, device.person_id)
     if person is None or person.status != "active":
         raise _invalid()
-    tokens = auth.issue_session(session, person, method="device", aal="aal1", ip=ip, now=now, device=device)
+    tokens = auth.issue_session(
+        session, person, method="device", aal="aal1", ip=ip, now=now, device=device
+    )
     return _tokens_response(request, response, tokens)
 
 
@@ -3417,7 +3761,9 @@ LINK_PAGE = """<!doctype html><meta charset="utf-8"><title>Mia</title>
 def link_page(session: DbSession, code: str) -> str:
     """The login link's page: one button, so fetching the URL never consumes the link."""
     found = auth.check_code(session, "link_login", code, utcnow())
-    person = session.get(Person, found.row.person_id) if found.status == "ok" and found.row else None
+    person = (
+        session.get(Person, found.row.person_id) if found.status == "ok" and found.row else None
+    )
     if person is None:
         raise HTTPException(404, "link expired or already used")
     return LINK_PAGE.replace("{name}", person.name.split()[0])
@@ -3428,13 +3774,19 @@ def link_login(request: Request, response: Response, session: DbSession, code: s
     """Consume the login link: a browser device and an aal1 session."""
     now, ip = utcnow(), client_ip(request)
     found = auth.check_code(session, "link_login", code, now)
-    person = session.get(Person, found.row.person_id) if found.status == "ok" and found.row else None
+    person = (
+        session.get(Person, found.row.person_id) if found.status == "ok" and found.row else None
+    )
     if found.row is None or person is None or person.status != "active":
         raise _invalid()
     actor = Actor.person(person)
     auth.use_code(session, actor, found.row, now)
-    device, _ = auth.bind_device(session, actor, person, "browser", request.headers.get("user-agent", "browser")[:80], now)
-    tokens = auth.issue_session(session, person, method="wa_link", aal="aal1", ip=ip, now=now, device=device)
+    device, _ = auth.bind_device(
+        session, actor, person, "browser", request.headers.get("user-agent", "browser")[:80], now
+    )
+    tokens = auth.issue_session(
+        session, person, method="wa_link", aal="aal1", ip=ip, now=now, device=device
+    )
     return _tokens_response(request, response, tokens)
 ```
 
@@ -3488,8 +3840,15 @@ def client(branch: object) -> TestClient:
 @pytest.fixture
 def override(session: Session, people: dict[str, Person]) -> str:
     row = approvals.request(
-        session, Actor.person(people["Sanna"]), "dispatcher.cover_override", "visit", "V",
-        "x", {}, ["admin"], channel="app_only",
+        session,
+        Actor.person(people["Sanna"]),
+        "dispatcher.cover_override",
+        "visit",
+        "V",
+        "x",
+        {},
+        ["admin"],
+        channel="app_only",
     )
     session.commit()
     return row.id
@@ -3503,7 +3862,9 @@ def test_pin_rules_over_http(client: TestClient, people: dict[str, Person], logi
     assert client.get("/auth/me").json()["pin"] is True
 
 
-def test_aal1_session_cannot_set_a_pin(client: TestClient, people: dict[str, Person], login) -> None:  # type: ignore[no-untyped-def]
+def test_aal1_session_cannot_set_a_pin(
+    client: TestClient, people: dict[str, Person], login
+) -> None:  # type: ignore[no-untyped-def]
     login(client, people["Helena"], aal="aal1", method="password")
     assert client.post("/auth/pin", json={"pin": "273916"}).status_code == 403
 
@@ -3603,11 +3964,15 @@ def stepup(request: Request, session: DbSession, ctx: PersonAuth, body: PinIn) -
 In `api/deps.py` `current_auth`, after loading the person session: a session on a mobile device whose `stepped_up_at` is within `STEP_UP_TTL` reports `aal="aal2"`:
 
 ```python
-    aal = row.aal
-    if row.device_id and row.stepped_up_at is not None and utcnow() - row.stepped_up_at <= auth.STEP_UP_TTL:
-        device = session.get(AuthDevice, row.device_id)
-        if device is not None and device.kind == "mobile":
-            aal = "aal2"
+aal = row.aal
+if (
+    row.device_id
+    and row.stepped_up_at is not None
+    and utcnow() - row.stepped_up_at <= auth.STEP_UP_TTL
+):
+    device = session.get(AuthDevice, row.device_id)
+    if device is not None and device.kind == "mobile":
+        aal = "aal2"
 ```
 
 (import `AuthDevice`). The dev page: when `/approvals/{id}/decide` answers 403 `step_up_required`, prompt for the PIN (`window.prompt` is fine on the dev page), post `/auth/stepup` and retry once.
@@ -3676,27 +4041,58 @@ def _basic(client_id: str, secret: str) -> dict[str, str]:
     return {"Authorization": "Basic " + base64.b64encode(f"{client_id}:{secret}".encode()).decode()}
 
 
-def test_register_and_get_a_token(client: TestClient, session: Session, people: dict[str, Person], capsys: pytest.CaptureFixture[str]) -> None:
+def test_register_and_get_a_token(
+    client: TestClient,
+    session: Session,
+    people: dict[str, Person],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert main(["auth", "client", "add", "Partner", "--role", "dispatcher"]) == 0
     out = capsys.readouterr().out
     client_id = out.split("client_id: ")[1].split()[0]
     secret = out.split("client_secret: ")[1].split()[0]
-    res = client.post("/auth/token", data={"grant_type": "client_credentials"}, headers=_basic(client_id, secret))
+    res = client.post(
+        "/auth/token", data={"grant_type": "client_credentials"}, headers=_basic(client_id, secret)
+    )
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["token_type"] == "Bearer" and body["expires_in"] == 3600
     res = client.get("/a2a-probe", headers={"Authorization": f"Bearer {body['access_token']}"})
     assert res.json() == {"id": f"client:{client_id}", "roles": ["dispatcher"]}
-    res = client.post("/auth/token", data={"grant_type": "client_credentials", "client_id": client_id, "client_secret": secret})
+    res = client.post(
+        "/auth/token",
+        data={"grant_type": "client_credentials", "client_id": client_id, "client_secret": secret},
+    )
     assert res.status_code == 200
-    assert client.post("/auth/token", data={"grant_type": "password"}, headers=_basic(client_id, secret)).status_code == 400
-    assert client.post("/auth/token", data={"grant_type": "client_credentials"}, headers=_basic(client_id, "x")).json() == {"error": "invalid_client"}
+    assert (
+        client.post(
+            "/auth/token", data={"grant_type": "password"}, headers=_basic(client_id, secret)
+        ).status_code
+        == 400
+    )
+    assert client.post(
+        "/auth/token", data={"grant_type": "client_credentials"}, headers=_basic(client_id, "x")
+    ).json() == {"error": "invalid_client"}
     assert main(["auth", "client", "revoke", client_id]) == 0
-    assert client.post("/auth/token", data={"grant_type": "client_credentials"}, headers=_basic(client_id, secret)).status_code == 401
-    assert client.get("/a2a-probe", headers={"Authorization": f"Bearer {body['access_token']}"}).status_code == 401
+    assert (
+        client.post(
+            "/auth/token",
+            data={"grant_type": "client_credentials"},
+            headers=_basic(client_id, secret),
+        ).status_code
+        == 401
+    )
+    assert (
+        client.get(
+            "/a2a-probe", headers={"Authorization": f"Bearer {body['access_token']}"}
+        ).status_code
+        == 401
+    )
 
 
-def test_client_never_holds_approve_or_a_human_role(session: Session, people: dict[str, Person]) -> None:
+def test_client_never_holds_approve_or_a_human_role(
+    session: Session, people: dict[str, Person]
+) -> None:
     helena = Actor.person(people["Helena"])
     with pytest.raises(ValueError, match="approve"):
         auth.create_client(session, helena, "x", ["admin"], utcnow())
@@ -3711,21 +4107,50 @@ def test_client_never_holds_approve_or_a_human_role(session: Session, people: di
 def test_client_token_is_refused_on_person_routes_and_cookies_on_client_routes(
     client: TestClient, session: Session, people: dict[str, Person], login
 ) -> None:  # type: ignore[no-untyped-def]
-    row, secret = auth.create_client(session, Actor.person(people["Helena"]), "x", ["dispatcher"], utcnow())
+    row, secret = auth.create_client(
+        session, Actor.person(people["Helena"]), "x", ["dispatcher"], utcnow()
+    )
     session.commit()
-    token = client.post("/auth/token", data={"grant_type": "client_credentials"}, headers=_basic(row.client_id, secret)).json()["access_token"]
-    assert client.post("/chat", json={"text": "hi"}, headers={"Authorization": f"Bearer {token}"}).status_code == 403
+    token = client.post(
+        "/auth/token",
+        data={"grant_type": "client_credentials"},
+        headers=_basic(row.client_id, secret),
+    ).json()["access_token"]
+    assert (
+        client.post(
+            "/chat", json={"text": "hi"}, headers={"Authorization": f"Bearer {token}"}
+        ).status_code
+        == 403
+    )
     login(client, people["Helena"])
     assert client.get("/a2a-probe").status_code == 401
-    assert client.get("/a2a-probe", headers={"X-Mia-Actor": people["Helena"].id, "Authorization": ""}).status_code == 401
+    assert (
+        client.get(
+            "/a2a-probe", headers={"X-Mia-Actor": people["Helena"].id, "Authorization": ""}
+        ).status_code
+        == 401
+    )
 
 
 def test_client_lockout(client: TestClient, session: Session, people: dict[str, Person]) -> None:
-    row, secret = auth.create_client(session, Actor.person(people["Helena"]), "x", ["dispatcher"], utcnow())
+    row, secret = auth.create_client(
+        session, Actor.person(people["Helena"]), "x", ["dispatcher"], utcnow()
+    )
     session.commit()
     for _ in range(10):
-        client.post("/auth/token", data={"grant_type": "client_credentials"}, headers=_basic(row.client_id, "bad"))
-    assert client.post("/auth/token", data={"grant_type": "client_credentials"}, headers=_basic(row.client_id, secret)).status_code == 401
+        client.post(
+            "/auth/token",
+            data={"grant_type": "client_credentials"},
+            headers=_basic(row.client_id, "bad"),
+        )
+    assert (
+        client.post(
+            "/auth/token",
+            data={"grant_type": "client_credentials"},
+            headers=_basic(row.client_id, secret),
+        ).status_code
+        == 401
+    )
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -3801,14 +4226,20 @@ def check_client(
         and row.status == "active"
         and (row.expires_at is None or row.expires_at > now)
     )
-    record_attempt(session, "client_secret", key, ok, now, actor=client_actor(row) if row and ok else None)
+    record_attempt(
+        session, "client_secret", key, ok, now, actor=client_actor(row) if row and ok else None
+    )
     if not ok or row is None:
         raise AuthError(INVALID)
-    store.update(session, row, {"last_used_at": now}, client_actor(row), action="auth.credential_used")
+    store.update(
+        session, row, {"last_used_at": now}, client_actor(row), action="auth.credential_used"
+    )
     return row
 
 
-def revoke_client(session: Session, actor: Actor, client: AuthClient, now: dt.datetime) -> AuthClient:
+def revoke_client(
+    session: Session, actor: Actor, client: AuthClient, now: dt.datetime
+) -> AuthClient:
     """Revoke a client and end its tokens."""
     revoke_sessions(session, actor, client.id, now)
     return store.update(session, client, {"status": "revoked"}, actor, action="auth.client_revoked")
@@ -3842,9 +4273,15 @@ def token(
         client = auth.check_client(session, client_id, client_secret, client_ip(request), now)
     except auth.AuthError:
         return JSONResponse({"error": "invalid_client"}, status_code=401)
-    tokens = auth.issue_session(session, client, method="client", aal="client", ip=client_ip(request), now=now)
+    tokens = auth.issue_session(
+        session, client, method="client", aal="client", ip=client_ip(request), now=now
+    )
     return JSONResponse(
-        {"access_token": tokens.access, "token_type": "Bearer", "expires_in": int(auth.CLIENT_TTL.total_seconds())},
+        {
+            "access_token": tokens.access,
+            "token_type": "Bearer",
+            "expires_in": int(auth.CLIENT_TTL.total_seconds()),
+        },
         headers={"Cache-Control": "no-store"},
     )
 ```
@@ -3903,7 +4340,9 @@ def client(branch: object) -> TestClient:
     return TestClient(app)
 
 
-def test_own_sessions_and_devices(client: TestClient, session: Session, people: dict[str, Person], login) -> None:  # type: ignore[no-untyped-def]
+def test_own_sessions_and_devices(
+    client: TestClient, session: Session, people: dict[str, Person], login
+) -> None:  # type: ignore[no-untyped-def]
     juha = people["Juha"]
     device, _ = auth.bind_device(session, Actor.person(juha), juha, "mobile", "p", utcnow())
     session.commit()
@@ -3919,7 +4358,9 @@ def test_own_sessions_and_devices(client: TestClient, session: Session, people: 
     devices = client.get("/auth/devices").json()
     assert [d["id"] for d in devices] == [device.id]
     assert client.delete(f"/auth/devices/{device.id}").status_code == 200
-    assert client.get("/auth/me").status_code == 401  # revoking the current device ends this session
+    assert (
+        client.get("/auth/me").status_code == 401
+    )  # revoking the current device ends this session
 
 
 def test_supervisor_revokes_staff_device_staff_cannot_see_others(
@@ -3939,7 +4380,9 @@ def test_supervisor_revokes_staff_device_staff_cannot_see_others(
     assert ev.actor_id == people["Sanna"].id
 
 
-def test_admin_reset_writes_both_actors(client: TestClient, session: Session, people: dict[str, Person], login) -> None:  # type: ignore[no-untyped-def]
+def test_admin_reset_writes_both_actors(
+    client: TestClient, session: Session, people: dict[str, Person], login
+) -> None:  # type: ignore[no-untyped-def]
     login(client, people["Sanna"])
     assert client.post(f"/auth/people/{people['Juha'].id}/reset").status_code == 403
     admin = TestClient(app)
@@ -3962,7 +4405,9 @@ Expected: 404/405 on `/auth/sessions`.
 Append to `node/mia/api/auth.py`:
 
 ```python
-def _require(session: Session, ctx: AuthContext, obj: str, action: str, owner_id: str | None) -> None:
+def _require(
+    session: Session, ctx: AuthContext, obj: str, action: str, owner_id: str | None
+) -> None:
     from mia.core.rbac import PermissionDenied, Resource, get_rbac
 
     try:
@@ -3983,8 +4428,15 @@ def sessions(session: DbSession, ctx: PersonAuth) -> list[dict[str, object]]:
         .order_by(col(AuthSession.id))
     ).all()
     return [
-        {"id": r.id, "method": r.method, "aal": r.aal, "ip": r.ip, "created_at": r.created_at.isoformat(),
-         "device_id": r.device_id, "current": r.id == ctx.session_id}
+        {
+            "id": r.id,
+            "method": r.method,
+            "aal": r.aal,
+            "ip": r.ip,
+            "created_at": r.created_at.isoformat(),
+            "device_id": r.device_id,
+            "current": r.id == ctx.session_id,
+        }
         for r in rows
     ]
 
@@ -4002,17 +4454,27 @@ def revoke_session(session: DbSession, ctx: PersonAuth, session_id: str) -> dict
 
 
 @router.get("/devices")
-def devices(session: DbSession, ctx: PersonAuth, person_id: str | None = None) -> list[dict[str, object]]:
+def devices(
+    session: DbSession, ctx: PersonAuth, person_id: str | None = None
+) -> list[dict[str, object]]:
     """Active devices of the person, or of another person for those who may read them."""
     from mia.core.models import AuthDevice
 
     owner = person_id or _person(ctx).id
     _require(session, ctx, "data:core.auth_devices", "read", owner)
     rows = session.exec(
-        select(AuthDevice).where(AuthDevice.person_id == owner).where(AuthDevice.status == "active").order_by(col(AuthDevice.id))
+        select(AuthDevice)
+        .where(AuthDevice.person_id == owner)
+        .where(AuthDevice.status == "active")
+        .order_by(col(AuthDevice.id))
     ).all()
     return [
-        {"id": d.id, "kind": d.kind, "name": d.name, "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None}
+        {
+            "id": d.id,
+            "kind": d.kind,
+            "name": d.name,
+            "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None,
+        }
         for d in rows
     ]
 
@@ -4105,7 +4567,11 @@ def test_health_behind_cloudflare_is_status_only(client: TestClient) -> None:
 
 
 def test_full_run_leaves_no_secret_in_events_or_logs(
-    client: TestClient, session: Session, people: dict[str, Person], login, caplog: pytest.LogCaptureFixture
+    client: TestClient,
+    session: Session,
+    people: dict[str, Person],
+    login,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:  # type: ignore[no-untyped-def]
     caplog.set_level(logging.DEBUG)
     helena = people["Helena"]

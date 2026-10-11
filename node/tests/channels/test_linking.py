@@ -11,8 +11,8 @@ from mia.core import people
 from mia.core.db import utcnow
 from mia.core.models import (
     Actor,
-    ChannelIdentity,
     AuthCode,
+    ChannelIdentity,
     Message,
     Person,
     Thread,
