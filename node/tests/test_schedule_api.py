@@ -135,3 +135,30 @@ def test_check_in_and_out_over_http(
     res = sup.post(f"/visits/{visit_id}/check-out", json={"person_id": people["Juha"].id})
     assert res.status_code == 200 and res.json()["status"] == "completed"
     assert client.post(f"/visits/{visit_id}/check-in").status_code == 409
+
+
+def test_check_in_for_someone_else_records_both_people(
+    client: TestClient,
+    session: Session,
+    branch: Branch,
+    people: dict[str, Person],
+    login,  # type: ignore[no-untyped-def]
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mia.core.models import Event
+
+    visit_id = _visit_id(session, branch, people)
+    visit = session.get(Visit, visit_id)
+    assert visit is not None
+    scheduling.assign(session, Actor.person(people["Sanna"]), visit, people["Juha"])
+    session.commit()
+    from mia.api import schedule as api
+
+    monkeypatch.setattr(api, "utcnow", lambda: visit.planned_start)
+    sup = TestClient(app)
+    login(sup, people["Sanna"])
+    res = sup.post(f"/visits/{visit_id}/check-in", json={"person_id": people["Juha"].id})
+    assert res.status_code == 200, res.text
+    session.expire_all()
+    ev = session.exec(select(Event).where(Event.action == "visit.checked_in")).one()
+    assert (ev.actor_id, ev.on_behalf_of) == (people["Sanna"].id, people["Juha"].id)

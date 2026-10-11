@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, col, select
 
 from mia.agents.dispatcher import scoring
-from mia.core import approvals, store
+from mia.core import approvals, events, store
 from mia.core.models import (
     Actor,
     Approval,
@@ -238,6 +238,7 @@ def generate(
     same weekday when that person is still eligible, else they are `unfilled`."""
     tz = branch.timezone
     today = today or dt.datetime.now(ZoneInfo(tz)).date()
+    events.write_lock(session)  # the ticker and `mia schedule generate` must not both read
     jobs = session.exec(select(Job).where(Job.branch_id == branch.id)).all()
     existing = {
         (v.job_id, v.date)
@@ -484,6 +485,8 @@ def inbox(session: Session, actor: Actor) -> list[Approval]:
         mine.update(enforcer.get_implicit_roles_for_user(role, "*"))
     out = []
     for approval in approvals.pending(session, actor.branch_id):
+        if actor.ids & approvals.requester_ids(approval):
+            continue  # nobody approves a request they made or triggered
         roles = set(approval.approver_roles)
         if approval.status == "escalated":
             roles |= set(approval.escalate_to)

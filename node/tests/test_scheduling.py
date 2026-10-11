@@ -324,3 +324,43 @@ def test_inbox_filters_by_role_and_escalation(
     store.update(session, ops, {"status": "escalated", "escalate_to": ["owner"]}, sanna)
     assert ops.id in {a.id for a in scheduling.inbox(session, helena)}
     assert ops.id in {a.id for a in scheduling.inbox(session, sanna)}
+
+
+def test_generate_takes_the_write_lock_before_reading(
+    session: Session, branch: Branch, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two writers (the ticker and `mia schedule generate`) must not both read the same set of
+    existing visits: the lock comes first (rule 11)."""
+    from mia.core import events
+
+    order: list[str] = []
+    real_lock, real_exec = events.write_lock, Session.exec
+
+    def lock(s: Session) -> None:
+        order.append("lock")
+        real_lock(s)
+
+    def exec_(self: Session, *a: object, **k: object) -> object:
+        order.append("exec")
+        return real_exec(self, *a, **k)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(events, "write_lock", lock)
+    monkeypatch.setattr(Session, "exec", exec_)
+    scheduling.generate(session, Actor.system(branch.id), branch, days=10)
+    assert order and order[0] == "lock"
+
+
+def test_inbox_hides_the_actors_own_requests(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    helena = Actor.person(people["Helena"])
+    visit = _visit(session, branch, "Kamppi shop clean", offset=10)
+    out = scheduling.assign(session, helena, visit, people["Liisa"])  # outside her hours
+    assert out.approval_id
+    assert out.approval_id not in {a.id for a in scheduling.inbox(session, helena)}
+    aki = Actor.person(
+        store.insert(
+            session, Person(branch_id=branch.id, name="Aki Admin", roles=["admin"]), helena
+        )
+    )
+    assert out.approval_id in {a.id for a in scheduling.inbox(session, aki)}

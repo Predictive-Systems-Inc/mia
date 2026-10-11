@@ -11,7 +11,7 @@ from sqlmodel import Session
 from mia.api.deps import AuthContext, DbSession, PersonAuth
 from mia.core import scheduling
 from mia.core.db import utcnow
-from mia.core.models import Branch, Job, Location, Person, Visit
+from mia.core.models import Actor, Branch, Job, Location, Person, Principal, Visit
 from mia.core.rbac import PermissionDenied, Resource, get_rbac
 
 router = APIRouter(tags=["schedule"])
@@ -171,8 +171,15 @@ def _attendance(
     # Own visit: write_own against the assignees; someone else's: write.
     own = person.id == me.id and me.id in visit.assigned_person_ids
     _require(session, ctx, "write", me.id if own else None)
+    actor = ctx.actor
+    if person.id != me.id:  # the office acting for a cleaner: both are logged (rule 5)
+        actor = Actor(
+            principal=ctx.actor.principal,
+            on_behalf_of=Principal(type="person", id=person.id, roles=list(person.roles)),
+            branch_id=ctx.actor.branch_id,
+        )
     try:
-        row = getattr(scheduling, fn)(session, ctx.actor, visit, person, utcnow())
+        row = getattr(scheduling, fn)(session, actor, visit, person, utcnow())
     except scheduling.ScheduleError as exc:
         raise HTTPException(409, str(exc)) from exc
     return _card(session, row, _branch(session, ctx).timezone)
