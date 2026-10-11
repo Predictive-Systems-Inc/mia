@@ -62,8 +62,34 @@ def test_admin_reset_writes_both_actors(
     admin = TestClient(app)
     login(admin, people["Helena"])
     res = admin.post(f"/auth/people/{people['Juha'].id}/reset")
+    assert res.status_code == 403 and res.json()["detail"] == "step_up_required"
+    login(admin, people["Helena"], stepped_up=True)
+    res = admin.post(f"/auth/people/{people['Juha'].id}/reset")
     assert res.status_code == 200 and "/auth/enrol/" in res.json()["enrol_url"]
     assert admin.post("/auth/people/nope/reset").status_code == 404
     session.expire_all()
     ev = session.exec(select(Event).where(Event.action == "auth.reset")).one()
     assert ev.actor_id == people["Helena"].id and ev.entity_id == people["Juha"].id
+
+
+def test_other_branch_is_invisible(
+    client: TestClient, session: Session, people: dict[str, Person], login
+) -> None:  # type: ignore[no-untyped-def]
+    from mia.core import store
+    from mia.core.models import Branch
+
+    helena = people["Helena"]
+    other = store.insert(
+        session,
+        Branch(organisation_id=session.get(Branch, helena.branch_id).organisation_id, name="B2"),  # type: ignore[union-attr]
+        Actor.system(helena.branch_id),
+    )
+    stranger = store.insert(
+        session, Person(branch_id=other.id, name="Outi", roles=["staff"]), Actor.system(other.id)
+    )
+    device, _ = auth.bind_device(session, Actor.person(stranger), stranger, "mobile", "p", utcnow())
+    session.commit()
+    login(client, helena, stepped_up=True)
+    assert client.get(f"/auth/devices?person_id={stranger.id}").status_code == 404
+    assert client.delete(f"/auth/devices/{device.id}").status_code == 404
+    assert client.post(f"/auth/people/{stranger.id}/reset").status_code == 404

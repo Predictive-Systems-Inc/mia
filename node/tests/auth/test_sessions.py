@@ -189,6 +189,12 @@ def test_client_ip_trusts_cf_header_only_from_a_trusted_proxy(
     monkeypatch.setenv("MIA_TRUSTED_PROXIES", "172.18.0.9, 10.0.0.1")
     get_settings.cache_clear()
     assert client_ip(req) == "198.51.100.7"  # type: ignore[arg-type]
+    monkeypatch.setenv("MIA_TRUSTED_PROXIES", "172.16.0.0/12")  # the compose network (CIDR)
+    get_settings.cache_clear()
+    assert client_ip(req) == "198.51.100.7"  # type: ignore[arg-type]
+    monkeypatch.setenv("MIA_TRUSTED_PROXIES", "10.0.0.0/8")
+    get_settings.cache_clear()
+    assert client_ip(req) == "172.18.0.9"  # type: ignore[arg-type]
 
 
 # ---- approvals need a step-up ------------------------------------------------------------

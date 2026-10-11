@@ -547,8 +547,12 @@ def revoke_session(session: DbSession, ctx: PersonAuth, session_id: str) -> dict
 def devices(
     session: DbSession, ctx: PersonAuth, person_id: str | None = None
 ) -> list[dict[str, object]]:
-    """Active devices of the person, or of another person for those who may read them."""
+    """Active devices of the person, or of another person in the branch for those who may
+    read them (404 outside the branch, so nothing leaks across branches)."""
     owner = person_id or _person(ctx).id
+    target = session.get(Person, owner)
+    if target is None or target.branch_id != ctx.actor.branch_id:
+        raise HTTPException(404, "person not found")
     _require(session, ctx, "core.auth_devices", "read", owner)
     rows = session.exec(
         select(AuthDevice)
@@ -590,5 +594,8 @@ def reset_person(session: DbSession, ctx: PersonAuth, person_id: str) -> dict[st
     if target is None or target.branch_id != ctx.actor.branch_id:
         raise HTTPException(404, "person not found")
     _require(session, ctx, "core.auth_credentials", "write", None)
+    fresh = ctx.stepped_up_at is not None and utcnow() - ctx.stepped_up_at <= auth.STEP_UP_TTL
+    if ctx.aal != "aal2" or not fresh:  # a reset takes over an account: PIN first
+        raise HTTPException(403, "step_up_required")
     code = auth.start_enrolment(session, ctx.actor, target, utcnow(), reason="reset")
     return {"enrol_url": f"{get_settings().MIA_PUBLIC_URL.rstrip('/')}/auth/enrol/{code}"}

@@ -1,7 +1,8 @@
 # 011: Authentication and identity on the node
 
 ## Status
-Accepted (decision D17, answers to Q10 to Q16).
+Accepted (decision D17, answers to Q10 to Q16). Built 2026-10-12
+(docs/superpowers/plans/2026-10-12-authentication.md); passkeys and SMS still wait for approval.
 
 ## Context
 The actor still comes from the unverified X-Mia-Actor header (architecture rule 4). The node is
@@ -55,3 +56,12 @@ credentials; a PIN for risky approvals by voice) but not the mechanism.
 - Meta must approve an authentication template before staff can log in to the app by phone.
 - Field encryption, when it lands, wraps the TOTP key as a data key so master key rotation does
   not break authenticators, and adds a blind index for the login email.
+- As built: rule 1 wins over "refreshes are not events" (a refresh rotation is a `store.update`
+  and emits `auth.session_refreshed`); the dependencies live in api/deps.py (shared with the
+  chat router, which avoids an import cycle); writes that record a failure commit before the
+  error is raised, so a rolled-back request cannot erase them; outbox events never carry the
+  payload (sign-in codes travel through the outbox); limits apply per subject whatever the IP as
+  well as per (subject, IP); `/auth/token` parses its form body with the standard library.
+- Follow-ups: the "View in the Mia app" link on sensitive channel messages is still a plain URL
+  to the login page (a per-person login link needs the person in the renderer); the chat intent
+  "open the app" is not wired to `send_login_link` yet.

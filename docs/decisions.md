@@ -274,3 +274,16 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   promoted by the bake-off; Gate 2 and `promote` stay with the developer.
 - Consequences: the skill and guidelines carry the "same action?" test; the reviewer lists suspect
   labels and paraphrases and never relabels; nothing is merged automatically.
+
+## D33: Authentication built as designed
+- Context: ADR 011 and D17 fixed the design; the build is plan 2026-10-12-authentication.md.
+- Decision: data standard 1.3 is in effect (auth_credentials, auth_devices, auth_sessions,
+  auth_clients; channel_link_codes and channel_link_attempts renamed auth_codes and
+  auth_attempts). Deviations from the spec text, each for a rule: refresh rotations are events
+  (rule 1); failure records commit before the error is raised (lockouts must accumulate);
+  limits also apply per subject whatever the IP; a reset revokes the old credentials, not only
+  the sessions; the token endpoint needs no form dependency. `MIA_AUTH_MODE=dev` is for
+  development only. Passkeys (`webauthn`) and SMS still need approval before they are built.
+- Consequences: `mia auth bootstrap` is the first login on a server; the `mia_login_code`
+  WhatsApp template must be approved before staff can sign in by phone; the master key file is
+  part of the install and of the recovery copy.

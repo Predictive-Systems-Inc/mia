@@ -43,7 +43,7 @@ mia/
     migrations/             alembic.ini, env.py, versions/
     config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ (instructions, settings.yaml),
                             ollama/ (Modelfiles for local models, ADR 004)
-    tests/                  unit tests; evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
+    tests/                  unit tests; auth/ (login flows); evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
                             and intents.py for intent classification)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,
                             research/ (research notes and dated evaluation reports, ADR 012)

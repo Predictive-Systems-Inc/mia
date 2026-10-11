@@ -64,6 +64,27 @@ Edit `deploy/.env`. Secrets live only in this file (or the environment), never i
 
 `MIA_DB_PATH` is fixed to `/data/mia.db` by the compose file; the value in `.env` is ignored.
 
+The master key (ADR 011) derives every authentication subkey. Create it once, next to `.env`,
+owned by the container user and readable by nobody else; keep a copy outside the data folder
+and never in a backup target (a lost key makes every MFA user re-enrol):
+
+```
+python3 -c "import secrets, sys; sys.stdout.buffer.write(secrets.token_bytes(32))" > master.key
+sudo chown 10001:10001 master.key && sudo chmod 400 master.key
+```
+
+`MIA_AUTH_MODE` stays `required` on a server (the node refuses to start in `dev` mode with a
+public URL). After the first start, create the owner's enrolment link and open it in a browser
+within 24 hours to set the password and the authenticator app:
+
+```
+docker compose exec node mia auth bootstrap --email owner@example.fi
+```
+
+Later: `mia auth reset NAME` (a locked-out person), `mia auth unlock LOGIN`, `mia auth link NAME`
+(a one-time login link over WhatsApp), `mia auth client add NAME --role ROLE` (an outside agent
+or service, credentials shown once).
+
 ## 4. Build, start and check
 
 ```
@@ -180,8 +201,13 @@ for the tunnel, run it as a container next to the node:
 
 1. In the Cloudflare dashboard (Zero Trust, Networks, Tunnels) create a tunnel and copy its token
    to `CLOUDFLARE_TUNNEL_TOKEN` in `deploy/.env`.
-2. Add a public hostname for the tunnel with service `http://node:8000` and path
-   `channels/.*`. Until real login lands, publish only the webhook path, never the whole node.
-3. Set `MIA_PUBLIC_URL=https://<that hostname>` in `deploy/.env`.
+2. Add public hostnames for the tunnel with service `http://node:8000`, one per path the
+   node serves to the outside: `channels/.*` (webhooks), `auth/.*`, `chat.*`, `ag-ui.*`,
+   `approvals/.*`, `notifications`, `health` and `/` (the office page). Everything else
+   returns 404 at the edge. Behind the tunnel `/health` shows status only.
+3. Set `MIA_PUBLIC_URL=https://<that hostname>` in `deploy/.env`. Staff sign in with a code sent
+   to their linked WhatsApp: the `mia_login_code` authentication template must be approved in
+   WhatsApp Manager first (docs/whatsapp-setup.md), and staff should turn on WhatsApp's own
+   two-step verification during onboarding.
 4. `docker compose --profile tunnel up -d --wait`
 5. Set the callback URL in Meta to `https://<hostname>/channels/whatsapp/webhook`.

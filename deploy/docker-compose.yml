@@ -14,13 +14,19 @@ services:
       MIA_DB_PATH: /data/mia.db
       MIA_MODELS_DIR: /data/models
       MIA_LEARNING_DIR: /data/learning
+      MIA_MASTER_KEY_FILE: /run/secrets/mia_master_key
+      # Requests through the tunnel arrive from the cloudflared container: trust the compose
+      # network for CF-Connecting-IP, or every visitor shares one IP for the login limits.
+      MIA_TRUSTED_PROXIES: ${MIA_TRUSTED_PROXIES:-172.16.0.0/12}
     volumes:
       - mia-data:/data
       - mia-backups:/backups
       - ./litestream.yml:/etc/litestream.yml:ro
+      # The master key (ADR 011): deploy/master.key, owned by uid 10001, mode 400 (install.md 3).
+      - ./master.key:/run/secrets/mia_master_key:ro
       # Organisation settings and instructions stay editable on the server.
       - ../node/config/org:/app/node/config/org:ro
-    # Local only: there is no real login yet. Outside traffic arrives through the tunnel.
+    # Local only: outside traffic arrives through the tunnel (section 7 of install.md).
     ports:
       - "127.0.0.1:${MIA_PORT:-8000}:8000"
     restart: unless-stopped

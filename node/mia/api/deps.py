@@ -58,11 +58,28 @@ def public_origin() -> str:
     return f"{parts.scheme}://{parts.netloc}"
 
 
+def _trusted_proxy(peer: str) -> bool:
+    """MIA_TRUSTED_PROXIES holds addresses or networks (the compose network for cloudflared)."""
+    try:
+        address = ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    for entry in get_settings().MIA_TRUSTED_PROXIES.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            if address in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def client_ip(request: Request) -> str:
     """The TCP peer, or CF-Connecting-IP when the peer is a trusted proxy."""
     peer = request.client.host if request.client else ""
-    trusted = {p.strip() for p in get_settings().MIA_TRUSTED_PROXIES.split(",") if p.strip()}
-    if peer in trusted:
+    if _trusted_proxy(peer):
         return request.headers.get("cf-connecting-ip", peer)
     return peer
 
