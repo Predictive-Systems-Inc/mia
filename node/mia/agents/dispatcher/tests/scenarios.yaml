@@ -295,3 +295,17 @@
   tools: [{tool: report_site_problem, args: {kind: site_problem}}]
   or_tools: [{tool: report_site_problem, status: invalid}]
   reply_lang: en
+
+- id: fi_checklist
+  as: Juha
+  message: "Mikä on tarkistuslista?"
+  tools: [{tool: checklist, status: ok}]
+  or_tools: [{tool: checklist, status: invalid}]
+  reply_lang: fi
+
+- id: fi_tick
+  as: Juha
+  message: "Tehty: Empty bins"
+  tools: [{tool: checklist, args: {item: "Empty bins"}}]
+  or_tools: [{tool: checklist, status: invalid}]
+  reply_lang: fi

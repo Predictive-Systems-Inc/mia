@@ -21,6 +21,7 @@ roles:
     - tool:dispatcher.check_out:execute
     - tool:dispatcher.visit_details:execute
     - tool:dispatcher.report_site_problem:execute
+    - tool:dispatcher.checklist:execute
     - data:core.visit:write
   denies: [tool:*:approve]
   # An explicit instruction is the approval (decision D1). Approvals are needed only when no
@@ -36,4 +37,5 @@ tools:
   - {id: dispatcher.check_out, kind: agent, risk: write_internal, approval: never, reads: [visit, location], writes: [visit]}
   - {id: dispatcher.visit_details, kind: agent, risk: read, approval: never, reads: [visit, location, job, cleaning_checklists]}
   - {id: dispatcher.report_site_problem, kind: agent, risk: write_internal, approval: never, reads: [visit, location, person], writes: [dispatcher_site_problems, chat_messages]}
+  - {id: dispatcher.checklist, kind: agent, risk: write_internal, approval: never, reads: [visit, cleaning_checklists, dispatcher_checklist_ticks], writes: [dispatcher_checklist_ticks]}
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.95}
