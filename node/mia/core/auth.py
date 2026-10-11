@@ -865,3 +865,13 @@ def start_enrolment(
             session, "auth.reset", person, None, {"by": actor.principal.id, "via": via}, actor
         )
     return create_code(session, actor, person, "enrol", now, token=True)
+
+
+def unlock_login(session: Session, login: str, now: dt.datetime) -> None:
+    """Owner's unlock from the CLI: the login's recent failures no longer count (each is
+    marked ok, with `auth.attempt_cleared`), and `auth.unlocked` is written."""
+    subject = login_key(login)
+    since = now - LIMITS["password_login"].window
+    for row in _recent(session, since, kind="password", prefix=f"{subject}@"):
+        store.update(session, row, {"ok": True}, auth_actor(), action="auth.attempt_cleared")
+    events.emit(session, "auth.unlocked", ("login", subject), None, {"via": "cli"}, auth_actor())

@@ -1,5 +1,5 @@
 """The `mia` command: migrate, seed, serve, chat, decide, inbox, tick, geocode, person,
-invite, channels, backup, verify-db."""
+invite, channels, backup, verify-db, keys, auth, skills."""
 
 import argparse
 import asyncio
@@ -366,6 +366,69 @@ def verify_db(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _enrol_link(code: str) -> str:
+    return f"{get_settings().MIA_PUBLIC_URL.rstrip('/')}/auth/enrol/{code}"
+
+
+def auth_bootstrap(args: argparse.Namespace) -> int:
+    from mia.core import auth, people
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor, Person
+
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        rows = session.exec(select(Person).where(Person.branch_id == branch_id)).all()
+        owners = [p for p in rows if "owner" in p.roles and p.status == "active"]
+        able = [p for p in owners if auth.credential(session, p.id, "password") is not None]
+        if able:
+            print(f"an owner can already sign in ({able[0].name}); use `mia auth reset` instead")
+            return 1
+        actor = Actor.system(branch_id)
+        if owners:
+            person = owners[0]  # an owner without a login yet (a seeded or imported branch)
+        else:
+            person = people.add_person(
+                session,
+                actor,
+                branch_id=branch_id,
+                name=args.name or args.email.split("@")[0],
+                roles=["owner"],
+                language=args.lang,
+            )
+        code = auth.start_enrolment(session, actor, person, utcnow(), via="cli")
+    print(
+        f"owner {person.name}: set the password (email {args.email}) and TOTP through this "
+        f"link (24 hours, single use):\n  {_enrol_link(code)}"
+    )
+    return 0
+
+
+def auth_reset(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor
+
+    with session_scope() as session:
+        person = _match_one(session, args.name)
+        actor = Actor.system(person.branch_id)
+        code = auth.start_enrolment(session, actor, person, utcnow(), reason="reset", via="cli")
+    print(
+        f"sessions of {person.name} ended. Enrolment link (24 hours, single use):\n"
+        f"  {_enrol_link(code)}"
+    )
+    return 0
+
+
+def auth_unlock(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+
+    with session_scope() as session:
+        auth.unlock_login(session, args.login, utcnow())
+    print(f"{auth.normalise_login(args.login)} unlocked")
+    return 0
+
+
 def keys_init(args: argparse.Namespace) -> int:
     from mia.core import keys
 
@@ -440,6 +503,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lang", default="fi", choices=["fi", "en"])
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=person_add)
+    auth_p = sub.add_parser("auth", help="authentication").add_subparsers(
+        dest="auth_command", required=True
+    )
+    p = auth_p.add_parser("bootstrap", help="create the first owner and print an enrolment link")
+    p.add_argument("--email", required=True)
+    p.add_argument("--name")
+    p.add_argument("--lang", default="fi", choices=["fi", "en"])
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=auth_bootstrap)
+    p = auth_p.add_parser("reset", help="end a person's sessions and print an enrolment link")
+    p.add_argument("name")
+    p.set_defaults(func=auth_reset)
+    p = auth_p.add_parser("unlock", help="clear the lockout of a login")
+    p.add_argument("login")
+    p.set_defaults(func=auth_unlock)
     keys_p = sub.add_parser("keys", help="key material").add_subparsers(
         dest="keys_command", required=True
     )

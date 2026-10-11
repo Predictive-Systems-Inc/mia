@@ -6,6 +6,7 @@ everything else gets bearer tokens. Every failure is 401 `invalid credentials`.
 """
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from mia.api.deps import (
@@ -226,3 +227,37 @@ def me(session: DbSession, ctx: CurrentAuth) -> dict[str, object]:
         "mfa": auth.has_mfa(session, person),
         "pin": auth.has_pin(session, person),
     }
+
+
+# ---- enrolment links (bootstrap, invites, resets) -----------------------------------------
+
+ENROL_PAGE = """<!doctype html><meta charset="utf-8"><title>Mia</title>
+<body style="font-family:system-ui;max-width:28rem;margin:4rem auto">
+<h1>Mia</h1><p>Continue to set up your sign-in.</p>
+<form method="post"><button style="padding:.6rem 1.2rem">Continue</button></form>
+<script>document.forms[0].onsubmit = async (e) => { e.preventDefault();
+ const r = await fetch(location.pathname, {method: "POST", headers: {"X-Mia-Client": "web"}});
+ location.href = r.ok ? "/" : location.pathname + "?failed=1"; };</script>"""
+
+
+@router.get("/enrol/{code}", response_class=HTMLResponse)
+def enrol_page(code: str) -> str:
+    """One button, so previews and scanners that fetch the link do not consume it."""
+    return ENROL_PAGE
+
+
+@router.post("/enrol/{code}", response_model=TokensOut)
+def enrol(request: Request, response: Response, session: DbSession, code: str) -> TokensOut:
+    """Consume an enrolment link: an enrolment session that can set a password and TOTP."""
+    now = utcnow()
+    found = auth.check_code(session, "enrol", code, now)
+    if found.status != "ok" or found.row is None:
+        raise _invalid()
+    person = session.get(Person, found.row.person_id)
+    if person is None or person.status != "active":
+        raise _invalid()
+    auth.use_code(session, Actor.person(person), found.row, now)
+    tokens = auth.issue_session(
+        session, person, method="enrol", aal="enrol", ip=client_ip(request), now=now
+    )
+    return _tokens_response(request, response, tokens)
