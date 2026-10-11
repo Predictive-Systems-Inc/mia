@@ -21,7 +21,8 @@ mia/
       core/                 models, db, ids, events, store, rbac, approvals, egress, usage, people,
                             geocoding (pluggable providers), orgconfig (organisation settings),
                             keys (master key, HKDF, scrypt, TOTP), auth (sessions, codes,
-                            credentials, devices, clients; ADR 011)
+                            credentials, devices, clients; ADR 011), scheduling (recurrence,
+                            visit generation, assignment rules, check-in, inbox)
       templates/cleaning/   models (sites, checklists), seed
       agents/               base.py (manifest, guard, model factory)
         dispatcher/         manifest.yaml, job.md, prompts/, models.py, classifier.py,
@@ -37,7 +38,8 @@ mia/
                             outbox.py, linking.py (codes, invites), setup.py, transport.py (the only HTTP
                             exit for channels), router.py (webhooks), simulator.py ("sim" adapter)
         whatsapp/           adapter.py (Meta Cloud API), templates.py
-      api/                  main.py, deps.py (session and auth dependencies), auth.py (login routes)
+      api/                  main.py, deps.py (session and auth dependencies), auth.py (login routes),
+                            schedule.py (week view, assignment, check-in, inbox)
       i18n/                 Finnish and English strings
       static/index.html     dev chat page
     migrations/             alembic.ini, env.py, versions/

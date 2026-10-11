@@ -287,3 +287,16 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
 - Consequences: `mia auth bootstrap` is the first login on a server; the `mia_login_code`
   WhatsApp template must be approved before staff can sign in by phone; the master key file is
   part of the install and of the recovery copy.
+
+## D34: Scheduling core built on the assumptions Q19 to Q22
+- Context: plan item 4 (Sprint 2); docs/superpowers/specs/2026-10-12-scheduling-core-design.md.
+- Decision: visits are generated 28 days ahead from the job recurrence (DAILY, WEEKLY with
+  BYDAY, INTERVAL, UNTIL; no dependency), one per (job, date); a new visit copies the last
+  same-weekday assignment when eligible (no job field, Q21); the office assigns under the
+  dispatcher's eligibility rules, and a rule-breaking assignment is an approval
+  `schedule.assignment_override` for admin or owner, app only (Q22); check-in opens two hours
+  before the planned start and closes four hours after the planned end; the inbox lists the
+  approvals the person's roles (with inheritance) may decide. The schedule board is the apps
+  project's (Q19). Timesheets wait for Q20 because they change the data standard.
+- Consequences: `mia schedule generate` and the daily ticker keep visits ahead; supervisors get
+  `data:core.visit write`, staff `write_own` for their own check-in and check-out.
