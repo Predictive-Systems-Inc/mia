@@ -138,7 +138,6 @@ def _finish(session: Session, row: ChannelInbound, status: str, error: str | Non
 
 
 def _after_turn(session: Session, inbound_id: str, person: Person, reply: ChatReply) -> None:
-    sensitive = any(getattr(b, "sensitive", False) for b in reply.blocks)  # access notes etc.
     deliver(
         session,
         person,
@@ -146,7 +145,7 @@ def _after_turn(session: Session, inbound_id: str, person: Person, reply: ChatRe
         Actor.person(person),
         urgent=True,
         source_id=reply.message_id,
-        sensitive=sensitive,
+        sensitive=reply.sensitive,
     )
     row = session.get(ChannelInbound, inbound_id)
     if row is not None:

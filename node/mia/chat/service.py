@@ -177,7 +177,21 @@ def _finish(
         deps.actor,
     )
     return ChatReply(
-        thread_id=thread.id, message_id=message.id, agent_id=MANIFEST.id, blocks=blocks
+        thread_id=thread.id,
+        message_id=message.id,
+        agent_id=MANIFEST.id,
+        blocks=blocks,
+        sensitive=_sensitive(deps, blocks),
+    )
+
+
+def _sensitive(deps: AgentDeps, blocks: list[Block]) -> bool:
+    """The reply is sensitive when a block says so or a tool handed the model access notes (a
+    free-text reply may repeat them)."""
+    if any(getattr(b, "sensitive", False) for b in blocks):
+        return True
+    return any(
+        e.tool == "dispatcher.visit_details" and e.output.get("access_notes") for e in deps.tool_log
     )
 
 
@@ -290,7 +304,11 @@ def _store_reply(
         deps.actor,
     )
     return ChatReply(
-        thread_id=thread.id, message_id=message.id, agent_id=MANIFEST.id, blocks=blocks
+        thread_id=thread.id,
+        message_id=message.id,
+        agent_id=MANIFEST.id,
+        blocks=blocks,
+        sensitive=_sensitive(deps, blocks),
     )
 
 

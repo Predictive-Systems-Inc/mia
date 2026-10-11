@@ -436,8 +436,12 @@ class VisitDetailsOutput(BaseModel):
 
 
 def _own_visits_today(deps: AgentDeps, location_name: str | None) -> list[Visit]:
-    """The acting person's visits today, by start; narrowed to a named site."""
-    rows = visits_for(deps.session, deps.branch.id, deps.person.id, deps.today, deps.today)
+    """The acting person's visits around today (yesterday to tomorrow, so a visit that crosses
+    midnight is still found), by start; narrowed to a named site."""
+    day = dt.timedelta(days=1)
+    rows = visits_for(
+        deps.session, deps.branch.id, deps.person.id, deps.today - day, deps.today + day
+    )
     if location_name:
         rows = [
             v
@@ -472,7 +476,10 @@ def check_in(deps: AgentDeps, args: CheckInInput, tool_call_id: str) -> Attendan
         tool_call_id,
     )
     now = utcnow()
-    planned = [v for v in _own_visits_today(deps, args.location_name) if v.status == "planned"]
+    rows = _own_visits_today(deps, args.location_name)
+    if any(v.status == "in_progress" for v in rows):
+        return AttendanceOutput(status="invalid", reason="already")
+    planned = [v for v in rows if v.status == "planned"]
     if not planned:
         return AttendanceOutput(status="invalid", reason="no_visit")
     open_now = [

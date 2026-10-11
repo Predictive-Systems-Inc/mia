@@ -148,6 +148,7 @@ class ChatReply(BaseModel):
     message_id: str
     agent_id: str
     blocks: list[Block]
+    sensitive: bool = False  # the turn exposed access notes or the like: channels get a link
 
     def text(self) -> str:
         """Plain text rendering, for the terminal and for text-only channels."""

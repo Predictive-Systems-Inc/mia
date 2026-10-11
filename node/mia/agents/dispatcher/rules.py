@@ -255,7 +255,8 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
 def _field_work(tool: str, out: dict[str, Any], lang: str) -> list[Block]:
     """Replies for check-in, check-out and visit details."""
     if out.get("status") != "ok":
-        return [TextBlock(text=t(f"{tool}.{out.get('reason', 'no_visit')}", lang))]
+        reason = out.get("reason") or ("not_checked_in" if tool == "check_out" else "no_visit")
+        return [TextBlock(text=t(f"{tool}.{reason}", lang))]
     v = out["visit"]
     if tool == "visit_details":
         fields = [CardField(label=t("field.address", lang), value=out["address"] or "-")]

@@ -108,3 +108,26 @@ def test_field_work_intents(text: str, intent: str, lang: str) -> None:
 def test_field_work_location_hint() -> None:
     assert classify("I've arrived at Kalasatama", TODAY).location_hint == "Kalasatama"
     assert classify("Mikä on ovikoodi Kampissa?", TODAY).location_hint == "Kampissa"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Just checking in, is the Kamppi visit still on?",
+        "Can you check out my schedule for Monday?",
+        "Finished the kitchen, where is the vacuum?",
+        "I'm done with the report",
+        "Olen valmis aloittamaan",
+        "Lähden lomalle ensi viikolla",
+        "Aloitan huomenna klo 8",
+        "Olen paikalla huomenna klo 8",
+        "The delivery arrived",
+        "Who is at the site today?",
+        "Onko Maria paikalla?",
+        "Mitä on tehty tänään?",
+        "I'm done, show my visits",
+    ],
+)
+def test_everyday_messages_never_check_in_or_out(text: str) -> None:
+    """A check-in or check-out is a write: only an anchored phrase triggers it."""
+    assert classify(text, TODAY).name not in ("check_in", "check_out"), text

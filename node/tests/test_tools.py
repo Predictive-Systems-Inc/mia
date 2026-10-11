@@ -276,7 +276,7 @@ def test_check_in_picks_the_visit_in_window(
     session.refresh(visit)
     assert visit.status == "in_progress"
     again = tools.check_in(deps, tools.CheckInInput(location_name="Kamppi"), "c2")
-    assert again.status == "invalid" and again.reason == "no_visit"  # already in progress
+    assert again.status == "invalid" and again.reason == "already"
     monkeypatch.setattr(tools, "utcnow", lambda: visit.planned_end + dt.timedelta(hours=5))
     done = tools.check_out(deps, tools.CheckOutInput(), "c3")
     assert done.status == "ok" and done.visit and done.visit.visit_id == visit.id
@@ -329,3 +329,53 @@ def test_visit_details_card(session: Session, branch: Branch, people: dict[str, 
         tools.visit_details(other, tools.VisitDetailsInput(location_name="Kamppi"), "c3").reason
         == "no_visit"
     )
+
+
+def test_field_work_tools_need_permission(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    """A viewer holds none of the three tools; the denial is logged like any other."""
+    from mia.core import people as people_service
+
+    viewer = people_service.add_person(
+        session,
+        Actor.person(people["Helena"]),
+        branch_id=branch.id,
+        name="Vilma Viewer",
+        roles=["viewer"],
+    )
+    deps = deps_for(session, branch, viewer)
+    for fn, args in (
+        (tools.check_in, tools.CheckInInput()),
+        (tools.check_out, tools.CheckOutInput()),
+        (tools.visit_details, tools.VisitDetailsInput()),
+    ):
+        with pytest.raises(PermissionDenied):
+            fn(deps, args, "c1")  # type: ignore[arg-type]
+    assert session.exec(select(Event).where(Event.action == "rbac.deny")).all()
+
+
+def test_check_in_and_out_span_midnight(
+    session: Session, branch: Branch, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An evening visit ending after midnight can be checked out on the next calendar day."""
+    deps = deps_for(session, branch, people["Juha"])
+    visit = _today_visit(session, deps, "Kamppi shop clean")
+    from mia.core import store
+
+    late_start = visit.planned_start.replace(
+        hour=19, minute=0
+    )  # 22:00 local in summer, 21:00 in winter
+    store.update(
+        session,
+        visit,
+        {"planned_start": late_start, "planned_end": late_start + dt.timedelta(hours=4)},
+        deps.actor,
+    )
+    monkeypatch.setattr(tools, "utcnow", lambda: late_start + dt.timedelta(minutes=5))
+    assert tools.check_in(deps, tools.CheckInInput(location_name="Kamppi"), "c1").status == "ok"
+    tomorrow = deps.today + dt.timedelta(days=1)
+    deps.today = tomorrow  # the clock has passed local midnight
+    monkeypatch.setattr(tools, "utcnow", lambda: late_start + dt.timedelta(hours=4, minutes=10))
+    out = tools.check_out(deps, tools.CheckOutInput(), "c2")
+    assert out.status == "ok" and out.visit and out.visit.visit_id == visit.id

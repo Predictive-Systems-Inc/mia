@@ -265,12 +265,19 @@ def test_reply_blocks_still_reject_what_cannot_be_read() -> None:
 def test_demo_5_cleaner_arrives_asks_the_door_code_and_finishes(
     client: TestClient, people: dict[str, Person], session: Session, daytime: object
 ) -> None:
+    from mia.core import store
+    from mia.core.models import Actor, Location
+
     juha = people["Juha"]
+    kamppi = session.exec(select(Location).where(Location.name == "Kamppi shop")).one()
+    store.update(session, kamppi, {"access_notes": "Door code 4711"}, Actor.person(people["Sanna"]))
+    session.commit()
     arrived = say(client, juha, "Olen perillä Kampissa")
     assert "Kirjasin saapumisesi" in blocks_of(arrived, "text")[0]["text"]
     details = say(client, juha, "Mikä on ovikoodi?", arrived["thread_id"])
     card = blocks_of(details, "card")[0]
     assert any(f["label"] == "Osoite" for f in card["fields"])
+    assert details["sensitive"] is True  # the tool returned access notes: the whole reply is
     done = say(client, juha, "Valmis, lähden nyt", arrived["thread_id"])
     assert "Kirjasin lähtösi" in blocks_of(done, "text")[0]["text"]
     today = dt.datetime.now(dt.UTC).date()

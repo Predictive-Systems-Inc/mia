@@ -78,14 +78,19 @@ COVER = re.compile(
 ASSIGN = re.compile(
     r"^\W*(assign|give it to|valitse|anna|laita)\s+(?P<name>[\wÄÖÅäöå-]+)", re.IGNORECASE
 )
+# Check-in and check-out are writes: only an anchored phrase triggers them, never a bare word
+# ("finished the kitchen", "the delivery arrived", "olen paikalla huomenna" do not).
 CHECK_IN = re.compile(
-    r"\b(i'?ve arrived|i have arrived|arrived|i'?m here|i am here|at the site|checking in|"
-    r"check in|olen perillä|perillä|olen paikalla|paikalla|saavuin|aloitan)\b",
+    r"^\W*(?:(?:i'?ve |i have )?arrived|i'?m here|i am here|i'?m at the site|"
+    r"check(?:ing|ed)? in)\W*(?:(?:at|in) \S+|now)?\W*$|"
+    r"^\W*(?:olen |ollaan )?(?:perillä|paikalla)\b(?!.*\b(?:huomenna|ylihuomenna|klo)\b)|"
+    r"^\W*saavuin\b",
     re.IGNORECASE,
 )
 CHECK_OUT = re.compile(
-    r"\b(i'?m done|all done|done here|finished|checking out|check out|leaving now|"
-    r"valmis|valmista|lähden|lopetin|tehty)\b",
+    r"^\W*(?:(?:i'?m |i am )?(?:all done|done here|finished here|done|finished)|"
+    r"check(?:ing|ed)? out|leaving now)\W*(?:here|now|(?:at|in) \S+)?\W*$|"
+    r"^\W*(?:valmis|valmista|lopetin)\b|\blähden nyt\b",
     re.IGNORECASE,
 )
 DETAILS = re.compile(
