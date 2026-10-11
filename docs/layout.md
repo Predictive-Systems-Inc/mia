@@ -25,6 +25,7 @@ mia/
                             visit generation, assignment rules, check-in, inbox), billing
                             (the monthly summary export)
       templates/cleaning/   models (sites, checklists), seed, importer (master data from YAML)
+      learning/             role skill data: generate, translate (the eval set by language), train, bakeoff
       agents/               base.py (manifest, guard, model factory)
         dispatcher/         manifest.yaml, job.md, prompts/, models.py, classifier.py,
                             scoring.py, cover.py (confirmation flow), alerts.py (missed
@@ -33,7 +34,6 @@ mia/
                             rules.py, tools.py (incl. site problems),
                             agent.py, tests/scenarios.yaml (and scenarios_en.yaml)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
-      learning/             offline pipeline for role skill models (ADR 013)
       skills/               classifier runtime and per-turn routing (ADR 013)
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls),
                             runs.py (live AG-UI runs: reconnect, catch-up, stop)

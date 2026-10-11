@@ -63,6 +63,11 @@ follow-up intents. The generator prompt is prompts/generator.md (the command rea
   path, so existing (reviewed) data is never overwritten. Read each printed path.
 - Ids are `<intent>/<lang>/<model>/<index>`. Rerunning the same teacher model produces the same
   ids again, so when merging dedupe by id (see the tie-break in step 5).
+- The intent evaluation set in another language: `uv run mia skills translate --lang fi
+  --model local/<model>` (or `fil`, or a gateway route through egress) appends translations of
+  the English records of tests/evals/intents.jsonl with the same intent, slots and split, ids
+  `<intent>/<lang>/<n>` and a `source_id`; rerun to continue, `--limit N`, `--split test` and
+  `--batch N` bound a run; `--dataset PATH` points elsewhere. Rows without a translation are counted, not written.
 - A second `--split test` run writes data/generated-test-<UTC timestamp>.jsonl. `validate` and
   `train` ignore that file, so after review merge it into data/test.jsonl with the same dedupe
   rule as step 5.

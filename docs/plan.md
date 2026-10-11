@@ -50,10 +50,11 @@ Remaining work in this order, because each step unblocks the next:
    88%, Gemma 4 12B 85%, Qwen3.5 9B on llama.cpp 76%), so before the pilot: the turn cap (D22,
    built 2026-10-12: eight model calls, then a translated reply and the event
    `chat.turn_capped`), the reply contract for small models (built: the agent accepts plain
-   text and code builds the blocks, `text_reply`), a parallel intent by language suite (waits
-   for the translation layer measurement on the node hardware, D19 and D26; the chat scenarios
-   exist in Finnish and English), and a distilled intent classifier where Gemma is weak (the
-   role skill models, built; measuring them on Gemma needs the Mac mini, D19).
+   text and code builds the blocks, `text_reply`), a parallel intent by language suite
+   (`mia skills translate` builds it from the English records with a local model, Q25; the
+   Finnish run and its measurement on Gemma 4 12B are in docs/research/, 2026-10-12), and a
+   distilled intent classifier where Gemma is weak (the role skill models, built; the weak
+   intents come from the same measurement).
    Cloud models are used only for development and as the distillation teacher, with synthetic
    or demo data.
 3. **Install and backup** (Sprint 0 items still open): Docker Compose, Litestream, health page,
@@ -64,8 +65,10 @@ Remaining work in this order, because each step unblocks the next:
    supervisor summary (unfilled visits, late check-ins, open site problems, pending approvals).
    Timesheets built 2026-10-12 as an agent-owned table until Q20 places them (spec
    2026-10-12-timesheets): drafts from completed visits, corrections, approval with separation
-   of duties. The board and the dashboard belong to the apps project (D25, Q19); the node side
-   (the API and the dev page's week table) is done.
+   of duties. The board and the dashboard proper belong to the apps project (D25, Q19); the
+   node has the API, `GET /schedule/people`, and on the dev page a schedule board (assign,
+   unassign) and a supervisor summary panel (resolve problems, approve timesheets), built
+   2026-10-12.
 5. **Field work over WhatsApp** (Sprint 3, D20): check-in and check-out, checklists and photos
    over WhatsApp; no mobile app. Needs Hype's agreement, since the proposal promised an app.
    Check-in, check-out, visit details (address, instructions, access notes), the checklist

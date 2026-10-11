@@ -74,6 +74,7 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run mia backup FILE` | Consistent copy of the database to a new file (safe while serving) |
 | `uv run mia verify-db FILE` | Check a restored copy: integrity, events hash chain, row counts |
 | `uv run mia skills generate ROLE --model ROUTE --split train\|test` | Teacher-model generation per coverage cell (role skill models) |
+| `uv run mia skills translate --lang fi\|fil --model ROUTE [--limit N]` | The intent eval set in another language, translated from the English records (a `local/` model sends nothing off the node) |
 | `uv run pytest` | Unit tests |
 | `uv run pytest node/tests/evals -m evals` | Dispatcher evaluation suite (41 scenarios, 5 runs each; `MIA_EVAL_SUITE=tests/scenarios_en.yaml` for English only) |
 | `MIA_EVAL_MODEL=local/<model> uv run pytest node/tests/evals/test_intent_classification.py -m evals -s` | English intent classification over docs/capabilities.md (held-out split; `MIA_EVAL_INTENT_SPLIT=all`, `MIA_EVAL_REPORT=file.json`) |
@@ -146,7 +147,10 @@ A new visit copies the last assignment on the same weekday when that person is s
 otherwise it is `unfilled`. Eligibility is code, the same rules the dispatcher uses for cover:
 availability, absences, double booking, daily and weekly hour limits, skills.
 
-- `GET /schedule?start=&person_id=&location_id=`: seven days of visits (staff see their own).
+- `GET /schedule?start=&person_id=&location_id=`: seven days of visits (staff see their own);
+  `GET /schedule/people` lists the branch's people for the office. The dev page's "Schedule
+  board" assigns and unassigns from the week table, and its "Supervisor summary" panel shows
+  the summary, resolves site problems and approves timesheet drafts.
 - `POST /visits/{id}/assign {person_id, add}` and `/unassign`: the office assigns; a
   rule-breaking assignment creates an approval (`schedule.assignment_override`, admin or owner,
   app only with a PIN) and the visit changes only when it is approved.

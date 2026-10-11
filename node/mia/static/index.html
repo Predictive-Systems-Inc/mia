@@ -39,6 +39,16 @@
          background:var(--panel); border-top:1px solid var(--line); }
   form input { flex:1; padding:10px 12px; border:1px solid var(--line); border-radius:10px; }
   form button { padding:10px 16px; border:0; border-radius:10px; background:var(--accent); color:#fff; }
+  details { max-width:960px; margin:8px auto; padding:0 16px; }
+  details table { width:100%; border-collapse:collapse; font-size:13px; background:var(--panel); }
+  details td, details th { border-bottom:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; }
+  .chip { display:inline-block; border:1px solid var(--line); border-radius:12px; padding:0 8px; margin:1px; }
+  .chip button { border:0; background:none; color:var(--bad); cursor:pointer; padding:0 2px; }
+  .row-tools { display:flex; gap:4px; }
+  .row-tools select { max-width:160px; }
+  .unfilled td { background:#fff4f2; }
+  .summary-box h3 { font-size:14px; margin:10px 0 4px; }
+  .summary-box ul { margin:0; padding-left:18px; font-size:13px; }
 </style>
 </head>
 <body>
@@ -54,7 +64,11 @@
   <input id="code" placeholder="Code" autocomplete="one-time-code" hidden>
   <button>Sign in</button>
 </form>
-<details id="week"><summary>Week</summary><table id="week-table"></table></details>
+<details id="board"><summary>Schedule board (the week)</summary>
+  <table id="week-table"></table>
+  <div class="sys" id="board-note"></div>
+</details>
+<details id="summary"><summary>Supervisor summary</summary><div class="summary-box" id="summary-box"></div></details>
 <main id="log"></main>
 <form id="send">
   <input id="text" autocomplete="off" placeholder="Message Mia, e.g. Olen kipeä huomenna." required>
@@ -268,23 +282,117 @@ document.getElementById("logout").addEventListener("click", async e => {
   await fetch("/auth/logout", {method: "POST", headers: {"Content-Type": "application/json"}});
   location.reload();
 });
-// The week view: the signed-in person's visits (staff) or the branch's (office roles).
-async function loadWeek() {
-  const res = await fetch("/schedule", {headers: authHeaders()});
+// The schedule board: the signed-in person's visits (staff) or the branch's (office roles),
+// with assignment controls when /schedule/people answers (office roles only). The board and
+// the dashboard proper belong to the apps project (Q19); this is the node's own view of them.
+async function post(path, body) {
+  const headers = {"Content-Type": "application/json", ...authHeaders(), ...WEB};
+  return fetch(path, {method: "POST", headers, body: body === undefined ? undefined : JSON.stringify(body)});
+}
+async function loadBoard() {
   const table = document.getElementById("week-table");
+  const note = document.getElementById("board-note");
   table.replaceChildren();
-  if (!res.ok) return;
+  note.textContent = "";
+  const [res, who] = await Promise.all([
+    fetch("/schedule", {headers: authHeaders()}),
+    fetch("/schedule/people", {headers: authHeaders()}),
+  ]);
+  if (!res.ok) { note.textContent = `No schedule (${res.status}).`; return; }
+  const staff = who.ok ? await who.json() : null;
+  const head = el("tr");
+  for (const h of ["When", "Job", "Site", "Assigned", "Status", staff ? "Assign" : ""]) head.append(el("th", null, h));
+  table.append(head);
   for (const v of await res.json()) {
-    const tr = el("tr");
+    const tr = el("tr", v.status === "unfilled" ? "unfilled" : null);
     const when = `${v.date} ${v.start.slice(11, 16)}–${v.end.slice(11, 16)}`;
-    for (const cell of [when, v.job, v.location, v.assignees.map(a => a.name).join(", "), v.status]) {
-      tr.append(el("td", null, cell));
+    tr.append(el("td", null, when), el("td", null, v.job), el("td", null, v.location));
+    const assigned = el("td");
+    for (const a of v.assignees) {
+      const chip = el("span", "chip", a.name);
+      if (staff) {
+        const x = el("button", null, "×");
+        x.title = "Unassign";
+        x.onclick = async () => {
+          const r = await post(`/visits/${v.id}/unassign`, {person_id: a.id});
+          note.textContent = r.ok ? "" : `Unassign failed (${r.status}).`;
+          loadBoard();
+        };
+        chip.append(x);
+      }
+      assigned.append(chip);
+    }
+    tr.append(assigned, el("td", null, v.status));
+    if (staff) {
+      const tools = el("div", "row-tools");
+      const sel = el("select");
+      for (const p of staff) { const o = el("option", null, p.name); o.value = p.id; sel.append(o); }
+      const b = el("button", null, "Assign");
+      b.onclick = async () => {
+        const r = await post(`/visits/${v.id}/assign`, {person_id: sel.value, add: v.assignees.length > 0});
+        const out = r.ok ? await r.json() : null;
+        note.textContent = !r.ok ? `Assign failed (${r.status}): ${(await r.text()).slice(0, 120)}`
+          : out.approval_id ? `Needs approval ${out.approval_id}: ${out.reasons.join(", ")}` : "";
+        loadBoard();
+      };
+      tools.append(sel, b);
+      const td = el("td"); td.append(tools); tr.append(td);
     }
     table.append(tr);
   }
 }
-document.getElementById("week").addEventListener("toggle", e => { if (e.target.open) loadWeek(); });
-actorSel.addEventListener("change", () => { if (document.getElementById("week").open) loadWeek(); });
+document.getElementById("board").addEventListener("toggle", e => { if (e.target.open) loadBoard(); });
+
+// The supervisor summary: unfilled visits, late check-ins, check-ins outside a fence, open
+// site problems (resolve) and timesheet drafts (approve). Staff get 403 and an empty panel.
+async function loadSummary() {
+  const box = document.getElementById("summary-box");
+  box.replaceChildren();
+  const res = await fetch("/supervisor/summary", {headers: authHeaders()});
+  if (!res.ok) { box.append(el("div", "sys", `Office roles only (${res.status}).`)); return; }
+  const s = await res.json();
+  const section = (title, items, render) => {
+    box.append(el("h3", null, `${title} (${items.length})`));
+    const ul = el("ul");
+    for (const it of items) ul.append(render(it));
+    box.append(ul);
+  };
+  const visit = v => el("li", null, `${v.date} ${v.start.slice(11, 16)} ${v.location}: ${v.assignees.map(a => a.name).join(", ") || "nobody"}`);
+  section("Unfilled this week", s.unfilled, visit);
+  section("Late check-ins today", s.late_check_ins, visit);
+  section("Outside the fence today", s.outside_fence, f => el("li", null, `${f.person} ${f.kind} ${f.distance_m} m from ${f.visit.location} (${f.reason})`));
+  section("Open site problems", s.open_problems, p => {
+    const li = el("li", null, `${p.location}: ${p.text} (${p.person}) `);
+    const b = el("button", null, "Resolve");
+    b.onclick = async () => {
+      const r = await post(`/problems/${p.id}/resolve`);
+      if (!r.ok) li.append(el("span", "sys", ` ${(await r.text()).slice(0, 80)}`));
+      else loadSummary();
+    };
+    li.append(b);
+    return li;
+  });
+  box.append(el("h3", null, `Pending approvals: ${s.pending_approvals}`));
+  const ts = await fetch("/timesheets", {headers: authHeaders()});
+  if (!ts.ok) return;
+  const drafts = (await ts.json()).filter(t => t.status === "draft");
+  section("Timesheet drafts", drafts, t => {
+    const li = el("li", null, `${t.date} ${t.person} ${t.location} ${t.minutes} min (${t.source}) `);
+    const b = el("button", null, "Approve");
+    b.onclick = async () => {
+      const r = await post(`/timesheets/${t.id}/approve`);
+      if (!r.ok) li.append(el("span", "sys", ` ${(await r.text()).slice(0, 80)}`));
+      else loadSummary();
+    };
+    li.append(b);
+    return li;
+  });
+}
+document.getElementById("summary").addEventListener("toggle", e => { if (e.target.open) loadSummary(); });
+actorSel.addEventListener("change", () => {
+  if (document.getElementById("board").open) loadBoard();
+  if (document.getElementById("summary").open) loadSummary();
+});
 
 async function init() {
   const health = await (await fetch("/health")).json();

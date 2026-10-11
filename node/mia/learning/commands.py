@@ -51,6 +51,9 @@ GENERATOR_PROMPT = (
 LEARNING_HINT = "install the learning group: uv sync --group learning"
 
 
+EVAL_DATASET = Path(__file__).resolve().parents[2] / "tests" / "evals" / "intents.jsonl"
+
+
 def skill_dir(role: str) -> Path:
     return AGENTS / role / "skill"
 
@@ -274,6 +277,51 @@ def _run_teacher(
             return run()
 
 
+def translate_cmd(args: argparse.Namespace) -> int:
+    """The parallel intent suite in another language from the English records (Q25)."""
+    from mia.learning import translate
+
+    path = Path(args.dataset)
+    if not path.exists():
+        print(f"dataset not found: {path}")
+        return 1
+    if args.batch < 1:
+        print("--batch must be at least 1")
+        return 1
+
+    def run() -> tuple[int, int]:
+        return asyncio.run(
+            translate.translate_file(
+                path, args.lang, args.model, batch=args.batch, limit=args.limit, split=args.split
+            )
+        )
+
+    try:
+        if args.model.startswith("local/"):
+            added, skipped = run()
+        else:
+            with session_scope() as session:
+                branches = session.exec(select(Branch)).all()
+                if len(branches) != 1:
+                    print(f"the database has {len(branches)} branches; run `mia seed` or fix it")
+                    return 1
+                ctx = EgressContext(
+                    session=session,
+                    actor=Actor.system(branches[0].id),
+                    organisation_id=branches[0].organisation_id,
+                    agent_id="learning.translate",
+                    purpose="skill-generation",
+                    level=get_settings().MIA_EGRESS_LEVEL,
+                )
+                with egress_context(ctx):
+                    added, skipped = run()
+    except Exception as exc:  # noqa: BLE001  model, route and network failures all end here
+        print(f"translation failed: {type(exc).__name__}: {exc}")
+        return 1
+    print(f"{added} {args.lang} records appended to {path}; {skipped} without a translation")
+    return 0
+
+
 def generate_cmd(args: argparse.Namespace) -> int:
     """Teacher generation for a role; 1 with a message on any error, never a traceback."""
     role = _role_spec(args.role)
@@ -436,6 +484,14 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--only", default=None, help="comma list of intent ids and languages")
     p.add_argument("--prompt", default=None, help="generator prompt file")
     p.set_defaults(func=generate_cmd)
+    p = skills.add_parser("translate", help="the intent eval set in another language (Q25)")
+    p.add_argument("--lang", choices=["fi", "fil"], required=True)
+    p.add_argument("--model", required=True, help="local/<model> or a gateway route")
+    p.add_argument("--dataset", default=str(EVAL_DATASET), help="jsonl of the intent eval set")
+    p.add_argument("--batch", type=int, default=20)
+    p.add_argument("--limit", type=int, default=None, help="translate at most this many")
+    p.add_argument("--split", choices=["train", "test"], default=None, help="one split only")
+    p.set_defaults(func=translate_cmd)
     p = skills.add_parser("overlap", help="embedding overlap review of intents")
     p.add_argument("role", nargs="?", default=None)
     p.add_argument("--dataset", default=None, help="eval-format jsonl: id, intent, text")
