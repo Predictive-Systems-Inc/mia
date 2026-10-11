@@ -26,8 +26,10 @@ from mia.core.db import get_engine, session_scope, utcnow
 from mia.core.ids import new_id
 from mia.core.models import (
     Actor,
+    Branch,
     ChannelIdentity,
     ChannelInbound,
+    Location,
     Person,
     Principal,
     Thread,
@@ -119,14 +121,21 @@ EXT = {"image": "jpg", "video": "mp4", "audio": "ogg", "document": "bin"}
 
 
 def _save_proof(
-    session: Session, person: Person, msg: InboundMessage, data: bytes, now: dt.datetime
+    session: Session,
+    inbound_id: str,
+    person: Person,
+    msg: InboundMessage,
+    data: bytes,
+    now: dt.datetime,
 ) -> None:
     """Store the attachment under MIA_MEDIA_DIR and reference it on the person's current
-    visit (event `visit.proof_added`, the reference only). Replies to the person."""
-    from mia.core import scheduling
-    from mia.core.models import Branch, Location
+    visit (event `visit.proof_added`, the reference only). Replies to the person and marks
+    the inbound row done. Ownership: current_visit only returns a visit the person is assigned
+    to, in their branch, today (the non-tool path's equivalent of the tools' rbac check)."""
+    from mia.core import scheduling  # core imports channels for linking; keep this one lazy
 
     actor = Actor.person(person)
+    row = session.get(ChannelInbound, inbound_id)
     branch = session.get(Branch, person.branch_id)
     visit = scheduling.current_visit(session, branch, person, now) if branch else None
     if visit is None:
@@ -137,6 +146,8 @@ def _save_proof(
             actor,
             urgent=True,
         )
+        if row is not None:
+            _finish(session, row, "done")
         return
     folder = get_settings().MIA_MEDIA_DIR / visit.branch_id / visit.id
     folder.mkdir(parents=True, exist_ok=True)
@@ -145,13 +156,23 @@ def _save_proof(
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as f:
         f.write(data)
-    ref = f"media/{visit.branch_id}/{visit.id}/{name}"
-    store.update(
-        session, visit, {"proof_refs": [*visit.proof_refs, ref]}, actor, action="visit.proof_added"
-    )
-    loc = session.get(Location, visit.location_id)
-    text = t("proof.saved", person.language, location=loc.name if loc else "?")
-    deliver(session, person, [TextBlock(text=text)], actor, urgent=True)
+    try:
+        ref = f"media/{visit.branch_id}/{visit.id}/{name}"
+        store.update(
+            session,
+            visit,
+            {"proof_refs": [*visit.proof_refs, ref]},
+            actor,
+            action="visit.proof_added",
+        )
+        loc = session.get(Location, visit.location_id)
+        text = t("proof.saved", person.language, location=loc.name if loc else "?")
+        deliver(session, person, [TextBlock(text=text)], actor, urgent=True)
+        if row is not None:
+            _finish(session, row, "done")
+    except Exception:
+        path.unlink(missing_ok=True)  # no orphan file without its reference
+        raise
 
 
 def _touch(
@@ -225,7 +246,9 @@ async def handle_inbound(inbound_id: str) -> None:
                 data = await adapter.fetch_media(step.media.media_id or "")
             if data is None:
                 raise RuntimeError(f"media {step.media.media_id} could not be fetched")
-            await asyncio.to_thread(_save_proof, session, step.person, step.media, data, utcnow())
+            await asyncio.to_thread(
+                _save_proof, session, inbound_id, step.person, step.media, data, utcnow()
+            )
             await asyncio.to_thread(session.commit)
         if step is not None and step.text is not None and step.person is not None:
             agent = get_agent()

@@ -248,6 +248,42 @@ def test_photo_during_a_visit_is_saved_as_proof(
     assert any("Kamppi shop" in t for t in texts_to(sim))
     ev = session.exec(select(Event).where(Event.action == "visit.proof_added")).one()
     assert "JPEGBYTES" not in str(ev.after) and ev.actor_id == juha.id
+    assert session.exec(select(ChannelInbound)).one().status == "done"
+
+
+def test_a_caption_with_a_photo_does_not_run_a_chat_turn(
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    people: dict[str, Person],
+    link: LinkFn,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import datetime as dt
+
+    from mia.channels import inbound as inbound_module
+    from mia.core import scheduling
+    from mia.core.models import Actor, Job, Message, Visit
+
+    juha = people["Juha"]
+    link(juha, ADDR)
+    today = dt.datetime.now(dt.UTC).date()
+    job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
+    visit = session.exec(
+        select(Visit).where(Visit.job_id == job.id).where(Visit.date == today)
+    ).one()
+    scheduling.check_in(session, Actor.person(juha), visit, juha, visit.planned_start)
+    session.commit()
+    monkeypatch.setattr(
+        inbound_module, "utcnow", lambda: visit.planned_start + dt.timedelta(minutes=5)
+    )
+    sim.media["M1"] = b"JPEGBYTES"
+    m = {"from": ADDR, "id": "p9", "text": "Olen kipeä huomenna", "media": "M1"}
+    assert post(client, sim, json.dumps({"messages": [m]}).encode()) == 200
+    session.expire_all()
+    assert session.exec(select(Message).where(Message.role == "user")).all() == []  # no chat turn
+    session.refresh(visit)
+    assert len(visit.proof_refs) == 1
 
 
 def test_photo_without_a_visit_is_not_saved(
@@ -260,6 +296,12 @@ def test_photo_without_a_visit_is_not_saved(
     assert post(client, sim, _photo("p2")) == 200
     assert all(not v.proof_refs for v in session.exec(select(Visit)))
     assert any("no visit" in t.lower() or "käyntiä" in t for t in texts_to(sim))
+    session.expire_all()
+    assert session.exec(select(ChannelInbound)).one().status == "done"
+    from mia.settings import get_settings
+
+    media_dir = get_settings().MIA_MEDIA_DIR
+    assert not media_dir.exists() or not any(media_dir.rglob("*"))
 
 
 def test_failed_download_marks_the_row_failed(

@@ -586,7 +586,7 @@ def _current_visit(deps: AgentDeps, location_name: str | None, now: dt.datetime)
     site narrows it (the one choice shared with photos through scheduling.current_visit)."""
     location_id = None
     if location_name:
-        rows = _own_visits_today(deps, location_name)
+        rows = [v for v in _own_visits_today(deps, location_name) if v.date == deps.today]
         if not rows:
             return None
         location_id = rows[0].location_id
