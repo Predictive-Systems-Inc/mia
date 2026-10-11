@@ -51,6 +51,9 @@ GENERATOR_PROMPT = (
 LEARNING_HINT = "install the learning group: uv sync --group learning"
 
 
+EVAL_DATASET = Path(__file__).resolve().parents[2] / "tests" / "evals" / "intents.jsonl"
+
+
 def skill_dir(role: str) -> Path:
     return AGENTS / role / "skill"
 
@@ -276,16 +279,19 @@ def _run_teacher(
 
 def translate_cmd(args: argparse.Namespace) -> int:
     """The parallel intent suite in another language from the English records (Q25)."""
-    from mia.learning.translate import translate_file
+    from mia.learning import translate
 
     path = Path(args.dataset)
     if not path.exists():
         print(f"dataset not found: {path}")
         return 1
+    if args.batch < 1:
+        print("--batch must be at least 1")
+        return 1
 
     def run() -> tuple[int, int]:
         return asyncio.run(
-            translate_file(
+            translate.translate_file(
                 path, args.lang, args.model, batch=args.batch, limit=args.limit, split=args.split
             )
         )
@@ -481,7 +487,7 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p = skills.add_parser("translate", help="the intent eval set in another language (Q25)")
     p.add_argument("--lang", choices=["fi", "fil"], required=True)
     p.add_argument("--model", required=True, help="local/<model> or a gateway route")
-    p.add_argument("--dataset", default="tests/evals/intents.jsonl")
+    p.add_argument("--dataset", default=str(EVAL_DATASET), help="jsonl of the intent eval set")
     p.add_argument("--batch", type=int, default=20)
     p.add_argument("--limit", type=int, default=None, help="translate at most this many")
     p.add_argument("--split", choices=["train", "test"], default=None, help="one split only")

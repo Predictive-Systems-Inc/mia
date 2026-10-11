@@ -307,7 +307,7 @@ async function loadBoard() {
     const tr = el("tr", v.status === "unfilled" ? "unfilled" : null);
     const when = `${v.date} ${v.start.slice(11, 16)}–${v.end.slice(11, 16)}`;
     tr.append(el("td", null, when), el("td", null, v.job), el("td", null, v.location));
-    const who = el("td");
+    const assigned = el("td");
     for (const a of v.assignees) {
       const chip = el("span", "chip", a.name);
       if (staff) {
@@ -320,9 +320,9 @@ async function loadBoard() {
         };
         chip.append(x);
       }
-      who.append(chip);
+      assigned.append(chip);
     }
-    tr.append(who, el("td", null, v.status));
+    tr.append(assigned, el("td", null, v.status));
     if (staff) {
       const tools = el("div", "row-tools");
       const sel = el("select");
@@ -364,7 +364,11 @@ async function loadSummary() {
   section("Open site problems", s.open_problems, p => {
     const li = el("li", null, `${p.location}: ${p.text} (${p.person}) `);
     const b = el("button", null, "Resolve");
-    b.onclick = async () => { await post(`/problems/${p.id}/resolve`); loadSummary(); };
+    b.onclick = async () => {
+      const r = await post(`/problems/${p.id}/resolve`);
+      if (!r.ok) li.append(el("span", "sys", ` ${(await r.text()).slice(0, 80)}`));
+      else loadSummary();
+    };
     li.append(b);
     return li;
   });
