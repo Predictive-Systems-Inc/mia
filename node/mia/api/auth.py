@@ -5,10 +5,12 @@ Web clients (header `X-Mia-Client: web`) get HttpOnly cookies and no tokens in t
 everything else gets bearer tokens. Every failure is 401 `invalid credentials`.
 """
 
+import base64
 import html
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
@@ -447,3 +449,47 @@ def stepup(request: Request, session: DbSession, ctx: PersonAuth, body: PinIn) -
         raise HTTPException(403, "no session to step up")
     auth.step_up(session, row, now)
     return {"stepped_up": True}
+
+
+# ---- clients: OAuth2 client credentials (RFC 6749 section 4.4) -------------------------
+
+
+def _form(body: bytes) -> dict[str, str]:
+    """application/x-www-form-urlencoded, parsed with the standard library (no form dependency)."""
+    return {k: v[0] for k, v in parse_qs(body.decode(errors="replace")).items()}
+
+
+def _client_error(code: str, status: int) -> JSONResponse:
+    return JSONResponse({"error": code}, status_code=status, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/token")
+async def token(request: Request, session: DbSession) -> JSONResponse:
+    """Client credentials grant: HTTP Basic or form credentials, a one-hour opaque bearer
+    token, no refresh. Errors follow RFC 6749 section 5.2."""
+    form = _form(await request.body())
+    if form.get("grant_type") != "client_credentials":
+        return _client_error("unsupported_grant_type", 400)
+    client_id, client_secret = form.get("client_id"), form.get("client_secret")
+    basic = request.headers.get("authorization", "")
+    if basic.lower().startswith("basic "):
+        try:
+            client_id, client_secret = base64.b64decode(basic[6:]).decode().split(":", 1)
+        except (ValueError, UnicodeDecodeError):
+            return _client_error("invalid_client", 401)
+    if not client_id or not client_secret:
+        return _client_error("invalid_client", 401)
+    now, ip = utcnow(), client_ip(request)
+    try:
+        client = auth.check_client(session, client_id, client_secret, ip, now)
+    except auth.AuthError:
+        return _client_error("invalid_client", 401)
+    tokens = auth.issue_session(session, client, method="client", aal="client", ip=ip, now=now)
+    return JSONResponse(
+        {
+            "access_token": tokens.access,
+            "token_type": "Bearer",
+            "expires_in": int(auth.CLIENT_TTL.total_seconds()),
+        },
+        headers={"Cache-Control": "no-store"},
+    )

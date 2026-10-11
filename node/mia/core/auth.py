@@ -1008,3 +1008,84 @@ def send_login_link(session: Session, actor: Actor, person: Person, now: dt.date
     )
     events.emit(session, "auth.link_sent", person, None, None, actor)
     return url
+
+
+# ---- clients (OAuth2 client credentials, ADR 008) ----------------------------------------
+
+
+def _role_can_approve(role: str) -> bool:
+    from mia.core.rbac import get_rbac
+
+    enforcer = get_rbac().enforcer
+    return any(p[3] == "approve" for p in enforcer.get_filtered_policy(0, role))
+
+
+def create_client(
+    session: Session,
+    actor: Actor,
+    name: str,
+    roles: list[str],
+    now: dt.datetime,
+    *,
+    expires_at: dt.datetime | None = None,
+) -> tuple[AuthClient, str]:
+    """Register an outside client. The secret is returned once. Human roles and roles that can
+    approve anything are refused (ValueError)."""
+    from mia.core.people import HUMAN_ROLES
+
+    if not roles:
+        raise ValueError("at least one role")
+    for role in roles:
+        if role in HUMAN_ROLES:
+            raise ValueError(f"{role} is a human role; clients get agent roles")
+        if _role_can_approve(role):
+            raise ValueError(f"{role} can approve; clients never hold approve")
+    secret = keys.new_token()
+    row = store.insert(
+        session,
+        AuthClient(
+            branch_id=actor.branch_id,
+            name=name,
+            client_id="mia_" + keys.new_token()[:20],
+            secret_hash=keys.hash_secret(secret),
+            roles=list(roles),
+            expires_at=expires_at,
+            created_by=actor.principal.id,
+        ),
+        actor,
+        action="auth.client_created",
+    )
+    return row, secret
+
+
+def check_client(
+    session: Session, client_id: str, secret: str, ip: str, now: dt.datetime
+) -> AuthClient:
+    """The active client when the secret matches (10 failures in 15 minutes block it)."""
+    key = attempt_key(client_id, ip)
+    if throttled(session, "client_secret", key, now):
+        raise Locked(INVALID)
+    row = session.exec(select(AuthClient).where(AuthClient.client_id == client_id)).first()
+    stored = row.secret_hash if row else keys.dummy_hash()
+    ok = (
+        keys.verify_secret(secret, stored)
+        and row is not None
+        and row.status == "active"
+        and (row.expires_at is None or row.expires_at > now)
+    )
+    actor = client_actor(row) if row is not None and ok else None
+    record_attempt(session, "client_secret", key, ok, now, actor=actor)
+    if not ok or row is None:
+        raise AuthError(INVALID)
+    store.update(
+        session, row, {"last_used_at": now}, client_actor(row), action="auth.credential_used"
+    )
+    return row
+
+
+def revoke_client(
+    session: Session, actor: Actor, client: AuthClient, now: dt.datetime
+) -> AuthClient:
+    """Revoke a client and end its tokens."""
+    revoke_sessions(session, actor, client.id, now)
+    return store.update(session, client, {"status": "revoked"}, actor, action="auth.client_revoked")

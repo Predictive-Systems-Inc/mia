@@ -434,6 +434,38 @@ def auth_link(args: argparse.Namespace) -> int:
     return 0
 
 
+def auth_client_add(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor
+
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        try:
+            row, secret = auth.create_client(
+                session, Actor.system(branch_id), args.name, args.roles, utcnow()
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+    print(f"client {row.name} registered. Shown once:\n  client_id: {row.client_id}")
+    print(f"  client_secret: {secret}")
+    return 0
+
+
+def auth_client_revoke(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor, AuthClient
+
+    with session_scope() as session:
+        row = session.exec(select(AuthClient).where(AuthClient.client_id == args.client_id)).first()
+        if row is None:
+            raise SystemExit(f"no client {args.client_id}")
+        auth.revoke_client(session, Actor.system(row.branch_id), row, utcnow())
+    print(f"client {args.client_id} revoked")
+    return 0
+
+
 def auth_unlock(args: argparse.Namespace) -> int:
     from mia.core import auth
     from mia.core.db import session_scope, utcnow
@@ -533,6 +565,17 @@ def build_parser() -> argparse.ArgumentParser:
     p = auth_p.add_parser("link", help="send a one-time login link to a person's WhatsApp")
     p.add_argument("name")
     p.set_defaults(func=auth_link)
+    clients = auth_p.add_parser("client", help="outside agents and services").add_subparsers(
+        dest="client_command", required=True
+    )
+    p = clients.add_parser("add", help="register a client; prints its credentials once")
+    p.add_argument("name")
+    p.add_argument("--role", dest="roles", action="append", required=True)
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=auth_client_add)
+    p = clients.add_parser("revoke", help="revoke a client and its tokens")
+    p.add_argument("client_id")
+    p.set_defaults(func=auth_client_revoke)
     p = auth_p.add_parser("unlock", help="clear the lockout of a login")
     p.add_argument("login")
     p.set_defaults(func=auth_unlock)
