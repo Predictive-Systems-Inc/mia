@@ -64,7 +64,8 @@ Remaining work in this order, because each step unblocks the next:
    supervisor summary (unfilled visits, late check-ins, open site problems, pending approvals).
    Timesheets built 2026-10-12 as an agent-owned table until Q20 places them (spec
    2026-10-12-timesheets): drafts from completed visits, corrections, approval with separation
-   of duties. Open: the board (apps project, Q19).
+   of duties. The board and the dashboard belong to the apps project (D25, Q19); the node side
+   (the API and the dev page's week table) is done.
 5. **Field work over WhatsApp** (Sprint 3, D20): check-in and check-out, checklists and photos
    over WhatsApp; no mobile app. Needs Hype's agreement, since the proposal promised an app.
    Check-in, check-out, visit details (address, instructions, access notes), the checklist
@@ -77,8 +78,9 @@ Remaining work in this order, because each step unblocks the next:
    alert, the unstaffed-visits card and the daily plan on the ticker, and `mia billing export`
    (completed work per client and site, no amounts until service agreements exist, D21).
    The missing check-out and overtime alerts and `mia payroll export` (approved timesheets as
-   CSV, generic layout until Q24) built 2026-10-12. Open: rollout at Hype (a real-world step:
-   install on the Mac mini, D19, link the staff phones, run the pilot).
+   CSV, generic layout until Q24) built 2026-10-12. Rollout: the runbook docs/rollout.md and
+   `mia import` (real master data from YAML) built 2026-10-12; the install itself, linking the
+   staff phones and the two supported weeks happen at Hype with the Mac mini (D19).
 
 Sprint numbers keep their order and milestones; hour figures are removed (D24).
 

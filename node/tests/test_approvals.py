@@ -2,6 +2,7 @@
 
 import datetime as dt
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import BaseModel
@@ -166,7 +167,7 @@ def _money_deps(session: Session, branch: Branch, people: dict[str, Person]) -> 
         person=helena,
         branch=branch,
         organisation_id=branch.organisation_id,
-        today=dt.datetime.now(dt.UTC).date(),
+        today=dt.datetime.now(ZoneInfo("Europe/Helsinki")).date(),
         lang="en",
         manifest=manifest,
     )

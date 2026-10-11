@@ -2,6 +2,7 @@
 
 import asyncio
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -94,7 +95,7 @@ def test_test_model_agent_produces_valid_reply(
         person=juha,
         branch=branch,
         organisation_id=branch.organisation_id,
-        today=dt.datetime.now(dt.UTC).date(),
+        today=dt.datetime.now(ZoneInfo("Europe/Helsinki")).date(),
         lang="fi",
         manifest=MANIFEST,
     )

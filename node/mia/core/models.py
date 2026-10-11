@@ -94,6 +94,10 @@ class Client(BranchScoped, table=True):
 
 
 class Location(BranchScoped, table=True):
+    __redact__: ClassVar[frozenset[str]] = frozenset(
+        {"access_notes"}
+    )  # door codes stay off the chain
+
     client_id: str = Field(foreign_key="client.id", index=True)
     name: str
     address: str

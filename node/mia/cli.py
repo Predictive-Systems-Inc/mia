@@ -45,6 +45,48 @@ def seed(_args: argparse.Namespace) -> int:
     return 0
 
 
+def import_data(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from mia.core import events
+    from mia.core.db import session_scope
+    from mia.core.models import Actor, Branch
+    from mia.templates.cleaning import importer
+    from mia.templates.cleaning.seed import is_seeded
+
+    path = Path(args.file)
+    try:
+        data = importer.parse(path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError) as exc:
+        raise SystemExit(f"{path}: {exc}") from exc
+    with session_scope() as session:
+        try:
+            if not is_seeded(session):
+                branch = importer.bootstrap(session, data)
+            else:
+                found = session.get(Branch, _only_branch_id(session, args.branch))
+                if found is None:
+                    raise SystemExit(f"no branch {args.branch}")
+                branch = found
+            counts = importer.load(session, data, branch)
+        except ValueError as exc:
+            session.rollback()
+            raise SystemExit(f"{path}: {exc}") from exc
+        events.emit(
+            session,
+            "data.imported",
+            ("branch", branch.id),
+            None,
+            {**counts.model_dump(), "file": path.name},
+            Actor.system(branch.id),
+        )
+    print(
+        f"imported into {branch.name}: {counts.people} person(s), {counts.clients} client(s), "
+        f"{counts.locations} location(s), {counts.jobs} job(s)"
+    )
+    return 0
+
+
 def serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -583,6 +625,10 @@ def build_parser() -> argparse.ArgumentParser:
         func=migrate
     )
     sub.add_parser("seed", help="load demo data").set_defaults(func=seed)
+    p = sub.add_parser("import", help="people, clients, sites and jobs from a YAML file")
+    p.add_argument("file")
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=import_data)
     p = sub.add_parser("backup", help="write a consistent copy of the database to a new file")
     p.add_argument("dest")
     p.set_defaults(func=backup)

@@ -223,3 +223,15 @@ Format for each entry:
   minutes) from `mia payroll export`; the system-specific layout is a second writer once the
   system is named. Mia never runs payroll (plan Sprint 5).
 - Blocking: no
+
+## Q25: The parallel intent suite by language
+- Where: docs/plan.md item 2 (a parallel intent by language suite); D26 (the core is measured in
+  English, translation on its own)
+- Question: the English intent suite has 3664 utterances. A Finnish and Filipino parallel suite
+  is generated with the cloud teacher from synthetic data (D18 allows it), which costs model
+  calls; and its purpose, measuring the translation layer and Gemma on the node, needs the Mac
+  mini (D19). Generate it now with the teacher, or once the node hardware is in place?
+- Assumed answer: once the hardware is in place, so the suite and the measurement land together
+  and the spend is approved with the pilot. The chat scenarios already exist in both languages
+  (tests/scenarios.yaml, scenarios_en.yaml) and run on every model route.
+- Blocking: no

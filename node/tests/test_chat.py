@@ -2,6 +2,7 @@
 
 import datetime as dt
 import json
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -282,7 +283,7 @@ def test_demo_5_cleaner_arrives_asks_the_door_code_and_finishes(
     assert later["sensitive"] is True  # the notes stay in the thread's model history
     done = say(client, juha, "Valmis, lähden nyt", arrived["thread_id"])
     assert "Kirjasin lähtösi" in blocks_of(done, "text")[0]["text"]
-    today = dt.datetime.now(dt.UTC).date()
+    today = dt.datetime.now(ZoneInfo("Europe/Helsinki")).date()
     visit = session.exec(
         select(Visit).where(Visit.status == "completed").where(Visit.date == today)
     ).first()
@@ -297,7 +298,7 @@ def test_demo_6_cleaner_ticks_the_checklist(
 
     juha = people["Juha"]
     job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
-    today = dt.datetime.now(dt.UTC).date()
+    today = dt.datetime.now(ZoneInfo("Europe/Helsinki")).date()
     visit = session.exec(
         select(Visit).where(Visit.job_id == job.id).where(Visit.date == today)
     ).one()

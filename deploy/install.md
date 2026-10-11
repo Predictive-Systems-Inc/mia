@@ -74,8 +74,9 @@ sudo chown 10001:10001 master.key && sudo chmod 400 master.key
 ```
 
 `MIA_AUTH_MODE` stays `required` on a server (the node refuses to start in `dev` mode with a
-public URL). After the first start, create the owner's enrolment link and open it in a browser
-within 24 hours to set the password and the authenticator app:
+public URL). After the first start, load the master data (`docs/rollout.md`, step 3: the first import
+creates the organisation and the branch), then create the owner's enrolment link and open it
+in a browser within 24 hours to set the password and the authenticator app:
 
 ```
 docker compose exec node mia auth bootstrap --email owner@example.fi

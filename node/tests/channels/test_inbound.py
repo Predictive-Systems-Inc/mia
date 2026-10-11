@@ -1,6 +1,7 @@
 """Inbound: webhook verification, de-duplication, linking, chat turns over a channel."""
 
 import json
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -226,7 +227,7 @@ def test_photo_during_a_visit_is_saved_as_proof(
 
     juha = people["Juha"]
     link(juha, ADDR)
-    today = dt.datetime.now(dt.UTC).date()
+    today = dt.datetime.now(ZoneInfo("Europe/Helsinki")).date()
     job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
     visit = session.exec(
         select(Visit).where(Visit.job_id == job.id).where(Visit.date == today)
@@ -267,7 +268,7 @@ def test_a_caption_with_a_photo_does_not_run_a_chat_turn(
 
     juha = people["Juha"]
     link(juha, ADDR)
-    today = dt.datetime.now(dt.UTC).date()
+    today = dt.datetime.now(ZoneInfo("Europe/Helsinki")).date()
     job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
     visit = session.exec(
         select(Visit).where(Visit.job_id == job.id).where(Visit.date == today)
@@ -324,7 +325,7 @@ def _kamppi_visit(session: Session) -> Visit:
 
     from mia.core.models import Job
 
-    today = dt.datetime.now(dt.UTC).date()
+    today = dt.datetime.now(ZoneInfo("Europe/Helsinki")).date()
     job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
     return session.exec(
         select(Visit).where(Visit.job_id == job.id).where(Visit.date == today)

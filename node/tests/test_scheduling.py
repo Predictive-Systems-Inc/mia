@@ -1,6 +1,7 @@
 """Scheduling core: recurrence, generation, assignment rules, check-in and out, week, inbox."""
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlmodel import Session, select
@@ -10,7 +11,7 @@ from mia.core.db import utcnow
 from mia.core.models import Actor, Approval, Branch, Event, Job, Location, Person, Visit
 
 MON = dt.date(2026, 10, 12)  # a Monday
-TODAY = dt.datetime.now(dt.UTC).date()
+TODAY = dt.datetime.now(ZoneInfo("Europe/Helsinki")).date()
 
 
 def test_recurrence_rules() -> None:

@@ -18,6 +18,7 @@ import os
 import re
 import time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import BaseModel, Field
@@ -88,7 +89,9 @@ def rules_baseline(messages: list[ModelMessage], info: AgentInfo) -> ModelRespon
     """MIA_EVAL_MODEL=test: the dispatcher's deterministic classifier, mapped to catalogue ids."""
     last = str(messages[-1].parts[-1].content)  # type: ignore[union-attr]
     m = re.search(r"<user_message>\n(.*)\n</user_message>", last, re.DOTALL)
-    intent = classify(html.unescape(m[1] if m else last), dt.datetime.now(dt.UTC).date())
+    intent = classify(
+        html.unescape(m[1] if m else last), dt.datetime.now(ZoneInfo("Europe/Helsinki")).date()
+    )
     label = OTHER if intent.name == "other" else f"dispatcher.{intent.name}"
     args = {"intent": label, "confidence": 1.0}
     return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, args)])

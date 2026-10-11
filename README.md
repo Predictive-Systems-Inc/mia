@@ -55,6 +55,7 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | --- | --- |
 | `uv run mia migrate` | Create or upgrade the SQLite database (Alembic) |
 | `uv run mia seed` | Load demo data (once, on an empty database) |
+| `uv run mia import FILE.yaml` | Real master data (people, clients, sites, jobs) from a YAML file; re-runnable, names are the key (docs/rollout.md) |
 | `uv run mia serve` | FastAPI on port 8000: chat page `/`, `/health`, `/chat`, `/chat/stream`, `/ag-ui` (plus `/ag-ui/connect` to catch up and `/ag-ui/stop`), `/notifications`, `/approvals/{id}/decide`, `/channels/{id}/webhook` |
 | `uv run mia chat "..." [--as NAME] [--thread ID]` | One chat turn from the terminal |
 | `uv run mia decide ID approved\|rejected --as NAME` | Decide an approval (stand-in for the inbox) |
@@ -200,6 +201,8 @@ Two kinds of model, chosen with `MIA_MODEL` in `.env`; no code changes:
 
 To evaluate a model: `MIA_EVAL_MODEL=gateway/<route>` or `local/<model>`, then
 `uv run pytest node/tests/evals -m evals`.
+
+Rolling out at a client: docs/rollout.md (install, keys, master data import, linking the phones, the first week).
 
 ## Documents
 - docs/spec.md: Mia Agent Manifest Specification v0.1
