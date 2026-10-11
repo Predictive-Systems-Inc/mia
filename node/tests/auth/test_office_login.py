@@ -261,3 +261,16 @@ def test_mfa_guesses_are_limited_per_person_not_per_token(
     assert (
         res.status_code == 401
     )  # five wrong guesses in five minutes: blocked, fresh tokens or not
+
+
+def test_current_password_guesses_are_limited_without_locking_the_login(
+    client: TestClient, owner: Person, login
+) -> None:  # type: ignore[no-untyped-def]
+    login(client, owner)
+    new = {"password": "a brand new long password"}
+    for _ in range(5):
+        client.post("/auth/password", json={**new, "current": "nope"})
+    assert client.post("/auth/password", json={**new, "current": PW}).status_code == 401
+    other = TestClient(app)  # the login itself is not locked by those guesses
+    res = other.post("/auth/login", json={"email": EMAIL, "password": PW})
+    assert res.status_code == 200

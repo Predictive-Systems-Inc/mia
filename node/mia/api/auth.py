@@ -185,9 +185,11 @@ def set_password(
     if not email:
         raise HTTPException(400, "email required")
     if current is not None and current.secret_hash and ctx.aal != "enrol":
-        key = auth.attempt_key(auth.login_key(email), client_ip(request))
+        key = auth.attempt_key(person.id, client_ip(request))
+        if auth.throttled(session, "password_change", key, now):
+            raise _invalid()
         ok = body.current is not None and keys.verify_secret(body.current, current.secret_hash)
-        auth.record_attempt(session, "password", key, ok, now, actor=ctx.actor)
+        auth.record_attempt(session, "password_change", key, ok, now, actor=ctx.actor)
         if not ok:
             raise _invalid()
     try:

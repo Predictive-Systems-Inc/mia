@@ -151,3 +151,21 @@ def test_pin_rules_and_lock(session: Session, people: dict[str, Person]) -> None
     assert cred.status == "locked"
     auth.unlock_pin(session, actor, sanna, now)
     assert auth.check_pin(session, sanna, "273916", IP, now)
+
+
+def test_use_code_is_single_use_across_sessions(
+    engine: object, session: Session, people: dict[str, Person]
+) -> None:
+    """Two requests holding the same code: the second one loses after the write lock."""
+    juha, actor = people["Juha"], Actor.person(people["Juha"])
+    now = utcnow()
+    token = auth.create_code(session, actor, juha, "enrol", now, token=True)
+    session.commit()
+    with Session(engine) as a, Session(engine) as b:  # type: ignore[arg-type]
+        ra = auth.check_code(a, "enrol", token, now)
+        rb = auth.check_code(b, "enrol", token, now)
+        assert ra.status == rb.status == "ok" and ra.row is not None and rb.row is not None
+        auth.use_code(a, actor, ra.row, now)
+        a.commit()
+        with pytest.raises(auth.AuthError):
+            auth.use_code(b, actor, rb.row, now)

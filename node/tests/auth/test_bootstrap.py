@@ -64,8 +64,18 @@ def test_reset_ends_sessions_and_unlock_clears_the_lockout(
     with Session(engine) as s:  # type: ignore[arg-type]
         ev = s.exec(select(Event).where(Event.action == "auth.reset")).one()
         assert ev.actor_id == "system" and ev.after == {"by": "system", "via": "cli"}
-    assert TestClient(app).post(f"/auth/enrol/{code}").status_code == 200
     client.headers.pop("Authorization")
+    # The old password and authenticator are gone with the reset, not only the sessions.
+    assert (
+        client.post("/auth/login", json={"email": "helena@example.fi", "password": PW}).status_code
+        == 401
+    )
+    enrol = TestClient(app).post(f"/auth/enrol/{code}")
+    assert enrol.status_code == 200
+    fresh = TestClient(app)
+    fresh.headers["Authorization"] = f"Bearer {enrol.json()['access']}"
+    body = {"password": PW, "email": "helena@example.fi"}
+    assert fresh.post("/auth/password", json=body).status_code == 200
     for _ in range(20):
         client.post("/auth/login", json={"email": "helena@example.fi", "password": "nope"})
     locked = client.post("/auth/login", json={"email": "helena@example.fi", "password": PW})

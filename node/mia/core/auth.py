@@ -75,6 +75,7 @@ LIMITS: dict[str, Limit] = {
     "link_code": Limit(5, H1, H1),
     "otp": Limit(5, M5, M5),
     "mfa": Limit(5, M5, M5),
+    "password_change": Limit(5, M15, M15),  # per person: cannot lock the login itself
 }
 EVENT_NAME = {"password": "login", "client_secret": "client", "link_code": "link"}
 
@@ -239,7 +240,12 @@ def check_code(
 
 
 def use_code(session: Session, actor: Actor, row: AuthCode, now: dt.datetime) -> AuthCode:
-    """Consume a code (single use)."""
+    """Consume a code. Single use holds across concurrent requests: the write lock is taken
+    first and the row re-read, so a second consumer gets AuthError."""
+    events.write_lock(session)
+    session.refresh(row)
+    if row.used_at is not None:
+        raise AuthError(INVALID)
     return store.update(session, row, {"used_at": now}, actor, action="auth.code_used")
 
 
@@ -858,9 +864,19 @@ def start_enrolment(
     via: str = "app",
 ) -> str:
     """A 24-hour enrolment token (set password, enrol TOTP). Every session of the person
-    ends. `reason="reset"` also writes `auth.reset` with both actors."""
+    ends. `reason="reset"` also revokes the password, authenticator and recovery codes (the
+    link is the only way back in) and writes `auth.reset` with both actors."""
     revoke_everything(session, actor, person, now)
     if reason == "reset":
+        for row in session.exec(
+            select(AuthCredential)
+            .where(AuthCredential.person_id == person.id)
+            .where(col(AuthCredential.kind).in_(("password", "totp", "recovery_code")))
+            .where(col(AuthCredential.status).in_(("active", "pending")))
+        ).all():
+            store.update(
+                session, row, {"status": "revoked"}, actor, action="auth.credential_revoked"
+            )
         events.emit(
             session, "auth.reset", person, None, {"by": actor.principal.id, "via": via}, actor
         )
