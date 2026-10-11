@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     # packages, and harvested learning candidates. Both stay on the node, never in git.
     MIA_MODELS_DIR: Path = Field(default=Path("data/models"))
     MIA_LEARNING_DIR: Path = Field(default=Path("data/learning"))
+    # Photos and files people send as proof of work (visit.proof_refs point into it).
+    MIA_MEDIA_DIR: Path = Field(default=Path("data/media"))
     MIA_EGRESS_LEVEL: EgressLevel = "pseudonymised"
     MIA_ORG: str = "demo"
     MIA_TICK_SECONDS: int = 30

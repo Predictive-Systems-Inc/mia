@@ -61,7 +61,7 @@ Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher
 | dispatcher.site_problem | Problem at the site | Site conditions stop or change the work (no water or power, renovation, event, client still there) | C | msg | write | n | - | n | Mia | both | 1 | yes | C2S |
 | dispatcher.visit_details | Job details | Ask practical details of a visit: address, door code, where things are, special instructions | C | msg | read | p | - | n | Mia | both | 1 | yes | C2S |
 | dispatcher.checklist | My checklist | Ask for or tick off the visit checklist | C | msg | write | n | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.send_photos | Send photos | Send before or after photos as proof of work | C | msg | write | p | - | n | Mia | both | 1 | no | C2S |
+| dispatcher.send_photos | Send photos | Send before or after photos as proof of work | C | msg | write | p | - | n | Mia | both | 1 | yes | C2S |
 | dispatcher.extra_time | Need more time | Ask to stay longer than planned to finish the job | C | msg | write | n | supervisor | n | Mia | both | 2 | no | S2C |
 | dispatcher.extra_work_on_site | Client wants extra | Client on site asked the cleaner for extra work not in the order | C | msg | write | n | supervisor (priced by code) | n | Mia | both | 2 | no | S2C |
 | dispatcher.swap_shift | Swap a shift | Cleaner proposes to swap a visit with a named colleague | C | msg | write | p | supervisor | n | Mia | both | 2 | no | C2S |

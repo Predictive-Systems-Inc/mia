@@ -202,3 +202,71 @@ def test_details_are_sensitive_on_channels(
     texts = texts_to(sim)
     assert texts and all("4711" not in t for t in texts)
     assert any("http" in t for t in texts)  # the link to the app
+
+
+def _photo(msg_id: str, address: str = ADDR) -> bytes:
+    m = {"from": address, "id": msg_id, "text": "", "media": "M1"}
+    return json.dumps({"messages": [m]}).encode()
+
+
+def test_photo_during_a_visit_is_saved_as_proof(
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    people: dict[str, Person],
+    link: LinkFn,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import datetime as dt
+
+    from mia.channels import inbound as inbound_module
+    from mia.core import scheduling
+    from mia.core.models import Actor, Event, Job, Visit
+    from mia.settings import get_settings
+
+    juha = people["Juha"]
+    link(juha, ADDR)
+    today = dt.datetime.now(dt.UTC).date()
+    job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
+    visit = session.exec(
+        select(Visit).where(Visit.job_id == job.id).where(Visit.date == today)
+    ).one()
+    scheduling.check_in(session, Actor.person(juha), visit, juha, visit.planned_start)
+    session.commit()
+    monkeypatch.setattr(
+        inbound_module, "utcnow", lambda: visit.planned_start + dt.timedelta(minutes=5)
+    )
+    sim.media["M1"] = b"JPEGBYTES"
+    assert post(client, sim, _photo("p1")) == 200
+    session.expire_all()
+    session.refresh(visit)
+    assert len(visit.proof_refs) == 1 and visit.proof_refs[0].startswith(
+        f"media/{visit.branch_id}/{visit.id}/"
+    )
+    path = get_settings().MIA_MEDIA_DIR / visit.proof_refs[0].removeprefix("media/")
+    assert path.read_bytes() == b"JPEGBYTES" and oct(path.stat().st_mode & 0o777) == "0o600"
+    assert any("Kamppi shop" in t for t in texts_to(sim))
+    ev = session.exec(select(Event).where(Event.action == "visit.proof_added")).one()
+    assert "JPEGBYTES" not in str(ev.after) and ev.actor_id == juha.id
+
+
+def test_photo_without_a_visit_is_not_saved(
+    client: TestClient, sim: SimAdapter, session: Session, people: dict[str, Person], link: LinkFn
+) -> None:
+    from mia.core.models import Visit
+
+    link(people["Sanna"], ADDR)  # a supervisor with no visits
+    sim.media["M1"] = b"JPEGBYTES"
+    assert post(client, sim, _photo("p2")) == 200
+    assert all(not v.proof_refs for v in session.exec(select(Visit)))
+    assert any("no visit" in t.lower() or "käyntiä" in t for t in texts_to(sim))
+
+
+def test_failed_download_marks_the_row_failed(
+    client: TestClient, sim: SimAdapter, session: Session, people: dict[str, Person], link: LinkFn
+) -> None:
+    link(people["Juha"], ADDR)
+    assert post(client, sim, _photo("p3")) == 200  # no bytes registered for M1: the download fails
+    session.expire_all()
+    row = session.exec(select(ChannelInbound)).one()
+    assert row.status == "failed"

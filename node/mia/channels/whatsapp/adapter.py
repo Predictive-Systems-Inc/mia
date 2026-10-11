@@ -48,7 +48,8 @@ class WhatsAppAdapter:
     ) -> None:
         self.app_secret = settings.MIA_WA_APP_SECRET
         self.verify_token = settings.MIA_WA_VERIFY_TOKEN
-        url = f"{settings.MIA_WA_GRAPH_URL.rstrip('/')}/{settings.MIA_WA_PHONE_NUMBER_ID}/messages"
+        self.graph_url = settings.MIA_WA_GRAPH_URL.rstrip("/")
+        url = f"{self.graph_url}/{settings.MIA_WA_PHONE_NUMBER_ID}/messages"
         self.messages_url = url
         self.client = httpx.AsyncClient(
             transport=ChannelTransport(transport),
@@ -83,6 +84,7 @@ class WhatsAppAdapter:
     def _message(self, m: dict[str, Any]) -> InboundMessage:
         kind = m.get("type")
         text, button, media = "", None, False
+        media_id = media_kind = None
         if kind == "text":
             text = m.get("text", {}).get("body", "")
         elif kind == "interactive":
@@ -93,6 +95,9 @@ class WhatsAppAdapter:
             button = m.get("button", {}).get("text")
         else:
             media = True
+            if kind in ("image", "document", "video", "audio", "sticker"):
+                media_kind = kind
+                media_id = m.get(kind, {}).get("id")
         return InboundMessage(
             channel=self.channel_id,
             address=m["from"],
@@ -100,6 +105,8 @@ class WhatsAppAdapter:
             text=text,
             button=button,
             has_media=media,
+            media_id=media_id,
+            media_kind=media_kind,
             received_at=datetime.fromtimestamp(int(m.get("timestamp", 0)), UTC),
         )
 
@@ -166,6 +173,19 @@ class WhatsAppAdapter:
             template["components"] = [{"type": "body", "parameters": params}]
         body = self._base(address) | {"type": "template", "template": template}
         return ChannelPayload(channel=self.channel_id, address=address, body=body)
+
+    async def fetch_media(self, media_id: str) -> bytes | None:
+        """Resolve the media id to its URL on the Graph API, then download it; both requests
+        go through the channel transport with the bearer token. None on any failure."""
+        try:
+            meta = await self.client.get(f"{self.graph_url}/{media_id}")
+            url = meta.json().get("url") if meta.status_code < 400 else None
+            if not url:
+                return None
+            data = await self.client.get(url)
+        except (httpx.HTTPError, ValueError):
+            return None
+        return data.content if data.status_code < 400 else None
 
     async def send(self, payload: ChannelPayload) -> DeliveryResult:
         """POST to the Graph API. Meta errors and network errors come back as results."""

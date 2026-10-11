@@ -582,17 +582,17 @@ class ProblemOutput(BaseModel):
 
 
 def _current_visit(deps: AgentDeps, location_name: str | None, now: dt.datetime) -> Visit | None:
-    """The acting person's visit in progress, else the current or next one today."""
-    rows = [
-        v
-        for v in _own_visits_today(deps, location_name)
-        if v.date == deps.today and v.status in ("planned", "in_progress")
-    ]
-    running = [v for v in rows if v.status == "in_progress"]
-    if running:
-        return running[0]
-    ahead = [v for v in rows if v.planned_end >= now]
-    return min(ahead, key=lambda v: abs((v.planned_start - now).total_seconds())) if ahead else None
+    """The acting person's visit in progress, else the current or next one today; a named
+    site narrows it (the one choice shared with photos through scheduling.current_visit)."""
+    location_id = None
+    if location_name:
+        rows = _own_visits_today(deps, location_name)
+        if not rows:
+            return None
+        location_id = rows[0].location_id
+    return scheduling.current_visit(
+        deps.session, deps.branch, deps.person, now, location_id=location_id
+    )
 
 
 def report_site_problem(

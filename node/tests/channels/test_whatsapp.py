@@ -220,3 +220,39 @@ def test_server_start_registers_whatsapp_when_configured(wa: WhatsAppAdapter) ->
     finally:
         registry._adapters.clear()
         registry._adapters.update(saved)
+
+
+def test_image_message_carries_the_media_id(wa: WhatsAppAdapter) -> None:
+    (m,) = wa.receive(SAMPLES.joinpath("inbound_image.json").read_bytes())
+    assert isinstance(m, InboundMessage)
+    assert (m.has_media, m.media_id, m.media_kind) == (True, "MEDIA_ID", "image")
+
+
+def test_fetch_media_resolves_the_url_then_downloads(wa: WhatsAppAdapter) -> None:
+    import asyncio
+
+    seen: list[tuple[str, str | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((str(request.url), request.headers.get("authorization")))
+        if request.url.path.endswith("/MEDIA_ID"):
+            return httpx.Response(
+                200, json={"url": "https://lookaside.example/file.jpg", "mime_type": "image/jpeg"}
+            )
+        return httpx.Response(200, content=b"JPEGBYTES")
+
+    from mia.channels import transport
+
+    adapter = _wa_with(httpx.MockTransport(handler))
+    with pytest.raises(transport.ChannelBlocked):  # outside fetching(): rule 6 holds
+        asyncio.run(adapter.fetch_media("MEDIA_ID"))
+    with transport.fetching("inbound-1"):
+        assert asyncio.run(adapter.fetch_media("MEDIA_ID")) == b"JPEGBYTES"
+    assert len(seen) == 2 and all(auth == "Bearer tok" for _, auth in seen)
+    assert seen[0][0].endswith("/MEDIA_ID") and seen[1][0] == "https://lookaside.example/file.jpg"
+
+    def broken(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500)
+
+    with transport.fetching("inbound-2"):
+        assert asyncio.run(_wa_with(httpx.MockTransport(broken)).fetch_media("MEDIA_ID")) is None
