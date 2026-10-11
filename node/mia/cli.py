@@ -370,6 +370,42 @@ def _enrol_link(code: str) -> str:
     return f"{get_settings().MIA_PUBLIC_URL.rstrip('/')}/auth/enrol/{code}"
 
 
+def billing_export(args: argparse.Namespace) -> int:
+    import sys
+
+    from mia.core import billing, events
+    from mia.core.db import session_scope
+    from mia.core.models import Actor
+
+    try:
+        year, month = (int(x) for x in args.month.split("-"))
+        if not 1 <= month <= 12:
+            raise ValueError
+    except ValueError as exc:
+        raise SystemExit("--month must be YYYY-MM") from exc
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        rows = billing.summary(session, branch_id, year, month)
+        if args.out:
+            with open(args.out, "w", encoding="utf-8", newline="") as f:
+                billing.write_csv(rows, f)
+        else:
+            billing.write_csv(rows, sys.stdout)
+        events.emit(
+            session,
+            "billing.exported",
+            ("billing", f"{year}-{month:02d}"),
+            None,
+            {"month": f"{year}-{month:02d}", "rows": len(rows)},
+            Actor.system(branch_id),
+        )
+    print(
+        f"exported {len(rows)} row(s) for {year}-{month:02d}"
+        + (f" to {args.out}" if args.out else "")
+    )
+    return 0
+
+
 def schedule_generate(args: argparse.Namespace) -> int:
     from mia.core import scheduling
     from mia.core.db import session_scope
@@ -563,6 +599,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lang", default="fi", choices=["fi", "en"])
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=person_add)
+    bill = sub.add_parser("billing", help="billing exports").add_subparsers(
+        dest="billing_command", required=True
+    )
+    p = bill.add_parser("export", help="completed work per client and site for a month, as CSV")
+    p.add_argument("--month", required=True, help="YYYY-MM")
+    p.add_argument("--out", help="file path (default: stdout)")
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=billing_export)
     sched = sub.add_parser("schedule", help="visits and assignments").add_subparsers(
         dest="schedule_command", required=True
     )
