@@ -11,6 +11,7 @@ from mia.agents.dispatcher import tools
 from mia.agents.dispatcher.agent import MANIFEST, create_agent
 from mia.agents.dispatcher.models import Absence
 from mia.core import approvals
+from mia.core.db import utcnow
 from mia.core.models import Actor, Approval, Branch, Event, Person, Visit
 from mia.core.rbac import PermissionDenied
 
@@ -197,7 +198,9 @@ def test_rule_breaking_instruction_needs_override_approval(
     assert "outside availability" in approval.evidence["reasons"]
     with pytest.raises(approvals.ApprovalError):
         approvals.decide(session, approval.id, Actor.person(people["Sanna"]), "approved")
-    approvals.decide(session, approval.id, Actor.person(people["Helena"]), "approved")
+    approvals.decide(
+        session, approval.id, Actor.person(people["Helena"]), "approved", stepped_up_at=utcnow()
+    )
     from mia.agents.dispatcher.models import CoverRequest
 
     request = session.exec(select(CoverRequest)).one()

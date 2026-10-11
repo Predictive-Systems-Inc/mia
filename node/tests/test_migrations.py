@@ -57,3 +57,49 @@ def test_upgrade_from_1_0_keeps_employee_data() -> None:
         assert conn.execute(text("SELECT max_weekly_minutes FROM work_limits")).scalar() == 2400
         person = conn.execute(text("SELECT home_address, accepts_calls FROM person")).one()
         assert person == ("", 1)
+
+
+def test_upgrade_from_1_2_keeps_link_codes_and_attempts() -> None:
+    """Link codes and attempts move to auth_codes and auth_attempts with their rows."""
+    cfg = _alembic_config()
+    command.upgrade(cfg, "0003")
+    ts = "'2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00'"
+    with get_engine().begin() as conn:
+        conn.execute(text(f"INSERT INTO organisation VALUES ('O', {ts}, 'Org', 'FI', 'fi')"))
+        conn.execute(text(f"INSERT INTO branch VALUES ('B', {ts}, 'O', 'Hki', 'Europe/Helsinki')"))
+        conn.execute(
+            text(
+                f"INSERT INTO person VALUES ('P', {ts}, 'B', 'Pia', 'active', '[\"staff\"]', '[]', "
+                "'employee', 'fi', '', NULL, NULL, 1)"
+            )
+        )
+        conn.execute(
+            text(
+                f"INSERT INTO channel_link_codes VALUES ('C', {ts}, 'B', 'P', 'abc', 'invite', "
+                "'2026-01-08T00:00:00+00:00', NULL, 'P')"
+            )
+        )
+        conn.execute(
+            text(f"INSERT INTO channel_link_attempts VALUES ('A', {ts}, 'whatsapp', '358401', 0)")
+        )
+    command.upgrade(cfg, "head")
+    with get_engine().connect() as conn:
+        assert conn.execute(text("SELECT purpose, address, tries FROM auth_codes")).one() == (
+            "invite",
+            None,
+            0,
+        )
+        assert conn.execute(text("SELECT kind, key, ok FROM auth_attempts")).one() == (
+            "link_code",
+            "whatsapp:358401@-",
+            0,
+        )
+        tables = set(inspect(conn).get_table_names())
+        assert {"auth_credentials", "auth_devices", "auth_sessions", "auth_clients"} <= tables
+        assert not {"channel_link_codes", "channel_link_attempts"} & tables
+    command.downgrade(cfg, "0003")
+    with get_engine().connect() as conn:
+        assert conn.execute(text("SELECT channel, address FROM channel_link_attempts")).one() == (
+            "whatsapp",
+            "358401",
+        )

@@ -4,6 +4,7 @@ Agents, tools and API routes never touch tables directly: they call these functi
 domain services built on them in mia/core and mia/templates).
 """
 
+from collections.abc import Iterable
 from typing import Any
 
 from sqlmodel import Session, SQLModel
@@ -25,8 +26,10 @@ def insert[T: SQLModel](
     action: str | None = None,
     tool_call_id: str | None = None,
     approval_id: str | None = None,
+    redact: Iterable[str] = (),
 ) -> T:
-    """Insert a row and emit `<table>.created` (or `action`) with the new values."""
+    """Insert a row and emit `<table>.created` (or `action`) with the new values (fields in
+    `redact` and the model's `__redact__` are hidden in the event)."""
     session.add(row)
     session.flush()
     events.emit(
@@ -34,7 +37,7 @@ def insert[T: SQLModel](
         action or f"{_table(row)}.created",
         row,
         None,
-        events.snapshot(row),
+        events.snapshot(row, redact),
         actor,
         tool_call_id=tool_call_id,
         approval_id=approval_id,
@@ -51,9 +54,10 @@ def update[T: SQLModel](
     action: str | None = None,
     tool_call_id: str | None = None,
     approval_id: str | None = None,
+    redact: Iterable[str] = (),
 ) -> T:
     """Apply changes to a row and emit `<table>.updated` (or `action`) with before and after."""
-    before = events.snapshot(row)
+    before = events.snapshot(row, redact)
     for key, value in changes.items():
         if not hasattr(row, key):
             raise AttributeError(f"{type(row).__name__} has no field {key!r}")
@@ -67,7 +71,7 @@ def update[T: SQLModel](
         action or f"{_table(row)}.updated",
         row,
         before,
-        events.snapshot(row),
+        events.snapshot(row, redact),
         actor,
         tool_call_id=tool_call_id,
         approval_id=approval_id,

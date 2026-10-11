@@ -1,6 +1,6 @@
 # Authentication and identity: design
 
-Date: 2026-10-05. Status: draft for review (design only, nothing built). ADR: 011 (proposed).
+Date: 2026-10-05. Status: accepted (D17) and built 2026-10-12 (D33, plan 2026-10-12-authentication.md). ADR: 011.
 Builds on spec.md, sections "Roles and permissions", "Authentication", "Approvals", "Channel
 rules", "Voice rules", "Keys and backup"; plan.md, "Status and revised order" item 1; ADR 003
 (tool risk and approval), ADR 007 (channel adapters), ADR 008 and D14 (A2A needs OAuth2 or mTLS).

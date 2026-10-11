@@ -16,7 +16,7 @@ from sqlmodel import Field, SQLModel
 from mia.core.db import TZDateTime, utcnow
 from mia.core.ids import new_id
 
-STANDARD_VERSION = "1.2"
+STANDARD_VERSION = "1.3"
 
 # Code lists, versioned with the standard.
 PersonStatus = Literal["active", "inactive"]
@@ -248,33 +248,112 @@ class ChannelIdentity(BranchScoped, table=True):
     last_inbound_at: datetime | None = Field(default=None, sa_type=TZDateTime)
 
 
-class ChannelLinkCode(BranchScoped, table=True):
-    """A one-time link code, stored only as an HMAC of the code."""
+class AuthCode(BranchScoped, table=True):
+    """A one-time code: channel link (invite, self), staff OTP, login link, MFA token or
+    enrolment link. Stored only as an HMAC (core/keys.py), single use, expiring, at most 5 tries."""
 
-    __tablename__: ClassVar[str] = "channel_link_codes"
+    __tablename__: ClassVar[str] = "auth_codes"
+    __redact__: ClassVar[frozenset[str]] = frozenset({"code_hmac"})
 
     person_id: str = Field(foreign_key="person.id", index=True)
     code_hmac: str = Field(unique=True)
-    purpose: str  # invite, self
+    purpose: str  # invite, self, otp_login, link_login, mfa, enrol
+    address: str | None = None  # where it was sent, if anywhere
+    tries: int = 0
     expires_at: datetime = Field(sa_type=TZDateTime)
     used_at: datetime | None = Field(default=None, sa_type=TZDateTime)
     created_by: str
 
 
-class ChannelLinkAttempt(Stamped, table=True):
-    """One attempt to redeem a link code, for the lockout count. Not tied to a branch."""
+class AuthAttempt(Stamped, table=True):
+    """One credential check, for rate limits and lockouts. `key` is `<subject>@<ip>` where the
+    subject is a login HMAC, an address, a person or client id; `@-` when there is no IP."""
 
-    __tablename__: ClassVar[str] = "channel_link_attempts"
+    __tablename__: ClassVar[str] = "auth_attempts"
 
-    channel: str
-    address: str = Field(index=True)
+    kind: str  # link_code, password, otp, pin, client_secret, mfa, device
+    key: str = Field(index=True)
     ok: bool
+
+
+class AuthCredential(BranchScoped, table=True):
+    """One login factor of a person: password, totp, recovery_code, pin (passkey later)."""
+
+    __tablename__: ClassVar[str] = "auth_credentials"
+    __redact__: ClassVar[frozenset[str]] = frozenset({"secret_hash", "data"})
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    kind: str
+    login: str | None = Field(default=None, unique=True)  # lowercased email, password rows only
+    secret_hash: str | None = None  # scrypt string; null for totp
+    data: dict[str, Any] = Field(default_factory=dict, sa_type=JSON)  # totp: nonce, last_step
+    status: str = "active"  # pending, active, revoked, used, locked
+    last_used_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+
+
+class AuthDevice(BranchScoped, table=True):
+    """A browser or phone a person signed in on. Mobile devices hold a device secret."""
+
+    __tablename__: ClassVar[str] = "auth_devices"
+    __redact__: ClassVar[frozenset[str]] = frozenset({"secret_hash"})
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    kind: str  # browser, mobile
+    name: str
+    secret_hash: str | None = None
+    status: str = "active"  # active, revoked
+    last_seen_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    revoked_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    revoked_by: str | None = None
+
+
+class AuthSession(BranchScoped, table=True):
+    """One signed-in session of a person or a client. Tokens are stored as SHA-256 hashes."""
+
+    __tablename__: ClassVar[str] = "auth_sessions"
+    __redact__: ClassVar[frozenset[str]] = frozenset(
+        {"access_hash", "refresh_hash", "prev_refresh_hash"}
+    )
+
+    subject_type: str  # person, client
+    subject_id: str = Field(index=True)
+    device_id: str | None = Field(default=None, foreign_key="auth_devices.id")
+    method: str  # password_totp, password, phone_otp, device, wa_link, client, enrol
+    aal: str  # aal1, aal2, client, enrol
+    access_hash: str = Field(unique=True)
+    access_expires_at: datetime = Field(sa_type=TZDateTime)
+    refresh_hash: str | None = Field(default=None, unique=True)
+    prev_refresh_hash: str | None = None
+    refresh_expires_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    absolute_expires_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    stepped_up_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    status: str = "active"  # active, revoked
+    ip: str = ""
+
+
+class AuthClient(BranchScoped, table=True):
+    """An outside agent or service with OAuth2 client credentials issued by this node."""
+
+    __tablename__: ClassVar[str] = "auth_clients"
+    __redact__: ClassVar[frozenset[str]] = frozenset({"secret_hash"})
+
+    name: str
+    client_id: str = Field(unique=True)
+    secret_hash: str
+    roles: list[str] = Field(default_factory=list, sa_type=JSON)
+    status: str = "active"  # active, revoked
+    expires_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    created_by: str
+    last_used_at: datetime | None = Field(default=None, sa_type=TZDateTime)
 
 
 class ChannelOutbox(BranchScoped, table=True):
     """One outbound channel message: queued, sent, delivered, read, failed or held."""
 
     __tablename__: ClassVar[str] = "channel_outbox"
+    # Message bodies stay in chat_messages and the outbox row; events carry the row's state
+    # only (sign-in codes travel through the outbox too).
+    __redact__: ClassVar[frozenset[str]] = frozenset({"payload"})
 
     person_id: str = Field(foreign_key="person.id", index=True)
     channel: str

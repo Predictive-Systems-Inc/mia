@@ -10,10 +10,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from sqlmodel import Session, select
 
+from mia.api.deps import DbSession
 from mia.channels import outbox, registry
 from mia.channels.base import ChannelAdapter, InboundMessage, StatusUpdate
 from mia.channels.inbound import handle_inbound
-from mia.chat.router import DbSession
 from mia.core import events, store
 from mia.core.models import Actor, ChannelInbound, Principal
 

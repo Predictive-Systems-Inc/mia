@@ -58,6 +58,10 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run mia serve` | FastAPI on port 8000: chat page `/`, `/health`, `/chat`, `/chat/stream`, `/ag-ui` (plus `/ag-ui/connect` to catch up and `/ag-ui/stop`), `/notifications`, `/approvals/{id}/decide`, `/channels/{id}/webhook` |
 | `uv run mia chat "..." [--as NAME] [--thread ID]` | One chat turn from the terminal |
 | `uv run mia decide ID approved\|rejected --as NAME` | Decide an approval (stand-in for the inbox) |
+| `uv run mia keys init [PATH]` | Create the master key file (ADR 011) |
+| `uv run mia auth bootstrap --email EMAIL` | First owner: prints an enrolment link (password and TOTP) |
+| `uv run mia auth reset NAME` / `unlock LOGIN` / `link NAME` | Recovery: new enrolment link, clear a lockout, send a login link over WhatsApp |
+| `uv run mia auth client add NAME --role ROLE` / `revoke ID` | Client credentials for outside agents and services |
 | `uv run mia inbox --as NAME` | Show messages Mia sent to a person |
 | `uv run mia tick` | Advance due cover confirmations and send the channel outbox once (`mia serve` does this every 30 s) |
 | `uv run mia person add NAME --role staff [--lang fi]` | Add a person |
@@ -106,6 +110,30 @@ uv run mia channels sim "Olen kipeä huomenna." --from 358401234567
 ```
 
 For the real WhatsApp number, follow docs/whatsapp-setup.md.
+
+## Authentication
+
+Every request carries a verified actor (ADR 011, docs/superpowers/specs/2026-10-05-authentication-design.md).
+`MIA_AUTH_MODE=dev` (the `.env.example` default) keeps the `X-Mia-Actor` header for local
+development and the chat page's actor picker; it works only from localhost and the node refuses
+to start in dev mode with a public URL. A server runs `required`.
+
+- Office users: `POST /auth/login` (email, password), then `POST /auth/mfa` with a TOTP or
+  recovery code. Owner, admin and accountant must enrol an authenticator (`/auth/mfa/enrol`,
+  `/auth/mfa/confirm`) before they get past the enrolment session. Web clients send
+  `X-Mia-Client: web` and get HttpOnly cookies; others get bearer tokens with a rotating refresh
+  token (`/auth/refresh`).
+- Staff: `POST /auth/otp/start` sends a 6-digit code to the linked WhatsApp number;
+  `POST /auth/otp/verify` binds the phone (a device secret, shown once) and signs in;
+  `POST /auth/device` signs in again on that phone. A one-time login link (`mia auth link`)
+  opens the web app from WhatsApp.
+- Risky approvals (money, external, delete) need a 6-digit PIN entered in the last five minutes:
+  `POST /auth/pin` to set it, `POST /auth/stepup` before deciding; the API answers 403
+  `step_up_required` otherwise.
+- Outside agents and services: `mia auth client add` and `POST /auth/token`
+  (client credentials, one-hour bearer tokens); clients never hold `approve`.
+- Keys: `mia keys init` writes the master key (mode 400); subkeys come from HKDF. Without a key
+  file, `MIA_NODE_SECRET` keys the one-time codes, so old invites keep working.
 
 ## Installing on a server
 

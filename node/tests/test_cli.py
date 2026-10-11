@@ -1,6 +1,7 @@
 """The `mia` command on a fresh database: migrate, seed, chat, decide."""
 
 import re
+from pathlib import Path
 
 import pytest
 
@@ -114,3 +115,11 @@ def test_cover_ask_from_the_cli_reaches_the_simulated_channel(
     out = capsys.readouterr().out
     ask, thanks = out.find("[Hyväksyn]"), out.find("Kiitos")
     assert 0 <= ask < thanks  # the ask is shown, before the reply to accepting it
+
+
+def test_keys_init(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = tmp_path / "k.key"
+    assert main(["keys", "init", str(path)]) == 0
+    assert "master key written" in capsys.readouterr().out and len(path.read_bytes()) == 32
+    with pytest.raises(SystemExit, match="exists"):
+        main(["keys", "init", str(path)])

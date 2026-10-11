@@ -19,7 +19,9 @@ mia/
       cli.py                mia migrate | seed | serve | chat | decide | inbox | tick | geocode |
                             backup | verify-db | ...
       core/                 models, db, ids, events, store, rbac, approvals, egress, usage, people,
-                            geocoding (pluggable providers), orgconfig (organisation settings)
+                            geocoding (pluggable providers), orgconfig (organisation settings),
+                            keys (master key, HKDF, scrypt, TOTP), auth (sessions, codes,
+                            credentials, devices, clients; ADR 011)
       templates/cleaning/   models (sites, checklists), seed
       agents/               base.py (manifest, guard, model factory)
         dispatcher/         manifest.yaml, job.md, prompts/, models.py, classifier.py,
@@ -35,13 +37,13 @@ mia/
                             outbox.py, linking.py (codes, invites), setup.py, transport.py (the only HTTP
                             exit for channels), router.py (webhooks), simulator.py ("sim" adapter)
         whatsapp/           adapter.py (Meta Cloud API), templates.py
-      api/                  main.py
+      api/                  main.py, deps.py (session and auth dependencies), auth.py (login routes)
       i18n/                 Finnish and English strings
       static/index.html     dev chat page
     migrations/             alembic.ini, env.py, versions/
     config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ (instructions, settings.yaml),
                             ollama/ (Modelfiles for local models, ADR 004)
-    tests/                  unit tests; evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
+    tests/                  unit tests; auth/ (login flows); evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
                             and intents.py for intent classification)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,
                             research/ (research notes and dated evaluation reports, ADR 012)

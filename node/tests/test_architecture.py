@@ -126,3 +126,46 @@ def test_dockerfile_sets_hf_hub_offline() -> None:
     """The node image runs offline for Hugging Face by default."""
     dockerfile = (MIA.parent.parent / "Dockerfile").read_text()
     assert "HF_HUB_OFFLINE=1" in dockerfile
+
+
+def test_x_mia_actor_is_read_only_by_the_dev_dependency() -> None:
+    """ADR 011: the header is accepted in one place, in dev mode."""
+    offenders = [
+        str(p)
+        for p in _py_files()
+        if "x-mia-actor" in p.read_text().lower() and p != MIA / "api" / "deps.py"
+    ]
+    assert offenders == []
+
+
+def test_every_route_depends_on_auth_or_is_public() -> None:
+    """Every route except /health, /, /auth/*, webhooks and /.well-known takes CurrentAuth."""
+    from mia.api.main import app
+
+    # /persons answers 404 outside dev mode (the chat page's actor picker).
+    public = {
+        "/health",
+        "/",
+        "/persons",
+        "/openapi.json",
+        "/docs",
+        "/docs/oauth2-redirect",
+        "/redoc",
+    }
+
+    def walk(routes: list[object]) -> list[object]:
+        out: list[object] = []
+        for r in routes:
+            nested = getattr(r, "routes", None)
+            out.extend(walk(nested) if nested else [r])
+        return out
+
+    for route in walk(list(app.routes)):
+        path = getattr(route, "path", "")
+        dependant = getattr(route, "dependant", None)
+        if dependant is None:
+            continue
+        if path in public or path.startswith(("/auth/", "/channels/", "/.well-known/")):
+            continue
+        names = {d.call.__name__ for d in dependant.dependencies}
+        assert names & {"current_auth", "current_person", "current_client"}, path

@@ -31,8 +31,9 @@ def blocks_of(reply: dict, kind: str) -> list[dict]:  # type: ignore[type-arg]
 def test_health_and_page(client: TestClient) -> None:
     body = client.get("/health").json()
     assert body["status"] == "ok" and body["events_chain"] is True and body["model"] == "test"
-    assert "<title>Mia chat" in client.get("/").text
-    assert len(client.get("/persons").json()) == 7
+    page = client.get("/").text
+    assert "<title>Mia chat" in page and 'id="login"' in page and "auth/me" in page
+    assert body["auth_mode"] == "dev" and len(client.get("/persons").json()) == 7
 
 
 def test_actor_is_required_and_must_exist(client: TestClient, people: dict[str, Person]) -> None:
@@ -40,14 +41,6 @@ def test_actor_is_required_and_must_exist(client: TestClient, people: dict[str, 
     assert (
         client.post("/chat", json={"text": "hi"}, headers={"X-Mia-Actor": "nobody"}).status_code
         == 403
-    )
-    both = {"text": "hi", "actor_id": people["Aino"].id}
-    assert (
-        client.post("/chat", json=both, headers={"X-Mia-Actor": people["Juha"].id}).status_code
-        == 400
-    )
-    assert (
-        client.post("/chat", json={"text": "hi", "actor_id": people["Juha"].id}).status_code == 200
     )
     other = say(client, people["Juha"], "hi")["thread_id"]
     res = client.post(

@@ -41,7 +41,8 @@ Remaining work in this order, because each step unblocks the next:
 
 1. **Authentication and identity** (Sprint 1 item, moved first): office login, staff phone
    OTP, sessions, and channel identities linked to real accounts. Blocks the pilot with real
-   people, WhatsApp in production and A2A.
+   people, WhatsApp in production and A2A. Built 2026-10-12 (D33, ADR 011); passkeys and SMS
+   wait for approval.
 2. **Local model to 95%** (D18, D19, D26): the full intent list in English, measured on
    Qwen3.5 9B and Gemma 4 12B; translation (Finnish, Filipino to and from English) as a
    separate layer measured on its own. Then: Gemma 4 12B on Ollama on an Apple Silicon Mac mini, no

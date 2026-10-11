@@ -40,8 +40,12 @@ def add_person(
 
 
 def deactivate(session: Session, actor: Actor, person: Person) -> Person:
-    """Mark a person inactive, revoke their channel identities, emit `person.deactivated`."""
+    """Mark a person inactive; revoke their devices, sessions and channel identities; emit
+    `person.deactivated`."""
     from mia.channels.linking import revoke_all  # channels depend on core, not the reverse
+    from mia.core.auth import revoke_everything
+    from mia.core.db import utcnow
 
+    revoke_everything(session, actor, person, utcnow())
     revoke_all(session, actor, person)
     return store.update(session, person, {"status": "inactive"}, actor, action="person.deactivated")

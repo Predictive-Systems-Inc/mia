@@ -20,7 +20,7 @@ from pydantic_ai import models
 
 from mia.agents.dispatcher import agent as dispatcher_agent
 from mia.channels import registry
-from mia.core import db
+from mia.core import db, keys
 from mia.core.models import Actor, Branch, Person
 from mia.schema import create_all
 from mia.settings import get_settings
@@ -54,6 +54,13 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     monkeypatch.setenv("MIA_GEOCODER", "static")
     monkeypatch.setenv("MIA_NODE_SECRET", "test-node-secret")
     monkeypatch.setenv("MIA_WA_NUMBER", "358401110000")
+    monkeypatch.setenv("MIA_PUBLIC_URL", "http://localhost:8000")  # not the developer's .env
+    key_file = tmp_path / "master.key"
+    keys.generate(key_file)
+    monkeypatch.setenv("MIA_MASTER_KEY_FILE", str(key_file))
+    monkeypatch.setenv("MIA_AUTH_MODE", "dev")
+    monkeypatch.setattr(keys, "SCRYPT_N", 2**8)  # the real 2**17 makes every login slow
+    keys.reset_cache()
     get_settings.cache_clear()
     dispatcher_agent.get_agent.cache_clear()
     db.reset_engines()
@@ -62,8 +69,23 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     registry._adapters.clear()
     registry._adapters.update(saved_adapters)
     db.reset_engines()
+    keys.reset_cache()
     get_settings.cache_clear()
     dispatcher_agent.get_agent.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _loopback_test_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TestClient requests come from 127.0.0.1 (the dev header needs a loopback peer), unless a
+    test passes its own `client=` address."""
+    from starlette import testclient
+
+    original = testclient.TestClient.__init__
+
+    def init(self, app, *args, client=("127.0.0.1", 50000), **kwargs):  # type: ignore[no-untyped-def]
+        original(self, app, *args, client=client, **kwargs)
+
+    monkeypatch.setattr(testclient.TestClient, "__init__", init)
 
 
 @pytest.fixture
@@ -97,6 +119,28 @@ def people(session: Session, branch: Branch) -> dict[str, Person]:
 def actor(people: dict[str, Person]) -> Actor:
     """A cleaner acting for themselves."""
     return Actor.person(people["Juha"])
+
+
+@pytest.fixture
+def login(session: Session):  # type: ignore[no-untyped-def]
+    """Sign a person in on a TestClient through the service (bearer token on every request)."""
+    from mia.core import auth as auth_service
+    from mia.core.db import utcnow
+
+    def _login(
+        client, person, *, aal="aal2", method="password_totp", stepped_up=False, device=None
+    ):  # type: ignore[no-untyped-def]
+        now = utcnow()
+        tokens = auth_service.issue_session(
+            session, person, method=method, aal=aal, ip="127.0.0.1", now=now, device=device
+        )
+        if stepped_up:
+            auth_service.step_up(session, tokens.row, now)
+        session.commit()
+        client.headers["Authorization"] = f"Bearer {tokens.access}"
+        return tokens
+
+    return _login
 
 
 @pytest.fixture

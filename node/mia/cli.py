@@ -1,9 +1,10 @@
 """The `mia` command: migrate, seed, serve, chat, decide, inbox, tick, geocode, person,
-invite, channels, backup, verify-db."""
+invite, channels, backup, verify-db, keys, auth, skills."""
 
 import argparse
 import asyncio
 import os
+from pathlib import Path
 
 from alembic.config import Config
 from sqlmodel import Session, col, select
@@ -46,6 +47,9 @@ def seed(_args: argparse.Namespace) -> int:
 def serve(args: argparse.Namespace) -> int:
     import uvicorn
 
+    from mia.api.deps import check_mode
+
+    check_mode(get_settings())
     # The node never downloads models (ADR 013); training processes do not go through serve.
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     uvicorn.run("mia.api.main:app", host=args.host, port=args.port, reload=args.reload)
@@ -85,14 +89,20 @@ def chat(args: argparse.Namespace) -> int:
 
 def decide(args: argparse.Namespace) -> int:
     from mia.core import approvals
-    from mia.core.db import session_scope
+    from mia.core.db import session_scope, utcnow
     from mia.core.models import Actor
 
     with session_scope() as session:
         person = _find_person(session, args.as_person)
         try:
+            # Shell access is full access: the CLI counts as a fresh step-up (ADR 011).
             row = approvals.decide(
-                session, args.approval_id, Actor.person(person), args.outcome, args.reason
+                session,
+                args.approval_id,
+                Actor.person(person),
+                args.outcome,
+                args.reason,
+                stepped_up_at=utcnow(),
             )
         except approvals.ApprovalError as exc:
             print(f"refused: {exc}")
@@ -356,6 +366,130 @@ def verify_db(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _enrol_link(code: str) -> str:
+    return f"{get_settings().MIA_PUBLIC_URL.rstrip('/')}/auth/enrol/{code}"
+
+
+def auth_bootstrap(args: argparse.Namespace) -> int:
+    from mia.core import auth, people
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor, Person
+
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        rows = session.exec(select(Person).where(Person.branch_id == branch_id)).all()
+        owners = [p for p in rows if "owner" in p.roles and p.status == "active"]
+        able = [p for p in owners if auth.credential(session, p.id, "password") is not None]
+        if able:
+            print(f"an owner can already sign in ({able[0].name}); use `mia auth reset` instead")
+            return 1
+        actor = Actor.system(branch_id)
+        if owners:
+            person = owners[0]  # an owner without a login yet (a seeded or imported branch)
+        else:
+            person = people.add_person(
+                session,
+                actor,
+                branch_id=branch_id,
+                name=args.name or args.email.split("@")[0],
+                roles=["owner"],
+                language=args.lang,
+            )
+        code = auth.start_enrolment(session, actor, person, utcnow(), via="cli")
+    print(
+        f"owner {person.name}: set the password (email {args.email}) and TOTP through this "
+        f"link (24 hours, single use):\n  {_enrol_link(code)}"
+    )
+    return 0
+
+
+def auth_reset(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor
+
+    with session_scope() as session:
+        person = _match_one(session, args.name)
+        actor = Actor.system(person.branch_id)
+        code = auth.start_enrolment(session, actor, person, utcnow(), reason="reset", via="cli")
+    print(
+        f"sessions of {person.name} ended. Enrolment link (24 hours, single use):\n"
+        f"  {_enrol_link(code)}"
+    )
+    return 0
+
+
+def auth_link(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor
+
+    with session_scope() as session:
+        person = _match_one(session, args.name)
+        url = auth.send_login_link(session, Actor.system(person.branch_id), person, utcnow())
+    if url is None:
+        print(f"{person.name} has no active channel identity; send an invite first")
+        return 1
+    print(f"login link sent to {person.name} (10 minutes, single use): {url}")
+    return 0
+
+
+def auth_client_add(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor
+
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        try:
+            row, secret = auth.create_client(
+                session, Actor.system(branch_id), args.name, args.roles, utcnow()
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+    print(f"client {row.name} registered. Shown once:\n  client_id: {row.client_id}")
+    print(f"  client_secret: {secret}")
+    return 0
+
+
+def auth_client_revoke(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor, AuthClient
+
+    with session_scope() as session:
+        row = session.exec(select(AuthClient).where(AuthClient.client_id == args.client_id)).first()
+        if row is None:
+            raise SystemExit(f"no client {args.client_id}")
+        auth.revoke_client(session, Actor.system(row.branch_id), row, utcnow())
+    print(f"client {args.client_id} revoked")
+    return 0
+
+
+def auth_unlock(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+
+    with session_scope() as session:
+        auth.unlock_login(session, args.login, utcnow())
+    print(f"{auth.normalise_login(args.login)} unlocked")
+    return 0
+
+
+def keys_init(args: argparse.Namespace) -> int:
+    from mia.core import keys
+
+    path = args.path or get_settings().MIA_MASTER_KEY_FILE
+    if path is None:
+        raise SystemExit("give a path or set MIA_MASTER_KEY_FILE")
+    try:
+        keys.generate(Path(path))
+    except keys.MasterKeyError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"master key written to {path} (mode 400). Back it up outside the data folder.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mia", description="Mia Node command line")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -416,6 +550,41 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lang", default="fi", choices=["fi", "en"])
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=person_add)
+    auth_p = sub.add_parser("auth", help="authentication").add_subparsers(
+        dest="auth_command", required=True
+    )
+    p = auth_p.add_parser("bootstrap", help="create the first owner and print an enrolment link")
+    p.add_argument("--email", required=True)
+    p.add_argument("--name")
+    p.add_argument("--lang", default="fi", choices=["fi", "en"])
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=auth_bootstrap)
+    p = auth_p.add_parser("reset", help="end a person's sessions and print an enrolment link")
+    p.add_argument("name")
+    p.set_defaults(func=auth_reset)
+    p = auth_p.add_parser("link", help="send a one-time login link to a person's WhatsApp")
+    p.add_argument("name")
+    p.set_defaults(func=auth_link)
+    clients = auth_p.add_parser("client", help="outside agents and services").add_subparsers(
+        dest="client_command", required=True
+    )
+    p = clients.add_parser("add", help="register a client; prints its credentials once")
+    p.add_argument("name")
+    p.add_argument("--role", dest="roles", action="append", required=True)
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=auth_client_add)
+    p = clients.add_parser("revoke", help="revoke a client and its tokens")
+    p.add_argument("client_id")
+    p.set_defaults(func=auth_client_revoke)
+    p = auth_p.add_parser("unlock", help="clear the lockout of a login")
+    p.add_argument("login")
+    p.set_defaults(func=auth_unlock)
+    keys_p = sub.add_parser("keys", help="key material").add_subparsers(
+        dest="keys_command", required=True
+    )
+    p = keys_p.add_parser("init", help="create the master key file")
+    p.add_argument("path", nargs="?")
+    p.set_defaults(func=keys_init)
     from mia.learning.commands import register as register_skills
 
     register_skills(sub)

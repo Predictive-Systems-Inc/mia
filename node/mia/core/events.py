@@ -7,6 +7,7 @@ previous hash plus the canonical JSON of the row, so any edit breaks verify_chai
 
 import hashlib
 import json
+from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy import DDL, event, text
@@ -53,18 +54,31 @@ def compute_hash(prev_hash: str, ev: Event) -> str:
     return hashlib.sha256((prev_hash + _payload(ev)).encode()).hexdigest()
 
 
-def _last_hash(session: Session) -> str:
-    # Take the write lock before reading: pysqlite runs SELECTs outside a transaction until the
-    # first write, so two writers could otherwise read the same hash and fork the chain. A
-    # zero-row UPDATE starts the write transaction (waiting up to busy_timeout) and changes nothing.
+def write_lock(session: Session) -> None:
+    """Take SQLite's write lock now (rule 11). pysqlite runs SELECTs outside a transaction
+    until the first write, so code that reads a value and writes based on it must lock first.
+    A zero-row UPDATE starts the write transaction (waiting up to busy_timeout), changes
+    nothing, and keeps the events table append-only."""
     session.execute(text("UPDATE events SET id = id WHERE 0"))
+
+
+def _last_hash(session: Session) -> str:
+    write_lock(session)  # two writers could otherwise read the same hash and fork the chain
     last = session.exec(select(Event.hash).order_by(col(Event.id).desc()).limit(1)).first()
     return last or GENESIS_HASH
 
 
-def snapshot(row: SQLModel | None) -> dict[str, Any] | None:
-    """JSON-safe copy of a row for before/after values."""
-    return None if row is None else row.model_dump(mode="json")
+REDACTED = "<redacted>"
+
+
+def snapshot(row: SQLModel | None, redact: Iterable[str] = ()) -> dict[str, Any] | None:
+    """JSON-safe copy of a row for before/after values. Fields named in the model's
+    `__redact__` and in `redact` are replaced by "<redacted>" so secrets never enter events."""
+    if row is None:
+        return None
+    data = row.model_dump(mode="json")
+    hidden = set(getattr(row, "__redact__", ())) | set(redact)
+    return {k: (REDACTED if k in hidden and v is not None else v) for k, v in data.items()}
 
 
 def emit(
