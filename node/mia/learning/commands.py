@@ -285,7 +285,9 @@ def translate_cmd(args: argparse.Namespace) -> int:
 
     def run() -> tuple[int, int]:
         return asyncio.run(
-            translate_file(path, args.lang, args.model, batch=args.batch, limit=args.limit)
+            translate_file(
+                path, args.lang, args.model, batch=args.batch, limit=args.limit, split=args.split
+            )
         )
 
     try:
@@ -482,6 +484,7 @@ def register(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None
     p.add_argument("--dataset", default="tests/evals/intents.jsonl")
     p.add_argument("--batch", type=int, default=20)
     p.add_argument("--limit", type=int, default=None, help="translate at most this many")
+    p.add_argument("--split", choices=["train", "test"], default=None, help="one split only")
     p.set_defaults(func=translate_cmd)
     p = skills.add_parser("overlap", help="embedding overlap review of intents")
     p.add_argument("role", nargs="?", default=None)

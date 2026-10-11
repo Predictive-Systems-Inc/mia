@@ -83,12 +83,20 @@ async def translate_file(
     transport: Any = None,  # test seam below egress (rule 6: no httpx here)
     batch: int = 20,
     limit: int | None = None,
+    split: str | None = None,
 ) -> tuple[int, int]:
     """Append the `lang` translations of the English records that have none yet (matched by
-    `source_id`). Returns (added, skipped): skipped are empty or missing translations."""
+    `source_id`), optionally one `split` only. Returns (added, skipped): skipped are empty or
+    missing translations."""
     rows = _rows(path)
     done = {r.get("source_id") for r in rows if r.get("lang") == lang}
-    todo = [r for r in rows if r.get("lang") == "en" and r["id"] not in done]
+    todo = [
+        r
+        for r in rows
+        if r.get("lang") == "en"
+        and r["id"] not in done
+        and (split is None or r.get("split") == split)
+    ]
     if limit is not None:
         todo = todo[:limit]
     if not todo:

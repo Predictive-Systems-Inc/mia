@@ -84,6 +84,13 @@ def test_translate_keeps_labels_and_skips_done_rows(tmp_path: Path) -> None:
             translate.translate_file(src, "fi", "local/m", transport=_transport(reply), batch=10)
         )
     assert (added, skipped) == (1, 1)  # the empty translation is dropped, not written
+    with models.override_allow_model_requests(True):
+        only_test = asyncio.run(
+            translate.translate_file(
+                src, "fil", "local/m", transport=_transport({"items": []}), batch=10, split="test"
+            )
+        )
+    assert only_test == (0, 1)  # one English test record offered, none translated by the stub
     rows = [json.loads(line) for line in src.read_text(encoding="utf-8").splitlines()]
     assert len(rows) == 4
     new = rows[-1]
