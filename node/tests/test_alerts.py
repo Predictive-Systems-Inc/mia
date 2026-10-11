@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from mia.agents.dispatcher import alerts
 from mia.chat.channels import NOTIFICATION
-from mia.core import scheduling
+from mia.core import scheduling, store
 from mia.core.models import Actor, Branch, Job, Message, Person, Thread, Visit
 
 
@@ -42,10 +42,11 @@ def test_missed_check_in_alerts_cleaner_and_supervisor_once(
         select(Visit).where(Visit.job_id == job.id).where(Visit.date == _today(branch))
     ).one()
     assert juha.id in visit.assigned_person_ids and visit.status == "planned"
-    early = visit.planned_start + dt.timedelta(minutes=5)
+    # The ticker passes UTC; SQLite compares ISO strings, so the query must not lean on them.
+    early = (visit.planned_start + dt.timedelta(minutes=5)).astimezone(dt.UTC)
     alerts.missed_check_ins(session, early)  # other, earlier visits may alert; this one not
     assert not alerts._marked(session, alerts.MISSED, visit.id)  # inside the grace period
-    late = visit.planned_start + dt.timedelta(minutes=20)
+    late = (visit.planned_start + dt.timedelta(minutes=20)).astimezone(dt.UTC)
     assert alerts.missed_check_ins(session, late) == 1
     assert alerts._marked(session, alerts.MISSED, visit.id)
     assert "Kamppi shop" in _notes(session, juha)[-1].text
@@ -110,3 +111,72 @@ def test_run_due_runs_all_three_from_the_ticker(session: Session, branch: Branch
 
     asyncio.run(run_due_work())  # no error; what it sends depends on the clock
     assert alerts.run_due(session, _local(branch, _today(branch), "03:00")) >= 0
+
+
+def test_missed_check_in_of_a_deactivated_cleaner_still_reaches_the_supervisor(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    from mia.core import people as people_service
+
+    juha, sanna = people["Juha"], people["Sanna"]
+    job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
+    visit = session.exec(
+        select(Visit).where(Visit.job_id == job.id).where(Visit.date == _today(branch))
+    ).one()
+    people_service.deactivate(session, Actor.person(people["Helena"]), juha)
+    late = (visit.planned_start + dt.timedelta(minutes=20)).astimezone(dt.UTC)
+    assert alerts.missed_check_ins(session, late) >= 1
+    assert any("Kamppi shop" in n.text for n in _notes(session, sanna))
+    assert _notes(session, juha) == []  # nothing to a person who left
+
+
+def test_supervisor_gets_one_message_per_visit_and_once_per_person(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    juha, mikael, sanna = people["Juha"], people["Mikael"], people["Sanna"]
+    job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
+    visit = session.exec(
+        select(Visit).where(Visit.job_id == job.id).where(Visit.date == _today(branch))
+    ).one()
+    store.update(session, visit, {"assigned_person_ids": [juha.id, mikael.id]}, Actor.person(sanna))
+    # Sanna is also an owner for this test: the fallback list must not alert her twice.
+    store.update(session, sanna, {"roles": ["supervisor", "owner"]}, Actor.person(people["Helena"]))
+    late = (visit.planned_start + dt.timedelta(minutes=20)).astimezone(dt.UTC)
+    alerts.missed_check_ins(session, late)
+    mine = [n for n in _notes(session, sanna) if "Kamppi shop" in n.text]
+    assert len(mine) == 1 and "Juha" in mine[0].text and "Mikael" in mine[0].text
+
+
+def test_daily_plan_reaches_anyone_assigned(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    sanna = people["Sanna"]
+    today = _today(branch)
+    job = session.exec(select(Job).where(Job.name == "Kamppi shop clean")).one()
+    visit = session.exec(
+        select(Visit)
+        .where(Visit.job_id == job.id)
+        .where(Visit.date == today + dt.timedelta(days=1))
+    ).one()
+    store.update(session, visit, {"assigned_person_ids": [sanna.id]}, Actor.person(sanna))
+    alerts.daily_plan(session, _local(branch, today, "17:30"))
+    plan = _notes(session, sanna)[-1]
+    assert "Kamppi shop" in str(plan.blocks)
+    assert not any(b.get("sensitive") for b in plan.blocks) and "Access" not in str(plan.blocks)
+
+
+def test_a_bad_branch_does_not_silence_the_others(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    from mia.core.models import Actor as A
+
+    bad = store.insert(
+        session,
+        Branch(organisation_id=branch.organisation_id, name="Broken", timezone="Nowhere/Bad"),
+        A.system(branch.id),
+    )
+    assert bad.id
+    today = _today(branch)
+    assert (
+        alerts.daily_plan(session, _local(branch, today, "17:30")) >= 1
+    )  # the good branch still runs

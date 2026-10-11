@@ -41,14 +41,7 @@ def test_csv_columns(session: Session, branch: Branch) -> None:
     out = io.StringIO()
     billing.write_csv(billing.summary(session, branch.id, year, month), out)
     reader = csv.DictReader(io.StringIO(out.getvalue()))
-    assert reader.fieldnames == [
-        "client",
-        "location",
-        "completed_visits",
-        "planned_minutes",
-        "actual_minutes",
-        "visit_ids",
-    ]
+    assert reader.fieldnames == billing.COLUMNS
     assert sum(1 for _ in reader) >= 1
 
 
@@ -58,7 +51,9 @@ def test_cli_export_writes_the_file_and_an_event(
     year, month = _month(branch)
     out = tmp_path / "billing.csv"
     assert main(["billing", "export", "--month", f"{year}-{month:02d}", "--out", str(out)]) == 0
-    assert "row(s)" in capsys.readouterr().out and out.read_text().startswith("client,location")
+    assert "row(s)" in capsys.readouterr().out and out.read_text().startswith(
+        "client_id,client,location_id,location"
+    )
     session.expire_all()
     ev = session.exec(select(Event).where(Event.action == "billing.exported")).one()
     assert ev.after == {
@@ -67,3 +62,43 @@ def test_cli_export_writes_the_file_and_an_event(
     }
     with pytest.raises(SystemExit):
         main(["billing", "export", "--month", "2026-13"])
+
+
+def test_rows_key_on_ids_and_csv_quotes_names(session: Session, branch: Branch) -> None:
+    """Two sites with one name under two clients stay two rows; a comma in a name survives."""
+    from mia.core import store
+    from mia.core.models import Actor, Client, Location
+
+    year, month = _month(branch)
+    actor = Actor.system(branch.id)
+    rows_before = billing.summary(session, branch.id, year, month)
+    first = rows_before[0]
+    loc = session.exec(select(Location).where(Location.name == first.location)).first()
+    assert loc is not None
+    other_client = store.insert(
+        session, Client(branch_id=branch.id, name='Acme "A, B"', type="business"), actor
+    )
+    twin = store.insert(
+        session,
+        Location(branch_id=branch.id, client_id=other_client.id, name=loc.name, address="x"),
+        actor,
+    )
+    done = session.exec(
+        select(Visit)
+        .where(Visit.location_id == loc.id)
+        .where(Visit.status == "completed")
+        .where(
+            Visit.date >= dt.date(year, month, 1)
+        )  # this month, not the seed's last-month visits
+    ).first()
+    assert done is not None
+    store.update(session, done, {"location_id": twin.id}, actor)
+    rows = billing.summary(session, branch.id, year, month)
+    names = [(r.client, r.location) for r in rows]
+    assert names.count((first.client, first.location)) == 1 and ('Acme "A, B"', loc.name) in names
+    assert all(r.client_id and r.location_id for r in rows)
+    out = io.StringIO()
+    billing.write_csv(rows, out)
+    parsed = list(csv.DictReader(io.StringIO(out.getvalue())))
+    assert any(p["client"] == 'Acme "A, B"' for p in parsed)
+    assert parsed[0].keys() >= {"client_id", "location_id"}

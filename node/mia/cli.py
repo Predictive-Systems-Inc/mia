@@ -3,6 +3,7 @@ invite, channels, backup, verify-db, keys, auth, skills."""
 
 import argparse
 import asyncio
+import datetime as dt
 import os
 from pathlib import Path
 
@@ -379,8 +380,7 @@ def billing_export(args: argparse.Namespace) -> int:
 
     try:
         year, month = (int(x) for x in args.month.split("-"))
-        if not 1 <= month <= 12:
-            raise ValueError
+        dt.date(year, month, 1)
     except ValueError as exc:
         raise SystemExit("--month must be YYYY-MM") from exc
     with session_scope() as session:

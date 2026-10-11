@@ -13,7 +13,9 @@ from sqlmodel import Session, col, select
 from mia.core.models import Client, Location, Visit
 
 COLUMNS = [
+    "client_id",
     "client",
+    "location_id",
     "location",
     "completed_visits",
     "planned_minutes",
@@ -26,6 +28,8 @@ COLUMNS = [
 class BillingRow:
     client: str
     location: str
+    client_id: str = field(compare=False, default="")
+    location_id: str = field(compare=False, default="")
     completed_visits: int = 0
     planned_minutes: int = 0
     actual_minutes: int = 0
@@ -37,8 +41,9 @@ def _minutes(start: dt.datetime, end: dt.datetime) -> int:
 
 
 def summary(session: Session, branch_id: str, year: int, month: int) -> list[BillingRow]:
-    """One row per client and site with completed visits in the month, sorted by client and
-    site. Actual minutes come from check-in to check-out, planned minutes otherwise."""
+    """One row per client and site (by id, since names repeat and change) with the completed
+    visits of the month, sorted by the names. Actual minutes come from check-in to check-out,
+    planned minutes otherwise."""
     first = dt.date(year, month, 1)
     last = (first.replace(day=28) + dt.timedelta(days=4)).replace(day=1) - dt.timedelta(days=1)
     rows: dict[tuple[str, str], BillingRow] = {}
@@ -53,12 +58,20 @@ def summary(session: Session, branch_id: str, year: int, month: int) -> list[Bil
     for v in visits:
         loc = session.get(Location, v.location_id)
         client = session.get(Client, loc.client_id) if loc else None
-        key = (client.name if client else "?", loc.name if loc else "?")
-        row = rows.setdefault(key, BillingRow(client=key[0], location=key[1]))
-        planned = _minutes(v.planned_start, v.planned_end)
-        actual = (
-            _minutes(v.actual_start, v.actual_end) if v.actual_start and v.actual_end else planned
+        key = (client.id if client else "?", loc.id if loc else "?")
+        row = rows.setdefault(
+            key,
+            BillingRow(
+                client=client.name if client else "?",
+                location=loc.name if loc else "?",
+                client_id=key[0],
+                location_id=key[1],
+            ),
         )
+        planned = _minutes(v.planned_start, v.planned_end)
+        actual = planned
+        if v.actual_start and v.actual_end:
+            actual = _minutes(v.actual_start, v.actual_end)
         row.completed_visits += 1
         row.planned_minutes += planned
         row.actual_minutes += actual
@@ -73,7 +86,9 @@ def write_csv(rows: list[BillingRow], out: TextIO) -> None:
     for r in rows:
         writer.writerow(
             [
+                r.client_id,
                 r.client,
+                r.location_id,
                 r.location,
                 r.completed_visits,
                 r.planned_minutes,
