@@ -86,6 +86,16 @@ SUBJECT_LIMITS: dict[str, Limit] = {
 EVENT_NAME = {"password": "login", "client_secret": "client", "link_code": "link"}
 
 
+RANK = {"owner": 4, "admin": 3, "supervisor": 2, "accountant": 2, "staff": 1, "viewer": 1}
+
+
+def outranks(target_roles: list[str], actor_roles: list[str]) -> bool:
+    """True when the target holds a role above every role of the actor: an admin must not
+    reset the owner, a supervisor must not end the owner's sessions."""
+    highest = max((RANK.get(r, 0) for r in actor_roles), default=0)
+    return any(RANK.get(r, 0) > highest for r in target_roles)
+
+
 def auth_actor(branch_id: str = "") -> Actor:
     """The system principal that records failures before anyone is known."""
     return Actor(principal=Principal(type="system", id="auth"), branch_id=branch_id)
@@ -439,6 +449,8 @@ def enrol_totp(
 
 
 def _totp_match(cred: AuthCredential, code: str, now: dt.datetime) -> int | None:
+    if not code.isdigit():  # compare_digest refuses non-ASCII text; a wrong code, not an error
+        return None
     seed = keys.totp_seed(cred.id, cred.data["nonce"])
     step = keys.totp_step(now)
     for candidate in (step - 1, step, step + 1):
@@ -708,6 +720,7 @@ def refresh_session(session: Session, token: str, now: dt.datetime) -> Tokens:
     """Rotate the tokens of a session. A refresh token presented twice revokes the session
     (`auth.refresh_reused`); an idle or absolute expiry revokes it too."""
     digest = keys.token_hash(token)
+    events.write_lock(session)  # the lookup must see a rotation another request just made
     row = session.exec(select(AuthSession).where(AuthSession.refresh_hash == digest)).first()
     if row is None:
         reused = session.exec(

@@ -294,3 +294,18 @@ def test_mfa_guesses_are_capped_per_person_across_ips(
     token = fresh.post("/auth/login", json={"email": EMAIL, "password": PW}).json()["mfa_token"]
     res = fresh.post("/auth/mfa", json={"mfa_token": token, "code": _totp_now(session, owner)})
     assert res.status_code == 401  # 20 failures in an hour: the person's MFA is paused
+
+
+def test_non_ascii_code_is_refused_not_a_crash(
+    client: TestClient, session: Session, owner: Person, login
+) -> None:  # type: ignore[no-untyped-def]
+    login(client, owner)
+    client.post("/auth/mfa/enrol")
+    assert client.post("/auth/mfa/confirm", json={"code": "12345ä"}).status_code == 401
+    _enrol(client, session, owner)
+    client.headers.pop("Authorization")
+    token = client.post("/auth/login", json={"email": EMAIL, "password": PW}).json()["mfa_token"]
+    res = client.post("/auth/mfa", json={"mfa_token": token, "code": "12345ä"})
+    assert res.status_code == 401
+    session.expire_all()
+    assert session.exec(select(Event).where(Event.action == "auth.mfa_failed")).first()

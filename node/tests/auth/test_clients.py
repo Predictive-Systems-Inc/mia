@@ -112,3 +112,29 @@ def test_client_lockout(client: TestClient, session: Session, people: dict[str, 
         client.post("/auth/token", data=GRANT, headers=_basic(row.client_id, "bad"))
     res = client.post("/auth/token", data=GRANT, headers=_basic(row.client_id, secret))
     assert res.status_code == 401
+
+
+def test_token_endpoint_hashes_off_the_event_loop(
+    client: TestClient, session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rule 12: scrypt and SQLite work of /auth/token run in a worker thread."""
+    import asyncio
+
+    from mia.api import auth as auth_api
+
+    calls: list[str] = []
+    real = asyncio.to_thread
+
+    async def spy(fn, *args, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(fn.__name__)
+        return await real(fn, *args, **kwargs)
+
+    monkeypatch.setattr(auth_api.asyncio, "to_thread", spy)
+    helena = Actor.person(people["Helena"])
+    row, secret = auth.create_client(session, helena, "x", ["dispatcher"], utcnow())
+    session.commit()
+    assert (
+        client.post("/auth/token", data=GRANT, headers=_basic(row.client_id, secret)).status_code
+        == 200
+    )
+    assert calls == ["_token_sync"]

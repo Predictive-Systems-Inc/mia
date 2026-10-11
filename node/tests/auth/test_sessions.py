@@ -275,3 +275,59 @@ def test_refused_decision_over_http_keeps_its_event(
     with session_scope() as s:
         refused = s.exec(select(Event).where(Event.action == "approval.refused")).all()
         assert len(refused) == 1 and refused[0].approval_id == row.id
+
+
+def test_refresh_rotation_is_single_use_under_a_race(
+    engine: object, session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two requests present the same refresh token at once: the one that takes the write lock
+    second must see the rotation, lose, and revoke the session as a reuse."""
+    import threading
+
+    from mia.core import events
+
+    now = utcnow()
+    t = auth.issue_session(
+        session, people["Helena"], method="password_totp", aal="aal2", ip=IP, now=now
+    )
+    session.commit()
+    assert t.refresh
+    real_lock = events.write_lock
+    a_locked, b_waiting = threading.Event(), threading.Event()
+    outcome: dict[str, object] = {}
+
+    def lock(s: Session) -> None:
+        if threading.current_thread().name == "A":
+            real_lock(s)
+            a_locked.set()
+            b_waiting.wait(2)  # B is now blocked on the lock (or about to be)
+        else:
+            b_waiting.set()
+            real_lock(s)  # blocks until A commits
+
+    monkeypatch.setattr(events, "write_lock", lock)
+
+    def run(name: str) -> None:
+        with Session(engine) as s:  # type: ignore[arg-type]
+            try:
+                auth.refresh_session(s, t.refresh or "", now)
+                s.commit()
+                outcome[name] = "ok"
+            except auth.AuthError:
+                s.commit()
+                outcome[name] = "refused"
+
+    a, b = (
+        threading.Thread(target=run, args=("A",), name="A"),
+        threading.Thread(target=run, args=("B",), name="B"),
+    )
+    a.start()
+    a_locked.wait(2)
+    b.start()
+    a.join(5)
+    b.join(5)
+    assert outcome == {"A": "ok", "B": "refused"}
+    session.expire_all()
+    row = session.get(auth.AuthSession, t.row.id)
+    assert row is not None and row.status == "revoked"
+    assert session.exec(select(Event).where(Event.action == "auth.refresh_reused")).first()

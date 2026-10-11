@@ -93,3 +93,32 @@ def test_other_branch_is_invisible(
     assert client.get(f"/auth/devices?person_id={stranger.id}").status_code == 404
     assert client.delete(f"/auth/devices/{device.id}").status_code == 404
     assert client.post(f"/auth/people/{stranger.id}/reset").status_code == 404
+
+
+def test_nobody_resets_or_revokes_someone_who_outranks_them(
+    client: TestClient, session: Session, people: dict[str, Person], login
+) -> None:  # type: ignore[no-untyped-def]
+    """An admin must not take over the owner's account through a reset; a supervisor must not
+    end the owner's sessions through a device revocation."""
+    helena = people["Helena"]
+    device, _ = auth.bind_device(session, Actor.person(helena), helena, "mobile", "p", utcnow())
+    session.commit()
+    admin = store_admin(session, people)
+    login(client, admin, stepped_up=True)
+    assert client.post(f"/auth/people/{helena.id}/reset").status_code == 403
+    sup = TestClient(app)
+    login(sup, people["Sanna"])
+    assert sup.get(f"/auth/devices?person_id={helena.id}").status_code == 403
+    assert sup.delete(f"/auth/devices/{device.id}").status_code == 403
+    owner = TestClient(app)
+    login(owner, helena, stepped_up=True)
+    assert owner.post(f"/auth/people/{admin.id}/reset").status_code == 200
+
+
+def store_admin(session: Session, people: dict[str, Person]) -> Person:
+    from mia.core import people as people_service
+
+    helena = people["Helena"]
+    return people_service.add_person(
+        session, Actor.person(helena), branch_id=helena.branch_id, name="Aki Admin", roles=["admin"]
+    )

@@ -5,6 +5,7 @@ Web clients (header `X-Mia-Client: web`) get HttpOnly cookies and no tokens in t
 everything else gets bearer tokens. Every failure is 401 `invalid credentials`.
 """
 
+import asyncio
 import base64
 import html
 from urllib.parse import parse_qs
@@ -466,12 +467,17 @@ def _client_error(code: str, status: int) -> JSONResponse:
 @router.post("/token")
 async def token(request: Request, session: DbSession) -> JSONResponse:
     """Client credentials grant: HTTP Basic or form credentials, a one-hour opaque bearer
-    token, no refresh. Errors follow RFC 6749 section 5.2."""
+    token, no refresh. Errors follow RFC 6749 section 5.2. The scrypt check and the writes run
+    in a worker thread (rule 12)."""
     form = _form(await request.body())
+    basic = request.headers.get("authorization", "")
+    return await asyncio.to_thread(_token_sync, session, form, basic, client_ip(request))
+
+
+def _token_sync(session: Session, form: dict[str, str], basic: str, ip: str) -> JSONResponse:
     if form.get("grant_type") != "client_credentials":
         return _client_error("unsupported_grant_type", 400)
     client_id, client_secret = form.get("client_id"), form.get("client_secret")
-    basic = request.headers.get("authorization", "")
     if basic.lower().startswith("basic "):
         try:
             client_id, client_secret = base64.b64decode(basic[6:]).decode().split(":", 1)
@@ -479,7 +485,7 @@ async def token(request: Request, session: DbSession) -> JSONResponse:
             return _client_error("invalid_client", 401)
     if not client_id or not client_secret:
         return _client_error("invalid_client", 401)
-    now, ip = utcnow(), client_ip(request)
+    now = utcnow()
     try:
         client = auth.check_client(session, client_id, client_secret, ip, now)
     except auth.AuthError:
@@ -508,6 +514,13 @@ def _require(
         get_rbac().require(ctx.actor, resource, action, session=session)
     except PermissionDenied as exc:
         raise HTTPException(403, "not allowed") from exc
+
+
+def _not_outranked(ctx: AuthContext, target: Person) -> None:
+    """Acting on someone else's credentials needs a role at least as high as theirs."""
+    person = _person(ctx)
+    if target.id != person.id and auth.outranks(target.roles, person.roles):
+        raise HTTPException(403, "not allowed")
 
 
 @router.get("/sessions")
@@ -554,6 +567,7 @@ def devices(
     if target is None or target.branch_id != ctx.actor.branch_id:
         raise HTTPException(404, "person not found")
     _require(session, ctx, "core.auth_devices", "read", owner)
+    _not_outranked(ctx, target)
     rows = session.exec(
         select(AuthDevice)
         .where(AuthDevice.person_id == owner)
@@ -580,6 +594,9 @@ def revoke_device(session: DbSession, ctx: PersonAuth, device_id: str) -> dict[s
     if row is None or row.status != "active" or row.branch_id != ctx.actor.branch_id:
         raise HTTPException(404, "device not found")
     _require(session, ctx, "core.auth_devices", "write", row.person_id)
+    target = session.get(Person, row.person_id)
+    if target is not None:
+        _not_outranked(ctx, target)
     auth.revoke_device(session, ctx.actor, row, utcnow())
     return {"ok": True}
 
@@ -594,6 +611,7 @@ def reset_person(session: DbSession, ctx: PersonAuth, person_id: str) -> dict[st
     if target is None or target.branch_id != ctx.actor.branch_id:
         raise HTTPException(404, "person not found")
     _require(session, ctx, "core.auth_credentials", "write", None)
+    _not_outranked(ctx, target)
     fresh = ctx.stepped_up_at is not None and utcnow() - ctx.stepped_up_at <= auth.STEP_UP_TTL
     if ctx.aal != "aal2" or not fresh:  # a reset takes over an account: PIN first
         raise HTTPException(403, "step_up_required")
