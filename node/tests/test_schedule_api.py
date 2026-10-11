@@ -168,3 +168,17 @@ def test_check_in_for_someone_else_records_both_people(
     session.expire_all()
     ev = session.exec(select(Event).where(Event.action == "visit.checked_in")).one()
     assert (ev.actor_id, ev.on_behalf_of) == (people["Sanna"].id, people["Juha"].id)
+
+
+def test_people_list_for_the_office_and_the_board_markup(
+    client: TestClient, session: Session, branch: Branch, people: dict[str, Person], login
+) -> None:  # type: ignore[no-untyped-def]
+    login(client, people["Sanna"])
+    rows = client.get("/schedule/people").json()
+    assert {r["name"] for r in rows} >= {"Juha Laine", "Mikael Nieminen"}
+    assert all({"id", "name", "roles", "skills"} <= set(r) for r in rows)
+    staff = TestClient(app)
+    login(staff, people["Juha"])
+    assert staff.get("/schedule/people").status_code == 403
+    page = client.get("/").text
+    assert 'id="board"' in page and 'id="summary"' in page and "/schedule/people" in page

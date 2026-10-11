@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from mia.api.deps import AuthContext, DbSession, PersonAuth
 from mia.core import scheduling
@@ -46,6 +46,14 @@ class VisitCard(BaseModel):
     address: str
     assignees: list[Assignee]
     status: str
+
+
+class PersonCard(BaseModel):
+    id: str
+    name: str
+    roles: list[str]
+    skills: list[str]
+    language: str
 
 
 class AssignOut(BaseModel):
@@ -135,6 +143,28 @@ def schedule(
     require_visit(session, ctx, "read", person_id)
     rows = scheduling.week(session, branch.id, start, person_id=person_id, location_id=location_id)
     return [visit_card(session, v, branch.timezone) for v in rows]
+
+
+@router.get("/schedule/people", response_model=list[PersonCard])
+def people(session: DbSession, ctx: PersonAuth) -> list[PersonCard]:
+    """The branch's active people for the board's assignment controls (office roles: staff
+    read only their own person, so they get 403)."""
+    try:
+        get_rbac().require(
+            ctx.actor, Resource(kind="data", name="core.person"), "read", session=session
+        )
+    except PermissionDenied as exc:
+        raise HTTPException(403, "not allowed") from exc
+    rows = session.exec(
+        select(Person)
+        .where(Person.branch_id == ctx.actor.branch_id)
+        .where(Person.status == "active")
+        .order_by(col(Person.name))
+    ).all()
+    return [
+        PersonCard(id=p.id, name=p.name, roles=p.roles, skills=p.skills, language=p.language)
+        for p in rows
+    ]
 
 
 @router.post("/visits/{visit_id}/assign", response_model=AssignOut)
