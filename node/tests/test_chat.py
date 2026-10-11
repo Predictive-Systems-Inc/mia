@@ -33,6 +33,7 @@ def test_health_and_page(client: TestClient) -> None:
     assert body["status"] == "ok" and body["events_chain"] is True and body["model"] == "test"
     page = client.get("/").text
     assert "<title>Mia chat" in page and 'id="login"' in page and "auth/me" in page
+    assert "/schedule" in page
     assert body["auth_mode"] == "dev" and len(client.get("/persons").json()) == 7
 
 
