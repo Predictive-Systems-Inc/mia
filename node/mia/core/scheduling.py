@@ -401,3 +401,92 @@ def on_override_approved(session: Session, approval: Approval, decider: Actor) -
 
 
 approvals.register_handler(OVERRIDE_TYPE, on_override_approved)
+
+
+# ---- check-in and check-out ------------------------------------------------------------
+
+
+def check_in(
+    session: Session, actor: Actor, visit: Visit, person: Person, now: dt.datetime
+) -> Visit:
+    """Mark the visit in progress for an assigned person, from 2 hours before the planned
+    start until 4 hours after the planned end."""
+    if person.id not in visit.assigned_person_ids:
+        raise ScheduleError("person is not assigned to this visit")
+    if visit.status != "planned":
+        raise ScheduleError(f"visit is {visit.status}")
+    if now < visit.planned_start - CHECK_IN_EARLY:
+        raise ScheduleError("too early to check in")
+    if now > visit.planned_end + CHECK_IN_LATE:
+        raise ScheduleError("too late to check in")
+    return store.update(
+        session,
+        visit,
+        {"actual_start": now, "status": "in_progress"},
+        actor,
+        action="visit.checked_in",
+    )
+
+
+def check_out(
+    session: Session, actor: Actor, visit: Visit, person: Person, now: dt.datetime
+) -> Visit:
+    """Complete a visit in progress for an assigned person."""
+    if person.id not in visit.assigned_person_ids:
+        raise ScheduleError("person is not assigned to this visit")
+    if visit.status != "in_progress":
+        raise ScheduleError(f"visit is {visit.status}")
+    return store.update(
+        session,
+        visit,
+        {"actual_end": now, "status": "completed"},
+        actor,
+        action="visit.checked_out",
+    )
+
+
+# ---- reading ------------------------------------------------------------------------------
+
+
+def week(
+    session: Session,
+    branch_id: str,
+    start: dt.date,
+    *,
+    person_id: str | None = None,
+    location_id: str | None = None,
+) -> list[Visit]:
+    """Seven days of visits from `start`, by planned start; optionally one person's or one
+    site's."""
+    stmt = (
+        select(Visit)
+        .where(Visit.branch_id == branch_id)
+        .where(col(Visit.date) >= start)
+        .where(col(Visit.date) <= start + dt.timedelta(days=6))
+        .order_by(col(Visit.planned_start))
+    )
+    if location_id is not None:
+        stmt = stmt.where(Visit.location_id == location_id)
+    rows = list(session.exec(stmt).all())
+    if person_id is not None:
+        rows = [v for v in rows if person_id in v.assigned_person_ids]
+    return rows
+
+
+def inbox(session: Session, actor: Actor) -> list[Approval]:
+    """Pending and escalated approvals the actor may decide (approver roles, or the escalation
+    roles once escalated), oldest first. Roles inherit through policy.csv (owner > admin > ...)."""
+    from mia.core.rbac import get_rbac
+
+    enforcer = get_rbac().enforcer
+    mine = set(actor.principal.roles)
+    for role in list(mine):
+        mine.update(enforcer.get_implicit_roles_for_user(role, "*"))
+    out = []
+    for approval in approvals.pending(session, actor.branch_id):
+        roles = set(approval.approver_roles)
+        if approval.status == "escalated":
+            roles |= set(approval.escalate_to)
+        if roles & mine:
+            out.append(approval)
+    return out

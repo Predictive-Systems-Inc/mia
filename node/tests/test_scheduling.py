@@ -257,3 +257,70 @@ def test_unassign_empties_to_unfilled(
     assert visit.assigned_person_ids == [] and visit.status == "unfilled"
     with pytest.raises(scheduling.ScheduleError, match="not assigned"):
         scheduling.unassign(session, sanna, visit, people["Aino"])
+
+
+def test_check_in_window(session: Session, branch: Branch, people: dict[str, Person]) -> None:
+    juha = people["Juha"]
+    visit = _visit(session, branch, "Kamppi shop clean", offset=10)
+    scheduling.assign(session, Actor.person(people["Sanna"]), visit, juha)
+    me = Actor.person(juha)
+    early = visit.planned_start - dt.timedelta(hours=2, minutes=1)
+    with pytest.raises(scheduling.ScheduleError, match="too early"):
+        scheduling.check_in(session, me, visit, juha, early)
+    with pytest.raises(scheduling.ScheduleError, match="not assigned"):
+        scheduling.check_in(session, me, visit, people["Aino"], visit.planned_start)
+    late = visit.planned_end + dt.timedelta(hours=4, minutes=1)
+    with pytest.raises(scheduling.ScheduleError, match="too late"):
+        scheduling.check_in(session, me, visit, juha, late)
+    at = visit.planned_start - dt.timedelta(minutes=5)
+    scheduling.check_in(session, me, visit, juha, at)
+    assert visit.status == "in_progress" and visit.actual_start == at
+    with pytest.raises(scheduling.ScheduleError, match="in_progress"):
+        scheduling.check_in(session, me, visit, juha, at)
+    with pytest.raises(scheduling.ScheduleError, match="not assigned"):
+        scheduling.check_out(session, me, visit, people["Aino"], at)
+    done = at + dt.timedelta(minutes=50)
+    scheduling.check_out(session, me, visit, juha, done)
+    assert visit.status == "completed" and visit.actual_end == done
+    actions = {e.action for e in session.exec(select(Event))}
+    assert {"visit.checked_in", "visit.checked_out"} <= actions
+
+
+def test_check_out_needs_in_progress(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    juha = people["Juha"]
+    visit = _visit(session, branch, "Kamppi shop clean", offset=10)
+    scheduling.assign(session, Actor.person(people["Sanna"]), visit, juha)
+    with pytest.raises(scheduling.ScheduleError, match="planned"):
+        scheduling.check_out(session, Actor.person(juha), visit, juha, visit.planned_end)
+
+
+def test_week_filters(session: Session, branch: Branch, people: dict[str, Person]) -> None:
+    start = TODAY
+    everyone = scheduling.week(session, branch.id, start)
+    assert everyone and all(start <= v.date <= start + dt.timedelta(days=6) for v in everyone)
+    assert everyone == sorted(everyone, key=lambda v: v.planned_start)
+    juha = scheduling.week(session, branch.id, start, person_id=people["Juha"].id)
+    assert juha and all(people["Juha"].id in v.assigned_person_ids for v in juha)
+    loc = everyone[0].location_id
+    here = scheduling.week(session, branch.id, start, location_id=loc)
+    assert here and all(v.location_id == loc for v in here)
+
+
+def test_inbox_filters_by_role_and_escalation(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    from mia.core import approvals
+
+    sanna, helena = Actor.person(people["Sanna"]), Actor.person(people["Helena"])
+    juha = Actor.person(people["Juha"])
+    money = approvals.request(
+        session, "payout", ("visit", "V"), "money", sanna, ["admin", "owner"], risk="money"
+    )
+    ops = approvals.request(session, "swap", ("visit", "V"), "swap", juha, ["supervisor"])
+    assert [a.id for a in scheduling.inbox(session, sanna)] == [ops.id]
+    assert {a.id for a in scheduling.inbox(session, helena)} == {money.id, ops.id}
+    store.update(session, ops, {"status": "escalated", "escalate_to": ["owner"]}, sanna)
+    assert ops.id in {a.id for a in scheduling.inbox(session, helena)}
+    assert ops.id in {a.id for a in scheduling.inbox(session, sanna)}
