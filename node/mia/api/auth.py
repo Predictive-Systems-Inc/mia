@@ -15,6 +15,7 @@ from mia.api.deps import (
     AuthContext,
     CurrentAuth,
     DbSession,
+    PersonAuth,
     clear_cookies,
     client_ip,
     public_origin,
@@ -403,3 +404,44 @@ def link_login(request: Request, response: Response, session: DbSession, code: s
         session, person, method="wa_link", aal="aal1", ip=ip, now=now, device=device
     )
     return _tokens_response(request, response, tokens)
+
+
+# ---- PIN and step-up ---------------------------------------------------------------------
+
+
+class PinIn(BaseModel):
+    pin: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+def _may_set_pin(ctx: AuthContext) -> bool:
+    return ctx.aal == "aal2" or ctx.method == "phone_otp"
+
+
+@router.post("/pin")
+def set_pin(session: DbSession, ctx: PersonAuth, body: PinIn) -> dict[str, bool]:
+    """Set the 6-digit PIN from an aal2 session, or on a bound device right after a phone
+    code. Trivial PINs are refused (400)."""
+    if not _may_set_pin(ctx):
+        raise HTTPException(403, "an MFA login or a fresh phone code is needed to set the PIN")
+    try:
+        auth.set_pin(session, ctx.actor, _person(ctx), body.pin, utcnow())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True}
+
+
+@router.post("/stepup")
+def stepup(request: Request, session: DbSession, ctx: PersonAuth, body: PinIn) -> dict[str, bool]:
+    """Enter the PIN: the session counts as stepped up for five minutes."""
+    now = utcnow()
+    try:
+        ok = auth.check_pin(session, _person(ctx), body.pin, client_ip(request), now)
+    except auth.Locked:
+        raise HTTPException(401, "pin locked") from None
+    if not ok:
+        raise _invalid()
+    row = session.get(AuthSession, ctx.session_id) if ctx.session_id else None
+    if row is None:
+        raise HTTPException(403, "no session to step up")
+    auth.step_up(session, row, now)
+    return {"stepped_up": True}
