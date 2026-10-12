@@ -381,13 +381,7 @@ def test_train_refuses_base_model_for_the_embedding_kinds(
     )
 
 
-def test_dropped_test_records_are_left_out_of_validate_and_train(
-    skill: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A reviewer drops a test record in place; neither the quota check nor the evaluation
-    counts it (the same rule split applies to reviewed.jsonl)."""
-    from mia.learning.train import load_splits
-
+def _dropped_test_fixture(skill: Path) -> None:
     other = rec(9, "what a lovely day", intent="other")
     write_records(skill / "data" / "train.jsonl", [rec(0, "im sick today"), other])
     write_records(
@@ -400,6 +394,23 @@ def test_dropped_test_records_are_left_out_of_validate_and_train(
             rec(3, "x", status="dropped").model_copy(update={"split": "test"}),
         ],
     )
-    assert [r.id for r in load_splits(skill)[3]] == ["tr/2"]
+
+
+def test_dropped_test_records_are_left_out_of_validate(
+    skill: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A reviewer drops a test record in place; the quota check does not count it (the same
+    rule split applies to reviewed.jsonl)."""
+    _dropped_test_fixture(skill)
     assert main(["skills", "validate", "tr"]) == 0
     assert capsys.readouterr().out.splitlines()[-1].startswith("4 records,")
+
+
+@pytest.mark.learning
+def test_dropped_test_records_are_left_out_of_train(skill: Path) -> None:
+    """The evaluation never sees a test record the reviewer dropped (train.py imports torch,
+    so this half needs the learning group)."""
+    from mia.learning.train import load_splits
+
+    _dropped_test_fixture(skill)
+    assert [r.id for r in load_splits(skill)[3]] == ["tr/2"]
