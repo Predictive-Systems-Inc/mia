@@ -28,7 +28,7 @@ intents:
       - dispatcher.absence_scope (the answer to which visits, after the absence)
       - conversation.kb_sick_leave_rules (a question about the rules, not a report)
   - id: dispatcher.absence_scope
-    description: Answers Mia's question which visits a just-reported absence covers (whole day, morning only, afternoon only); a write because it changes the recorded absence.
+    description: Answers Mia's question which visits a just-reported absence covers (the whole day, only the morning, only one named visit, until Thursday); the context is Mia asking whether the absence covers the whole day or which visits, and the message is only the answer, not a new absence report; a write because it changes the recorded absence.
     counterparts: [cleaner]
     risk: write
     label_en: Which visits
@@ -56,7 +56,7 @@ intents:
       - dispatcher.assign (naming the person is the assignment, not the search)
       - dispatcher.who_is_working (asking who is on today, not who could cover)
   - id: dispatcher.assign
-    description: Instructs Mia to assign a named person to cover a visit; a write because the visit changes once the person accepts.
+    description: Instructs Mia to assign a person, always named by first name, to a visit named by site or time (put Sanna on the Kamppi visit tomorrow); without a name it is find_cover, not this; a write because the visit changes once the person accepts.
     counterparts: [supervisor]
     risk: write
     label_en: Assign cover
