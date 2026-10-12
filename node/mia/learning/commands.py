@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import datetime as dt
 import json
+import re
 from importlib import import_module
 from pathlib import Path
 from typing import Any
@@ -235,6 +236,16 @@ def _filter_cells(role: RoleSpec, cells: list[Cell], only: str) -> list[Cell] | 
     ]
 
 
+def _next_index(data: Path, tag: str) -> int:
+    """One past the highest id index of this teacher in any data file (0 when none)."""
+    pattern = re.compile(rf'/{re.escape(tag)}/(\d+)"')
+    top = -1
+    for path in sorted(data.glob("*.jsonl")) if data.is_dir() else []:
+        for found in pattern.findall(path.read_text(encoding="utf-8")):
+            top = max(top, int(found))
+    return top + 1
+
+
 def _output_path(folder: Path, split_name: str) -> Path:
     """The canonical file, or a timestamped sibling when it exists (reviewed data is kept)."""
     data = folder / "data"
@@ -255,8 +266,12 @@ def _run_teacher(
 ) -> list[Record] | None:
     """Runs the teacher; local routes need no egress context, others log through egress."""
 
+    start = _next_index(skill_dir(role.id) / "data", model.replace("/", "-"))
+
     def run() -> list[Record]:
-        return asyncio.run(generate(role, cells, model, prompt, split=split_name, drops=drops))
+        return asyncio.run(
+            generate(role, cells, model, prompt, split=split_name, drops=drops, start=start)
+        )
 
     if model.startswith("local/"):
         return run()
@@ -348,7 +363,10 @@ def generate_cmd(args: argparse.Namespace) -> int:
     path = _output_path(skill_dir(args.role), args.split)
     write_records(path, records)
     dropped = ", ".join(f"{n} {why}" for why, n in sorted(drops.items())) or "none"
-    print(f"{len(records)} records in {len(cells)} cells written to {path}; dropped: {dropped}")
+    print(
+        f"{len(records)} records in {len(cells)} cells written to {path}; "
+        f"dropped or repaired: {dropped}"
+    )
     return 0
 
 

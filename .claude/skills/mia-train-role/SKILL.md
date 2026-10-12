@@ -61,8 +61,10 @@ follow-up intents. The generator prompt is prompts/generator.md (the command rea
 - Output: train goes to data/generated.jsonl, test to data/test.jsonl. If that file already
   exists the command writes data/generated-<split>-<UTC timestamp>.jsonl instead and prints the
   path, so existing (reviewed) data is never overwritten. Read each printed path.
-- Ids are `<intent>/<lang>/<model>/<index>`. Rerunning the same teacher model produces the same
-  ids again, so when merging dedupe by id (see the tie-break in step 5).
+- Ids are `<intent>/<lang>/<model>/<index>`; the index continues after the highest one that
+  teacher already has in any data file, so a top-up never repeats an id. A message whose slot
+  name the intent does not declare keeps its text and loses that slot (counted as repaired).
+  When merging dedupe by id (see the tie-break in step 5).
 - The intent evaluation set in another language: `uv run mia skills translate --lang fi
   --model local/<model>` (or `fil`, or a gateway route through egress) appends translations of
   the English records of tests/evals/intents.jsonl with the same intent, slots and split, ids
