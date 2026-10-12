@@ -62,7 +62,10 @@ def assign_train_dev(role: RoleSpec, records: list[Record], seed: int = 0) -> li
         rng.shuffle(clusters)
         dev_normal = 0
         for cluster in clusters:
-            normal_count = sum(1 for r in cluster if r.kind == "normal")
+            # a label's own examples count toward its dev quota: kind normal, and kind other
+            # for the `other` label; negatives, injection and safety records follow their
+            # cluster without counting
+            normal_count = sum(1 for r in cluster if r.kind in ("normal", "other"))
             target = "dev" if dev_normal < need else "train"
             if target == "dev":
                 dev_normal += normal_count

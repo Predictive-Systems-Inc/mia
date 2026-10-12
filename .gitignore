@@ -2,6 +2,7 @@
 .env
 data/
 !node/tests/fixtures/**/data/
+!node/mia/agents/*/skill/data/
 *.db
 *.db-wal
 *.db-shm

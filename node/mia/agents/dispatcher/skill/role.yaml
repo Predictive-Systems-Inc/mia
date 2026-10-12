@@ -56,7 +56,7 @@ intents:
       - dispatcher.assign (naming the person is the assignment, not the search)
       - dispatcher.who_is_working (asking who is on today, not who could cover)
   - id: dispatcher.assign
-    description: Instructs Mia to assign a person, always named by first name, to a visit named by site or time (put Sanna on the Kamppi visit tomorrow); without a name it is find_cover, not this; a write because the visit changes once the person accepts.
+    description: Instructs Mia to assign a person, always named by first name, to a visit named by site, client or time, with varied names and sites; without a name it is find_cover, not this; a write because the visit changes once the person accepts.
     counterparts: [supervisor]
     risk: write
     label_en: Assign cover

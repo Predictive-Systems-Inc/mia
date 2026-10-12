@@ -187,3 +187,16 @@ def test_shared_labels_split_with_the_light_quota() -> None:
     out = assign_train_dev(ROLE, recs + shared, seed=1)
     for intent in ("conversation.greeting", "other"):
         assert sum(r.intent == intent and r.split == "dev" for r in out) == ROLE.targets.dev
+
+
+def test_other_records_carry_kind_other_and_still_fill_only_the_dev_quota() -> None:
+    """The generator writes `other` records with kind "other"; they are that label's normal
+    examples, so dev takes its quota of them and the rest train (not all of them in dev)."""
+    recs = [rec(i, t) for i, t in enumerate(TEXTS)]
+    others = [
+        rec(200 + i, f"weather chat {i}", kind="other").model_copy(update={"intent": "other"})
+        for i in range(6)
+    ]
+    out = assign_train_dev(ROLE, recs + others, seed=1)
+    assert sum(r.intent == "other" and r.split == "dev" for r in out) == ROLE.targets.dev
+    assert sum(r.intent == "other" and r.split == "train" for r in out) == 4
