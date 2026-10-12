@@ -89,7 +89,7 @@ skills validate dispatcher`.
 | --- | --- | --- | --- | --- |
 | report_absence | en | 164 (100) | 15 | **29** (30) |
 | report_absence | fi | 102 (100) | 15 | **24** (30) |
-| absence_scope | en | 131 (60) | 15 | 31 (30) |
+| absence_scope | en | 131 (60) | 15 | **28** (30) |
 | absence_scope | fi | 81 (60) | 15 | **25** (30) |
 | my_visits | en | 41 (60, above the minimum) | 10 | 23 (20) |
 | my_visits | fi | 37 (60, above the minimum) | 10 | 20 (20) |
@@ -116,14 +116,19 @@ skills validate dispatcher`.
 | other | en | 88 (60) | 10 | 24 (20) |
 | other | fi | **22** (60) | 10 | **12** (20) |
 
-Usable records by teacher: gemma4-mia 2460; qwen3.5-mia 1171; total 3631.
+Usable records by teacher: gemma4-mia 2457; qwen3.5-mia 1171; total 3628.
 
 Bold is below the target in guidelines.md (write and high-volume intents 100 train, 15 dev,
-30 test; follow-ups 60/15/30; reads 60 target with 30 minimum, 10, 20). `validate` reports 28
-shortfalls: the Finnish train cells of six write intents, `other` in Finnish, and the test set
-in 19 cells. The top-ups filled absence_scope and assign in both languages; the test top-up
-for check_in fi lost 17 of 34 records as copies of train records (the same-family test set,
-below).
+30 test; follow-ups 60/15/30; reads 60 target with 30 minimum, 10, 20). `validate` reports 25
+errors, all quota shortfalls: 8 train cells (the Finnish cells of check_in, check_out,
+cannot_access_site, site_problem, checklist and send_photos below 100, cover_reply/fi below 60,
+visit_details/fi below 30) and 17 test cells (16 under 30 or 20, visit_details/en at 11). The
+validator does not count `other`, whose Finnish train cell (22) is also short. Its leakage check
+found three more test records whose text is in train (absence_scope/en, "Whole day", "All day",
+"Just the morning shift"), after the reviewers had already dropped about 80 copies; they are
+dropped in place, and the validator reports no leakage now. The top-ups filled absence_scope and
+assign in both languages; the test top-up for check_in fi lost 17 of 34 records as copies of
+train records (the same-family test set, below).
 
 ### The teachers
 
@@ -186,8 +191,8 @@ By intent, from the per-cell notes (details in reports/review-cells-2026-10-12.m
 `uv run mia skills overlap dispatcher` (reports/overlap-202610120456.md, multilingual-e5-small,
 on the reviewed data): no merge, split or narrow candidates. Nearest dispatcher pairs: check_in
 and check_out (0.52), cannot_access_site and site_problem (0.45), cover_reply and report_absence
-(0.35); assign and find_cover fell from 0.39 before the top-up to 0.26 after it (the named
-person separates them). These are the pairs the reviewers flagged and the pairs Gemma confuses in
+(0.35); assign and find_cover stood at 0.39 in the first run (before the top-up; that report
+was not kept) and at 0.26 after it (the named person separates them). These are the pairs the reviewers flagged and the pairs Gemma confuses in
 docs/research/local-models-2026-10-12.md. Its suspect-label list (129 records whose neighbours
 carry another label) was read next to the reviewers' decisions; its 20 cross-intent paraphrases
 are short Finnish messages that compress to the same embedding with different meanings ("Oon
@@ -244,7 +249,8 @@ Three decisions for the developer at Gate 1:
 
 Provisional: it comes from Gemma 4 12B, the same family as a train teacher, because this Mac has
 no third family that answers structured chat. After the review it is also short (table above)
-and it had copied train records, which were dropped. It can read the first training report; it
+and it had copied train records (the reviewers dropped about 80, the validator's leakage
+check three more, all dropped in place). It can read the first training report; it
 tunes nothing. A test set from a cloud teacher of another family (synthetic data only, D18) is
 the recommended Gate 1 spend, together with the Finnish train cells of the write intents.
 
