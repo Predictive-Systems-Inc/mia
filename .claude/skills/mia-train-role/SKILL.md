@@ -61,8 +61,10 @@ follow-up intents. The generator prompt is prompts/generator.md (the command rea
 - Output: train goes to data/generated.jsonl, test to data/test.jsonl. If that file already
   exists the command writes data/generated-<split>-<UTC timestamp>.jsonl instead and prints the
   path, so existing (reviewed) data is never overwritten. Read each printed path.
-- Ids are `<intent>/<lang>/<model>/<index>`. Rerunning the same teacher model produces the same
-  ids again, so when merging dedupe by id (see the tie-break in step 5).
+- Ids are `<intent>/<lang>/<model>/<index>`; the index continues after the highest one that
+  teacher already has in any data file, so a top-up never repeats an id. A message whose slot
+  name the intent does not declare keeps its text and loses that slot (counted as repaired).
+  When merging dedupe by id (see the tie-break in step 5).
 - The intent evaluation set in another language: `uv run mia skills translate --lang fi
   --model local/<model>` (or `fil`, or a gateway route through egress) appends translations of
   the English records of tests/evals/intents.jsonl with the same intent, slots and split, ids
@@ -113,7 +115,9 @@ and review.md. Stop until they approve. Gate 1 is a human decision; do not train
 
 ## 7. Train
 `uv run mia skills train <role>` (needs `uv sync --group learning`; `--with-real` adds approved
-real records; on a cloud GPU only with synthetic or scrubbed data, D27). For the first role, run
+real records; on a cloud GPU only with synthetic or scrubbed data, D27). The conversation
+intents and `other` get their rows from tests/evals/intents.jsonl (other roles' rows as `other`,
+the role's own rows left out), so the role's data only needs its own intents. For the first role, run
 the base-model bake-off with `--base-model` for jhu-clsp/mmBERT-small, jhu-clsp/mmBERT-base,
 FacebookAI/xlm-roberta-base and intfloat/multilingual-e5-base, and compare per-language
 accuracy, ECE and CPU latency.

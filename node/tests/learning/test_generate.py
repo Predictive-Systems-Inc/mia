@@ -115,19 +115,18 @@ def test_generate_ids_source_and_drops() -> None:
     drops: dict[str, int] = {}
     recs = _run(cells, _reply(items), drops)
     assert [r.id for r in recs] == [
-        "r.a/en/local-m/0000",
-        "r.a/en/local-m/0001",
-        "r.a/fi/local-m/0002",
-        "r.a/fi/local-m/0003",
+        f"r.a/{lang}/local-m/{n:04d}" for n, lang in enumerate(["en"] * 3 + ["fi"] * 3)
     ]
     assert {r.source for r in recs} == {"teacher:local/m"}
-    assert [r.text for r in recs] == ["sick today", "flu", "sick today", "flu"]
-    assert recs[0].slots == {"when": "today"} and recs[1].context == "c"
-    assert drops == {"empty text": 2, "unknown slot": 2}
-    assert (recs[2].lang, recs[2].counterpart, recs[2].style) == ("fi", "owner", "terse")
+    assert [r.text for r in recs] == ["sick today", "hurt", "flu"] * 2
+    assert recs[0].slots == {"when": "today"} and recs[2].context == "c"
+    # an undeclared slot is removed, the message itself is kept (the text is still labelled)
+    assert recs[1].slots == {}
+    assert drops == {"empty text": 2, "unknown slot removed": 2}
+    assert (recs[3].lang, recs[3].counterpart, recs[3].style) == ("fi", "owner", "terse")
 
 
-def test_other_cell_gets_other_kind_and_label_and_rejects_slots() -> None:
+def test_other_cell_gets_other_kind_and_label_and_strips_slots() -> None:
     cell = _cell("en", "cleaner", "informal", 2, intent="other", kind="other")
     items: list[dict[str, object]] = [
         {"text": "weather?", "context": "", "slots": {}},
@@ -135,8 +134,8 @@ def test_other_cell_gets_other_kind_and_label_and_rejects_slots() -> None:
     ]
     drops: dict[str, int] = {}
     recs = _run([cell], _reply(items), drops)
-    assert [(r.intent, r.kind) for r in recs] == [("other", "other")]
-    assert drops == {"unknown slot": 1}
+    assert [(r.intent, r.kind, r.slots) for r in recs] == [("other", "other", {})] * 2
+    assert drops == {"unknown slot removed": 1}
 
 
 def test_prompt_never_contains_harvested_candidates(
@@ -207,6 +206,45 @@ def skill(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return folder
 
 
+def test_ids_start_where_the_caller_says() -> None:
+    items: list[dict[str, object]] = [{"text": "a", "context": "", "slots": {}}]
+    with models.override_allow_model_requests(True):
+        recs = asyncio.run(
+            generate(
+                ROLE,
+                [_cell("en", "cleaner", "informal", 1)],
+                "local/m",
+                "Write.",
+                split="train",
+                transport=_reply(items),
+                start=1951,
+            )
+        )
+    assert [r.id for r in recs] == ["r.a/en/local-m/1951"]
+
+
+def test_command_numbers_a_top_up_after_the_ids_already_on_disk(
+    skill: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second run of one teacher (a top-up with --only) never repeats an id of the first."""
+    (skill / "data" / "generated.jsonl").write_text(
+        '{"id":"tr.a/en/local-m/0007"}\n{"id":"tr.a/en/local-other/0100"}\n', encoding="utf-8"
+    )
+    (skill / "data" / "test.jsonl").write_text('{"id":"tr.a/fi/local-m/0003"}\n', encoding="utf-8")
+    starts: list[object] = []
+
+    async def spy(
+        role: RoleSpec, cells: list[Cell], model: str, prompt: str, **kw: object
+    ) -> list[Record]:
+        starts.append(kw.get("start"))
+        return []
+
+    monkeypatch.setattr(commands, "generate", spy)
+    assert main(["skills", "generate", "tr", "--model", "local/m", "--only", "tr.a,fi"]) == 0
+    assert main(["skills", "generate", "tr", "--model", "local/new", "--only", "tr.a,fi"]) == 0
+    assert starts == [8, 0]
+
+
 def test_command_writes_generated_jsonl_and_reports(
     skill: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -214,7 +252,7 @@ def test_command_writes_generated_jsonl_and_reports(
     out = capsys.readouterr().out
     path = skill / "data" / "generated.jsonl"
     assert code == 0
-    assert out == f"1 records in 1 cells written to {path}; dropped: 1 empty text\n"
+    assert out == f"1 records in 1 cells written to {path}; dropped or repaired: 1 empty text\n"
     assert [r.intent for r in load_records(path)] == ["tr.a"]
     assert load_records(path)[0].lang == "fi"
 
@@ -283,3 +321,36 @@ def test_gateway_route_runs_in_an_egress_context_and_local_does_not(
     assert main(["skills", "generate", "tr", "--model", "gateway/x", "--only", "tr.a,fi"]) == 0
     assert main(["skills", "generate", "tr", "--model", "local/m", "--only", "tr.a,fi"]) == 0
     assert seen == {"gateway/x": "learning.generate/skill-generation/system", "local/m": None}
+
+
+def test_a_cell_whose_output_never_validates_is_skipped_not_fatal() -> None:
+    """The teacher's malformed answer costs that cell only; the run goes on (drops count it)."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls <= 3:  # the first cell: a broken answer, then two failed retries
+            message = {"role": "assistant", "content": "not a tool call", "tool_calls": []}
+        else:
+            args = json.dumps({"response": [{"text": "flu", "context": "", "slots": {}}]})
+            call = {
+                "id": "c",
+                "type": "function",
+                "function": {"name": "final_result", "arguments": args},
+            }
+            message = {"role": "assistant", "content": None, "tool_calls": [call]}
+        body = {
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "m",
+            "choices": [{"index": 0, "finish_reason": "stop", "message": message}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        return httpx.Response(200, json=body)
+
+    cells = [_cell("en", "cleaner", "informal", 4), _cell("fi", "owner", "terse", 2)]
+    drops: dict[str, int] = {}
+    records = _run(cells, httpx.MockTransport(handler), drops)
+    assert [r.lang for r in records] == ["fi"] and drops == {"model_error": 4}

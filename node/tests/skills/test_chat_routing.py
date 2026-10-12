@@ -179,7 +179,7 @@ def test_every_template_conversation_intent_has_text_in_both_languages() -> None
 
 def test_every_seed_intent_has_a_label_in_both_languages() -> None:
     role = load_role_plan("dispatcher")
-    assert role is not None and len(role.intents) == 6
+    assert role is not None and len(role.intents) == 13
     for spec in role.intents:
         assert STRINGS["en"][f"intent.{spec.id}"] == spec.label_en
         assert f"intent.{spec.id}" in STRINGS["fi"]

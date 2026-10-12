@@ -34,8 +34,9 @@ Build the Mia platform structure and one fully configured agent, the dispatcher,
 Built so far, ahead of the sprint order below: the initial build (docs/brief.md), core data and
 events, RBAC and approvals records, chat with blocks and AG-UI, the dispatcher with instructed
 cover and the confirmation flow (D1, D6 to D11), channel adapters with WhatsApp (D13), local
-and cloud model routes with the evaluation suite. Not built: real authentication (the actor
-still comes from the unverified X-Mia-Actor header), the office web app, Huey workers, Docker Compose and Litestream.
+and cloud model routes with the evaluation suite. Since then (2026-10-12): real authentication
+(D33, ADR 011), Docker Compose and Litestream in deploy/, the dev page with the board and the
+supervisor summary as the office view; the in-process ticker stands in for the Huey worker.
 
 Remaining work in this order, because each step unblocks the next:
 
@@ -54,7 +55,10 @@ Remaining work in this order, because each step unblocks the next:
    (`mia skills translate` builds it from the English records with a local model, Q25; the
    Finnish run and its measurement on Gemma 4 12B are in docs/research/, 2026-10-12), and a
    distilled intent classifier where Gemma is weak (the role skill models, built; the weak
-   intents come from the same measurement).
+   intents come from the same measurement). The dispatcher's data package is at Gate 1
+   (2026-10-12): 13 intents, two local teachers for train and a provisional local test set,
+   every record reviewed (node/mia/agents/dispatcher/skill/review.md); training waits for the
+   developer's Gate 1, promotion for Gate 2 (Q26).
    Cloud models are used only for development and as the distillation teacher, with synthetic
    or demo data.
 3. **Install and backup** (Sprint 0 items still open): Docker Compose, Litestream, health page,

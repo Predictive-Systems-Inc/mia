@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -379,3 +380,82 @@ def test_train_refuses_base_model_for_the_embedding_kinds(
     assert capsys.readouterr().out == (
         f"--base-model applies to the encoder kind; use --embedding-model for {kind}\n"
     )
+
+
+def _dropped_test_fixture(skill: Path) -> None:
+    other = rec(9, "what a lovely day", intent="other")
+    write_records(skill / "data" / "train.jsonl", [rec(0, "im sick today"), other])
+    write_records(
+        skill / "data" / "dev.jsonl", [rec(1, "cant come").model_copy(update={"split": "dev"})]
+    )
+    write_records(
+        skill / "data" / "test.jsonl",
+        [
+            rec(2, "fever, staying home", status="kept").model_copy(update={"split": "test"}),
+            rec(3, "x", status="dropped").model_copy(update={"split": "test"}),
+        ],
+    )
+
+
+def test_dropped_test_records_are_left_out_of_validate(
+    skill: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A reviewer drops a test record in place; the quota check does not count it (the same
+    rule split applies to reviewed.jsonl)."""
+    _dropped_test_fixture(skill)
+    assert main(["skills", "validate", "tr"]) == 0
+    assert capsys.readouterr().out.splitlines()[-1].startswith("4 records,")
+
+
+@pytest.mark.learning
+def test_dropped_test_records_are_left_out_of_train(skill: Path) -> None:
+    """The evaluation never sees a test record the reviewer dropped (train.py imports torch,
+    so this half needs the learning group)."""
+    from mia.learning.train import load_splits
+
+    _dropped_test_fixture(skill)
+    assert [r.id for r in load_splits(skill, shared=None)[3]] == ["tr/2"]
+
+
+@pytest.mark.learning
+def test_train_takes_the_shared_labels_rows_from_the_evaluation_set(skill: Path) -> None:
+    """Conversation rows and other roles' rows (as `other`) join the splits; the role's own
+    rows of the evaluation set stay out."""
+    from mia.learning.train import load_splits
+
+    _dropped_test_fixture(skill)
+    shared = skill / "intents.jsonl"
+    rows = [
+        {
+            "id": "conversation.greeting/en/001",
+            "intent": "conversation.greeting",
+            "lang": "en",
+            "text": "hi there",
+            "role": "cleaner",
+            "style": "informal",
+            "split": "test",
+        },
+        {
+            "id": "sales.new_lead/en/001",
+            "intent": "sales.new_lead",
+            "lang": "en",
+            "text": "a new client called",
+            "role": "office",
+            "style": "formal",
+            "split": "train",
+        },
+        {
+            "id": "tr.a/en/001",
+            "intent": "tr.a",
+            "lang": "en",
+            "text": "mine",
+            "role": "cleaner",
+            "style": "informal",
+            "split": "train",
+        },
+    ]
+    shared.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    _, train, dev, test = load_splits(skill, shared=shared)
+    assert [r.id for r in test] == ["tr/2", "conversation.greeting/en/001"]
+    assert ("other", "other") in {(r.intent, r.kind) for r in train + dev}
+    assert "tr.a/en/001" not in {r.id for r in train + dev + test}

@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from mia.agents.base import build_model
 from mia.agents.dispatcher.rules import rules_model
@@ -84,12 +85,16 @@ def plan_cells(role: RoleSpec, split: Split, per_cell: int | None) -> list[Cell]
 
 
 def _keep(msg: GeneratedMessage, allowed_slots: set[str]) -> str | None:
-    """None when the message is usable, else the reason it is dropped."""
+    """None when the message is usable, else the reason it is dropped. A slot name the intent
+    does not declare is removed from the message (counted by the caller), never a reason to
+    drop it: the text is still a labelled message, only its slot annotation was wrong."""
     if not msg.text.strip():
         return "empty text"
-    if not set(msg.slots) <= allowed_slots:
-        return "unknown slot"
     return None
+
+
+def _strip_slots(msg: GeneratedMessage, allowed_slots: set[str]) -> dict[str, str]:
+    return {k: v for k, v in msg.slots.items() if k in allowed_slots}
 
 
 def _ask(role: RoleSpec, cell: Cell) -> str:
@@ -111,23 +116,33 @@ async def generate(
     split: Split,
     transport: Any = None,  # test seam: an httpx transport below egress (rule 6: no httpx here)
     drops: dict[str, int] | None = None,
+    start: int = 0,
 ) -> list[Record]:
     """One teacher call per cell; returns records, never more than `count` per cell.
 
-    Messages with empty text or slot names outside the intent's slots are dropped and counted
-    by reason in `drops` (when given). Ids are f"{intent}/{lang}/{tag}/{n:04d}".
+    Messages with empty text are dropped and slot names outside the intent's slots removed,
+    both counted by reason in `drops` (when given). Ids are f"{intent}/{lang}/{tag}/{n:04d}"
+    with n counted from `start` (the command passes the next free index of that teacher, so a
+    top-up never repeats an id of an earlier run).
     """
     agent: Agent[None, list[GeneratedMessage]] = Agent(
         build_model(model_name, rules_model(), transport=transport),
         output_type=list[GeneratedMessage],
         instructions=prompt,
+        retries=2,
     )
     tag = model_name.replace("/", "-")
     out: list[Record] = []
     for cell in cells:
         spec = role.intent(cell.intent)
         allowed = set(spec.slots) if spec else set()
-        result = await agent.run(_ask(role, cell))
+        try:
+            result = await agent.run(_ask(role, cell))
+        except UnexpectedModelBehavior as exc:  # one cell's bad output never ends the run
+            log.warning("cell %s/%s skipped: %s", cell.intent, cell.lang, exc)
+            if drops is not None:
+                drops["model_error"] = drops.get("model_error", 0) + cell.count
+            continue
         for msg in result.output[: cell.count]:
             reason = _keep(msg, allowed)
             if reason:
@@ -135,9 +150,14 @@ async def generate(
                 if drops is not None:
                     drops[reason] = drops.get(reason, 0) + 1
                 continue
+            slots = _strip_slots(msg, allowed)
+            if len(slots) < len(msg.slots):
+                log.warning("unknown slot removed in %s/%s: %s", cell.intent, cell.lang, msg.slots)
+                if drops is not None:
+                    drops["unknown slot removed"] = drops.get("unknown slot removed", 0) + 1
             out.append(
                 Record(
-                    id=f"{cell.intent}/{cell.lang}/{tag}/{len(out):04d}",
+                    id=f"{cell.intent}/{cell.lang}/{tag}/{start + len(out):04d}",
                     role=role.id,
                     intent=cell.intent,
                     lang=cell.lang,
@@ -145,7 +165,7 @@ async def generate(
                     context=msg.context,
                     counterpart=cell.counterpart,
                     style=cell.style,
-                    slots=msg.slots,
+                    slots=slots,
                     kind=cell.kind,
                     split=split,
                     source=f"teacher:{model_name}",

@@ -21,6 +21,7 @@ from mia.learning.package import (
     write_card,
 )
 from mia.learning.schema import Record, RoleSpec, load_records, load_role
+from mia.learning.shared_rows import EVAL_DATASET, shared_records
 from mia.settings import get_settings
 
 LANGS = ["en", "fi", "fil", "mixed"]
@@ -252,12 +253,20 @@ def _report(card: ModelCard, curve: dict[int, float]) -> str:
 
 
 def load_splits(
-    folder: Path, with_real: bool = False
+    folder: Path, with_real: bool = False, shared: Path | None = EVAL_DATASET
 ) -> tuple[RoleSpec, list[Record], list[Record], list[Record]]:
-    """role.yaml and the three splits; with_real adds kept or fixed local candidates (D18)."""
+    """role.yaml and the three splits; with_real adds kept or fixed local candidates (D18);
+    `shared` (the intent evaluation set) adds the conversation and `other` rows the label
+    space needs and the role's data lacks, None adds nothing."""
     role = load_role(folder / "role.yaml")
     data = folder / "data"
-    train, dev, test = (load_records(data / f"{s}.jsonl") for s in ("train", "dev", "test"))
+    train, dev, test = (
+        [r for r in load_records(data / f"{s}.jsonl") if r.review.status != "dropped"]
+        for s in ("train", "dev", "test")
+    )
+    if shared is not None and shared.exists():
+        for r in shared_records(role.id, shared):
+            {"train": train, "dev": dev, "test": test}[r.split].append(r)
     if with_real:
         real = get_settings().MIA_LEARNING_DIR / role.id / "candidates.jsonl"
         approved = (
