@@ -41,6 +41,7 @@ from mia.learning.schema import (
     load_role,
     write_records,
 )
+from mia.learning.shared_rows import EVAL_DATASET
 from mia.learning.splits import assign_train_dev
 from mia.settings import get_settings
 
@@ -50,9 +51,6 @@ GENERATOR_PROMPT = (
     Path(__file__).resolve().parents[3] / ".claude/skills/mia-train-role/prompts/generator.md"
 )
 LEARNING_HINT = "install the learning group: uv sync --group learning"
-
-
-EVAL_DATASET = Path(__file__).resolve().parents[2] / "tests" / "evals" / "intents.jsonl"
 
 
 def skill_dir(role: str) -> Path:

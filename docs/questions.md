@@ -250,3 +250,7 @@ Format for each entry:
   set is a spend decision taken at Gate 1; D18 allows it (no real data), the egress layer
   already carries gateway routes.
 - Blocking: yes for training and promotion; no for the package itself.
+- Addendum (same day): the train step takes the conversation and `other` rows from the intent
+  evaluation set (tests/evals/intents.jsonl; the dispatcher's own rows stay out, it is the
+  benchmark), so the shared labels no longer train on nothing. Assumed acceptable: the set is
+  the project's own labelled data, synthetic, already in git.

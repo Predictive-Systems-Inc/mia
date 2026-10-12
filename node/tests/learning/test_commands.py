@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -413,4 +414,48 @@ def test_dropped_test_records_are_left_out_of_train(skill: Path) -> None:
     from mia.learning.train import load_splits
 
     _dropped_test_fixture(skill)
-    assert [r.id for r in load_splits(skill)[3]] == ["tr/2"]
+    assert [r.id for r in load_splits(skill, shared=None)[3]] == ["tr/2"]
+
+
+@pytest.mark.learning
+def test_train_takes_the_shared_labels_rows_from_the_evaluation_set(skill: Path) -> None:
+    """Conversation rows and other roles' rows (as `other`) join the splits; the role's own
+    rows of the evaluation set stay out."""
+    from mia.learning.train import load_splits
+
+    _dropped_test_fixture(skill)
+    shared = skill / "intents.jsonl"
+    rows = [
+        {
+            "id": "conversation.greeting/en/001",
+            "intent": "conversation.greeting",
+            "lang": "en",
+            "text": "hi there",
+            "role": "cleaner",
+            "style": "informal",
+            "split": "test",
+        },
+        {
+            "id": "sales.new_lead/en/001",
+            "intent": "sales.new_lead",
+            "lang": "en",
+            "text": "a new client called",
+            "role": "office",
+            "style": "formal",
+            "split": "train",
+        },
+        {
+            "id": "tr.a/en/001",
+            "intent": "tr.a",
+            "lang": "en",
+            "text": "mine",
+            "role": "cleaner",
+            "style": "informal",
+            "split": "train",
+        },
+    ]
+    shared.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    _, train, dev, test = load_splits(skill, shared=shared)
+    assert [r.id for r in test] == ["tr/2", "conversation.greeting/en/001"]
+    assert ("other", "other") in {(r.intent, r.kind) for r in train + dev}
+    assert "tr.a/en/001" not in {r.id for r in train + dev + test}

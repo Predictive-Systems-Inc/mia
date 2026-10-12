@@ -234,14 +234,15 @@ Three decisions for the developer at Gate 1:
   check_in against check_out, cannot_access_site against site_problem, absence_scope against
   report_absence), which is the boundary the reviewers policed. Acceptable for Gate 1; a
   `negative` cell kind in the generator is the next tool change before Gate 2.
-- `injection attempts under 1%` and `no safety records`: the role's own data has none, and
-  `train` reads only the role's train, dev and test files while its label space holds the 87
-  conversation intents (prompt_injection, emergency, hazard_report and the rest) from the
-  catalogue. As the tool stands those labels would train on no rows at all. The rows exist:
-  tests/evals/intents.jsonl holds 3664 English and 1051 Finnish labelled utterances across every
-  intent, including the conversation ones. Before training, `train` should take the
-  conversation rows from there (or the catalogue's examples); a tool change for the train step,
-  blocking Gate 2, not the review of this data.
+- `injection attempts under 1%` and `no safety records`: the role's own data has none, while
+  the label space holds the 87 conversation intents (prompt_injection, emergency, hazard_report
+  and the rest). `train` now takes those rows from the intent evaluation set
+  (tests/evals/intents.jsonl, 3664 English and 1051 Finnish utterances): conversation rows keep
+  their label, other roles' rows become `other`, the dispatcher's own rows stay out because
+  that set is the benchmark (mia/learning/shared_rows.py). The validator reads only the role's
+  files, so its warning stands; the Finnish conversation rows exist only in the set's test
+  split, so Finnish safety and injection recall is measured, not trained, until the set has
+  Finnish train rows (`mia skills translate --split train`).
 - The `may not be <lang>` warnings: none after review (the reviewers dropped the wrong-language
   text).
 

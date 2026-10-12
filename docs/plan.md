@@ -34,8 +34,9 @@ Build the Mia platform structure and one fully configured agent, the dispatcher,
 Built so far, ahead of the sprint order below: the initial build (docs/brief.md), core data and
 events, RBAC and approvals records, chat with blocks and AG-UI, the dispatcher with instructed
 cover and the confirmation flow (D1, D6 to D11), channel adapters with WhatsApp (D13), local
-and cloud model routes with the evaluation suite. Not built: real authentication (the actor
-still comes from the unverified X-Mia-Actor header), the office web app, Huey workers, Docker Compose and Litestream.
+and cloud model routes with the evaluation suite. Since then (2026-10-12): real authentication
+(D33, ADR 011), Docker Compose and Litestream in deploy/, the dev page with the board and the
+supervisor summary as the office view; the in-process ticker stands in for the Huey worker.
 
 Remaining work in this order, because each step unblocks the next:
 

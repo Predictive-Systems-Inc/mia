@@ -115,7 +115,9 @@ and review.md. Stop until they approve. Gate 1 is a human decision; do not train
 
 ## 7. Train
 `uv run mia skills train <role>` (needs `uv sync --group learning`; `--with-real` adds approved
-real records; on a cloud GPU only with synthetic or scrubbed data, D27). For the first role, run
+real records; on a cloud GPU only with synthetic or scrubbed data, D27). The conversation
+intents and `other` get their rows from tests/evals/intents.jsonl (other roles' rows as `other`,
+the role's own rows left out), so the role's data only needs its own intents. For the first role, run
 the base-model bake-off with `--base-model` for jhu-clsp/mmBERT-small, jhu-clsp/mmBERT-base,
 FacebookAI/xlm-roberta-base and intfloat/multilingual-e5-base, and compare per-language
 accuracy, ECE and CPU latency.
