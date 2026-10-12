@@ -89,8 +89,8 @@ def validate(args: argparse.Namespace) -> int:
         path = folder / "data" / f"{s}.jsonl"
         if not path.exists():
             continue
-        try:
-            records += load_records(path)
+        try:  # a record the reviewer dropped in place (test.jsonl) is not counted
+            records += [r for r in load_records(path) if r.review.status != "dropped"]
         except ValueError as exc:  # pydantic ValidationError and JSON errors are ValueErrors
             print(f"error: {path}: {exc}")
             return 1

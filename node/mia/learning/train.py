@@ -257,7 +257,10 @@ def load_splits(
     """role.yaml and the three splits; with_real adds kept or fixed local candidates (D18)."""
     role = load_role(folder / "role.yaml")
     data = folder / "data"
-    train, dev, test = (load_records(data / f"{s}.jsonl") for s in ("train", "dev", "test"))
+    train, dev, test = (
+        [r for r in load_records(data / f"{s}.jsonl") if r.review.status != "dropped"]
+        for s in ("train", "dev", "test")
+    )
     if with_real:
         real = get_settings().MIA_LEARNING_DIR / role.id / "candidates.jsonl"
         approved = (
