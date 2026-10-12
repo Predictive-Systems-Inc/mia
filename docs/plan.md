@@ -54,7 +54,10 @@ Remaining work in this order, because each step unblocks the next:
    (`mia skills translate` builds it from the English records with a local model, Q25; the
    Finnish run and its measurement on Gemma 4 12B are in docs/research/, 2026-10-12), and a
    distilled intent classifier where Gemma is weak (the role skill models, built; the weak
-   intents come from the same measurement).
+   intents come from the same measurement). The dispatcher's data package is at Gate 1
+   (2026-10-12): 13 intents, two local teachers for train and a provisional local test set,
+   every record reviewed (node/mia/agents/dispatcher/skill/review.md); training waits for the
+   developer's Gate 1, promotion for Gate 2 (Q26).
    Cloud models are used only for development and as the distillation teacher, with synthetic
    or demo data.
 3. **Install and backup** (Sprint 0 items still open): Docker Compose, Litestream, health page,
