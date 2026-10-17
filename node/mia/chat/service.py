@@ -9,19 +9,23 @@ import asyncio
 import datetime as dt
 import html
 import time
+from dataclasses import replace
 from functools import cache
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from pydantic import ValidationError
 from pydantic_ai import Agent, AgentRunResult
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 from pydantic_ai.usage import UsageLimits
 from sqlmodel import Session, col, select
 
-from mia.agents.base import AgentDeps
+from mia.agents.base import AgentDeps, call_tool
+from mia.agents.dispatcher import actions, decider, replies
 from mia.agents.dispatcher.agent import MANIFEST
-from mia.agents.dispatcher.classifier import detect_language
+from mia.agents.dispatcher.classifier import classify, detect_language
+from mia.agents.dispatcher.tools import BINDINGS
 from mia.chat.blocks import (
     AgentReply,
     ApprovalCardBlock,
@@ -34,6 +38,7 @@ from mia.chat.blocks import (
 from mia.chat.channels import notify
 from mia.core import events, store
 from mia.core.egress import EgressContext, egress_context
+from mia.core.ids import new_id
 from mia.core.models import Actor, Approval, Branch, Event, Message, Organisation, Person, Thread
 from mia.i18n import t
 from mia.i18n.strings import STRINGS
@@ -430,6 +435,127 @@ def _reply_clarify(
     return reply
 
 
+_BINDINGS = {b.tool_id: b for b in BINDINGS}
+
+
+def _jev_tapped(session: Session, thread: Thread, text: str) -> decider.Decision | None:
+    """The stored decision behind a tapped Jev clarify button, if text is one. A button only
+    counts while its question is the thread's last assistant message."""
+    asked = session.exec(
+        select(Event)
+        .where(Event.action == "decision.clarify_asked")
+        .where(Event.entity_id == thread.id)
+        .order_by(col(Event.id).desc())
+    ).first()
+    last = _latest_message(session, thread, "assistant")
+    if asked is None or last is None or (asked.after or {}).get("message_id") != last.id:
+        return None
+    chosen = ((asked.after or {}).get("options") or {}).get(text.strip())
+    return decider.Decision.model_validate(chosen) if chosen else None
+
+
+def _jev_query(
+    session: Session, deps: AgentDeps, thread: Thread, text: str
+) -> tuple[decider.Decision | None, actions.Query | None]:
+    """A decision already made (a tapped button, an injection), or the query for Jev."""
+    tapped = _jev_tapped(session, thread, text)
+    if tapped is not None:
+        return tapped, None
+    if classify(html.unescape(text), deps.today, deps.lang).injection:
+        injection = decider.Decision(action="reply_only", args={"kind": "injection"}, confidence=1)
+        return injection, None
+    last = _latest_message(session, thread, "assistant")
+    return None, actions.build_query(deps, text, last.text if last else "")
+
+
+def _jev_clarify(
+    session: Session, deps: AgentDeps, thread: Thread, decision: decider.Decision
+) -> ChatReply:
+    """Ask "Did you mean" with one button per offerable alternative (its inputs kept, so a tap
+    runs it without a new request) plus Something else; with none, ask to rephrase."""
+    options: dict[str, dict[str, Any]] = {}
+    for alt in decision.alternatives:
+        spec = actions.ACTIONS.get(alt.action)
+        if spec is None or spec.label_key is None or alt.missing is not None:
+            continue
+        label = t(spec.label_key, deps.lang)
+        if label not in options:
+            chosen = decider.Decision(action=alt.action, args=alt.args, confidence=alt.probability)
+            options[label] = chosen.model_dump(mode="json")
+    if not options:
+        return _reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
+    other = t("clarify.something_else", deps.lang)
+    reply = _store_reply(
+        session,
+        deps,
+        thread,
+        [
+            TextBlock(text=t("clarify.question", deps.lang)),
+            QuickRepliesBlock(options=[*options, other]),
+        ],
+    )
+    options[other] = decider.Decision(action="clarify", confidence=1.0).model_dump(mode="json")
+    events.emit(
+        session,
+        "decision.clarify_asked",
+        ("thread", thread.id),
+        None,
+        {"options": options, "message_id": reply.message_id},
+        deps.actor,
+    )
+    return reply
+
+
+def _jev_act(
+    session: Session, deps: AgentDeps, thread: Thread, decision: decider.Decision
+) -> ChatReply:
+    """Log the decision, then run its tool through the guard and word the reply."""
+    events.emit(
+        session,
+        "decision.made",
+        ("thread", thread.id),
+        None,
+        decision.model_dump(mode="json"),
+        deps.actor,
+    )
+    if decision.action == "clarify":
+        return _jev_clarify(session, deps, thread, decision)
+    tool = actions.ACTIONS[decision.action].tool
+    if tool is None:  # reply_only
+        kind = str(decision.args.get("kind", "other"))
+        return _store_reply(session, deps, thread, replies.conversation_reply(kind, deps.lang))
+    binding = _BINDINGS[f"{MANIFEST.id}.{tool}"]
+    try:
+        args = binding.input_type.model_validate(decision.args)
+    except ValidationError:
+        return _reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
+    out = call_tool(deps, binding, args, new_id())
+    return _store_reply(session, deps, thread, replies.tool_reply(tool, out, deps.lang))
+
+
+def _jev_failed(session: Session, deps: AgentDeps, thread: Thread, error: str) -> ChatReply:
+    events.emit(
+        session, "decision.failed", ("thread", thread.id), None, {"error": error}, deps.actor
+    )
+    return _reply_text(session, deps, thread, t("reply.unavailable", deps.lang))
+
+
+async def _jev_turn(
+    session: Session, deps: AgentDeps, thread: Thread, text: str, ctx: EgressContext
+) -> ChatReply:
+    """Jev picks the action, code runs it and words the reply (spec 2026-10-17-jev-decider).
+    DB work runs in worker threads; the Jev request runs with no write lock held."""
+    decision, query = await asyncio.to_thread(_jev_query, session, deps, thread, text)
+    if decision is None and query is not None:
+        try:
+            with egress_context(replace(ctx, provider="typesafe", purpose="dispatcher.decide")):
+                decision = await decider.decide(query)
+        except decider.DecideError as exc:
+            return await asyncio.to_thread(_jev_failed, session, deps, thread, str(exc))
+    assert decision is not None
+    return await asyncio.to_thread(_jev_act, session, deps, thread, decision)
+
+
 def _reply_emergency(session: Session, deps: AgentDeps, thread: Thread, text: str) -> ChatReply:
     """Safety script first; every supervisor of the branch is told, urgently."""
     org = session.get(Organisation, deps.organisation_id)
@@ -452,17 +578,19 @@ def _template_text(decided: Route, lang: str) -> str | None:
 
 
 def resolve_turn(
-    session: Session, deps: AgentDeps, thread: Thread, text: str
+    session: Session, deps: AgentDeps, thread: Thread, text: str, jev: bool = False
 ) -> tuple[ChatReply | None, str]:
     """Classify and route one turn (shared by run_turn and the AG-UI run).
 
     Returns (reply, ""), already stored (the caller commits), for the emergency script, a
     template reply or a "Did you mean" question; or (None, text_for_the_agent) with deps.intent
-    set when the agent should answer.
+    set when the agent should answer. With jev=True only the emergency script is decided here.
     """
     decided, agent_text = _classify_turn(session, deps, thread, text)
     if decided.kind == "emergency":
         return _reply_emergency(session, deps, thread, text), ""
+    if jev:  # the safety step stays; Jev decides everything else (run_turn)
+        return None, text
     if decided.kind == "clarify":
         return _reply_clarify(session, deps, thread, decided.options), ""
     template = _template_text(decided, deps.lang)
@@ -485,12 +613,16 @@ async def run_turn(
     the network; tool calls and egress commit their own writes. The caller commits the reply.
     Each turn is classified first and goes to the emergency script, a template reply, a Did you
     mean question or the agent. Database and classifier work run in worker threads (rule 12);
-    only the agent run stays on the loop.
+    only the agent run stays on the loop. With MIA_DECIDER=jev, Jev picks the action instead of
+    the agent; the AG-UI run (chat/runs.py) keeps the agent.
     """
     thread, past, deps, ctx = await asyncio.to_thread(_prepare, session, person, text, thread_id)
-    reply, agent_text = await asyncio.to_thread(resolve_turn, session, deps, thread, text)
+    jev = get_settings().MIA_DECIDER == "jev"
+    reply, agent_text = await asyncio.to_thread(resolve_turn, session, deps, thread, text, jev)
     if reply is not None:
         return reply
+    if jev:
+        return await _jev_turn(session, deps, thread, text, ctx)
     try:
         with egress_context(ctx):
             result = await agent.run(
