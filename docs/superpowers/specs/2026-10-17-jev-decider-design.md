@@ -78,7 +78,7 @@ message -> safety step (unchanged) -> decide() -> call_tool() -> reply() -> chan
 | `mia/i18n/__init__.py` | `t()` accepts a string or a list of variants; a list picks one with an optional `random.Random` (seeded in tests). Single strings work as before. |
 | `mia/i18n/strings.py` | The keys compose() and reply_only use get 3 variants each, fi and en (both paths gain the variety). Tests pin the first variant (conftest), so pinned texts stay stable. |
 | `mia/chat/service.py` | After the safety step, `MIA_DECIDER=jev` takes decide, call_tool, reply in `run_turn` (the /chat endpoint, channels, the CLI and the evals); otherwise the agent. The AG-UI web chat keeps the agent until the measurement says Jev mode stays. DB work in worker threads (rule 12). |
-| `mia/settings.py`, `.env.example` | `MIA_DECIDER`, `MIA_TYPESAFE_URL`, `MIA_TYPESAFE_KEY`, `MIA_JEV_MODEL` (pinned, for example `jev-1.12`, never `jev-latest`, so measurements compare). |
+| `mia/settings.py`, `.env.example` | `MIA_DECIDER`, `MIA_TYPESAFE_URL`, `MIA_TYPESAFE_KEY`, `MIA_JEV_MODEL` (pinned, for example `jev-1.13.0`, never `jev-latest`, so measurements compare). |
 
 No new dependency: the call is one httpx POST (no TypeSafe SDK or cooksafe). No schema change:
 decisions go to the events log.

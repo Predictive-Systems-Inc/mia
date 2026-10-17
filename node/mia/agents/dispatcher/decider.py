@@ -198,7 +198,7 @@ async def decide(q: Query) -> Decision:
                 await asyncio.sleep(BACKOFF * 2**attempt)
                 continue
             if response.status_code != 200:
-                raise DecideError(f"status {response.status_code}")
+                raise DecideError(f"status {response.status_code}: {response.text[:300]}")
             try:
                 return parse(response.json()["answers"], q)
             except (KeyError, ValueError) as exc:

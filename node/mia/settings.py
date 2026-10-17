@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     MIA_DECIDER: Literal["agent", "jev"] = "agent"
     MIA_TYPESAFE_URL: str = "https://api.typesafe.ai/v1/systemone"
     MIA_TYPESAFE_KEY: str = ""
-    MIA_JEV_MODEL: str = "jev-1.12"  # pinned, so measurements compare
+    MIA_JEV_MODEL: str = "jev-1.13.0"  # pinned, so measurements compare
     MIA_ORG: str = "demo"
     MIA_TICK_SECONDS: int = 30
     MIA_GEOCODER: str = "digitransit"

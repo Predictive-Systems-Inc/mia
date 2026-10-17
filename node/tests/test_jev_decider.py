@@ -41,7 +41,7 @@ def _query(**over: Any) -> actions.Query:
 
 
 def _body(q: actions.Query) -> dict[str, Any]:
-    return actions.build_request(q, "jev-1.12")
+    return actions.build_request(q, "jev-1.13.0")
 
 
 def test_confident_absence_becomes_record_absence() -> None:
