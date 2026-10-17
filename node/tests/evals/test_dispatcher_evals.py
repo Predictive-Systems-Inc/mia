@@ -37,6 +37,7 @@ RUNS = int(os.environ.get("MIA_EVAL_RUNS", "5"))
 # A real model is the point of MIA_EVAL_MODEL; conftest blocks model requests otherwise.
 if os.environ.get("MIA_EVAL_MODEL"):
     models.ALLOW_MODEL_REQUESTS = True
+# MIA_DECIDER=jev runs the suite through Jev (spec 2026-10-17-jev-decider); needs MIA_TYPESAFE_KEY.
 # MIA_EVAL_SUITE picks another suite in the agent folder (tests/scenarios_en.yaml: English only).
 SUITE = os.environ.get("MIA_EVAL_SUITE") or MANIFEST.tests["suite"]
 SCENARIOS: list[dict[str, Any]] = yaml.safe_load((AGENT_DIR / SUITE).read_text(encoding="utf-8"))
@@ -186,9 +187,10 @@ def test_dispatcher_pass_rate(template_db: Path, tmp_path: Path) -> None:
         f"{sid}: {sum(1 for f in runs if not f)}/{len(runs)} {next((f for f in runs if f), '')}"
         for sid, runs in results.items()
     ]
+    decider_name = os.environ.get("MIA_DECIDER", "agent")
     print(
         f"\ndispatcher evals: {passed}/{total} runs passed ({rate:.1%}), suite={SUITE},"
-        f" model={os.environ.get('MIA_EVAL_MODEL', 'test')}"
+        f" decider={decider_name}, model={os.environ.get('MIA_EVAL_MODEL', 'test')}"
     )
     by_lang: dict[str, list[int]] = {}
     for sid, runs in results.items():
