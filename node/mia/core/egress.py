@@ -157,7 +157,10 @@ def send(
 
 def _usage_counts(body: dict[str, Any]) -> tuple[int, int]:
     u = body.get("usage") or {}
-    return int(u.get("prompt_tokens", 0) or 0), int(u.get("completion_tokens", 0) or 0)
+    # OpenAI-style (gateway) or input/output (TypeSafe)
+    prompt = u.get("prompt_tokens", u.get("input_tokens", 0))
+    completion = u.get("completion_tokens", u.get("output_tokens", 0))
+    return int(prompt or 0), int(completion or 0)
 
 
 class EgressTransport(httpx.AsyncBaseTransport):
