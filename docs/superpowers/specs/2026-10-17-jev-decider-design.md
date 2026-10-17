@@ -29,7 +29,7 @@ Jev chooses exactly one of 12 actions per message.
 | `get_my_visits` | `start`, `end` (code parses dates, Jev picks), `person_name` (Jev picks from people) | my_visits |
 | `record_absence` | `date` (candidates), `reason` (sick, late, leaving_early, other), `partial_day` (morning, afternoon, none), `person_name` | report_absence, absence_scope |
 | `find_replacements` | `visit_id` (Jev picks from visits) or `location_name`, `date`, `time` | find_cover |
-| `assign_cover` | `visit_id` (thread state: the visit find_replacements showed), `candidate_id` (Jev picks from the candidates shown) | assign |
+| `assign_cover` | `visit_id` (thread state: the visit of the sender's latest find_replacements; none means clarify, never a guessed visit), `candidate_id` (Jev picks from the branch's people) | assign |
 | `respond_to_cover` | `accept` (yes or no) | cover_reply |
 | `check_in`, `check_out` | `location_name` (Jev picks from today's sites) | check_in, check_out |
 | `visit_details` | `location_name` | visit_details |
@@ -74,10 +74,10 @@ message -> safety step (unchanged) -> decide() -> call_tool() -> reply() -> chan
 | --- | --- |
 | `mia/agents/dispatcher/actions.py` (new) | The typed table of the 12 actions: Jev description, input questions, candidate source, required inputs, the confidence threshold. |
 | `mia/agents/dispatcher/decider.py` (new) | `decide(deps, message, last_mia_text) -> Decision(action, args, confidence, alternatives)`. Builds state and questions, calls Jev through egress, parses answers. Runs no tool, writes nothing but egress_log and the `decision.made` event. |
-| `mia/agents/dispatcher/replies.py` (new) | `reply(decision, tool_output, lang) -> Message`. Picks key and variant, fills it from the tool output, adds blocks. |
+| `mia/agents/dispatcher/replies.py` (new) | Tool results are worded by `rules.compose()` (the rules model already turns every tool result into fi and en blocks: cards, the scope question, quick replies), so both paths share one set of wordings; reply_only maps to the shared `conversation.*` strings. |
 | `mia/i18n/__init__.py` | `t()` accepts a string or a list of variants; a list picks one with an optional `random.Random` (seeded in tests). Single strings work as before. |
-| `mia/i18n/strings.py` | `reply.<action>.<outcome>` keys, 3 to 5 variants each, fi and en. |
-| `mia/chat/service.py` | After the safety step, `MIA_DECIDER=jev` takes decide, call_tool, reply; otherwise the agent. DB work in worker threads (rule 12). |
+| `mia/i18n/strings.py` | The keys compose() and reply_only use get 3 variants each, fi and en (both paths gain the variety). Tests pin the first variant (conftest), so pinned texts stay stable. |
+| `mia/chat/service.py` | After the safety step, `MIA_DECIDER=jev` takes decide, call_tool, reply in `run_turn` (the /chat endpoint, channels, the CLI and the evals); otherwise the agent. The AG-UI web chat keeps the agent until the measurement says Jev mode stays. DB work in worker threads (rule 12). |
 | `mia/settings.py`, `.env.example` | `MIA_DECIDER`, `MIA_TYPESAFE_URL`, `MIA_TYPESAFE_KEY`, `MIA_JEV_MODEL` (pinned, for example `jev-1.12`, never `jev-latest`, so measurements compare). |
 
 No new dependency: the call is one httpx POST (no TypeSafe SDK or cooksafe). No schema change:
