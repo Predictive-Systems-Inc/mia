@@ -60,8 +60,8 @@ Remaining work in this order, because each step unblocks the next:
    every record reviewed (node/mia/agents/dispatcher/skill/review.md); training waits for the
    developer's Gate 1, promotion for Gate 2 (Q26).
    A second decider, Jev (TypeSafe, `MIA_DECIDER=jev`, synthetic data only, Q27), picks the
-   action and code words the reply: 39/48 on the agentic suite (Gemma 37 and 38), 87.8%
-   (English) and 79.6% (Finnish) right picks on the built intents
+   action and code words the reply: 38/48 on the agentic suite (Gemma 37 and 38), 87.8%
+   (English) and 77.6% (Finnish) right picks on the built intents
    (docs/research/jev-2026-10-18.md); short follow-ups and other agents' messages are its gaps.
    Cloud models are used only for development and as the distillation teacher, with synthetic
    or demo data.
