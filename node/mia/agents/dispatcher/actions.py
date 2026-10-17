@@ -19,6 +19,7 @@ from mia.agents.dispatcher.classifier import EN_WEEKDAYS, FI_WEEKDAYS
 from mia.core.models import Event, Location, Person, Visit
 
 NOT_STATED = "not_stated"
+ANOTHER_DAY = "another_day"  # a day outside the listed dates: asked, never assumed
 # ponytail: one threshold for every action, set from the dev split (Task 7); per action if the
 # measurement shows writes need a higher bar than reads.
 THRESHOLD = 0.6
@@ -261,7 +262,11 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
         "date": _choice(
             "Which day does `message` refer to? For a short answer about which visits an"
             " absence covers, the day in `previous_mia_message`.",
-            {**q.dates, **none},
+            {
+                **q.dates,
+                ANOTHER_DAY: "A day that is not in this list: in the past, or further ahead",
+                **none,
+            },
         ),
         "period": _choice(
             "Which period of visits does the sender ask to see?",

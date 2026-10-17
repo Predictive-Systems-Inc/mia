@@ -91,6 +91,22 @@ def test_egress_none_gives_the_unavailable_reply(
     assert reply.text().startswith("Sorry")
 
 
+def test_an_answer_missing_a_question_gives_the_unavailable_reply(
+    session: Session,
+    people: dict[str, Person],
+    jev: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def partial(body: dict[str, Any]) -> dict[str, Any]:
+        answers = answers_for(body, "record_absence", reason="sick")
+        del answers["date"]
+        return answers
+
+    monkeypatch.setattr(decider, "_inner", lambda: fake_jev(partial, jev))
+    reply = _turn(session, people["Juha"], "I'm sick today")
+    assert _tools(session) == [] and reply.text().startswith("Sorry")
+
+
 def test_a_cleaner_cannot_run_a_supervisor_tool(
     session: Session,
     people: dict[str, Person],
@@ -141,6 +157,25 @@ def test_stale_clarify_label_goes_to_jev(
     second = _turn(session, people["Juha"], "hello", first.thread_id)
     _turn(session, people["Juha"], label, second.thread_id)
     assert _tools(session) == [] and len(jev) == 3  # the label after "hello" was a new message
+
+
+def test_a_clarify_button_from_another_day_goes_to_jev(
+    session: Session,
+    people: dict[str, Person],
+    jev: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stored decision holds that day's "today"; tapped on a later day it must not run."""
+    import datetime as dt
+
+    from mia.chat import service
+
+    probs = {"record_absence": 0.45, "get_my_visits": 0.40}
+    _answer(monkeypatch, jev, action="record_absence", confidence=0.45, probabilities=probs)
+    first = _turn(session, people["Juha"], "tomorrow")
+    monkeypatch.setattr(service, "_local_day", lambda ts, tz: dt.date(2000, 1, 1))
+    _turn(session, people["Juha"], _quick(first).options[0], first.thread_id)
+    assert _tools(session) == [] and len(jev) == 2
 
 
 def test_jev_assign_resolves_a_pseudonymised_name(

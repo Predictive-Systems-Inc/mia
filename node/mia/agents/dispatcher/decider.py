@@ -12,8 +12,15 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, Field
 
-from mia.agents.dispatcher.actions import ACTIONS, NOT_STATED, THRESHOLD, Query, build_request
-from mia.core.egress import EgressBlocked, EgressTransport
+from mia.agents.dispatcher.actions import (
+    ACTIONS,
+    ANOTHER_DAY,
+    NOT_STATED,
+    THRESHOLD,
+    Query,
+    build_request,
+)
+from mia.core.egress import EgressBlocked, EgressTransport, Pseudonymiser, current_context
 from mia.settings import get_settings
 
 RETRY_STATUS = {429, 529}
@@ -70,18 +77,25 @@ class _Reader:
         self.confidences: list[float] = []
 
     def pick(
-        self, slot: str, options: dict[str, str] | set[str], fallback: bool = False
+        self,
+        slot: str,
+        options: dict[str, str] | set[str],
+        fallback: bool = False,
+        count_unstated: bool = False,
     ) -> str | None:
         """The chosen option, or None when not stated. Only a stated value counts toward the
-        confidence (not stated means the tool's default applies). With fallback=True an
-        uncertain value is dropped instead, for slots that code can resolve another way."""
+        confidence (not stated means the tool's default applies), unless count_unstated: for
+        slots whose default is consequential (an absence's day and person). With fallback=True
+        an uncertain value is dropped instead, for slots that code can resolve another way."""
         answer = self.answers[slot]
         value = str(answer["choice"])
         if value != NOT_STATED and value not in options:
             raise DecideError(f"{slot}: {value!r} is not an option")
-        if value == NOT_STATED:
-            return None
         confidence = float(answer["confidence"])
+        if value == NOT_STATED:
+            if count_unstated:
+                self.confidences.append(confidence)
+            return None
         if fallback and confidence < THRESHOLD:
             return None
         self.confidences.append(confidence)
@@ -93,6 +107,18 @@ class _Reader:
         return p >= 0.5
 
 
+def _ambiguous(person: str | None, q: Query) -> bool:
+    """True when the picked person shares a first name with someone else in the branch and the
+    message names neither their surname nor their full name: the pseudonymiser gives a shared
+    first name one token, so Jev cannot see the ambiguity and code must."""
+    if person is None:
+        return False
+    first, *rest = q.people[person].split()
+    namesakes = [n for n in q.people.values() if n.split()[0].lower() == first.lower()]
+    message = q.message.lower()
+    return len(namesakes) > 1 and not any(part.lower() in message for part in rest)
+
+
 def _args(action: str, r: _Reader) -> tuple[dict[str, Any], str | None]:
     """The tool input for one action and the required slot that is missing, if any."""
     q = r.q
@@ -100,12 +126,19 @@ def _args(action: str, r: _Reader) -> tuple[dict[str, Any], str | None]:
         period = r.pick("period", {"today", "tomorrow", "this_week", "next_week"})
         start, end = _period(period, q.today)
         person = r.pick("person", q.people)
+        if _ambiguous(person, q):
+            return {}, "person"
         return {"start": start, "end": end, "person_name": q.people.get(person or "")}, None
     if action == "record_absence":
-        date = r.pick("date", q.dates) or q.today.isoformat()
+        day = r.pick("date", {*q.dates, ANOTHER_DAY}, count_unstated=True)
         reason = r.pick("reason", {"sick", "late", "leaving_early", "other"})
         part = r.pick("partial_day", {"morning", "afternoon", "whole_day"})
-        person = r.pick("person", q.people)
+        person = r.pick("person", q.people, count_unstated=True)
+        if day == ANOTHER_DAY:
+            return {}, "date"
+        if _ambiguous(person, q):
+            return {}, "person"
+        date = day or q.today.isoformat()
         return {
             "date": date,
             "reason": reason or "other",
@@ -116,12 +149,14 @@ def _args(action: str, r: _Reader) -> tuple[dict[str, Any], str | None]:
         visit = r.pick("visit", q.visits, fallback=True)  # else site and date, resolved by code
         if visit is not None:
             return {"visit_id": visit}, None
-        site, day = r.pick("site", q.sites), r.pick("date", q.dates)
-        if site is None:
+        site, day = r.pick("site", q.sites), r.pick("date", {*q.dates, ANOTHER_DAY})
+        if site is None or day == ANOTHER_DAY:
             return {}, "visit"
         return {"location_name": q.sites[site], "date": day}, None
     if action == "assign_cover":
         person = r.pick("person", q.people)
+        if _ambiguous(person, q):
+            return {}, "person"
         if q.last_cover_visit is None:  # never a guessed visit: the cover flow comes first
             return {}, "visit"
         if person is None:
@@ -169,11 +204,14 @@ def parse(answers: dict[str, Any], q: Query) -> Decision:
         for action, p in ranked:
             if action == "clarify" or action not in ACTIONS or p < 0.05:
                 continue
-            alt_args, alt_missing = _args(action, _Reader(answers, q))
+            alt_reader = _Reader(answers, q)
+            alt_args, alt_missing = _args(action, alt_reader)
+            if alt_missing is None and min(alt_reader.confidences, default=1.0) < THRESHOLD:
+                alt_missing = "uncertain"  # a button must not carry the input that was in doubt
             alternatives.append(
                 Alternative(action=action, args=alt_args, probability=p, missing=alt_missing)
             )
-    except (KeyError, TypeError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise DecideError(f"unexpected answer: {exc!r}") from exc
     if raw == "clarify" or missing is not None or confidence < THRESHOLD:
         return Decision(
@@ -189,14 +227,34 @@ def parse(answers: dict[str, Any], q: Query) -> Decision:
     )
 
 
+def _pseudonymised(body: dict[str, Any], pseudo: Pseudonymiser) -> dict[str, Any]:
+    """The request with names replaced in the values that can carry them (the state and the
+    option descriptions) and nowhere else: question keys, option ids and instructions leave as
+    they are. The shared pseudonymiser also takes words that start with a name (a "Per" takes
+    "person"), so it never sees the whole body."""
+    state = {k: pseudo.apply(v) if isinstance(v, str) else v for k, v in body["state"].items()}
+    questions = {
+        qid: {**q, "criteria": {key: pseudo.apply(text) for key, text in q["criteria"].items()}}
+        for qid, q in body["questions"].items()
+    }
+    return {**body, "state": state, "questions": questions}
+
+
 async def decide(q: Query) -> Decision:
     """One Jev request for the query. Raises DecideError when no usable answer came back."""
     settings = get_settings()
     if not settings.MIA_TYPESAFE_KEY:
         raise DecideError("MIA_TYPESAFE_KEY is not set")
-    body = build_request(q, settings.MIA_JEV_MODEL)
+    try:
+        ctx = current_context()
+    except EgressBlocked as exc:
+        raise DecideError(str(exc)) from exc
+    pseudo = await asyncio.to_thread(Pseudonymiser.for_branch, ctx.session, ctx.actor.branch_id)
+    body = _pseudonymised(build_request(q, settings.MIA_JEV_MODEL), pseudo)
     headers = {"Authorization": f"Bearer {settings.MIA_TYPESAFE_KEY}"}
-    async with httpx.AsyncClient(transport=EgressTransport(_inner()), timeout=TIMEOUT) as client:
+    # The body is pseudonymised above; the transport still logs, meters and enforces the level.
+    transport = EgressTransport(_inner(), pseudonymise=False)
+    async with httpx.AsyncClient(transport=transport, timeout=TIMEOUT) as client:
         for attempt in range(RETRIES + 1):
             try:
                 response = await client.post(settings.MIA_TYPESAFE_URL, json=body, headers=headers)
@@ -211,6 +269,6 @@ async def decide(q: Query) -> Decision:
                 raise DecideError(f"status {response.status_code}: {response.text[:300]}")
             try:
                 return parse(response.json()["answers"], q)
-            except (KeyError, ValueError) as exc:
+            except (KeyError, TypeError, ValueError, AttributeError) as exc:
                 raise DecideError(f"unexpected answer: {exc!r}") from exc
     raise DecideError("no answer")  # not reached: the loop returns or raises

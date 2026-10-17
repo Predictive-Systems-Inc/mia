@@ -84,6 +84,29 @@ def test_an_unstated_slot_does_not_lower_the_confidence() -> None:
     assert d.action == "record_absence" and d.args["partial_day"] is None
 
 
+def test_an_uncertain_unstated_date_still_asks_for_an_absence() -> None:
+    """For an absence, not stated means "today" and "the sender": an uncertain default writes
+    on the wrong day or for the wrong person, so it counts."""
+    q = _query(message="I'm sick")
+    a = answers_for(_body(q), "record_absence", reason="sick")
+    a["date"] = choice("not_stated", 0.4)
+    assert decider.parse(a, q).action == "clarify"
+
+
+def test_an_uncertain_unstated_person_still_asks_for_an_absence() -> None:
+    q = _query(message="Mikael is sick today", role="supervisor")
+    a = answers_for(_body(q), "record_absence", reason="sick", date=TODAY.isoformat())
+    a["person"] = choice("not_stated", 0.45)
+    assert decider.parse(a, q).action == "clarify"
+
+
+def test_a_day_outside_the_list_asks_instead_of_using_today() -> None:
+    q = _query(message="I was sick yesterday")
+    a = answers_for(_body(q), "record_absence", reason="sick", date=actions.ANOTHER_DAY)
+    d = decider.parse(a, q)
+    assert d.action == "clarify" and d.missing == "date"
+
+
 def test_a_stated_slot_with_low_confidence_still_clarifies() -> None:
     q = _query()
     a = answers_for(_body(q), "record_absence", reason="sick")
@@ -98,6 +121,33 @@ def test_an_uncertain_visit_falls_back_to_site_and_date() -> None:
     d = decider.parse(a, q)
     assert d.action == "find_replacements"
     assert d.args == {"location_name": "Kalasatama", "date": "2026-10-18"}
+
+
+def test_an_alternative_with_an_uncertain_input_is_not_offered() -> None:
+    """The input that caused the question must not ride along on a button."""
+    q = _query(message="Mikael sick today", role="supervisor")
+    a = answers_for(_body(q), "record_absence", reason="sick", date=TODAY.isoformat())
+    a["person"] = choice("p1", 0.40)
+    d = decider.parse(a, q)
+    assert d.action == "clarify"
+    absence = next(x for x in d.alternatives if x.action == "record_absence")
+    assert absence.missing is not None
+
+
+def test_a_shared_first_name_without_a_surname_asks() -> None:
+    people = {"p1": "Maria Mäkinen", "p2": "Maria Virtanen"}
+    q = _query(message="Maria is sick today", role="supervisor", people=people)
+    a = answers_for(_body(q), "record_absence", reason="sick", date=TODAY.isoformat(), person="p1")
+    d = decider.parse(a, q)
+    assert d.action == "clarify" and d.missing == "person"
+
+
+def test_a_shared_first_name_with_the_surname_acts() -> None:
+    people = {"p1": "Maria Mäkinen", "p2": "Maria Virtanen"}
+    q = _query(message="Maria Virtanen is sick today", role="supervisor", people=people)
+    a = answers_for(_body(q), "record_absence", reason="sick", date=TODAY.isoformat(), person="p2")
+    d = decider.parse(a, q)
+    assert d.action == "record_absence" and d.args["person_name"] == "Maria Virtanen"
 
 
 def test_assign_without_a_cover_search_clarifies() -> None:
@@ -149,6 +199,32 @@ def test_unknown_choice_is_a_decide_error() -> None:
         decider.parse({"action": choice("no_such_action")}, q)
 
 
+def test_a_wrongly_shaped_answer_is_a_decide_error() -> None:
+    q = _query()
+    a = answers_for(_body(q), "record_absence")
+    a["action"]["probabilities"] = [["record_absence", 0.9]]  # a list, not an object
+    with pytest.raises(decider.DecideError):
+        decider.parse(a, q)
+
+
+@pytest.mark.parametrize("payload", [[1, 2], None, {"answers": None}])
+def test_a_body_that_is_not_an_answer_object_is_a_decide_error(
+    payload: Any,
+    session: Session,
+    people: dict[str, Person],
+    branch: Branch,
+    monkeypatch: pytest.MonkeyPatch,
+    key: None,
+) -> None:
+    import httpx
+
+    monkeypatch.setattr(
+        decider, "_inner", lambda: httpx.MockTransport(lambda r: httpx.Response(200, json=payload))
+    )
+    with egress_context(_ctx(session, people, branch)), pytest.raises(decider.DecideError):
+        _run(_query())
+
+
 def _ctx(
     session: Session, people: dict[str, Person], branch: Branch, level: str = "pseudonymised"
 ) -> EgressContext:
@@ -184,6 +260,41 @@ def test_decide_goes_through_egress(
     assert session.exec(select(EgressLog).where(EgressLog.provider == "typesafe")).first()
     used = session.exec(select(UsageCloudRequest)).one()  # Jev's input/output token names
     assert (used.input_tokens, used.output_tokens) == (100, 12)
+
+
+def test_a_name_that_prefixes_a_key_leaves_keys_and_ids_alone(
+    session: Session,
+    people: dict[str, Person],
+    branch: Branch,
+    monkeypatch: pytest.MonkeyPatch,
+    key: None,
+) -> None:
+    """Pseudonymising a staff member called Per must not turn the `person` and `period`
+    question keys, or the `tomorrow` option, into tokens; the name in the message still goes."""
+    from mia.core import store
+
+    store.insert(
+        session, Person(branch_id=branch.id, name="Per Lindqvist"), Actor.person(people["Sanna"])
+    )
+    store.insert(
+        session, Person(branch_id=branch.id, name="Tom Berg"), Actor.person(people["Sanna"])
+    )
+    session.commit()
+    seen: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        decider,
+        "_inner",
+        lambda: fake_jev(lambda b: answers_for(b, "get_my_visits", period="tomorrow"), seen),
+    )
+    q = _query(message="Per Lindqvist: show my visits tomorrow")
+    with egress_context(_ctx(session, people, branch)):
+        d = _run(q)
+    body = seen[0]
+    assert {"person", "period"} <= set(body["questions"])
+    assert "tomorrow" in body["questions"]["period"]["criteria"]
+    assert "Lindqvist" not in body["state"]["message"]
+    assert "Mikael" not in str(body["questions"]["person"]["criteria"])  # descriptions go too
+    assert d.action == "get_my_visits"
 
 
 def test_egress_none_blocks_before_the_network(

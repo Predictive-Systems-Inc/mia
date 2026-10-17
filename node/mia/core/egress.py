@@ -230,8 +230,9 @@ class EgressTransport(httpx.AsyncBaseTransport):
         input_tokens = output_tokens = 0
         try:
             body = json.loads(content)
-            model = str(body.get("model", model))
-            input_tokens, output_tokens = _usage_counts(body)
+            if isinstance(body, dict):  # an error or a malformed answer may be any JSON
+                model = str(body.get("model", model))
+                input_tokens, output_tokens = _usage_counts(body)
         except ValueError:
             pass
         usage.record(

@@ -438,9 +438,16 @@ def _reply_clarify(
 _BINDINGS = {b.tool_id: b for b in BINDINGS}
 
 
-def _jev_tapped(session: Session, thread: Thread, text: str) -> decider.Decision | None:
+def _local_day(timestamp: dt.datetime, tz: str) -> dt.date:
+    return timestamp.astimezone(ZoneInfo(tz)).date()
+
+
+def _jev_tapped(
+    session: Session, deps: AgentDeps, thread: Thread, text: str
+) -> decider.Decision | None:
     """The stored decision behind a tapped Jev clarify button, if text is one. A button only
-    counts while its question is the thread's last assistant message."""
+    counts while its question is the thread's last assistant message and was asked today (its
+    inputs hold that day's "today")."""
     asked = session.exec(
         select(Event)
         .where(Event.action == "decision.clarify_asked")
@@ -450,6 +457,8 @@ def _jev_tapped(session: Session, thread: Thread, text: str) -> decider.Decision
     last = _latest_message(session, thread, "assistant")
     if asked is None or last is None or (asked.after or {}).get("message_id") != last.id:
         return None
+    if _local_day(asked.timestamp, deps.branch.timezone) != deps.today:
+        return None
     chosen = ((asked.after or {}).get("options") or {}).get(text.strip())
     return decider.Decision.model_validate(chosen) if chosen else None
 
@@ -458,7 +467,7 @@ def _jev_query(
     session: Session, deps: AgentDeps, thread: Thread, text: str
 ) -> tuple[decider.Decision | None, actions.Query | None]:
     """A decision already made (a tapped button, an injection), or the query for Jev."""
-    tapped = _jev_tapped(session, thread, text)
+    tapped = _jev_tapped(session, deps, thread, text)
     if tapped is not None:
         return tapped, None
     if classify(html.unescape(text), deps.today, deps.lang).injection:
