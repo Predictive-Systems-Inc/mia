@@ -86,26 +86,38 @@ def test_jev_actions(session: Session, branch: Branch) -> None:
                 "seconds": secs,
             }
         )
-    n = len(results)
     tools = set(INTENT_ACTION.values()) - {"reply_only"}
-    disp = [x for x in results if x["intent"].startswith("dispatcher.")]
+    # In scope: the dispatcher intents that are built (INTENT_ACTION). Everything else (other
+    # agents, unbuilt dispatcher intents, conversation) is judged only on whether a tool ran.
+    ins = [x for x in results if x["intent"] in INTENT_ACTION]
+    out = [x for x in results if x["intent"] not in INTENT_ACTION]
+
+    def rate(rows: list[dict[str, Any]], hit: Any) -> float:
+        return sum(1 for x in rows if hit(x)) / max(len(rows), 1)
+
     secs = sorted(x["seconds"] for x in results if x["seconds"])
     summary = {
         "split": SPLIT,
         "lang": LANG,
-        "messages": n,
-        "raw_accuracy": sum(x["raw"] == x["expected"] for x in results) / n,
-        "acted_accuracy": sum(x["acted"] == x["expected"] for x in results) / n,
-        "clarify_rate": sum(x["acted"] == "clarify" for x in results) / n,
-        "wrong_tool_rate": sum(x["acted"] in tools and x["acted"] != x["expected"] for x in results)
-        / n,
-        "dispatcher_raw_accuracy": sum(x["raw"] == x["expected"] for x in disp) / max(len(disp), 1),
+        "messages": len(results),
+        "in_scope": len(ins),
+        "in_scope_raw_accuracy": rate(ins, lambda x: x["raw"] == x["expected"]),
+        "in_scope_acted_accuracy": rate(ins, lambda x: x["acted"] == x["expected"]),
+        "in_scope_clarify_rate": rate(ins, lambda x: x["acted"] == "clarify"),
+        "in_scope_wrong_tool_rate": rate(
+            ins, lambda x: x["acted"] in tools and x["acted"] != x["expected"]
+        ),
+        "out_of_scope": len(out),
+        "out_of_scope_tool_rate": rate(out, lambda x: x["acted"] in tools),
         "errors": sum(x["acted"] == "error" for x in results),
         "latency_p50": secs[len(secs) // 2] if secs else 0.0,
         "latency_p95": secs[int(len(secs) * 0.95)] if secs else 0.0,
-        "confusions": Counter(
-            f"{x['expected']} -> {x['raw']}" for x in results if x["raw"] != x["expected"]
-        ).most_common(15),
+        "in_scope_confusions": Counter(
+            f"{x['intent']} -> {x['raw']}" for x in ins if x["raw"] != x["expected"]
+        ).most_common(10),
+        "out_of_scope_tools": Counter(
+            f"{x['intent']} -> {x['acted']}" for x in out if x["acted"] in tools
+        ).most_common(10),
     }
     print("\n" + json.dumps(summary, indent=2, ensure_ascii=False))
     if path := os.environ.get("MIA_EVAL_REPORT"):
