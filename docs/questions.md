@@ -254,3 +254,11 @@ Format for each entry:
   evaluation set (tests/evals/intents.jsonl; the dispatcher's own rows stay out, it is the
   benchmark), so the shared labels no longer train on nothing. Assumed acceptable: the set is
   the project's own labelled data, synthetic, already in git.
+
+## Q27: TypeSafe as a processor of real data
+- Where: spec 2026-10-17-jev-decider-design.md (Scope and data); docs/research/jev-2026-10-18.md; D18
+- Question: Jev mode is measured on synthetic data only. TypeSafe's docs say nothing about
+  retention, region or processing terms. May Jev ever see real Hype messages?
+- Assumed answer: no, until the terms are read and an ADR amends D18; real traffic stays on
+  MIA_DECIDER=agent.
+- Blocking: yes for real data; no for the measurement.
