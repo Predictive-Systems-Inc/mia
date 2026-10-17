@@ -18,6 +18,7 @@ os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 from pydantic_ai import models
 
+from mia import i18n
 from mia.agents.dispatcher import agent as dispatcher_agent
 from mia.channels import registry
 from mia.core import db, keys, scheduling
@@ -60,6 +61,7 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     keys.generate(key_file)
     monkeypatch.setenv("MIA_MASTER_KEY_FILE", str(key_file))
     monkeypatch.setenv("MIA_AUTH_MODE", "dev")
+    monkeypatch.setattr(i18n, "_pick", lambda variants: variants[0])  # stable pinned texts
     monkeypatch.setattr(keys, "SCRYPT_N", 2**8)  # the real 2**17 makes every login slow
     keys.reset_cache()
     scheduling.reset_generation()

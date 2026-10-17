@@ -13,7 +13,7 @@ from mia.chat import service
 from mia.chat.blocks import AgentReply
 from mia.chat.service import run_turn, wrap_user_text
 from mia.core.models import Event, Message, Organisation, Person
-from mia.i18n import STRINGS
+from mia.i18n import STRINGS, t
 from mia.learning import catalogue
 from mia.skills import runtime
 from mia.skills.roles import load_role_plan
@@ -166,7 +166,7 @@ def test_template_intent_replies_without_the_agent(
 ) -> None:  # type: ignore[no-untyped-def]
     use(cls("conversation.thanks", "high"))
     reply = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "kiitos"))
-    assert reply.text() == STRINGS["fi"]["conversation.thanks"]
+    assert reply.text() == t("conversation.thanks", "fi")
 
 
 def test_every_template_conversation_intent_has_text_in_both_languages() -> None:
@@ -343,4 +343,4 @@ def test_emergency_script_follows_the_organisation_country(
     session.commit()
     use(cls("conversation.emergency", "high", safety=0.9))
     reply = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "help"))
-    assert reply.text() == STRINGS["fi"][expected]
+    assert reply.text() == t(expected, "fi")
