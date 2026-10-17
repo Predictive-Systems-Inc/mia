@@ -69,13 +69,23 @@ class _Reader:
         self.answers, self.q = answers, q
         self.confidences: list[float] = []
 
-    def pick(self, slot: str, options: dict[str, str] | set[str]) -> str | None:
+    def pick(
+        self, slot: str, options: dict[str, str] | set[str], fallback: bool = False
+    ) -> str | None:
+        """The chosen option, or None when not stated. Only a stated value counts toward the
+        confidence (not stated means the tool's default applies). With fallback=True an
+        uncertain value is dropped instead, for slots that code can resolve another way."""
         answer = self.answers[slot]
         value = str(answer["choice"])
         if value != NOT_STATED and value not in options:
             raise DecideError(f"{slot}: {value!r} is not an option")
-        self.confidences.append(float(answer["confidence"]))
-        return None if value == NOT_STATED else value
+        if value == NOT_STATED:
+            return None
+        confidence = float(answer["confidence"])
+        if fallback and confidence < THRESHOLD:
+            return None
+        self.confidences.append(confidence)
+        return value
 
     def yes(self, slot: str) -> bool:
         p = float(self.answers[slot]["noul"])
@@ -103,7 +113,7 @@ def _args(action: str, r: _Reader) -> tuple[dict[str, Any], str | None]:
             "person_name": q.people.get(person or ""),
         }, None
     if action == "find_replacements":
-        visit = r.pick("visit", q.visits)
+        visit = r.pick("visit", q.visits, fallback=True)  # else site and date, resolved by code
         if visit is not None:
             return {"visit_id": visit}, None
         site, day = r.pick("site", q.sites), r.pick("date", q.dates)

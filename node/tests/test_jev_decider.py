@@ -75,6 +75,31 @@ def test_low_confidence_clarifies_with_the_top_actions() -> None:
     ]
 
 
+def test_an_unstated_slot_does_not_lower_the_confidence() -> None:
+    """Not stated means the tool's default applies; nothing was read from the message."""
+    q = _query(message="I'm sick today")
+    a = answers_for(_body(q), "record_absence", reason="sick")
+    a["partial_day"] = choice("not_stated", 0.47)
+    d = decider.parse(a, q)
+    assert d.action == "record_absence" and d.args["partial_day"] is None
+
+
+def test_a_stated_slot_with_low_confidence_still_clarifies() -> None:
+    q = _query()
+    a = answers_for(_body(q), "record_absence", reason="sick")
+    a["date"] = choice("2026-10-18", 0.4)
+    assert decider.parse(a, q).action == "clarify"
+
+
+def test_an_uncertain_visit_falls_back_to_site_and_date() -> None:
+    q = _query(message="Who can cover Kalasatama tomorrow at 6:30?", role="supervisor")
+    a = answers_for(_body(q), "find_replacements", site="l2", date="2026-10-18")
+    a["visit"] = choice("v1", 0.5)
+    d = decider.parse(a, q)
+    assert d.action == "find_replacements"
+    assert d.args == {"location_name": "Kalasatama", "date": "2026-10-18"}
+
+
 def test_assign_without_a_cover_search_clarifies() -> None:
     q = _query(message="Assign Mikael", role="supervisor")
     d = decider.parse(answers_for(_body(q), "assign_cover", person="p1"), q)

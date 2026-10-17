@@ -59,7 +59,7 @@ message -> safety step (unchanged) -> decide() -> call_tool() -> reply() -> chan
    questions; code reads only the chosen action's answers. The request goes through
    `egress.send()` (rule 6, pseudonymised at the default level, logged in egress_log) with no
    write lock held (rule 11).
-4. Decision: the call's confidence is its least certain judgment. At or above the threshold
+4. Decision: the call's confidence is its least certain judgment among the action and the slot values the chosen action actually reads from the message (a slot answered "not stated" does not count: the tool's default applies; an uncertain visit pick is dropped for the site and date, which code resolves; measured 17 Oct, every optional slot counting sent clear messages to clarify). At or above the threshold
    the tool runs through `call_tool()` in mia/agents/base.py (guard, rbac.require, events,
    actor and on_behalf_of; rules 3 to 5). Below it, or with a required input missing, the
    action is `clarify`.

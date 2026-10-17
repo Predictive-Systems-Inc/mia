@@ -168,7 +168,7 @@ def test_scenarios_are_well_formed() -> None:
 
 def test_dispatcher_pass_rate(template_db: Path, tmp_path: Path) -> None:
     results: dict[str, list[list[str]]] = {}
-    real_model = bool(os.environ.get("MIA_EVAL_MODEL"))
+    real_model = bool(os.environ.get("MIA_EVAL_MODEL")) or os.environ.get("MIA_DECIDER") == "jev"
     # llm_only: languages the deterministic rules model does not read (Filipino).
     for scenario in [s for s in SCENARIOS if real_model or not s.get("llm_only")]:
         for run in range(RUNS):
