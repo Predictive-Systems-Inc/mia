@@ -185,7 +185,8 @@ def _visits(deps: AgentDeps) -> dict[str, str]:
 def _checklist_items(deps: AgentDeps) -> dict[str, str]:
     from mia.templates.cleaning.models import CleaningChecklist
 
-    visit = tools._current_visit(deps, None, tools.utcnow())
+    # tools.utcnow, not core.db.utcnow: the evals patch the clock there
+    visit = tools._current_visit(deps, None, tools.utcnow())  # type: ignore[attr-defined]
     if visit is None:
         return {}
     sheet = deps.session.exec(
