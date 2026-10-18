@@ -12,7 +12,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
 from mia.agents.decider import THRESHOLD, Decision
-from mia.agents.inventory_manager import MANIFEST, actions, decider, due, replies, tools
+from mia.agents.inventory_manager import MANIFEST, actions, calc, decider, due, replies, tools
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import reply_text, store_reply
@@ -24,7 +24,7 @@ from mia.core.models import Event, Message, Thread
 from mia.core.rbac import Resource, get_rbac
 from mia.i18n import t
 from mia.settings import get_settings
-from mia.templates.retail.models import RetailIngredient
+from mia.templates.retail.models import RetailIngredient, RetailItem
 
 _BINDINGS = {b.tool_id: b for b in tools.BINDINGS}  # importing tools registers its handlers
 _ORDER_TOOL = Resource(kind="tool", name=tools.DRAFT_ORDER)
@@ -120,32 +120,30 @@ def _refusal(
     thread: Thread,
     tool: str,
     out: dict[str, Any],
-    named: str | None,
 ) -> ChatReply:
-    """The reply to a refused tool call: another branch, an order by someone who may not
-    order, else denied or rephrase."""
-    if out["status"] == "denied" and named is not None and named != deps.branch.id:
-        key, values = "stock.not_allowed.branch", {"branch": deps.branch.name}
-    elif out["status"] == "denied":
-        key, values = ("stock.not_allowed" if tool == "draft_order" else "denied.generic"), {}
+    """The reply to a refused tool call: an order by someone who may not order, else denied
+    or rephrase. (No decision names another branch: draft_order's is stripped in _run.)"""
+    if out["status"] == "denied":
+        key = "stock.not_allowed" if tool == "draft_order" else "denied.generic"
     else:
-        key, values = "clarify.rephrase", {}
-    return reply_text(session, deps, thread, t(key, deps.lang, **values))
+        key = "clarify.rephrase"
+    return reply_text(session, deps, thread, t(key, deps.lang))
 
 
 def _order_summary(session: Session, deps: AgentDeps, order: tools.DraftOrderInput) -> str:
-    """The order in words for the approval and the reply; the total only when every line is in
-    its ingredient's unit with a pack price (as draft_order prices it)."""
+    """The order in words for the approval and the reply; the total is calc.order_total over
+    the prices draft_order writes (a pack price only for a line in its ingredient's unit), so
+    what the owner sees is what is written."""
     lines: list[tuple[int, str, str]] = []
-    total: int | None = 0
+    priced: list[tuple[int, int | None]] = []
     currency = "PHP"
     for line in order.lines:
         ing = session.get(RetailIngredient, line.ingredient_id)
         name, unit = (ing.name, line.unit or ing.unit) if ing else (line.ingredient_id, "")
         lines.append((line.quantity, unit, name))
-        price = ing.pack_price if ing is not None and unit == ing.unit else None
+        priced.append((line.quantity, ing.pack_price if ing and unit == ing.unit else None))
         currency = ing.currency if ing is not None else currency
-        total = None if total is None or price is None else total + line.quantity * price
+    total = calc.order_total(priced)
     return replies.order_text(order.supplier, lines, total, currency, deps.lang)
 
 
@@ -183,7 +181,7 @@ def _run(
         blocks = replies.order_waiting(summary, str(out["approval_id"]), deps.lang)
         return store_reply(session, deps, thread, blocks)
     if "status" in out and "message" in out:  # a ToolRefusal
-        return _refusal(session, deps, thread, tool, out, args.get("branch_id"))
+        return _refusal(session, deps, thread, tool, out)
     blocks = replies.tool_reply(tool, out, args, deps.lang, deps.branch.timezone)
     offer = _offer(session, deps, out) if tool == "record_events" else None
     if offer is None:
@@ -206,6 +204,17 @@ def _answer_offer(
     return _run(session, deps, thread, "draft_order", order)
 
 
+def _names(session: Session, events: list[dict[str, Any]]) -> dict[str, str]:
+    """The name of each item or ingredient the events are about, by id."""
+    out: dict[str, str] = {}
+    for e in events:
+        if (item := session.get(RetailItem, e.get("item_id") or "")) is not None:
+            out[item.id] = item.name
+        if (ing := session.get(RetailIngredient, e.get("ingredient_id") or "")) is not None:
+            out[ing.id] = ing.name
+    return out
+
+
 def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) -> ChatReply:
     """Log the decision, then ask what is missing (a waste reason asks with buttons), or run
     its tool through the guard and word the reply. Nothing is recorded before it is complete."""
@@ -213,7 +222,8 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     events.emit(session, "decision.made", ("thread", thread.id), None, after, deps.actor)
     sure = decision.confidence >= THRESHOLD
     if decision.action == "clarify" and decision.missing == "reason" and sure:
-        return _ask(session, deps, thread, *replies.ask_reason(decision, deps.lang))
+        names = _names(session, decision.args.get("events") or [])
+        return _ask(session, deps, thread, *replies.ask_reason(decision, names, deps.lang))
     if decision.action == "clarify":
         return _did_you_mean(session, deps, thread, decision)
     spec = actions.ACTIONS.get(decision.action)

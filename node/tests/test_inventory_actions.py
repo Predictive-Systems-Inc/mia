@@ -13,7 +13,7 @@ from mia.agents.inventory_manager.decider import _args
 from mia.core.egress import Pseudonymiser
 from mia.core.models import Branch, Person
 from mia.i18n import t
-from tests.jev_fake import answers_for
+from tests.jev_fake import answers_for, choice
 from tests.test_sales_tools import deps_for
 
 TODAY = dt.date(2026, 10, 19)
@@ -25,7 +25,7 @@ def build(session: Session, ferinos: tuple[Branch, dict[str, Person]], message: 
 
 
 def args(
-    q: Query, action: str, confidence: float = 0.95, **slots: str
+    q: Query, action: str, confidence: float = 0.95, **slots: Any
 ) -> tuple[dict[str, Any], str | None]:
     answers = answers_for(build_request(q, "m"), action, confidence, **slots)
     return _args(action, Reader(answers, q))
@@ -72,6 +72,36 @@ def test_waste_without_a_reason_is_missing_reason(session: Session, ferinos: Any
     assert missing is None and out["events"][0]["reason"] == "burnt"
 
 
+def test_an_unsure_reason_is_not_stated(session: Session, ferinos: Any) -> None:
+    q = build(session, ferinos, "nahulog ang 8 classic")
+    classic = named(q, "Classic")
+    answers = answers_for(
+        build_request(q, "m"), "report_stock", kind="waste", reason=choice("dropped", 0.4),
+        item_0=classic,
+    )  # fmt: skip
+    reader = Reader(answers, q)
+    out, missing = _args("report_stock", reader)
+    assert missing == "reason" and out["events"][0]["reason"] is None
+    assert min(reader.confidences) >= 0.6  # the unsure reason does not count
+
+
+def test_a_time_with_a_space_is_no_group(session: Session, ferinos: Any) -> None:
+    q = build(session, ferinos, "5 ube na lang alas 2")
+    assert [(g.quantity, g.words) for g in q.groups] == [(5, "ube")]
+    assert q.times == {"t0": "14:00"}
+    assert build(session, ferinos, "ubos na ang special 3 pm").groups == []
+
+
+def test_received_is_no_report_kind_and_reasons_carry_local_words(
+    session: Session, ferinos: Any
+) -> None:
+    questions = build_request(build(session, ferinos, "ubos na"), "m")["questions"]
+    assert "received" not in questions["kind"]["criteria"]
+    reasons = questions["reason"]["criteria"]
+    assert "nasunog" in reasons["burnt"] and "nahulog" in reasons["dropped"]
+    assert "panis" in reasons["expired"] and "tuyo" in reasons["too_dry"]
+
+
 def test_running_low_names_an_ingredient(session: Session, ferinos: Any) -> None:
     q = build(session, ferinos, "running low on rice flour")
     flour = named(q, "Rice flour")
@@ -109,6 +139,13 @@ def test_place_order_takes_the_one_fitting_supplier_else_asks(
     picks = {"item_0": named(mixed, "Eggs"), "item_1": named(mixed, "Sugar")}
     assert args(mixed, "place_order", **picks)[1] == "supplier"
     assert args(mixed, "place_order", supplier="Metro Supply", **picks)[1] is None
+
+
+def test_two_ingredients_of_one_supplier_resolve_it(session: Session, ferinos: Any) -> None:
+    q = build(session, ferinos, "order 10 eggs 30 coconut")
+    picks = {"item_0": named(q, "Eggs"), "item_1": named(q, "Coconut")}
+    out, missing = args(q, "place_order", **picks)
+    assert missing is None and out["supplier"] == "Aling Nena" and len(out["lines"]) == 2
 
 
 def test_receive_lines_skip_items(session: Session, ferinos: Any) -> None:

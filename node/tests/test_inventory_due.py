@@ -109,12 +109,36 @@ def test_closing_summary_goes_to_head_staff_once(
     rosa = [n.text for n in _notes(session, people["Rosa"])]
     assert note.text in rosa and len(rosa) == 2  # one summary per branch
     assert any(text.startswith(t("stock.summary", lang, branch="Street stall")) for text in rosa)
-    (empty,) = due._summary_blocks(kiosk, [], [], "en")
-    assert empty.text == t("stock.summary.empty", "en", branch="Mall kiosk")
     assert _notes(session, people["Ana"]) == []
     assert due.run_due(session, manila_at(22, 30)) == 0
     marker = next(m for m in _markers(session, due.SUMMARY) if m.entity_id == kiosk.id)
     assert marker.after is not None and len(marker.after["message_ids"]) == 2
+
+
+def test_the_summary_names_an_ingredient(session: Session, ferinos: Ferinos, manila_at: At) -> None:
+    _, people = ferinos
+    manila_at(15, 0)
+    waste = EventIn(
+        kind="waste", ingredient_id=ingredient(session, "Eggs"), quantity=2, reason="burnt"
+    )
+    tools.record_events(deps_for(session, people["Ana"]), RecordEventsInput(events=[waste]), "c1")
+    session.commit()
+    due.run_due(session, manila_at(21, 45))
+    (note,) = _notes(session, people["Marites"])
+    lang = people["Marites"].language
+    burnt = t("stock.reason.burnt", lang)
+    assert t("stock.waste", lang, item="Eggs", quantity="2", reason=burnt) in note.text
+
+
+def test_a_quiet_night_sends_no_summary(session: Session, ferinos: Ferinos, manila_at: At) -> None:
+    kiosk, people = ferinos
+    manila_at(15, 0)
+    lpg = EventIn(kind="count", ingredient_id=ingredient(session, "LPG"), quantity=5)
+    tools.record_events(deps_for(session, people["Ana"]), RecordEventsInput(events=[lpg]), "c1")
+    session.commit()  # nothing sold out, left over, thrown away or low at the kiosk today
+    due.run_due(session, manila_at(21, 45))
+    assert _notes(session, people["Marites"]) == []
+    assert [m for m in _markers(session, due.SUMMARY) if m.entity_id == kiosk.id] == []
 
 
 def test_summary_crosses_midnight_under_the_closing_day(

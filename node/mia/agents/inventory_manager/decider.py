@@ -5,7 +5,7 @@ from functools import partial
 from typing import Any
 
 from mia.agents import decider as shared
-from mia.agents.decider import Decision, Reader
+from mia.agents.decider import Alternative, Decision, Reader
 from mia.agents.inventory_manager.actions import (
     ACTIONS,
     CONVERSATION,
@@ -16,6 +16,7 @@ from mia.agents.inventory_manager.actions import (
     Query,
     build_request,
 )
+from mia.agents.parsing import has_buy_word
 
 
 def _item(r: Reader, i: int) -> str | None:
@@ -48,6 +49,8 @@ def _lines(r: Reader) -> tuple[list[dict[str, Any]], str | None]:
 def _event(
     r: Reader, kind: str, ref: str, quantity: int | None, reason: str | None
 ) -> dict[str, Any]:
+    """One record_events event about the item or ingredient `ref` (the unit is the
+    ingredient's; the reason only on waste; the picked time or none for now)."""
     q: Query = r.q
     is_ing = q.kinds[ref] == "ingredient"
     return {
@@ -63,10 +66,11 @@ def _event(
 
 def _report(r: Reader) -> tuple[dict[str, Any], str | None]:
     """record_events input. A bare count is `count`; a negation on a count simply records the
-    count (no correction action in v1)."""
+    count (no correction action in v1). An unsure reason is not stated (it does not count
+    toward the confidence), so a waste asks for it with the reason buttons."""
     q: Query = r.q
     kind = r.pick("kind", set(KINDS))
-    reason = r.pick("reason", set(REASONS)) if kind == "waste" else None
+    reason = r.pick("reason", set(REASONS), fallback=True) if kind == "waste" else None
     events: list[dict[str, Any]] = []
     if q.groups:
         for i, g in enumerate(q.groups):
@@ -116,5 +120,15 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
 async def decide(q: Query) -> Decision:
     """One Jev request for the query. Raises JevUnreachable when Jev cannot be reached, and
     JevError (DecideError for an answer outside the options) when no usable answer came."""
-    parse = partial(shared.parse, q=q, actions=ACTIONS, args=_args)
-    return await shared.decide(q, build_request=build_request, parse=parse)
+    return await shared.decide(q, build_request=build_request, parse=partial(parse, q=q))
+
+
+def parse(answers: dict[str, Any], q: Query) -> Decision:
+    """shared.parse, then an order with no buy word in the message (parsing.has_buy_word)
+    becomes clarify with place_order as the first alternative: a count is never ordered
+    silently."""
+    d = shared.parse(answers, q, actions=ACTIONS, args=_args)
+    if d.action != "place_order" or has_buy_word(q.message):
+        return d
+    first = Alternative(action=d.action, args=d.args, probability=d.confidence)
+    return d.model_copy(update={"action": "clarify", "alternatives": [first, *d.alternatives][:3]})

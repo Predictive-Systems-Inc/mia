@@ -29,14 +29,15 @@ ITEMS: list[tuple[str, list[str], int]] = [
     ("Box of 4", ["b4", "box"], 16000),
     ("Kape", ["kape", "coffee"], 2500),
 ]
-# name, codes, unit, reorder point, supplier, pack price (centavos)
+# name, codes, unit, reorder point, supplier, pack price (centavos). No item and ingredient
+# share a name or a code, and a code is one word (menu_tokens does not split codes).
 INGREDIENTS: list[tuple[str, list[str], str, int, str | None, int | None]] = [
     ("Rice flour", ["rf", "flour"], "kg", 10, "Metro Supply", 6500),
-    ("Eggs", ["egg", "eggs"], "tray", 5, "Aling Nena", 25000),
+    ("Eggs", ["egg", "eggs", "itlog"], "tray", 5, "Aling Nena", 25000),
     ("Coconut", ["coco", "niyog"], "pcs", 20, "Aling Nena", 3500),
     ("Sugar", ["sugar", "asukal"], "kg", 5, "Metro Supply", 7500),
     ("Cheese", ["cheese", "keso"], "kg", 2, "Metro Supply", 38000),
-    ("Salted egg", ["itlog", "se"], "pcs", 30, "Metro Supply", 1500),
+    ("Salted duck eggs", ["maalat", "pula"], "pcs", 30, "Metro Supply", 1500),
     ("Banana leaves", ["bl", "dahon"], "pack", 3, "Metro Supply", 5000),
     ("LPG", ["lpg", "gas"], "tank", 1, "Metro Supply", 95000),
 ]
@@ -227,17 +228,19 @@ def _seed_order(
     eggs: RetailIngredient,
     by: str,
 ) -> None:
-    """Add one approved egg order from three days ago and its received stock event. The seed
-    does not go through approvals, so approval_id stays empty."""
+    """Add one egg order from three days ago and its received stock event, so the order is
+    received (no seeded order is open for a real delivery to close). The seed does not go
+    through approvals, so approval_id stays empty."""
     day = today - dt.timedelta(days=3)
     price = eggs.pack_price or 0
+    line = {"ingredient_id": eggs.id, "quantity": 10, "unit": "tray", "unit_price": price}
     order = SupplierOrder(
         branch_id=branch.id,
         supplier="Aling Nena",
-        lines=[{"ingredient_id": eggs.id, "quantity": 10, "unit": "tray", "unit_price": price}],
+        lines=[line | {"received": 10}],
         currency=CURRENCY,
         total=10 * price,
-        status="approved",
+        status="received",
         approval_id=None,
         requested_by=by,
         business_date=day,

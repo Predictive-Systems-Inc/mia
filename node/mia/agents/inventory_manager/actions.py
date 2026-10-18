@@ -14,7 +14,14 @@ from sqlmodel import col, or_, select
 from mia.agents.base import AgentDeps
 from mia.agents.decider import NOT_STATED, Action
 from mia.agents.inventory_manager import MANIFEST
-from mia.agents.parsing import Group, find_times, menu_tokens, pre_parse, was_corrected
+from mia.agents.parsing import (
+    Group,
+    find_times,
+    menu_tokens,
+    pre_parse,
+    strip_times,
+    was_corrected,
+)
 from mia.i18n import t
 from mia.templates.retail.models import RetailIngredient, RetailItem
 
@@ -44,14 +51,14 @@ KINDS = {
         " malapit nang maubos, hapit na mahurot, hapit maubos, haros ubos, harani nang"
         " maubos, konti na lang, gamay na, diutay na, gutiay na, dikit na, need more)"
     ),
-    "received": "A delivery arrived: stock came in from a supplier",
     NOT_STATED: "The message does not say, or none of these fits.",
 }
+# The local words are machine drafts (Q28 to Q35), read by Jev only; code matches none of them.
 REASONS = {
-    "too_dry": "Too dry",
-    "burnt": "Burnt",
-    "expired": "Expired or gone bad",
-    "dropped": "Dropped or spilled",
+    "too_dry": "Too dry or hard (tuyo, natuyo, matigas, gahi, mamala, magahi)",
+    "burnt": "Burnt (nasunog, sunog, nasunog na, napaso, sinunog, nasunogan)",
+    "expired": "Expired or gone bad (expired, panis, napanis, lumang, luma na, dunot, bahaw)",
+    "dropped": "Dropped, spilled or broken (nahulog, nahulog sa sahig, natapon, basag, nabuak)",
     "other": "Any other reason",
     NOT_STATED: "The message gives no reason.",
 }
@@ -65,6 +72,7 @@ CONVERSATION = {
 
 
 def _label(action: str) -> str:
+    """The i18n key of the action's "Did you mean" button label."""
     return f"intent.{MANIFEST.id}.{action}"
 
 
@@ -179,7 +187,9 @@ def build_query(
         .order_by(col(RetailIngredient.name))
     ).all()
     rows: list[RetailItem | RetailIngredient] = [*items, *ings]
-    groups, total = pre_parse(message, menu_tokens((r.name, r.short_codes) for r in rows))
+    groups, total = pre_parse(
+        strip_times(message), menu_tokens((r.name, r.short_codes) for r in rows)
+    )
     supplier_of = {i.id: i.supplier for i in ings if i.supplier}
     return Query(
         message=message,
@@ -204,6 +214,7 @@ def build_query(
 
 
 def _choice(instructions: str, options: dict[str, str]) -> dict[str, Any]:
+    """One Jev choice question: the instructions and the options (id to description)."""
     return {"type": "choice", "instructions": instructions, "criteria": options}
 
 
@@ -230,7 +241,7 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
         "kind": _choice(
             "What does the sender report about the stock? Sold out means finished; a count is"
             " how many are in the shop now; leftover is what stayed unsold at closing; waste is"
-            " thrown away; low is almost out; received is a delivery. A bare count with no"
+            " thrown away; low is almost out. A bare count with no"
             " other word (5 ube) is count.",
             KINDS,
         ),

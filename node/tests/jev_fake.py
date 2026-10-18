@@ -25,8 +25,9 @@ def answers_for(
     probabilities: dict[str, float] | None = None,
     **slots: Any,
 ) -> dict[str, Any]:
-    """Answers for every question in body: `action`, the given slots (a float for a noul), and
-    not_stated (or the first option, or no) for the rest."""
+    """Answers for every question in body: `action`, the given slots (a float for a noul, a
+    dict from `choice` for a slot at its own confidence), and not_stated (or the first option,
+    or no) for the rest."""
     out: dict[str, Any] = {}
     for qid, q in body["questions"].items():
         if qid == "action":
@@ -34,7 +35,8 @@ def answers_for(
         elif q["type"] == "noul":
             out[qid] = {"type": "noul", "noul": float(slots.get(qid, 0.0))}
         elif qid in slots:
-            out[qid] = choice(slots[qid])
+            given = slots[qid]
+            out[qid] = given if isinstance(given, dict) else choice(given)
         else:
             first = "not_stated" if "not_stated" in q["criteria"] else next(iter(q["criteria"]))
             out[qid] = choice(first)

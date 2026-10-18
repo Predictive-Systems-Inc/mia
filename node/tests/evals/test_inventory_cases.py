@@ -4,7 +4,7 @@ test_inventory_manager_evals.py)."""
 from collections import Counter
 
 from mia.agents.inventory_manager.actions import ACTIONS
-from mia.agents.parsing import menu_tokens, pre_parse
+from mia.agents.parsing import menu_tokens, pre_parse, strip_times
 from mia.templates.retail.seed import INGREDIENTS, ITEMS
 from tests.evals.inventory_manager_cases import CASES, GATED_LANGS, SCENARIOS, SYNONYMS
 
@@ -48,7 +48,7 @@ def test_counts_parse_to_the_expected_groups() -> None:
     for c in CASES:
         if c.expected_action not in COUNTED:
             continue
-        groups, _ = pre_parse(c.text, tokens)
+        groups, _ = pre_parse(strip_times(c.text), tokens)  # as build_query
         if c.expected_items[0][1] is None:
             assert len(c.expected_items) == 1 and not groups, (c, groups)
             continue

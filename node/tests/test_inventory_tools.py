@@ -3,6 +3,7 @@ from collections.abc import Callable
 from zoneinfo import ZoneInfo
 
 import pytest
+from pydantic import ValidationError
 from sqlmodel import Session, select
 
 from mia.agents.base import AgentDeps, call_tool
@@ -21,6 +22,7 @@ from mia.core import approvals, events, store
 from mia.core.models import Actor, Approval, Branch, Event, Message, Person
 from mia.core.rbac import PermissionDenied
 from mia.templates.retail.models import RetailBranchHours, RetailIngredient, RetailItem
+from mia.templates.retail.seed import ITEMS
 
 Ferinos = tuple[Branch, dict[str, Person]]
 MNL = ZoneInfo("Asia/Manila")
@@ -101,6 +103,36 @@ def test_an_event_about_nothing_known_is_refused(session: Session, ferinos: Feri
         tools.record_events(deps_for(session, people["Ana"]), args, "c1")
 
 
+def test_a_receipt_and_a_bad_time_are_no_report(session: Session, ferinos: Ferinos) -> None:
+    eggs = ingredient(session, "Eggs")
+    with pytest.raises(ValidationError):  # only receive_delivery writes stock.received
+        EventIn(kind="received", ingredient_id=eggs, quantity=10)  # type: ignore[arg-type]
+    for bad in ("25:00", "12:99", "7:5"):
+        with pytest.raises(ValidationError):
+            EventIn(kind="sold_out", item_id=item(session, "Ube"), at=bad)
+
+
+def test_a_sell_out_stores_no_quantity(session: Session, ferinos: Ferinos) -> None:
+    _, people = ferinos
+    args = RecordEventsInput(
+        events=[EventIn(kind="sold_out", item_id=item(session, "Ube"), quantity=2)]
+    )
+    (out,) = tools.record_events(deps_for(session, people["Ana"]), args, "c1").recorded
+    row = session.get(StockEvent, out.event_id)
+    assert row is not None and row.quantity is None and out.quantity is None
+
+
+def test_a_supervisors_delivery_counts_once(session: Session, ferinos: Ferinos) -> None:
+    kiosk, people = ferinos
+    eggs = ingredient(session, "Eggs")
+    count = RecordEventsInput(events=[EventIn(kind="count", ingredient_id=eggs, quantity=6)])
+    tools.record_events(deps_for(session, people["Ana"]), count, "c1")
+    delivery = ReceiveDeliveryInput(lines=[LineIn(ingredient_id=eggs, quantity=10)])
+    tools.receive_delivery(deps_for(session, people["Marites"]), delivery, "c2")
+    rows = tools._stock_rows(session, kiosk.id, ["count", "received"])
+    assert tools._on_hand(rows)[eggs] == 16
+
+
 def test_a_late_sell_out_belongs_to_the_closing_day(
     session: Session, ferinos: Ferinos, manila_at: Callable[[int, int], dt.datetime]
 ) -> None:
@@ -157,6 +189,7 @@ def test_the_bake_plan_has_a_line_per_item(session: Session, ferinos: Ferinos) -
     _, people = ferinos
     out = tools.plan_tomorrow(deps_for(session, people["Ana"]), PlanTomorrowInput(), "c1")
     assert len(out.lines) == 8 and out.note_heuristic
+    assert [line.item for line in out.lines] == [name for name, *_ in ITEMS]  # menu order
     assert {line.plan for line in out.lines} <= {"more", "same", "fewer"}
 
 

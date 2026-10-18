@@ -7,7 +7,7 @@ Synthetic, written by Claude, not native speakers (D18). English seeds come firs
 Philippine languages are drafts for a kiosk clerk texting on a phone, and Q28 to Q35 cover
 their review. Item and ingredient names and short codes are the seed's
 (mia/templates/retail/seed.py). Clock times are written "2pm" or "16:00" (a bare number is a
-count, never a time); "itlog" is avoided for eggs because the seed codes it as salted egg."""
+count, never a time)."""
 
 from dataclasses import dataclass, field
 from typing import Literal

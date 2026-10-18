@@ -126,16 +126,13 @@ def order_text(
 
 
 def order_waiting(text: str, approval_id: str, lang: str) -> list[Block]:
-    """The order waiting reply with its approval card (the owner decides it in the app)."""
-    return [
-        TextBlock(text=text),
-        ApprovalCardBlock(
-            approval_id=approval_id,
-            title=t("stock.approval_title", lang),
-            summary=text,
-            fields=[CardField(label=t("field.status", lang), value="pending")],
-        ),
-    ]
+    """The order waiting reply with its approval card (the owner decides it in the app); the
+    status field shows the status the card carries."""
+    card = ApprovalCardBlock(
+        approval_id=approval_id, title=t("stock.approval_title", lang), summary=text
+    )
+    card.fields = [CardField(label=t("field.status", lang), value=card.status)]
+    return [TextBlock(text=text), card]
 
 
 def _asked(decision: Decision, args: dict[str, Any]) -> dict[str, Any]:
@@ -146,9 +143,24 @@ def _asked(decision: Decision, args: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def ask_reason(decision: Decision, lang: str) -> tuple[list[Block], Options]:
-    """Why it was thrown away: one button per reason, each the same report with the reason
-    filled in on every waste event."""
+def _wasted(events: list[dict[str, Any]], names: dict[str, str], lang: str) -> str:
+    """The waste events as "8 Classic, 2 tray Eggs": what a reason button writes."""
+    said = []
+    for e in events:
+        name = names.get(e.get("item_id") or e.get("ingredient_id") or "", "")
+        quantity = "" if e.get("quantity") is None else format_int(e["quantity"], lang)
+        line = t(
+            "stock.order_line", lang, quantity=quantity, unit=e.get("unit") or "", ingredient=name
+        )
+        said.append(" ".join(line.split()))  # no double space without a unit or a quantity
+    return ", ".join(said)
+
+
+def ask_reason(decision: Decision, names: dict[str, str], lang: str) -> tuple[list[Block], Options]:
+    """Why it was thrown away: the question names each waste event that will be written (its
+    quantity, unit and name from `names`, id to name), and one button per reason runs the same
+    report with the reason filled in on every waste event."""
+    wasted = [e for e in decision.args.get("events") or [] if e.get("kind") == "waste"]
     options: Options = {}
     for reason in REASONS:
         args = copy.deepcopy(decision.args)
@@ -157,7 +169,7 @@ def ask_reason(decision: Decision, lang: str) -> tuple[list[Block], Options]:
                 event["reason"] = reason
         options[t(f"stock.reason.{reason}", lang)] = _asked(decision, args)
     blocks: list[Block] = [
-        TextBlock(text=t("stock.which_reason", lang)),
+        TextBlock(text=t("stock.which_reason", lang, items=_wasted(wasted, names, lang))),
         QuickRepliesBlock(options=list(options)),
     ]
     return blocks, options

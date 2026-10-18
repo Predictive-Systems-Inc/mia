@@ -14,15 +14,19 @@ from sqlmodel import Session, col, select
 
 from mia.agents.inventory_manager import MANIFEST, tools
 from mia.agents.inventory_manager.models import StockEvent, SupplierOrder
+from mia.agents.inventory_manager.tools import EventIn, RecordEventsInput
 from mia.chat.access import agents_for
 from mia.chat.blocks import ApprovalCardBlock, ChatReply, QuickRepliesBlock, TextBlock
+from mia.chat.channels import notify
 from mia.chat.service import run_turn
 from mia.core import approvals, jev, orgconfig, store
 from mia.core.models import Actor, Approval, Branch, Event, Message, Person, Thread
+from mia.core.money import format_money
 from mia.i18n import t
 from mia.settings import get_settings
 from mia.templates.retail.models import RetailIngredient, RetailItem
-from tests.jev_fake import answers_for, fake_jev
+from tests.jev_fake import answers_for, choice, fake_jev
+from tests.test_inventory_tools import deps_for
 
 Ferinos = tuple[Branch, dict[str, Person]]
 FIL = "fil"  # every Ferino's person speaks Filipino
@@ -151,7 +155,7 @@ def test_waste_without_a_reason_asks_one(
     _, people = ferinos
     _answers(monkeypatch, "report_stock", kind="waste", item_0=_id(session, "Classic"))
     asked = _turn(session, people["Ana"], "threw away 8 classic")
-    assert t("stock.which_reason", FIL) in asked.text()
+    assert t("stock.which_reason", FIL, items="8 Classic") in asked.text()
     burnt = t("stock.reason.burnt", FIL)
     assert _buttons(asked) == [
         t(f"stock.reason.{r}", FIL) for r in ("too_dry", "burnt", "expired", "dropped", "other")
@@ -160,6 +164,55 @@ def test_waste_without_a_reason_asks_one(
     reply = _turn(session, people["Ana"], burnt, asked.thread_id)
     assert reply.text() == t("stock.waste", FIL, quantity="8", item="Classic", reason=burnt)
     assert [r.reason for r in _mine(session, people["Ana"], "waste")] == ["burnt"]
+
+
+def test_an_unsure_reason_asks_with_the_reason_buttons(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    unsure = choice("dropped", 0.4)
+    _answers(
+        monkeypatch, "report_stock", kind="waste", reason=unsure, item_0=_id(session, "Classic")
+    )
+    asked = _turn(session, people["Ana"], "threw away 8 classic")
+    assert asked.text().startswith(t("stock.which_reason", FIL, items="8 Classic"))
+    reasons = [
+        t(f"stock.reason.{r}", FIL) for r in ("too_dry", "burnt", "expired", "dropped", "other")
+    ]
+    assert _buttons(asked) == reasons  # not "Did you mean"
+    assert not _mine(session, people["Ana"], "waste")
+    dropped = t("stock.reason.dropped", FIL)
+    reply = _turn(session, people["Ana"], dropped, asked.thread_id)
+    assert reply.text() == t("stock.waste", FIL, quantity="8", item="Classic", reason=dropped)
+    assert [r.reason for r in _mine(session, people["Ana"], "waste")] == ["dropped"]
+
+
+def test_a_clerks_delivery_is_refused(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    _answers(monkeypatch, "receive", item_0=_id(session, "Eggs"))
+    reply = _turn(session, people["Ana"], "eggs delivered, 10 trays")
+    assert reply.text() == t("denied.generic", FIL)
+    assert not session.exec(
+        select(StockEvent)
+        .where(StockEvent.reported_by == people["Ana"].id)
+        .where(StockEvent.kind == "received")
+    ).all()
+
+
+def test_an_order_without_a_buy_word_asks_first(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    marites = people["Marites"]
+    _answers(monkeypatch, "place_order", item_0=_id(session, "Sugar"))
+    asked = _turn(session, marites, "4 kg asukal na lang")
+    order = t("intent.inventory_manager.place_order", FIL)
+    assert asked.text().startswith(t("clarify.question", FIL)) and _buttons(asked)[0] == order
+    assert not session.exec(select(Approval)).all()
+    reply = _turn(session, marites, order, asked.thread_id)
+    assert any(isinstance(b, ApprovalCardBlock) for b in reply.blocks)
 
 
 def _report_low(session: Session, person: Person, monkeypatch: pytest.MonkeyPatch) -> ChatReply:
@@ -236,6 +289,26 @@ def test_a_stale_offer_tap_is_plain_text(
     _answers(monkeypatch, "answer_offer", seen, answer="yes")
     reply = _turn(session, people["Marites"], t("stock.offer.yes", FIL), asked.thread_id)
     assert len(seen) == 1 and "answer" not in seen[0]["questions"]  # Jev read it as text
+    assert reply.text() == t("clarify.rephrase", FIL)
+    assert not session.exec(select(Approval)).all()
+
+
+def test_an_offer_after_a_notification_is_plain_text(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    branch, people = ferinos
+    marites = people["Marites"]
+    asked = _report_low(session, marites, monkeypatch)
+    thread = session.get(Thread, asked.thread_id)
+    assert thread is not None  # the chat's thread, so the notice lands under the offer
+    store.update(session, thread, {"agent_id": MANIFEST.id}, Actor.system(branch.id))
+    note = notify(session, marites, [TextBlock(text="x")], Actor.system(branch.id), MANIFEST.id)
+    session.commit()
+    assert note.thread_id == asked.thread_id
+    seen: list[dict[str, Any]] = []
+    _answers(monkeypatch, "answer_offer", seen, answer="yes")
+    reply = _turn(session, marites, t("stock.offer.yes", FIL), asked.thread_id)
+    assert len(seen) == 1 and "answer" not in seen[0]["questions"]
     assert reply.text() == t("clarify.rephrase", FIL)
     assert not session.exec(select(Approval)).all()
 
@@ -354,9 +427,25 @@ def test_what_is_low_lists_items_under_the_reorder_point(
     _, people = ferinos
     _answers(monkeypatch, "whats_low")
     reply = _turn(session, people["Marites"], "what is low")
-    lpg = RetailIngredient  # the seed counts LPG at 0, under its reorder point of 1
+    # the seed counts LPG at 0, under its reorder point of 1
     line = t("stock.low_list.line", FIL, ingredient="LPG", count="0", unit="tank", reorder="1")
-    assert line in [b.text for b in reply.blocks if isinstance(b, TextBlock)], lpg
+    assert line in [b.text for b in reply.blocks if isinstance(b, TextBlock)]
+
+
+def test_what_is_low_names_a_reported_low_and_says_when_nothing_is(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    ana, marites = people["Ana"], people["Marites"]
+    lpg = EventIn(kind="count", ingredient_id=_id(session, "LPG"), quantity=5)
+    tools.record_events(deps_for(session, ana), RecordEventsInput(events=[lpg]), "c1")
+    session.commit()
+    _answers(monkeypatch, "whats_low")
+    assert _turn(session, marites, "what is low").text() == t("stock.low_list.empty", FIL)
+    _report_low(session, ana, monkeypatch)
+    _answers(monkeypatch, "whats_low")
+    reported = t("stock.low_list.reported", FIL, ingredient="Rice flour", reorder="10", unit="kg")
+    assert _turn(session, marites, "ano ang kulang").text() == reported
 
 
 def _order_eggs(
@@ -392,6 +481,8 @@ def test_a_supervisor_drafts_an_order_and_the_owner_approves_it(
         select(SupplierOrder).where(SupplierOrder.approval_id == approval.id)
     ).one()
     assert order.status == "approved" and order.requested_by == marites.id
+    assert order.total is not None  # what the owner saw is what was written
+    assert format_money(order.total, order.currency, FIL) in approval.summary
     told = t("stock.order_approved", FIL, supplier="Aling Nena")
     notified = select(Message).where(Message.role == "notification").where(Message.text == told)
     threads = [session.get(Thread, m.thread_id) for m in session.exec(notified)]
@@ -408,10 +499,7 @@ def test_a_delivery_closes_the_order_line(
     _answers(monkeypatch, "receive", item_0=_id(session, "Eggs"))
     said = t("stock.received", FIL, quantity="10", unit="tray", ingredient="Eggs")
     mine = session.exec(select(SupplierOrder).where(SupplierOrder.approval_id == approval.id)).one()
-    # the seed's older open egg order takes the first delivery, then this one takes the next
-    for expected in ("approved", "received"):
-        assert _turn(session, marites, "received 10 trays of eggs").text() == said
-        session.refresh(mine)
-        assert mine.status == expected
-    assert mine.lines[0]["received"] == 10
-    assert len(_logged(session, "inventory.order_received")) == 2
+    assert _turn(session, marites, "received 10 trays of eggs").text() == said
+    session.refresh(mine)  # the seed's egg order is received already: this one takes it
+    assert mine.status == "received" and mine.lines[0]["received"] == 10
+    assert len(_logged(session, "inventory.order_received")) == 1

@@ -38,9 +38,25 @@ def test_org_template_selects_the_retail_seed(ferinos: None, session: Session) -
         stock = select(StockEvent).where(StockEvent.branch_id == b.id)
         assert len(session.exec(stock).all()) >= 8
     orders = session.exec(select(SupplierOrder)).all()
-    assert len(orders) == 1 and orders[0].status == "approved"
+    assert len(orders) == 1 and orders[0].status == "received"  # its receipt is seeded
+    assert orders[0].lines[0]["received"] == orders[0].lines[0]["quantity"]
     roles = {p.name: p.roles for p in session.exec(select(Person)).all()}
     assert "clerk" in roles["Ana"] and "owner" in roles["Rosa"]
+
+
+def test_no_item_and_ingredient_share_a_name_or_a_code() -> None:
+    from mia.templates.retail.seed import INGREDIENTS, ITEMS
+
+    def words(rows: list[tuple[str, list[str]]]) -> set[str]:
+        return {w.casefold() for name, codes in rows for w in (name, *codes)}
+
+    items = words([(name, codes) for name, codes, _ in ITEMS])
+    ingredients = words([(name, codes) for name, codes, *_ in INGREDIENTS])
+    assert not items & ingredients, items & ingredients
+    codes = [c for _, cs, *_ in [*ITEMS, *INGREDIENTS] for c in cs]
+    assert all(len(c.split()) == 1 for c in codes)  # menu_tokens does not split codes
+    eggs = next(cs for name, cs, *_ in INGREDIENTS if name == "Eggs")
+    assert "itlog" in eggs
 
 
 def test_default_template_is_cleaning() -> None:

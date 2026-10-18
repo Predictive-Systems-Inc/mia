@@ -89,10 +89,12 @@ def _plan(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[
 
 
 def _day_events(session: Session, branch_id: str, day: dt.date) -> list[tools.EventOut]:
-    """The branch's sell-outs, leftovers and waste of the business date, oldest first, named."""
+    """The branch's sell-outs, leftovers and waste of the business date, oldest first, each
+    named by its item or ingredient."""
     names = {k: v.name for k, v in tools._items(session, branch_id).items()}
+    names |= {k: v.name for k, v in tools._ingredients(session, branch_id).items()}
     rows = [r for r in tools._stock_rows(session, branch_id, SUMMED) if r.business_date == day]
-    return [tools._event_out(r, names.get(r.item_id or "", "")) for r in rows]
+    return [tools._event_out(r, names.get(r.item_id or r.ingredient_id or "", "")) for r in rows]
 
 
 def _leads(session: Session, branch: Branch) -> list[Person]:
@@ -115,9 +117,7 @@ def _send(
 def _summary_blocks(
     branch: Branch, events: list[tools.EventOut], low: list[str], lang: str
 ) -> list[Block]:
-    """The summary in lang: a heading, one line per event, the low ingredients; or empty."""
-    if not events and not low:
-        return [TextBlock(text=t("stock.summary.empty", lang, branch=branch.name))]
+    """The summary in lang: a heading, one line per event, the low ingredients."""
     lines = [replies.event_line(e, lang, branch.timezone) for e in events]
     if low:
         lines.append(t("stock.summary.line", lang, ingredients=", ".join(low)))
@@ -128,6 +128,8 @@ def _summary_blocks(
 def _summary(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Message]:
     events = _day_events(session, branch.id, day)
     low = _low(session, branch.id, day)
+    if not events and not low:
+        return []  # a quiet night sends nothing (and leaves no marker)
     return [
         _send(session, branch, p, _summary_blocks(branch, events, low, p.language), urgent=True)
         for p in _leads(session, branch)

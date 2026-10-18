@@ -46,7 +46,8 @@ INGREDIENTS = Resource(kind="data", name=RetailIngredient.__tablename__)
 ITEMS = Resource(kind="data", name=RetailItem.__tablename__)
 HOURS = Resource(kind="data", name=RetailBranchHours.__tablename__)
 
-Kind = Literal["sold_out", "count", "leftover", "waste", "low", "received"]
+# No "received": only receive_delivery writes stock.received (a supervisor, against an order).
+Kind = Literal["sold_out", "count", "leftover", "waste", "low"]
 Reason = Literal["too_dry", "burnt", "expired", "dropped", "other"]
 EVENT_ACTIONS = {"count": "stock.counted"}  # every other kind logs as stock.<kind>
 
@@ -175,7 +176,9 @@ class EventIn(BaseModel):
     unit: str | None = None
     reason: Reason | None = None
     at: str | None = Field(
-        None, pattern=r"^\d{1,2}:\d{2}$", description="Local HH:MM when said; none means now"
+        None,
+        pattern=r"^([01]?\d|2[0-3]):[0-5]\d$",
+        description="Local HH:MM when said; none means now",
     )
 
     @model_validator(mode="after")
@@ -199,7 +202,8 @@ def record_events(
     deps: AgentDeps, args: RecordEventsInput, tool_call_id: str
 ) -> RecordEventsOutput:
     """Record one stock event per input (event stock.<kind>, stock.counted for a count) at the
-    stated local time or now, each on the business date of its time. business_date is the
+    stated local time or now, each on the business date of its time; a sell-out stores no
+    quantity (a number in it is not a count). business_date is the
     branch's business date now. Raises LookupError for an item or ingredient the branch does
     not have, or a time that does not exist."""
     _check(deps, _as_reporter(STOCK, deps), "write", tool_call_id)
@@ -225,7 +229,7 @@ def record_events(
             kind=e.kind,
             item_id=e.item_id,
             ingredient_id=e.ingredient_id,
-            quantity=e.quantity,
+            quantity=None if e.kind == "sold_out" else e.quantity,
             unit=unit,
             reason=e.reason,
             at=at,

@@ -1,6 +1,13 @@
 import datetime as dt
 
-from mia.agents.parsing import find_times, menu_tokens, pre_parse, was_corrected
+from mia.agents.parsing import (
+    find_times,
+    has_buy_word,
+    menu_tokens,
+    pre_parse,
+    strip_times,
+    was_corrected,
+)
 from mia.templates.retail.seed import ITEMS as MENU
 
 FERINOS = menu_tokens((name, codes) for name, codes, _ in MENU)
@@ -82,3 +89,32 @@ def test_find_times_edges() -> None:
     assert find_times("12am 12 PM") == [("t0", dt.time(0, 0)), ("t1", dt.time(12, 0))]
     assert find_times("alas 9 at alas siyete") == [("t0", dt.time(9, 0)), ("t1", dt.time(7, 0))]
     assert find_times("13pm 25:00 alas 13 2") == []
+
+
+def test_find_times_alas_12_is_noon_and_an_hour_starts_a_number() -> None:
+    assert find_times("alas 12") == [("t0", dt.time(12, 0))]
+    assert find_times("alas dose") == [("t0", dt.time(12, 0))]
+    assert find_times("112pm 3:105pm") == []
+
+
+def test_times_with_a_space_are_not_count_groups() -> None:
+    assert split(strip_times("ubos na ang special 3 pm")) == []
+    assert split(strip_times("5 ube na lang alas 2")) == [(5, "ube")]
+    assert find_times("5 ube na lang alas 2") == [("t0", dt.time(14, 0))]
+    assert split(strip_times("special sold out at 2:15 pm")) == []
+    assert split(strip_times("5 ube left at 3 pm")) == [(5, "ube left at")]
+    assert strip_times("3 special 5 classic 13pm") == "3 special 5 classic 13pm"  # not a time
+
+
+def test_buy_words() -> None:
+    for text in (
+        "order 10 trays of eggs",
+        "mag-order ng 5 kg asukal",
+        "pa reorder sa flour",
+        "bumili ng 2 kg keso",
+        "palit og 30 niyog",
+        "osta 3 kg sokeria",
+    ):
+        assert has_buy_word(text), text
+    assert not has_buy_word("4 kg asukal na lang")
+    assert not has_buy_word("received 10 trays of eggs")
