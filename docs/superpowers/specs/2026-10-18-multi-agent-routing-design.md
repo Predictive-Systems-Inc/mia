@@ -18,20 +18,21 @@ while Jev is unreachable.
 ## Scope and data
 
 - In scope: an agent registry, the shift supervisor behind it, access per person, a Jev router,
-  agent switching with a notice, per-person language (9 languages), a queue for turns while
+  agent switching with a notice, per-person language (the 10 languages of `SUPPORTED` below), a queue for turns while
   Jev is down, developer alerts, and a real-Jev routing evaluation.
 - Stubs (label and router description only) for the other agents of the roster below, so
   routing can be measured before they exist; no organisation enables them yet.
 - Out of scope: the sales supervisor agent itself, new tables, real authentication, the role skill
   models (ADR 013).
-- No schema change. The active agent comes from `Message.agent_id`; deferrals and language
+- No schema change. If one turns out to be needed, it edits `0000_initial` in place and dev
+  databases are rebuilt (rule 14, no new migration before the first candidate). The active agent comes from `Message.agent_id`; deferrals and language
   choice are events. Jev under D18 sees synthetic and demo data only (Q27 still open).
 
 ## Components
 
 | Unit | Job |
 | --- | --- |
-| `agents/registry.py` | `AgentSpec(id, manifest, label_key, router_description, handle_turn, run_due)` and `AGENTS: dict[str, AgentSpec]`. `run_due(session, now) -> int` is optional. |
+| `agents/registry.py` | `AgentSpec(id, manifest, label_key, router_description, handle_turn, run_due)` and `AGENTS: dict[str, AgentSpec]`. `run_due(session, now) -> int` is optional. `label_key` is `agent.<id>.label`, the shown name (rule 15): `shift_supervisor` is "Vuoropäällikkö" (fi) and "Shift Supervisor" (en, fil). The id is the manifest's id, never a second literal. |
 | `agents/shift_supervisor/turn.py` | The shift supervisor's `handle_turn`: today's classify, template, clarify, Jev and agent paths, moved out of `chat/service.py` without behaviour change. |
 | `agents/stubs.py` | Stub specs for the roster agents not built yet: label and router description; `handle_turn` replies with the `reply.unavailable` text. |
 | `chat/access.py` | `agents_for(session, person) -> list[AgentSpec]`: agents enabled for the organisation (org config `agents`, default `[shift_supervisor]`) and allowed by RBAC (`agent:<id>`, action `use`). |
@@ -41,6 +42,7 @@ while Jev is unreachable.
 | `chat/service.py` | Agent neutral: store, safety checks, language, route, switch notice, `spec.handle_turn`. `chat/runs.py` (AG-UI) uses the same steps. |
 | `api/main.py` | The tick calls `run_due` of every registered agent and `deferred.retry_due`, instead of importing the shift supervisor's alerts. |
 | `i18n` | `SUPPORTED = ("fi", "en", "fil", "ceb", "ilo", "hil", "war", "bcl", "pam", "pag")`, one strings module per language; a missing key falls back to English. |
+| Agent ids in code | The shift supervisor's own id literals go: `chat/service.py` `ROLE`, `agents/shift_supervisor/cover.py` `AGENT_ID` and the tool id in `actions.py` `_last_cover_visit` read the manifest id; the `mia inbox` command (`cli.py`) shows each message's own `Message.agent_id`. A test checks that no module outside the manifest spells an agent id. |
 | `config/policies/policy.csv` | `agent:<id>`, `use` lines per role, and the new `clerk` role (see Roster). |
 
 ## Roster and access
@@ -184,5 +186,8 @@ Real Jev (`node/tests/evals/test_router_eval.py`, `-m evals`, skipped without a 
 
 - ADR 015: one agent per chat becomes many agents per person, with a router.
 - ADR 016: per-person language chosen once replaces language detection.
+- CLAUDE.md: the style line "Finnish and English user-facing strings go through mia/i18n"
+  becomes "User-facing strings go through mia/i18n (keys, not literals) in every language of
+  `i18n.SUPPORTED`; a missing key falls back to English".
 - `docs/layout.md`: the new modules. README: the router eval command. `.env.example`:
   `MIA_DEVELOPER_PERSON_ID`.
