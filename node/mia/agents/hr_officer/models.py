@@ -14,6 +14,9 @@ class Contract(BranchScoped, table=True):
     """One person's terms: employment type (regular, probationary, part_time), daily rate in
     minor units, rest day (weekday number), start and optional end date."""
 
+    __redact__: ClassVar[frozenset[str]] = frozenset(
+        {"daily_rate"}
+    )  # pay and leave stay off the chain
     __tablename__: ClassVar[str] = "hr_officer_contracts"
 
     person_id: str = Field(foreign_key="person.id", index=True)
@@ -31,6 +34,9 @@ class Payslip(BranchScoped, table=True):
     """One issued payslip per person and cutoff. lines carry kind, minutes or days, rate and
     amount; deductions carry kind and amount; money is in minor units."""
 
+    __redact__: ClassVar[frozenset[str]] = frozenset(
+        {"lines", "gross", "deductions", "net"}
+    )  # pay and leave stay off the chain
     __tablename__: ClassVar[str] = "hr_officer_payslips"
     __table_args__ = (UniqueConstraint("person_id", "cutoff_start"),)
 
@@ -51,6 +57,9 @@ class Leave(BranchScoped, table=True):
     """A leave request or grant: kind vacation, sick or unpaid; status requested, approved or
     rejected. reason is free text and is stored as data."""
 
+    __redact__: ClassVar[frozenset[str]] = frozenset(
+        {"kind", "reason"}
+    )  # pay and leave stay off the chain
     __tablename__: ClassVar[str] = "hr_officer_leave"
 
     person_id: str = Field(foreign_key="person.id", index=True)

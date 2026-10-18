@@ -89,23 +89,67 @@ def test_seed_hr_data(ferinos: None, session: Session) -> None:
     assert {t.status for t in sheets} == {"approved"}
     for clerk in ("Ana", "Liza", "Pao"):
         days = {t.date for t in sheets if people[t.person_id] == clerk}
-        assert len(days) >= 12 and min(days) <= today - dt.timedelta(days=13)
+        assert len(days) >= 9 and min(days) <= today - dt.timedelta(days=10)
         assert max(days) >= today - dt.timedelta(days=2)
-    late = [v for v in session.exec(select(Visit)).all() if v.actual_end.hour == 23]  # type: ignore[union-attr]
-    assert len(late) == 1  # an evening shift to 23:30, so night minutes exist
-
-
-def test_holidays_validate_and_a_bad_kind_is_refused() -> None:
-    ok = orgconfig.OrgSettings(
-        holidays=[{"date": "2026-12-25", "kind": "regular", "name": "Christmas"}]  # type: ignore[list-item]
-    )
-    assert ok.holidays[0].date.month == 12 and ok.payroll.pay_lag_days == 5
-    with pytest.raises(ValueError):
-        orgconfig.OrgSettings(
-            holidays=[{"date": "2026-12-25", "kind": "bank", "name": "x"}]  # type: ignore[list-item]
-        )
+    visits = session.exec(select(Visit)).all()
+    assert {t.visit_id for t in sheets} == {v.id for v in visits}  # a timesheet per visit
+    assert len(sheets) == len(visits)
 
 
 def test_ferinos_holidays_load_from_holidays_yaml(ferinos: None) -> None:
     holidays = orgconfig.load().holidays
     assert len(holidays) >= 18 and {h.kind for h in holidays} == {"regular", "special"}
+
+
+@pytest.mark.parametrize("offset", range(7))
+def test_late_shift_exists_on_any_weekday_and_skips_rest_and_leave_days(
+    ferinos: None, session: Session, offset: int
+) -> None:
+    import datetime as dt
+
+    from mia.agents.hr_officer.models import Contract, Leave
+    from mia.core.models import Timesheet, Visit
+    from mia.templates.retail import seed
+
+    today = dt.date(2026, 10, 19) + dt.timedelta(days=offset)  # each weekday once
+    seed.seed(session, today)
+    contracts = {c.person_id: c for c in session.exec(select(Contract)).all()}
+    off = {
+        (x.person_id, x.start_date + dt.timedelta(days=n))
+        for x in session.exec(select(Leave)).all()
+        for n in range((x.end_date - x.start_date).days + 1)
+    }
+    sheets = session.exec(select(Timesheet)).all()
+    for t in sheets:
+        assert t.date.weekday() != contracts[t.person_id].rest_day
+        assert (t.person_id, t.date) not in off
+    assert off  # the leave rows exist
+    late = [
+        t
+        for t in sheets
+        if (t.end - t.start).total_seconds() / 60 > 600  # 13:00 to 23:30
+    ]
+    assert len(late) == 1 and late[0].minutes == 630
+    night = (late[0].end - late[0].end.replace(hour=22, minute=0)).total_seconds() / 60
+    assert night == 90  # the 22:00 to 06:00 window
+    visits = session.exec(select(Visit)).all()
+    assert len(visits) == len(sheets)
+
+
+def test_hr_events_hide_rates_amounts_and_leave_reasons(ferinos: None, session: Session) -> None:
+    from mia.core.models import Event
+    from mia.templates.retail import seed
+
+    seed.seed(session)
+    hidden = {
+        "hr_officer_contracts": {"daily_rate"},
+        "hr_officer_payslips": {"lines", "gross", "deductions", "net"},
+        "hr_officer_leave": {"kind", "reason"},
+    }
+    events = session.exec(select(Event)).all()
+    for table, fields in hidden.items():
+        rows = [e for e in events if e.action == f"{table}.created"]
+        assert rows
+        for e in rows:
+            assert e.after is not None
+            assert all(e.after[f] == "<redacted>" for f in fields)

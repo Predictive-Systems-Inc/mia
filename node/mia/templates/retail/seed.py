@@ -74,7 +74,11 @@ CONTRACTS: list[tuple[str, str, int, dt.date, str]] = [
 REST_DAYS = (0, 1)  # Monday at the mall, Tuesday at the stall (by branch index)
 # clerk, branch index, shift start, shift end (local); the last one runs to 23:30 (night minutes)
 SHIFTS = {"Ana": (0, "09:00", "17:00"), "Liza": (0, "13:00", "21:00"), "Pao": (1, "06:00", "15:00")}
-LATE_SHIFT = ("Liza", "13:00", "23:30")  # one evening shift at the mall, three days ago
+LATE_SHIFT = (
+    "Liza",
+    "13:00",
+    "23:30",
+)  # the clerk's most recent working day runs late (night minutes)
 
 
 def is_seeded(session: Session) -> bool:
@@ -189,6 +193,15 @@ def _cutoffs(today: dt.date, count: int) -> list[tuple[dt.date, dt.date]]:
     return out[::-1]
 
 
+def _leave_plan(today: dt.date) -> list[tuple[str, str, dt.date, dt.date, int, str]]:
+    """The two approved leave rows: name, kind, first day, last day, days, reason."""
+    day = dt.timedelta
+    return [
+        ("Liza", "vacation", today - day(days=9), today - day(days=8), 2, "Family trip"),
+        ("Pao", "sick", today - day(days=5), today - day(days=5), 1, "Fever"),
+    ]
+
+
 def _seed_hr(
     session: Session, branches: list[Branch], staff: dict[str, Person], today: dt.date
 ) -> None:
@@ -212,6 +225,7 @@ def _seed_hr(
             set_by=owner,
         )
         store.insert(session, contract, Actor.system(branch.id))
+    leave_plan = _leave_plan(today)
     for index, branch in enumerate(branches):
         actor = Actor.system(branch.id)
         client = store.insert(session, Client(branch_id=branch.id, name=BRANCHES[index][0]), actor)
@@ -231,18 +245,16 @@ def _seed_hr(
         for name, (where_index, begin, finish) in SHIFTS.items():
             if where_index != index:
                 continue
-            _seed_shifts(session, branch, job, staff[name], owner, today, begin, finish)
-    for name, kind, start, end, days, reason in [
-        (
-            "Liza",
-            "vacation",
-            today - dt.timedelta(days=9),
-            today - dt.timedelta(days=8),
-            2,
-            "Family trip",
-        ),
-        ("Pao", "sick", today - dt.timedelta(days=5), today - dt.timedelta(days=5), 1, "Fever"),
-    ]:
+            off = {
+                start + dt.timedelta(days=n)
+                for who, _, start, end, _, _ in leave_plan
+                if who == name
+                for n in range((end - start).days + 1)
+            }
+            _seed_shifts(
+                session, branch, index, job, staff[name], owner, today, (begin, finish), off
+            )
+    for name, kind, start, end, days, reason in leave_plan:
         leave = Leave(
             branch_id=branches[where[name]].id,
             person_id=staff[name].id,
@@ -281,23 +293,28 @@ def _seed_hr(
 def _seed_shifts(
     session: Session,
     branch: Branch,
+    index: int,
     job: Job,
     clerk: Person,
     approver: str,
     today: dt.date,
-    begin: str,
-    finish: str,
+    hours: tuple[str, str],
+    off: set[dt.date],
 ) -> None:
     """One completed visit and one approved timesheet per working day of the last 14 days for
-    a clerk (the contract's rest day is skipped)."""
+    a clerk, skipping the contract's rest day and the days in `off` (approved leave). The late
+    clerk's most recent working day runs to the late end time."""
+    begin, finish = hours
     zone = ZoneInfo(branch.timezone)
-    rest = REST_DAYS[0 if branch.name == BRANCHES[0][0] else 1]
+    rest = REST_DAYS[index]
     actor = Actor.system(branch.id)
+    late_pending = clerk.name == LATE_SHIFT[0]
     for offset in range(1, 15):
         day = today - dt.timedelta(days=offset)
-        if day.weekday() == rest:
+        if day.weekday() == rest or day in off:
             continue
-        end_text = LATE_SHIFT[2] if (clerk.name, offset) == (LATE_SHIFT[0], 3) else finish
+        end_text = LATE_SHIFT[2] if late_pending else finish
+        late_pending = False
         start = dt.datetime.combine(day, dt.time.fromisoformat(begin), zone)
         end = dt.datetime.combine(day, dt.time.fromisoformat(end_text), zone)
         visit = Visit(
