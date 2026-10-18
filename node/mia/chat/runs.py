@@ -18,7 +18,7 @@ Guarantees:
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -41,12 +41,12 @@ from ag_ui.core import (
 from ag_ui.core import (
     Message as AguiMessage,
 )
-from pydantic_ai import AgentRunResult, CancellationToken
+from pydantic_ai import Agent, AgentRunResult, CancellationToken
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from sqlmodel import Session, col, select
 
-from mia.agents.registry import AGENTS
+from mia.agents.base import AgentDeps, Turn
 from mia.agents.shift_supervisor.turn import resolve_turn
 from mia.chat import service
 from mia.chat.blocks import AgentReply, ApprovalCardBlock, ChatReply
@@ -230,12 +230,23 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
         lang = deps.lang  # a language tap changes it
         reply: ChatReply | None = None
         agent_text = ""
+        stream_agent: Callable[[], Agent[AgentDeps, Any]] | None = None
         if isinstance(before, ChatReply):
             reply = before
         else:
-            text = before
-            reply, agent_text = await asyncio.to_thread(resolve_turn, session, deps, thread, text)
-        if reply is not None:  # emergency, template or question: the agent does not run
+            routed = await service.route_turn(session, deps, thread, before, ctx)
+            if isinstance(routed, ChatReply):
+                reply = routed
+            else:
+                spec, deps, ctx, text = routed
+                stream_agent = spec.stream_agent
+                if stream_agent is not None:
+                    reply, agent_text = await asyncio.to_thread(
+                        resolve_turn, session, deps, thread, text
+                    )
+                else:  # an agent that does not stream answers in one piece
+                    reply = await spec.handle_turn(Turn(session, deps, thread, text, past, ctx))
+        if reply is not None:  # a reply already stored: nothing streams
             await asyncio.to_thread(session.commit)
             await run.push(RunStartedEvent(thread_id=run.thread_id, run_id=run.run_id))
             last = EventType.RUN_STARTED
@@ -248,7 +259,6 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
         clean = run_input.model_copy(
             update={"messages": [], "tools": [], "state": None, "context": [], "resume": None}
         )
-        stream_agent = AGENTS[deps.manifest.id].stream_agent
         assert stream_agent is not None  # only agents with a stream_agent are streamed
         agent = stream_agent()
         adapter = AGUIAdapter(agent=agent, run_input=clean)

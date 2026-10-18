@@ -7,22 +7,28 @@ steps; the agent's handle_turn answers the rest; the caller commits the reply.
 
 import asyncio
 import datetime as dt
+import html
 import time
+from dataclasses import replace
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
-from mia.agents.base import AgentDeps, Turn
+from mia.agents.base import AgentDeps, AgentSpec, Turn
 from mia.agents.registry import AGENTS, DEFAULT
-from mia.chat import language
-from mia.chat.blocks import ChatReply
-from mia.chat.replies import history, latest_message, reply_text, tell_supervisors
+from mia.agents.shift_supervisor.classifier import classify
+from mia.chat import agent_router, language
+from mia.chat.access import agents_for
+from mia.chat.blocks import ChatReply, QuickRepliesBlock, TextBlock
+from mia.chat.channels import NOTIFICATION
+from mia.chat.replies import history, latest_message, reply_text, store_reply, tell_supervisors
 from mia.core import events, people, store
-from mia.core.egress import EgressContext
-from mia.core.models import Actor, Branch, Message, Organisation, Person, Thread
+from mia.core.egress import EgressContext, Pseudonymiser, egress_context
+from mia.core.jev import JevError, JevUnreachable
+from mia.core.models import Actor, Branch, Event, Message, Organisation, Person, Thread
 from mia.i18n import t
 from mia.i18n.strings import STRINGS
 from mia.settings import get_settings
@@ -150,6 +156,202 @@ def _before_agent(session: Session, deps: AgentDeps, thread: Thread, text: str) 
     return text
 
 
+ROUTE_ASKED = "chat.route_asked"
+
+
+def _last_mia(session: Session, thread: Thread) -> Message | None:
+    """Mia's latest message on the thread (assistant or notification), skipping the route and
+    language questions: they are stored under the default agent but belong to no agent."""
+    asked = session.exec(
+        select(Event)
+        .where(Event.entity_id == thread.id)
+        .where(col(Event.action).in_([ROUTE_ASKED, language.ASKED]))
+    ).all()
+    skip = [str((e.after or {}).get("message_id")) for e in asked]
+    return session.exec(
+        select(Message)
+        .where(Message.thread_id == thread.id)
+        .where(col(Message.role).in_(["assistant", NOTIFICATION]))
+        .where(col(Message.id).not_in(skip))
+        .order_by(col(Message.id).desc())
+    ).first()
+
+
+def active_agent(session: Session, thread: Thread) -> str | None:
+    """The agent of the thread's latest Mia message (assistant or notification), if any."""
+    row = _last_mia(session, thread)
+    return row.agent_id if row is not None else None
+
+
+def _pending(session: Session, thread: Thread) -> Message | None:
+    """Mia's latest message when it is a question (it has buttons): its agent keeps the turn."""
+    row = _last_mia(session, thread)
+    if row is None or not any(b.get("type") == "quick_replies" for b in row.blocks):
+        return None
+    return row
+
+
+def _route_tapped(session: Session, thread: Thread, text: str) -> tuple[str, str | None] | None:
+    """(agent id, original message id) for a tap on the "Is this about" question that is the
+    thread's last Mia message; otherwise None (a stale button is plain text)."""
+    asked = session.exec(
+        select(Event)
+        .where(Event.action == ROUTE_ASKED)
+        .where(Event.entity_id == thread.id)
+        .order_by(col(Event.id).desc())
+    ).first()
+    last = latest_message(session, thread, "assistant")
+    after = (asked.after or {}) if asked is not None else {}
+    if last is None or after.get("message_id") != last.id:
+        return None
+    agent_id = (after.get("options") or {}).get(text.strip())
+    return (str(agent_id), after.get("original_message_id")) if agent_id else None
+
+
+def _ask_route(
+    session: Session, deps: AgentDeps, thread: Thread, agents: list[AgentSpec]
+) -> ChatReply:
+    """ "Is this about" with one button per agent of the person; the tap answers the message."""
+    options = {t(a.label_key, deps.lang): a.id for a in agents}
+    reply = store_reply(
+        session,
+        deps,
+        thread,
+        [TextBlock(text=t("route.question", deps.lang)), QuickRepliesBlock(options=list(options))],
+    )
+    user = latest_message(session, thread, "user")
+    events.emit(
+        session,
+        ROUTE_ASKED,
+        ("thread", thread.id),
+        None,
+        {
+            "options": options,
+            "message_id": reply.message_id,
+            "original_message_id": user.id if user else None,
+        },
+        deps.actor,
+    )
+    return reply
+
+
+def _deps_for(deps: AgentDeps, spec: AgentSpec) -> AgentDeps:
+    """The same turn, acted by another agent (its actor and manifest)."""
+    return replace(
+        deps,
+        actor=Actor.person(deps.person).as_agent(spec.manifest.roles.agent_role),
+        manifest=spec.manifest,
+    )
+
+
+Chosen = tuple[AgentSpec | None, list[AgentSpec], str | None, str]
+
+
+def _choose(session: Session, deps: AgentDeps, thread: Thread, text: str) -> ChatReply | Chosen:
+    """The steps before the router: no agent (a stored reply), a tap on "Is this about", a
+    pending question, one agent, an injection. Returns (spec, the person's agents, the active
+    agent id, the text to answer); spec None means the router decides. Commits nothing."""
+    agents = agents_for(session, deps.person)
+    if not agents:
+        return reply_text(session, deps, thread, t("reply.no_agent", deps.lang))
+    ids = {a.id: a for a in agents}
+    active = active_agent(session, thread)
+    active = active if active in ids else None
+    tap = _route_tapped(session, thread, text)
+    if tap is not None and tap[0] in ids:
+        return ids[tap[0]], agents, active, language.original_text(session, tap[1]) or text
+    pending = _pending(session, thread)
+    if pending is not None and pending.agent_id in ids:
+        return ids[pending.agent_id], agents, active, text
+    if len(agents) == 1:
+        return agents[0], agents, active, text
+    if classify(html.unescape(text), deps.today, deps.lang).injection:
+        return ids[active] if active else agents[0], agents, active, text
+    return None, agents, active, text
+
+
+def _router_input(session: Session, deps: AgentDeps, thread: Thread) -> tuple[str, Pseudonymiser]:
+    """Mia's last message (the router's context) and the branch's pseudonymiser."""
+    last = _last_mia(session, thread)
+    return (last.text if last else ""), Pseudonymiser.for_branch(session, deps.branch.id)
+
+
+def _settle(
+    session: Session,
+    deps: AgentDeps,
+    thread: Thread,
+    picked: agent_router.Route,
+    agents: list[AgentSpec],
+    error: str | None,
+) -> ChatReply | AgentDeps:
+    """Act on the router's outcome: the "Is this about" question (a stored reply), or the deps
+    of the agent that answers (with the switch notice and its event on a switch)."""
+    if error is not None:
+        events.emit(
+            session, "chat.route_failed", ("thread", thread.id), None, {"error": error}, deps.actor
+        )
+    if picked.kind == "ask" or picked.agent_id is None:
+        return _ask_route(session, deps, thread, agents)
+    spec = AGENTS[picked.agent_id]
+    chosen = _deps_for(deps, spec)
+    if picked.kind == "switch":
+        label = t(spec.label_key, deps.lang)
+        chosen.notice = [TextBlock(text=t("chat.switched", deps.lang, agent=label))]
+        events.emit(
+            session,
+            "chat.agent_switched",
+            ("thread", thread.id),
+            None,
+            {"from": active_agent(session, thread), "to": spec.id},
+            chosen.actor,
+        )
+    return chosen
+
+
+async def route_turn(
+    session: Session, deps: AgentDeps, thread: Thread, text: str, ctx: EgressContext
+) -> ChatReply | tuple[AgentSpec, AgentDeps, EgressContext, str]:
+    """Pick the agent for a message (spec 2026-10-18, A turn, steps 4 to 7). Returns a stored
+    reply (the caller commits), or the agent, its deps and egress context, and the text it
+    answers. The Jev request runs with no write lock held; JevUnreachable propagates."""
+    chosen = await asyncio.to_thread(_choose, session, deps, thread, text)
+    if isinstance(chosen, ChatReply):
+        return chosen
+    spec, agents, active, text = chosen
+    if spec is not None:
+        agent_deps = _deps_for(deps, spec)
+    else:
+        error: str | None = None
+        if ctx.level == "none":  # configuration, not an outage: no request, no failure event
+            picked = agent_router.fallback(agents, active)
+        else:
+            previous, pseudo = await asyncio.to_thread(_router_input, session, deps, thread)
+            await asyncio.to_thread(session.commit)
+            lead = AGENTS[active] if active else agents[0]
+            router_ctx = replace(
+                ctx,
+                actor=_deps_for(deps, lead).actor,
+                agent_id=lead.id,
+                provider="typesafe",
+                purpose="chat.route",
+            )
+            active_spec = AGENTS[active] if active else None
+            try:
+                with egress_context(router_ctx):
+                    picked = await agent_router.route(text, agents, active_spec, previous, pseudo)
+            except JevUnreachable:
+                raise  # Task 7 defers the turn
+            except JevError as exc:
+                picked, error = agent_router.fallback(agents, active), str(exc)
+        settled = await asyncio.to_thread(_settle, session, deps, thread, picked, agents, error)
+        if isinstance(settled, ChatReply):
+            return settled
+        agent_deps = settled
+        spec = AGENTS[agent_deps.manifest.id]
+    agent_ctx = replace(ctx, actor=agent_deps.actor, agent_id=spec.id)
+    return spec, agent_deps, agent_ctx, text
+
+
 async def run_turn(
     session: Session,
     agent: Agent[AgentDeps, Any] | None,
@@ -164,6 +366,8 @@ async def run_turn(
     before = await asyncio.to_thread(_before_agent, session, deps, thread, text)
     if isinstance(before, ChatReply):
         return before
-    text = before  # the text the agent answers (the original message after a language tap)
-    spec = AGENTS[deps.manifest.id]
-    return await spec.handle_turn(Turn(session, deps, thread, text, past, ctx, agent))
+    routed = await route_turn(session, deps, thread, before, ctx)
+    if isinstance(routed, ChatReply):
+        return routed
+    spec, agent_deps, agent_ctx, text = routed
+    return await spec.handle_turn(Turn(session, agent_deps, thread, text, past, agent_ctx, agent))

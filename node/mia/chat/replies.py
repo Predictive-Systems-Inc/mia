@@ -84,8 +84,9 @@ def check_blocks(session: Session, deps: AgentDeps, blocks: list[Block]) -> list
 def finish(
     session: Session, deps: AgentDeps, thread: Thread, result: AgentRunResult[AgentReply]
 ) -> ChatReply:
-    """Check the reply's blocks and store the assistant message (the caller commits)."""
-    blocks = check_blocks(session, deps, result.output.blocks)
+    """Check the reply's blocks and store the assistant message (the caller commits). A switch
+    notice in deps.notice comes first."""
+    blocks = [*deps.notice, *check_blocks(session, deps, result.output.blocks)]
     reply_text = "\n".join(b.text for b in blocks if b.type == "text")
     new_messages = ModelMessagesTypeAdapter.dump_python(result.new_messages(), mode="json")
     message = store.insert(
@@ -154,6 +155,7 @@ def store_reply(
     session: Session, deps: AgentDeps, thread: Thread, blocks: list[Block]
 ) -> ChatReply:
     """Store a reply the agent did not write (template, question, safety script)."""
+    blocks = [*deps.notice, *blocks]
     text = "\n".join(b.text for b in blocks if b.type == "text")
     message = store.insert(
         session,

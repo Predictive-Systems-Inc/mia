@@ -602,3 +602,22 @@ def test_a_capped_run_ends_with_the_translated_reply(
     assert session.exec(select(Event).where(Event.action == "chat.turn_capped")).one()
     stored = session.exec(select(Message).where(Message.role == "assistant")).all()
     assert stored and "esihenkilö" in stored[-1].text.casefold()
+
+
+def test_a_routed_run_is_answered_by_the_chosen_agent(
+    client: TestClient, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mia.core import jev, orgconfig
+    from mia.settings import get_settings
+    from tests.jev_fake import choice, fake_jev
+
+    two = orgconfig.OrgSettings(agents=["shift_supervisor", "sales_supervisor"])
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: two)
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    get_settings.cache_clear()
+    answer = {"agent": choice("sales_supervisor")}
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(lambda body: answer))
+    events = parse(post(client, "/ag-ui", people["Sanna"], body("how much did we sell?")).text)
+    assert_well_formed(events)
+    blocks = [e for e in events if e["type"] == "CUSTOM" and e["name"] == runs.BLOCKS_EVENT]
+    assert blocks[-1]["value"]["agent_id"] == "sales_supervisor"

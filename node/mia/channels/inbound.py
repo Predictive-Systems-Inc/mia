@@ -17,7 +17,6 @@ from pydantic import BaseModel
 from sqlalchemy import text as sql
 from sqlmodel import Session, col, select
 
-from mia.agents.shift_supervisor import MANIFEST
 from mia.agents.shift_supervisor.agent import get_agent
 from mia.channels import linking, outbox, registry, transport
 from mia.channels.base import InboundMessage
@@ -119,11 +118,8 @@ def _begin(session: Session, inbound_id: str, now: dt.datetime) -> _Step | None:
         )
         _finish(session, row, "done")
         return _Step(person=person)
-    thread = session.exec(
-        select(Thread)
-        .where(Thread.person_id == person.id)
-        .where(Thread.agent_id == MANIFEST.id)
-        .order_by(col(Thread.id).desc())
+    thread = session.exec(  # one conversation per person on a channel, whichever agent
+        select(Thread).where(Thread.person_id == person.id).order_by(col(Thread.id).desc())
     ).first()
     return _Step(person=person, text=text, thread_id=thread.id if thread else None)
 
