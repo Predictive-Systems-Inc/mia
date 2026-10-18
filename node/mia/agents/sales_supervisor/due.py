@@ -2,7 +2,8 @@
 list to head staff, the owner's end-of-day report, the morning message and the why question.
 
 What is due is pure code (rule 7): the five window functions take the branch, its hours rows
-and `now`, and return a bool. The senders load rows and send through notify, so quiet hours
+and `now`, and return the business date the work is due for, or None. After-close work belongs
+to the closing's date, also after midnight, until the next opening. The senders load rows and send through notify, so quiet hours
 apply in deliver. Each send leaves a marker event on the branch with the business date (and
 the message ids), checked first, so each fires at most once per branch and date. Each branch
 commits alone and a failing branch never silences the others (alerts._each_branch).
@@ -16,9 +17,7 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, col, select
 
 from mia.agents.sales_supervisor import MANIFEST, actions, calc, replies, tools
-from mia.agents.sales_supervisor.models import SalesTarget
 from mia.agents.shift_supervisor import alerts
-from mia.agents.shift_supervisor.classifier import EN_WEEKDAYS
 from mia.chat.blocks import Block, TextBlock
 from mia.chat.channels import notify
 from mia.core import orgconfig
@@ -30,6 +29,7 @@ from mia.templates.retail.models import RetailBranchHours
 DEFAULT_OPENS = dt.time(9, 0)
 HALF_HOUR = dt.timedelta(minutes=30)
 HOUR = dt.timedelta(hours=1)
+NO_HOURS_WINDOW = dt.timedelta(hours=6)
 GOOD_DAY_PERCENT = 20  # without a target, a day this much above the 4-week average is good
 REMINDER = "sales.reminder_sent"
 MISSING = "sales.missing_sent"
@@ -42,45 +42,70 @@ Sender = Callable[[Session, Branch, Hours, dt.date], list[Message]]
 # ---- what is due (pure) ---------------------------------------------------------------------
 
 
-def _times(branch: Branch, hours: Hours, now: dt.datetime) -> tuple[dt.datetime, ...]:
-    """(local now, opening, closing) on the branch's local date; 09:00 and 21:00 without a row.
-    ponytail: a closing near midnight puts the after-close windows on the next date, where they
-    never fire; handle it when a branch closes after 22:30."""
+def _at(branch: Branch, hours: Hours, day: dt.date, closing: bool) -> dt.datetime:
+    """The opening (or closing) of `day` as an aware local time; 09:00 and 21:00 without a row."""
+    if closing:
+        when = tools._closes(hours, day.weekday())
+    else:
+        row = next((h for h in hours if h.weekday == day.weekday()), None)
+        when = dt.time.fromisoformat(row.opens) if row else DEFAULT_OPENS
+    return dt.datetime.combine(day, when, ZoneInfo(branch.timezone))
+
+
+def _window_end(branch: Branch, hours: Hours, day: dt.date) -> dt.datetime:
+    """When the after-close work of `day` stops: the next open day's opening, or six hours
+    after closing for a branch without hours."""
+    if not hours:
+        return _at(branch, hours, day, closing=True) + NO_HOURS_WINDOW
+    is_open = tools._open_days(hours)
+    nxt = next(d for k in range(1, 8) if is_open(d := day + dt.timedelta(days=k)))
+    return _at(branch, hours, nxt, closing=False)
+
+
+def _after_close(
+    branch: Branch, hours: Hours, now: dt.datetime, delay: dt.timedelta
+) -> dt.date | None:
+    """The business date (today or yesterday, local) whose closing plus delay has passed and
+    whose window has not ended; None when there is none. Crosses midnight."""
     local = now.astimezone(ZoneInfo(branch.timezone))
-    row = next((h for h in hours if h.weekday == local.weekday()), None)
-    opens = dt.time.fromisoformat(row.opens) if row else DEFAULT_OPENS
-    closes = tools._closes(hours, local.weekday())
-    day, tz = local.date(), local.tzinfo
-    return local, dt.datetime.combine(day, opens, tz), dt.datetime.combine(day, closes, tz)
+    is_open = tools._open_days(hours)
+    for day in (local.date(), local.date() - dt.timedelta(days=1)):
+        start = _at(branch, hours, day, closing=True) + delay
+        if is_open(day) and start <= local < _window_end(branch, hours, day):
+            return day
+    return None
 
 
-def closing_reminder(branch: Branch, hours: Hours, now: dt.datetime) -> bool:
-    """True in the half hour before closing."""
-    local, _, closes = _times(branch, hours, now)
-    return closes - HALF_HOUR <= local < closes
+def closing_reminder(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
+    """Today's date in the half hour before an open day's closing, else None."""
+    local = now.astimezone(ZoneInfo(branch.timezone))
+    closes = _at(branch, hours, local.date(), closing=True)
+    on = tools._open_days(hours)(local.date()) and closes - HALF_HOUR <= local < closes
+    return local.date() if on else None
 
 
-def missing_list(branch: Branch, hours: Hours, now: dt.datetime) -> bool:
-    """True from half an hour after closing to the end of the local day."""
-    local, _, closes = _times(branch, hours, now)
-    return closes + HALF_HOUR <= local
+def missing_list(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
+    """The business date from half an hour after its closing to its window's end."""
+    return _after_close(branch, hours, now, HALF_HOUR)
 
 
-def owner_report(branch: Branch, hours: Hours, now: dt.datetime) -> bool:
-    """True from an hour after closing to the end of the local day."""
-    local, _, closes = _times(branch, hours, now)
-    return closes + HOUR <= local
+def owner_report(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
+    """The business date from an hour after its closing to its window's end."""
+    return _after_close(branch, hours, now, HOUR)
 
 
-def why_question(branch: Branch, hours: Hours, now: dt.datetime) -> bool:
-    """True when the report is due: the question is asked at the same time."""
+def why_question(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
+    """As owner_report: the question is asked at the same time."""
     return owner_report(branch, hours, now)
 
 
-def morning_message(branch: Branch, hours: Hours, now: dt.datetime) -> bool:
-    """True in the first hour after opening (a node started later skips the day's message)."""
-    local, opens, _ = _times(branch, hours, now)
-    return opens <= local < opens + HOUR
+def morning_message(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
+    """Today's date in the first hour after an open day's opening (a node started later skips
+    the day's message), else None."""
+    local = now.astimezone(ZoneInfo(branch.timezone))
+    opens = _at(branch, hours, local.date(), closing=False)
+    on = tools._open_days(hours)(local.date()) and opens <= local < opens + HOUR
+    return local.date() if on else None
 
 
 def good_day(total: int, share: int | None, average: int | None) -> bool:
@@ -119,25 +144,6 @@ def _leads(session: Session, organisation_id: str) -> list[Person]:
     stmt = select(Person).where(col(Person.branch_id).in_(branch_ids))
     rows = session.exec(stmt.where(Person.status == "active").order_by(col(Person.id)))
     return [p for p in rows if tools.LEADS & set(p.roles)]
-
-
-def _share(session: Session, branch_id: str, hours: Hours, day: dt.date) -> int | None:
-    """tools.target_share without the rbac check (the tick is system work) and with the hours
-    already loaded: a day target beats a month target, then an owner's or admin's, then the
-    newest. ponytail: mirrors target_share's ranking; let target_share call this when tools.py
-    is next touched."""
-    stmt = select(SalesTarget).where(SalesTarget.branch_id == branch_id)
-    rows = [r for r in session.exec(stmt.where(col(SalesTarget.starts_on) <= day)) if r.amount]
-    setters = {p.id: p for p in session.exec(select(Person))}
-    ranked = []
-    for row in rows:
-        assert row.amount is not None
-        target = calc.Target(row.period, row.starts_on, row.amount)
-        share = calc.day_share(target, day, tools._open_days(hours))
-        if share is not None:
-            lead = tools._is_lead(setters.get(row.set_by))
-            ranked.append((row.period == "day", lead, row.created_at, row.id, share))
-    return max(ranked)[-1] if ranked else None
 
 
 def _total(session: Session, branch_id: str, day: dt.date) -> int:
@@ -193,11 +199,6 @@ def _signed(percent: int, lang: str) -> str:
     return ("+" if percent > 0 else "") + format_int(percent, lang)
 
 
-def _weekday(day: dt.date, lang: str) -> str:
-    name = actions.DAY_NAMES.get(lang, EN_WEEKDAYS)[day.weekday()]
-    return name if lang == "fi" else name.capitalize()
-
-
 @dataclass(frozen=True)
 class _Day:
     """One branch's business date as the report words it."""
@@ -233,7 +234,7 @@ def _report_blocks(d: _Day, lang: str) -> list[Block]:
     week, avg = calc.compare(d.total, d.last_week), calc.compare(d.total, d.average)
     if week is not None and avg is not None:
         compare = {"percent": _signed(week, lang), "avg_percent": _signed(avg, lang)}
-        weekday = _weekday(d.day, lang)
+        weekday = actions.day_when(d.day.weekday(), lang)
         blocks.append(TextBlock(text=t("sales.report.compare", lang, weekday=weekday, **compare)))
     return blocks
 
@@ -249,7 +250,7 @@ def _report(session: Session, branch: Branch, hours: Hours, day: dt.date) -> lis
         items=[(names[i].name, q, a) for i, (q, a) in ordered],
         total=sum(a for _, a in sums.values()),
         currency=tools._currency(session, branch.id),
-        share=_share(session, branch.id, hours, day),
+        share=tools._share(session, branch.id, hours, day),
         last_week=last_week,
         average=average,
     )
@@ -259,44 +260,57 @@ def _report(session: Session, branch: Branch, hours: Hours, day: dt.date) -> lis
     ]
 
 
+def _morning_text(lang: str, yesterday: str | None, target: str | None) -> str | None:
+    """The morning words: yesterday and today's target, either one alone, or None."""
+    if yesterday is None:
+        return t("sales.morning.first", lang, target=target) if target else None
+    if target is None:
+        return t("sales.morning.no_target", lang, yesterday=yesterday)
+    return t("sales.morning", lang, yesterday=yesterday, target=target)
+
+
 def _morning(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Message]:
     yesterday = day - dt.timedelta(days=1)
+    counted = tools._open_days(hours)(yesterday) and _reporters(session, branch.id, yesterday)
     total = _total(session, branch.id, yesterday)
     currency = tools._currency(session, branch.id)
-    past, share = (
-        _share(session, branch.id, hours, yesterday),
-        _share(session, branch.id, hours, day),
-    )
+    past = tools._share(session, branch.id, hours, yesterday)
+    share = tools._share(session, branch.id, hours, day)
     people = {p.id: p for p in alerts._people(session, branch.id, "clerk")}
     people |= {p.id: p for p in alerts.supervisors(session, branch.id)}
     sent = []
     for person in people.values():
         lang = person.language
         done = format_money(total, currency, lang) + replies._target(total, past, currency, lang)
-        if share is None:
-            text = t("sales.morning.no_target", lang, yesterday=done)
-        else:
-            text = t(
-                "sales.morning", lang, yesterday=done, target=format_money(share, currency, lang)
-            )
-        sent.append(_text(session, branch, person, text))
+        target = None if share is None else format_money(share, currency, lang)
+        text = _morning_text(lang, done if counted else None, target)
+        if text is not None:
+            sent.append(_text(session, branch, person, text))
     return sent
 
 
 def _why(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Message]:
     total = _total(session, branch.id, day)
     _, average = _history(session, branch.id, day)
-    if not good_day(total, _share(session, branch.id, hours, day), average):
+    share = tools._share(session, branch.id, hours, day)
+    if not good_day(total, share, average):
         return []
     reporters = [session.get(Person, pid) for pid in sorted(_reporters(session, branch.id, day))]
     return [
-        _text(session, branch, p, t("sales.why", p.language))
+        _text(session, branch, p, _why_text(p.language, day, share))
         for p in reporters
-        if p is not None and p.status == "active"
+        if p and p.status == "active"
     ]
 
 
-DUE: list[tuple[Callable[[Branch, Hours, dt.datetime], bool], str, Sender]] = [
+def _why_text(lang: str, day: dt.date, share: int | None) -> str:
+    """sales.why after beating a target; sales.why.average after beating the usual weekday."""
+    if share is not None:
+        return t("sales.why", lang)
+    return t("sales.why.average", lang, weekday=actions.day_when(day.weekday(), lang))
+
+
+DUE: list[tuple[Callable[[Branch, Hours, dt.datetime], dt.date | None], str, Sender]] = [
     (morning_message, MORNING, _morning),
     (closing_reminder, REMINDER, _remind),
     (missing_list, MISSING, _missing),
@@ -308,12 +322,10 @@ DUE: list[tuple[Callable[[Branch, Hours, dt.datetime], bool], str, Sender]] = [
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
     stmt = select(RetailBranchHours).where(RetailBranchHours.branch_id == branch.id)
     hours = list(session.exec(stmt))
-    day = now.astimezone(ZoneInfo(branch.timezone)).date()
-    if not tools._open_days(hours)(day):
-        return 0
     count = 0
     for is_due, marker, send in DUE:
-        if not is_due(branch, hours, now) or alerts._marked(session, marker, branch.id, day):
+        day = is_due(branch, hours, now)
+        if day is None or alerts._marked(session, marker, branch.id, day):
             continue
         sent = send(session, branch, hours, day)
         if sent:  # the marker records a send; nothing sent is checked again on the next tick

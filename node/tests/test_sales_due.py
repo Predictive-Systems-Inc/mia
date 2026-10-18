@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterator
 import pytest
 from sqlmodel import Session, select
 
-from mia.agents.sales_supervisor import MANIFEST, due, tools
+from mia.agents.sales_supervisor import MANIFEST, actions, due, tools
 from mia.agents.sales_supervisor.tools import CountIn, RecordCountsInput, SetTargetInput
 from mia.channels import registry
 from mia.channels.simulator import SimAdapter
@@ -26,6 +26,7 @@ from mia.core.models import (
     Thread,
     Visit,
 )
+from mia.core.money import format_money
 from mia.core.orgconfig import ChannelConfig, OrgSettings, QuietHours
 from mia.core.people import add_person
 from mia.i18n import t
@@ -245,9 +246,11 @@ def test_owner_report_compares_with_last_week_and_the_average(
     assert len(rosa) == 2  # one report per branch
     kiosk_report = next(n for n in rosa if "Mall kiosk" in n.text)
     assert "40 Special" in kiosk_report.text and "₱1,800.00" in kiosk_report.text
-    assert "%" in kiosk_report.text and "4-week average" in kiosk_report.text
+    assert "%" in kiosk_report.text and len(kiosk_report.blocks) == 2  # the comparison line
     stall_report = next(n for n in rosa if "Street stall" in n.text)
-    assert stall_report.text == t("sales.today.empty", "en", branch="Street stall")
+    assert stall_report.text == t(
+        "sales.today.empty", people["Rosa"].language, branch="Street stall"
+    )
     assert due.run_due(session, manila_at(22, 30)) == 0
 
 
@@ -279,7 +282,7 @@ def test_morning_message_at_opening(session: Session, ferinos: Ferinos, manila_a
     assert kiosk_people <= owners and people["Rosa"].id not in owners
     assert sent == 3  # the stall opened at 06:00, past its morning window
     (ana,) = _notes(session, people["Ana"])
-    assert ana.text.startswith("Good morning") and "₱" in ana.text
+    assert ana.text.count("₱") == 3  # yesterday, its target share, today's share
     assert due.run_due(session, manila_at(9, 20)) == 0
 
 
@@ -317,3 +320,125 @@ def test_no_why_question_below_the_target(
     due.run_due(session, manila_at(22, 0))
     why = t("sales.why", people["Ana"].language)
     assert why not in [n.text for n in _notes(session, people["Ana"])]
+
+
+# ---- fix round 1 ------------------------------------------------------------------------------
+
+
+def _marker_dates(session: Session, action: str) -> list[str]:
+    rows = session.exec(select(Event).where(Event.action == action)).all()
+    return [str((r.after or {}).get("date")) for r in rows]
+
+
+def _kiosk_reports(session: Session, person: Person) -> list[Message]:
+    return [n for n in _notes(session, person) if "Mall kiosk" in n.text]
+
+
+def test_a_late_closing_reports_after_midnight_under_its_own_date(
+    session: Session, ferinos: Ferinos, manila_at: At
+) -> None:
+    kiosk, people = ferinos
+    for row in _hours(session, kiosk):
+        store.update(session, row, {"closes": "23:00"}, Actor.system(kiosk.id))
+    session.commit()
+    _report(session, people["Ana"], quantity=40)
+    today = manila_at(15, 0).date()
+    due.run_due(session, manila_at(22, 59))
+    assert _notes(session, people["Marites"]) == []  # no missing list before 23:30
+    due.run_due(session, manila_at(23, 30))
+    assert len(_notes(session, people["Marites"])) == 1  # Liza is missing
+    assert _kiosk_reports(session, people["Rosa"]) == []
+    midnight = manila_at(0, 0) + dt.timedelta(days=1)
+    due.run_due(session, midnight)
+    assert len(_kiosk_reports(session, people["Rosa"])) == 1
+    assert len(_notes(session, people["Ana"])) == 1  # the why question
+    assert _marker_dates(session, "sales.report_sent").count(today.isoformat()) == 2
+    assert _marker_dates(session, "sales.why_asked") == [today.isoformat()]
+    assert due.run_due(session, midnight + dt.timedelta(minutes=30)) == 0
+    assert (
+        len(_kiosk_reports(session, people["Rosa"])) == 1
+        and len(_notes(session, people["Marites"])) == 1
+    )
+
+
+def test_after_close_window_ends_at_the_next_opening(
+    session: Session, ferinos: Ferinos, manila_at: At
+) -> None:
+    kiosk, _ = ferinos
+    hours = _hours(session, kiosk)
+    tomorrow = dt.timedelta(days=1)
+    assert due.owner_report(kiosk, hours, manila_at(8, 59) + tomorrow) == manila_at(8, 59).date()
+    assert due.owner_report(kiosk, hours, manila_at(9, 0) + tomorrow) is None
+    assert due.owner_report(kiosk, [], manila_at(2, 59) + tomorrow) == manila_at(2, 59).date()
+    assert due.owner_report(kiosk, [], manila_at(3, 0) + tomorrow) is None
+
+
+def test_a_zero_target_counts_in_both_callers(
+    session: Session, ferinos: Ferinos, manila_at: At
+) -> None:
+    kiosk, people = ferinos
+    today = manila_at(15, 0).date()
+    target = tools.SalesTarget(
+        branch_id=kiosk.id,
+        period="day",
+        starts_on=today,
+        amount=0,
+        currency="PHP",
+        set_by=people["Rosa"].id,
+    )
+    store.insert(session, target, Actor.system(kiosk.id))
+    session.commit()
+    rosa = deps_for(session, people["Rosa"])
+    assert tools.target_share(rosa, kiosk.id, today, "t1") == 0
+    assert tools._share(session, kiosk.id, _hours(session, kiosk), today) == 0
+
+
+def test_why_question_without_a_target_names_the_usual_weekday(
+    session: Session, ferinos: Ferinos, manila_at: At
+) -> None:
+    kiosk, people = ferinos
+    for row in session.exec(select(tools.SalesTarget)).all():  # no target at all
+        store.update(session, row, {"amount": None}, Actor.system(kiosk.id))
+    session.commit()
+    _report(session, people["Ana"], quantity=200)  # far above any seeded day
+    due.run_due(session, manila_at(22, 0))
+    (note,) = _notes(session, people["Ana"])
+    lang = people["Ana"].language
+    day = manila_at(22, 0).date()
+    assert note.text == t("sales.why.average", lang, weekday=actions.day_when(day.weekday(), lang))
+    assert note.text in actions.why_texts(lang)
+
+
+def test_nothing_runs_for_an_organisation_without_the_sales_supervisor(
+    session: Session, ferinos: Ferinos, manila_at: At, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    org = OrgSettings(agents=["shift_supervisor"])
+    with monkeypatch.context() as m:
+        m.setattr(orgconfig, "load", lambda org_name=None: org)
+        assert due.run_due(session, manila_at(22, 0)) == 0
+    assert _notes(session) == []
+
+
+def test_finnish_compare_line_uses_the_essive_weekday() -> None:
+    monday = dt.date(2026, 10, 19)
+    assert actions.day_when(monday.weekday(), "fi") == "maanantaina"
+    assert actions.day_when(monday.weekday(), "en") == "Monday"
+
+
+def test_morning_after_a_day_without_counts_names_only_the_target(
+    session: Session, ferinos: Ferinos, manila_at: At
+) -> None:
+    kiosk, people = ferinos
+    yesterday = manila_at(9, 5).date() - dt.timedelta(days=1)
+    stmt = select(tools.SalesCount).where(tools.SalesCount.business_date == yesterday)
+    for row in session.exec(stmt).all():
+        store.update(session, row, {"superseded_by": "gone"}, Actor.system(kiosk.id))
+    session.commit()
+    due.run_due(session, manila_at(9, 5))
+    (note,) = _notes(session, people["Ana"])
+    share = tools._share(
+        session, kiosk.id, _hours(session, kiosk), yesterday + dt.timedelta(days=1)
+    )
+    assert share is not None
+    lang = people["Ana"].language
+    assert note.text == t("sales.morning.first", lang, target=format_money(share, "PHP", lang))

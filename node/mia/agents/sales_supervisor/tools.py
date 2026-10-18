@@ -109,11 +109,18 @@ def _open_days(hours: Sequence[RetailBranchHours]) -> Callable[[dt.date], bool]:
 
 
 def target_share(deps: AgentDeps, branch_id: str, day: dt.date, tool_call_id: str) -> int | None:
-    """The branch's money target for the day, after the targets read check. A day target wins
-    over a month target; between targets of the same period, one set by an owner or admin
-    wins, then the newest."""
+    """The branch's money target for the day (see _share), after the targets and the
+    branch-hours read checks."""
     _check(deps, TARGETS, "read", tool_call_id)
-    session = deps.session
+    return _share(deps.session, branch_id, _hours(deps, branch_id, tool_call_id), day)
+
+
+def _share(
+    session: Session, branch_id: str, hours: Sequence[RetailBranchHours], day: dt.date
+) -> int | None:
+    """The branch's money target for the day without a permission check (callers check, or are
+    the system tick); reads only. A day target wins over a month target; between targets of the
+    same period, one set by an owner or admin wins, then the newest. A zero target counts."""
     stmt = (
         select(SalesTarget)
         .where(SalesTarget.branch_id == branch_id)
@@ -123,7 +130,7 @@ def target_share(deps: AgentDeps, branch_id: str, day: dt.date, tool_call_id: st
     rows = session.exec(stmt).all()
     setter_ids = {r.set_by for r in rows}
     setters = {p.id: p for p in session.exec(select(Person).where(col(Person.id).in_(setter_ids)))}
-    open_day = _open_days(_hours(deps, branch_id, tool_call_id))
+    open_day = _open_days(hours)
     ranked = []
     for row in rows:
         assert row.amount is not None

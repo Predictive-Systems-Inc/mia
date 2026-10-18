@@ -30,6 +30,33 @@ NONE = "none"
 FIL_WEEKDAYS = ["lunes", "martes", "miyerkules", "huwebes", "biyernes", "sabado", "linggo"]
 CEB_WEEKDAYS = ["lunes", "martes", "miyerkules", "huwebes", "biyernes", "sabado", "dominggo"]
 DAY_NAMES = {"en": EN_WEEKDAYS, "fi": FI_WEEKDAYS, "fil": FIL_WEEKDAYS, "ceb": CEB_WEEKDAYS}
+# Finnish "on a Monday" (essive), as the due messages use it: "kuin viime maanantaina".
+FI_WEEKDAYS_ESSIVE = [
+    "maanantaina",
+    "tiistaina",
+    "keskiviikkona",
+    "torstaina",
+    "perjantaina",
+    "lauantaina",
+    "sunnuntaina",
+]
+
+
+def day_when(weekday: int, lang: str) -> str:
+    """The weekday (0 is Monday) as the due messages put it: the essive in Finnish, else the
+    capitalised name in the language (English when it has none)."""
+    if lang == "fi":
+        return FI_WEEKDAYS_ESSIVE[weekday]
+    return DAY_NAMES.get(lang, EN_WEEKDAYS)[weekday].capitalize()
+
+
+def why_texts(lang: str) -> set[str]:
+    """Every wording of Mia's why question in lang: after beating the target, or the usual
+    for any weekday."""
+    usual = {t("sales.why.average", lang, weekday=day_when(d, lang)) for d in range(7)}
+    return {t("sales.why", lang)} | usual
+
+
 THEMES = {
     "weather": "The weather",
     "foot_traffic": "Many people passing by or visiting",
@@ -231,7 +258,7 @@ def build_query(deps: AgentDeps, message: str, previous_mia_message: str) -> Que
         items=items,
         branches=branches,
         periods=_periods(deps.lang),
-        why_asked=previous_mia_message == t("sales.why", deps.lang),
+        why_asked=previous_mia_message in why_texts(deps.lang),
         lang=deps.lang,
     )
 
