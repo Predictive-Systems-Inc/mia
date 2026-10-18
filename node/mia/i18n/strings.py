@@ -302,6 +302,11 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "stock.approval_title": "Supplier order",
         "stock.order_approved": "Your order from {supplier} is approved.",
         "stock.order_rejected": "Your order from {supplier} was not approved.",
+        "hr.leave_approved": "Your leave from {start} to {end} is approved.",
+        "hr.leave_rejected": "Your leave from {start} to {end} was not approved.",
+        "hr.payslip_resent": (
+            "Your payslip for {start} to {end}: gross {gross}, deductions {deductions}, net {net}."
+        ),
         "stock.plan.more": "Bake more {item}.",
         "stock.plan.same": "Bake the same {item}.",
         "stock.plan.fewer": "Bake fewer {item}.",
@@ -687,6 +692,12 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "stock.approval_title": "Toimittajatilaus",
         "stock.order_approved": "Tilauksesi toimittajalta {supplier} on hyväksytty.",
         "stock.order_rejected": "Tilaustasi toimittajalta {supplier} ei hyväksytty.",
+        "hr.leave_approved": "Vapaasi {start} - {end} on hyväksytty.",
+        "hr.leave_rejected": "Vapaatasi {start} - {end} ei hyväksytty.",
+        "hr.payslip_resent": (
+            "Palkkalaskelmasi {start} - {end}: brutto {gross}, vähennykset {deductions}, "
+            "netto {net}."
+        ),
         "stock.plan.more": "Leivo enemmän: {item}.",
         "stock.plan.same": "Leivo saman verran: {item}.",
         "stock.plan.fewer": "Leivo vähemmän: {item}.",

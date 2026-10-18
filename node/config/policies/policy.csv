@@ -109,6 +109,32 @@ p, supervisor, *, data:retail_ingredients, read, allow
 p, admin, *, data:inventory_manager_*, read_all, allow
 p, admin, *, data:inventory_manager_*, write_all, allow
 
+# staff (clerk inherits): their own hours, payday, 13th month, contributions, leave balance,
+# holiday pay and payslip; request leave (it waits for head staff)
+p, staff, *, tool:hr_officer.hours, execute, allow
+p, staff, *, tool:hr_officer.next_payday, execute, allow
+p, staff, *, tool:hr_officer.thirteenth_month, execute, allow
+p, staff, *, tool:hr_officer.last_contributions, execute, allow
+p, staff, *, tool:hr_officer.balance, execute, allow
+p, staff, *, tool:hr_officer.holiday, execute, allow
+p, staff, *, tool:hr_officer.resend_payslip, execute, allow
+p, staff, *, tool:hr_officer.request_leave, request, allow
+p, staff, *, data:hr_officer_contracts, read_own, allow
+p, staff, *, data:hr_officer_payslips, read_own, allow
+p, staff, *, data:hr_officer_leave, read_own, allow
+p, staff, *, data:hr_officer_leave, write_own, allow
+
+# supervisor: the branch's hours (core.timesheet read comes with data:core.*); leave approvals
+# come from the manifest's approvers list
+p, supervisor, *, data:hr_officer_contracts, read, allow
+
+# admin: every person of every branch, the certificate text and contracts; owner inherits
+p, admin, *, data:hr_officer_*, read_all, allow
+p, admin, *, data:hr_officer_*, write_all, allow
+p, admin, *, data:core.timesheet, read_all, allow
+p, admin, *, tool:hr_officer.certificate_text, execute, allow
+p, admin, *, tool:hr_officer.set_contract, execute, allow
+
 # agents a role may talk to (chat/access.py); owner inherits admin > supervisor > staff
 p, staff, *, agent:shift_supervisor, use, allow
 p, clerk, *, agent:sales_supervisor, use, allow

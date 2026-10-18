@@ -4,8 +4,8 @@ Guarantees for every agent built here:
 - only tools listed in the manifest are registered (no tool, no action), and every manifest
   tool must have an implementation;
 - every tool call runs rbac.require() on the agent principal and the person it acts for;
-- tools with risk money, external or delete create an approval and stop (ApprovalRequired)
-  unless an approved approval for that tool call is supplied;
+- tools with risk money, external or delete, or with `approval: always`, create an approval
+  and stop (ApprovalRequired) unless an approved approval for that tool call is supplied;
 - every call is written to the events log with its inputs and result, and committed;
 - the model comes from settings.MIA_MODEL: `test` uses the agent's deterministic rules model,
   anything else is a gateway route reached only through mia.core.egress.
@@ -210,8 +210,8 @@ def guard(
     summary: str = "",
     args: BaseModel | None = None,
 ) -> None:
-    """Permission check, then the approval rule. Raises before the tool body can run. A risky
-    tool's approval carries the validated input in its evidence (`input`), so what runs on
+    """Permission check, then the approval rule: a risky tool or one with `approval: always`
+    asks for an approval first. Raises before the tool body can run. The approval carries the validated input in its evidence (`input`), so what runs on
     approve is exactly what the approver saw."""
     get_rbac().require(
         deps.actor,
@@ -220,7 +220,8 @@ def guard(
         session=deps.session,
         tool_call_id=tool_call_id,
     )
-    if spec.risk in RISKY and not _approved_for(deps, spec):
+    needs_approval = spec.risk in RISKY or spec.approval == "always"
+    if needs_approval and not _approved_for(deps, spec):
         approval = approvals.request(
             deps.session,
             spec.id,

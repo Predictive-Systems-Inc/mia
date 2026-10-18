@@ -6,7 +6,42 @@ job_description: job.md
 instructions: {base: prompts/base.md}
 roles:
   agent_role: agent.hr_officer
-  grants: []
+  grants:
+    - data:hr_officer_contracts:read
+    - data:hr_officer_contracts:write
+    - data:hr_officer_contracts:read_all
+    - data:hr_officer_contracts:write_all
+    - data:hr_officer_payslips:read
+    - data:hr_officer_payslips:read_all
+    - data:hr_officer_leave:read
+    - data:hr_officer_leave:write
+    - data:hr_officer_leave:read_all
+    - data:core.timesheet:read
+    - data:core.timesheet:read_all
+    - data:core.person:read
+    - data:core.branch:read
+    - tool:hr_officer.hours:execute
+    - tool:hr_officer.next_payday:execute
+    - tool:hr_officer.thirteenth_month:execute
+    - tool:hr_officer.last_contributions:execute
+    - tool:hr_officer.request_leave:request
+    - tool:hr_officer.balance:execute
+    - tool:hr_officer.holiday:execute
+    - tool:hr_officer.resend_payslip:execute
+    - tool:hr_officer.certificate_text:execute
+    - tool:hr_officer.set_contract:execute
   denies: [tool:*:approve]
-tools: []
+  # Leave waits for head staff: the guard asks a supervisor, the owner or an admin.
+  approvers: {hr_officer.request_leave: [supervisor, owner, admin]}
+tools:
+  - {id: hr_officer.hours, kind: agent, risk: read, approval: never, reads: [hr_officer_contracts, timesheets]}
+  - {id: hr_officer.next_payday, kind: agent, risk: read, approval: never, reads: []}
+  - {id: hr_officer.thirteenth_month, kind: agent, risk: read, approval: never, reads: [hr_officer_contracts, hr_officer_payslips]}
+  - {id: hr_officer.last_contributions, kind: agent, risk: read, approval: never, reads: [hr_officer_payslips]}
+  - {id: hr_officer.request_leave, kind: agent, risk: write_internal, approval: always, reads: [hr_officer_contracts], writes: [hr_officer_leave, approval]}
+  - {id: hr_officer.balance, kind: agent, risk: read, approval: never, reads: [hr_officer_contracts, hr_officer_leave]}
+  - {id: hr_officer.holiday, kind: agent, risk: read, approval: never, reads: []}
+  - {id: hr_officer.resend_payslip, kind: agent, risk: read, approval: never, reads: [hr_officer_payslips], writes: [message]}
+  - {id: hr_officer.certificate_text, kind: agent, risk: read, approval: never, reads: [hr_officer_contracts, person, branch]}
+  - {id: hr_officer.set_contract, kind: agent, risk: write_internal, approval: never, reads: [person, branch], writes: [hr_officer_contracts]}
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

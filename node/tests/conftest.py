@@ -122,6 +122,16 @@ def inventory_manager_role() -> None:
     get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
 
 
+@pytest.fixture(autouse=True)
+def hr_officer_role() -> None:
+    """The hr officer's manifest grants are in RBAC for every test (no LLM agent)."""
+    from mia.agents.hr_officer import MANIFEST
+    from mia.core.rbac import get_rbac
+
+    roles = MANIFEST.roles
+    get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
+
+
 @pytest.fixture
 def engine() -> Engine:
     eng = db.get_engine()
@@ -203,6 +213,7 @@ CLOCK_USERS = (
     "mia.agents.shift_supervisor.tools",
     "mia.agents.sales_supervisor.tools",
     "mia.agents.inventory_manager.tools",
+    "mia.agents.hr_officer.tools",
     "mia.api.main",
     "mia.channels.outbox",
     "mia.channels.service",
