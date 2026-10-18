@@ -123,9 +123,9 @@ def test_answer_offer_only_after_the_offer(session: Session, ferinos: Any) -> No
     assert "answer" not in build_request(q, "m")["questions"]
     assert args(q, "answer_offer")[1] == "offer"
     asked = build(
-        session, ferinos, "yes please", previous=t("stock.offer_order", "en", ingredient="Eggs")
+        session, ferinos, "yes please", previous=t("stock.offer_order", "fil", ingredient="Eggs")
     )
-    assert asked.offer_asked and asked.previous_mia_message in offer_texts("en", ["Eggs"])
+    assert asked.offer_asked and asked.previous_mia_message in offer_texts("fil", ["Eggs"])
     assert args(asked, "answer_offer", answer="yes") == ({"yes": True}, None)
     assert args(asked, "answer_offer", answer="no") == ({"yes": False}, None)
     assert args(asked, "answer_offer")[1] == "answer"
