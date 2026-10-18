@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlmodel import Session, select
@@ -66,3 +67,45 @@ def test_default_template_is_cleaning() -> None:
 def test_unknown_template_is_refused() -> None:
     with pytest.raises(ValueError):
         orgconfig.OrgSettings(template="bakery")  # type: ignore[arg-type]
+
+
+def test_seed_hr_data(ferinos: None, session: Session) -> None:
+    import datetime as dt
+
+    from mia.agents.hr_officer.models import Contract, Leave, Payslip
+    from mia.core.models import Timesheet, Visit
+    from mia.templates.retail import seed
+
+    seed.seed(session)
+    people = {p.id: p.name for p in session.exec(select(Person)).all()}
+    assert len(session.exec(select(Contract)).all()) == 5
+    leave = session.exec(select(Leave)).all()
+    assert len(leave) == 2 and {x.status for x in leave} == {"approved"}
+    slips = session.exec(select(Payslip)).all()
+    for clerk in ("Ana", "Liza", "Pao"):
+        assert [people[s.person_id] for s in slips].count(clerk) == 2
+    today = dt.datetime.now(ZoneInfo("Asia/Manila")).date()
+    sheets = session.exec(select(Timesheet)).all()
+    assert {t.status for t in sheets} == {"approved"}
+    for clerk in ("Ana", "Liza", "Pao"):
+        days = {t.date for t in sheets if people[t.person_id] == clerk}
+        assert len(days) >= 12 and min(days) <= today - dt.timedelta(days=13)
+        assert max(days) >= today - dt.timedelta(days=2)
+    late = [v for v in session.exec(select(Visit)).all() if v.actual_end.hour == 23]  # type: ignore[union-attr]
+    assert len(late) == 1  # an evening shift to 23:30, so night minutes exist
+
+
+def test_holidays_validate_and_a_bad_kind_is_refused() -> None:
+    ok = orgconfig.OrgSettings(
+        holidays=[{"date": "2026-12-25", "kind": "regular", "name": "Christmas"}]  # type: ignore[list-item]
+    )
+    assert ok.holidays[0].date.month == 12 and ok.payroll.pay_lag_days == 5
+    with pytest.raises(ValueError):
+        orgconfig.OrgSettings(
+            holidays=[{"date": "2026-12-25", "kind": "bank", "name": "x"}]  # type: ignore[list-item]
+        )
+
+
+def test_ferinos_holidays_load_from_holidays_yaml(ferinos: None) -> None:
+    holidays = orgconfig.load().holidays
+    assert len(holidays) >= 18 and {h.kind for h in holidays} == {"regular", "special"}

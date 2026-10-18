@@ -47,6 +47,21 @@ class AlertSettings(BaseModel):
     daily_plan_time: dt.time = dt.time(17, 0)
 
 
+class Holiday(BaseModel):
+    """One Philippine holiday: regular (double pay) or special non-working day."""
+
+    date: dt.date
+    kind: Literal["regular", "special"]
+    name: str
+
+
+class Payroll(BaseModel):
+    """Payroll cycle: cutoffs and how many days after a cutoff the pay date falls."""
+
+    cutoffs: Literal["semi_monthly"] = "semi_monthly"
+    pay_lag_days: int = 5
+
+
 class OrgSettings(BaseModel):
     # Which demo seed and industry tables the organisation uses.
     template: Literal["cleaning", "retail"] = "cleaning"
@@ -56,6 +71,8 @@ class OrgSettings(BaseModel):
     channels: dict[str, ChannelConfig] = Field(default_factory=dict)
     # Offered in the language question; fewer than two: nobody is asked.
     languages: list[str] = Field(default_factory=list)
+    holidays: list[Holiday] = Field(default_factory=list)
+    payroll: Payroll = Field(default_factory=Payroll)
     # The agents this organisation runs, in routing order.
     agents: list[str] = Field(default_factory=lambda: ["shift_supervisor"])
 
@@ -76,4 +93,9 @@ def load(org: str | None = None) -> OrgSettings:
     path = settings.config_dir / "org" / (org or settings.MIA_ORG) / "settings.yaml"
     if not path.exists():
         return OrgSettings()
-    return OrgSettings.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    extra = path.with_name("holidays.yaml")  # holidays live next to settings.yaml when present
+    if extra.exists():
+        listed = yaml.safe_load(extra.read_text(encoding="utf-8")) or []
+        data["holidays"] = [*data.get("holidays", []), *listed]
+    return OrgSettings.model_validate(data)

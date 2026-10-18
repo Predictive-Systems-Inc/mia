@@ -1017,6 +1017,107 @@ def upgrade() -> None:
         )
 
     op.create_table(
+        "hr_officer_contracts",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("person_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("employment_type", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("daily_rate", sa.Integer(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("rest_day", sa.Integer(), nullable=False),
+        sa.Column("start_date", sa.Date(), nullable=False),
+        sa.Column("end_date", sa.Date(), nullable=True),
+        sa.Column("position", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("set_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["person_id"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("hr_officer_contracts", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_hr_officer_contracts_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_hr_officer_contracts_person_id"), ["person_id"], unique=False
+        )
+
+    op.create_table(
+        "hr_officer_payslips",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("person_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("cutoff_start", sa.Date(), nullable=False),
+        sa.Column("cutoff_end", sa.Date(), nullable=False),
+        sa.Column("pay_date", sa.Date(), nullable=False),
+        sa.Column("lines", sa.JSON(), nullable=False),
+        sa.Column("gross", sa.Integer(), nullable=False),
+        sa.Column("deductions", sa.JSON(), nullable=False),
+        sa.Column("net", sa.Integer(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("issued_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("message_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["person_id"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("person_id", "cutoff_start"),
+    )
+    with op.batch_alter_table("hr_officer_payslips", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_hr_officer_payslips_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_hr_officer_payslips_person_id"), ["person_id"], unique=False
+        )
+
+    op.create_table(
+        "hr_officer_leave",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("person_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("kind", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("start_date", sa.Date(), nullable=False),
+        sa.Column("end_date", sa.Date(), nullable=False),
+        sa.Column("days", sa.Integer(), nullable=False),
+        sa.Column("status", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("approval_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("reason", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["person_id"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("hr_officer_leave", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_hr_officer_leave_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_hr_officer_leave_person_id"), ["person_id"], unique=False
+        )
+
+    op.create_table(
         "cover_requests",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -1162,6 +1263,21 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_cover_requests_branch_id"))
 
     op.drop_table("cover_requests")
+    with op.batch_alter_table("hr_officer_leave", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_hr_officer_leave_person_id"))
+        batch_op.drop_index(batch_op.f("ix_hr_officer_leave_branch_id"))
+
+    op.drop_table("hr_officer_leave")
+    with op.batch_alter_table("hr_officer_payslips", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_hr_officer_payslips_person_id"))
+        batch_op.drop_index(batch_op.f("ix_hr_officer_payslips_branch_id"))
+
+    op.drop_table("hr_officer_payslips")
+    with op.batch_alter_table("hr_officer_contracts", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_hr_officer_contracts_person_id"))
+        batch_op.drop_index(batch_op.f("ix_hr_officer_contracts_branch_id"))
+
+    op.drop_table("hr_officer_contracts")
     with op.batch_alter_table("inventory_manager_orders", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_inventory_manager_orders_branch_id"))
 

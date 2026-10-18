@@ -11,10 +11,21 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
+from mia.agents.hr_officer.models import Contract, Leave, Payslip
 from mia.agents.inventory_manager.models import StockEvent, SupplierOrder
 from mia.agents.sales_supervisor.models import SalesCount, SalesTarget
 from mia.core import events, store
-from mia.core.models import Actor, Branch, Organisation
+from mia.core.models import (
+    Actor,
+    Branch,
+    Client,
+    Job,
+    Location,
+    Organisation,
+    Person,
+    Timesheet,
+    Visit,
+)
 from mia.core.people import add_person
 from mia.templates.retail.models import RetailBranchHours, RetailIngredient, RetailItem
 
@@ -52,6 +63,18 @@ PEOPLE = [
     ("Liza", "clerk", 0, "fil"),
     ("Pao", "clerk", 1, "ceb"),
 ]
+# name, employment type, daily rate (centavos), start date, position. The owner has no contract.
+CONTRACTS: list[tuple[str, str, int, dt.date, str]] = [
+    ("Marites", "regular", 80000, dt.date(2025, 2, 3), "Supervisor"),
+    ("Jun", "regular", 80000, dt.date(2025, 3, 10), "Supervisor"),
+    ("Ana", "regular", 61000, dt.date(2025, 4, 7), "Clerk"),
+    ("Liza", "probationary", 61000, dt.date(2026, 3, 2), "Clerk"),
+    ("Pao", "regular", 61000, dt.date(2025, 6, 2), "Clerk"),
+]
+REST_DAYS = (0, 1)  # Monday at the mall, Tuesday at the stall (by branch index)
+# clerk, branch index, shift start, shift end (local); the last one runs to 23:30 (night minutes)
+SHIFTS = {"Ana": (0, "09:00", "17:00"), "Liza": (0, "13:00", "21:00"), "Pao": (1, "06:00", "15:00")}
+LATE_SHIFT = ("Liza", "13:00", "23:30")  # one evening shift at the mall, three days ago
 
 
 def is_seeded(session: Session) -> bool:
@@ -150,7 +173,161 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
             set_by=staff["Rosa"].id,
         )
         store.insert(session, target_row, branch_actor)
+    _seed_hr(session, branches, staff, today)
     return first
+
+
+def _cutoffs(today: dt.date, count: int) -> list[tuple[dt.date, dt.date]]:
+    """The last `count` semi-monthly cutoffs (1st to 15th, 16th to month end) that ended
+    before today, oldest first."""
+    end = today.replace(day=15) if today.day > 15 else today.replace(day=1) - dt.timedelta(days=1)
+    out = []
+    for _ in range(count):
+        start = end.replace(day=1) if end.day == 15 else end.replace(day=16)
+        out.append((start, end))
+        end = start - dt.timedelta(days=1)
+    return out[::-1]
+
+
+def _seed_hr(
+    session: Session, branches: list[Branch], staff: dict[str, Person], today: dt.date
+) -> None:
+    """Seed-only HR data: contracts, a Counter shift per branch with a fortnight of completed
+    visits and approved timesheets (inserted directly with a note; the real flow is the shift
+    supervisor's draft and approval), two approved leave rows and two issued payslips per clerk.
+    The payslip numbers are plain data, not computed."""
+    owner = staff["Rosa"].id
+    where = {name: index for name, _, index, _ in PEOPLE}
+    for name, kind, rate, start, position in CONTRACTS:
+        branch = branches[where[name]]
+        contract = Contract(
+            branch_id=branch.id,
+            person_id=staff[name].id,
+            employment_type=kind,
+            daily_rate=rate,
+            currency=CURRENCY,
+            rest_day=REST_DAYS[where[name]],
+            start_date=start,
+            position=position,
+            set_by=owner,
+        )
+        store.insert(session, contract, Actor.system(branch.id))
+    for index, branch in enumerate(branches):
+        actor = Actor.system(branch.id)
+        client = store.insert(session, Client(branch_id=branch.id, name=BRANCHES[index][0]), actor)
+        loc = Location(
+            branch_id=branch.id, client_id=client.id, name=BRANCHES[index][0], address=""
+        )
+        loc = store.insert(session, loc, actor)
+        job = Job(
+            branch_id=branch.id,
+            location_id=loc.id,
+            name="Counter shift",
+            recurrence="FREQ=DAILY",
+            start_time=BRANCHES[index][1],
+            duration_minutes=480,
+        )
+        job = store.insert(session, job, actor)
+        for name, (where_index, begin, finish) in SHIFTS.items():
+            if where_index != index:
+                continue
+            _seed_shifts(session, branch, job, staff[name], owner, today, begin, finish)
+    for name, kind, start, end, days, reason in [
+        (
+            "Liza",
+            "vacation",
+            today - dt.timedelta(days=9),
+            today - dt.timedelta(days=8),
+            2,
+            "Family trip",
+        ),
+        ("Pao", "sick", today - dt.timedelta(days=5), today - dt.timedelta(days=5), 1, "Fever"),
+    ]:
+        leave = Leave(
+            branch_id=branches[where[name]].id,
+            person_id=staff[name].id,
+            kind=kind,
+            start_date=start,
+            end_date=end,
+            days=days,
+            status="approved",
+            reason=reason,
+        )
+        store.insert(session, leave, Actor.system(leave.branch_id))
+    for name in SHIFTS:
+        branch = branches[where[name]]
+        rate = next(r for n, _, r, _, _ in CONTRACTS if n == name)
+        for start, end in _cutoffs(today, 2):
+            gross = 11 * rate
+            sss = gross // 20
+            slip = Payslip(
+                branch_id=branch.id,
+                person_id=staff[name].id,
+                cutoff_start=start,
+                cutoff_end=end,
+                pay_date=end + dt.timedelta(days=5),
+                lines=[{"kind": "regular", "days": 11, "rate": rate, "amount": gross}],
+                gross=gross,
+                deductions=[{"kind": "sss", "amount": sss}],
+                net=gross - sss,
+                currency=CURRENCY,
+                issued_at=dt.datetime.combine(
+                    end + dt.timedelta(days=5), dt.time(9, 0), ZoneInfo(branch.timezone)
+                ),
+            )
+            store.insert(session, slip, Actor.system(branch.id))
+
+
+def _seed_shifts(
+    session: Session,
+    branch: Branch,
+    job: Job,
+    clerk: Person,
+    approver: str,
+    today: dt.date,
+    begin: str,
+    finish: str,
+) -> None:
+    """One completed visit and one approved timesheet per working day of the last 14 days for
+    a clerk (the contract's rest day is skipped)."""
+    zone = ZoneInfo(branch.timezone)
+    rest = REST_DAYS[0 if branch.name == BRANCHES[0][0] else 1]
+    actor = Actor.system(branch.id)
+    for offset in range(1, 15):
+        day = today - dt.timedelta(days=offset)
+        if day.weekday() == rest:
+            continue
+        end_text = LATE_SHIFT[2] if (clerk.name, offset) == (LATE_SHIFT[0], 3) else finish
+        start = dt.datetime.combine(day, dt.time.fromisoformat(begin), zone)
+        end = dt.datetime.combine(day, dt.time.fromisoformat(end_text), zone)
+        visit = Visit(
+            branch_id=branch.id,
+            job_id=job.id,
+            location_id=job.location_id,
+            date=day,
+            assigned_person_ids=[clerk.id],
+            planned_start=start,
+            planned_end=dt.datetime.combine(day, dt.time.fromisoformat(finish), zone),
+            actual_start=start,
+            actual_end=end,
+            status="completed",
+        )
+        store.insert(session, visit, actor)
+        sheet = Timesheet(
+            branch_id=branch.id,
+            visit_id=visit.id,
+            person_id=clerk.id,
+            date=day,
+            start=start,
+            end=end,
+            minutes=int((end - start).total_seconds() // 60),
+            status="approved",
+            entered_by=clerk.id,
+            note="seed-only: inserted approved, not through the draft flow",
+            approved_by=approver,
+            approved_at=end,
+        )
+        store.insert(session, sheet, actor)
 
 
 def _stock(

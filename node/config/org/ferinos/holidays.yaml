@@ -1,0 +1,22 @@
+# DRAFT: 2026 Philippine holidays as recalled, to verify against the official proclamations (Q62).
+# Islamic holiday dates are set by proclamation and are approximate.
+- {date: "2026-01-01", kind: regular, name: "New Year's Day"}
+- {date: "2026-02-17", kind: special, name: "Chinese New Year"}
+- {date: "2026-03-20", kind: regular, name: "Eid'l Fitr (date to verify)"}
+- {date: "2026-04-02", kind: regular, name: "Maundy Thursday"}
+- {date: "2026-04-03", kind: regular, name: "Good Friday"}
+- {date: "2026-04-04", kind: special, name: "Black Saturday"}
+- {date: "2026-04-09", kind: regular, name: "Araw ng Kagitingan"}
+- {date: "2026-05-01", kind: regular, name: "Labor Day"}
+- {date: "2026-05-27", kind: regular, name: "Eid'l Adha (date to verify)"}
+- {date: "2026-06-12", kind: regular, name: "Independence Day"}
+- {date: "2026-08-21", kind: special, name: "Ninoy Aquino Day"}
+- {date: "2026-08-31", kind: regular, name: "National Heroes Day"}
+- {date: "2026-11-01", kind: special, name: "All Saints' Day"}
+- {date: "2026-11-02", kind: special, name: "All Souls' Day"}
+- {date: "2026-11-30", kind: regular, name: "Bonifacio Day"}
+- {date: "2026-12-08", kind: special, name: "Feast of the Immaculate Conception"}
+- {date: "2026-12-24", kind: special, name: "Christmas Eve"}
+- {date: "2026-12-25", kind: regular, name: "Christmas Day"}
+- {date: "2026-12-30", kind: regular, name: "Rizal Day"}
+- {date: "2026-12-31", kind: special, name: "New Year's Eve"}
