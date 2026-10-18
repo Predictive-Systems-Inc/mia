@@ -801,14 +801,14 @@ INTENTS = Path(__file__).with_name("intents.jsonl")
 
 
 def _intent_cases() -> list[Case]:
-    """Finnish single cases from the intent test split: shift supervisor and conversation rows,
-    without in-flow replies (style "context" or an in-flow intent)."""
+    """Finnish single cases from the intent test split: shift supervisor and conversation rows.
+    The in-flow replies (the cover_reply and absence_scope intents) are left out, and so is the
+    one row that names Tagalog (the language is Filipino)."""
     cases = []
     for line in INTENTS.read_text(encoding="utf-8").splitlines():
         row = json.loads(line)
-        if row["split"] != "test" or row["lang"] != "fi" or row.get("style") == "context":
+        if row["split"] != "test" or row["lang"] != "fi":
             continue
-        # The language is Filipino, never Tagalog (one change_language row says tagalogilla).
         if row["intent"] in IN_FLOW_INTENTS or "tagalog" in row["text"].casefold():
             continue
         if row["intent"].startswith("shift_supervisor."):

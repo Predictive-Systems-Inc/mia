@@ -57,3 +57,16 @@ def test_small_talk_is_right_for_greetings_and_a_miss_for_real_messages() -> Non
     assert r("small_talk", "sales_supervisor") == "small_talk"
     assert r("chosen", "bookkeeper") == "wrong"
     assert r("keep", "bookkeeper") == "other"
+
+
+def test_gated_summary_ignores_reported_languages_and_the_tune_half() -> None:
+    from tests.evals.test_router_eval import _gated
+
+    def row(lang: str, half: str, score: str) -> dict[str, object]:
+        return {"lang": lang, "half": half, "score": score, "kind": "chosen", "tokens": 0}
+
+    results = [row("en", "gate", "right")] * 10 + [row("fi", "gate", "wrong")] * 90
+    results += [row("en", "tune", "wrong")] * 5
+    gated = _gated(results)
+    assert gated["all"]["n"] == 10 and gated["all"]["wrong"] == 0
+    assert set(gated["by_language"]) == {"en"}

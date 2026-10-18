@@ -125,6 +125,12 @@ def _table(results: list[dict[str, Any]], key: str) -> dict[str, Any]:
     return {k: _row(v) for k, v in sorted(groups.items())}
 
 
+def _gated(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """The rows the gate asserts read: the gate half of the gated languages only."""
+    rows = [r for r in results if r["half"] == "gate" and r["lang"] in GATED_LANGS]
+    return {"all": _row(rows), "by_language": _table(rows, "lang")}
+
+
 def _print(title: str, table: dict[str, Any]) -> None:
     print(f"\n{title}\n{'':18}{'n':>5}", "".join(f"{s[:5]:>7}" for s in SCORES), end="")
     print(f"{'err':>5}{'p50':>6}{'p95':>6}{'tok':>6}")
@@ -157,18 +163,18 @@ def test_router(engine: Engine, branch: Branch) -> None:
         "by_group": _table(results, "group"),
         "by_half": _table(results, "half"),
     }
-    gate = [r for r in results if r["half"] == "gate"]
-    summary["gate"] = {"all": _row(gate), "by_language": _table(gate, "lang")}
+    summary["gated"] = _gated(results)
     for name in ("by_language", "by_agent", "by_group", "by_half"):
-        _print(name, summary[name])
-    _print("all", {"all": summary["all"]})
+        _print(f"{name} (all languages, reported)", summary[name])
+    _print("all languages (reported)", {"all": summary["all"]})
+    _print("gated languages, gate half (asserted)", summary["gated"]["by_language"])
+    _print("gated languages, gate half (asserted)", {"all": summary["gated"]["all"]})
     REPORT.write_text(
         json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8",
     )
-    _print("gate by_language", summary["gate"]["by_language"])
-    assert summary["gate"]["all"]["wrong"] <= 0.02, summary["gate"]["all"]
-    low = {k: v["right"] for k, v in summary["gate"]["by_language"].items() if k in GATED_LANGS}
+    assert summary["gated"]["all"]["wrong"] <= 0.02, summary["gated"]["all"]
+    low = {k: v["right"] for k, v in summary["gated"]["by_language"].items()}
     assert all(v >= 0.9 for v in low.values()), low
 
 
