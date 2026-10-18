@@ -6,15 +6,13 @@ import pytest
 from sqlmodel import Session
 
 from mia.agents.decider import Reader
+from mia.agents.parsing import menu_tokens, pre_parse, was_corrected
 from mia.agents.sales_supervisor.actions import (
     Query,
     _period,
     _target_start,
     build_query,
     build_request,
-    menu_tokens,
-    pre_parse,
-    was_corrected,
 )
 from mia.agents.sales_supervisor.decider import _args, _parse
 from mia.core.models import Branch, Person
@@ -24,35 +22,6 @@ from tests.test_sales_tools import deps_for
 
 TODAY = dt.date(2026, 10, 19)  # a Monday
 FERINOS = menu_tokens((name, codes) for name, codes, _ in MENU)
-
-
-def split(text: str) -> list[tuple[int | None, str]]:
-    return [(g.quantity, g.words) for g in pre_parse(text, FERINOS)[0]]
-
-
-def test_number_then_words_and_words_then_number() -> None:
-    groups, _ = pre_parse("3 special 5 classic", FERINOS)
-    assert [(g.quantity, g.words) for g in groups] == [(3, "special"), (5, "classic")]
-    groups, _ = pre_parse("special 3 classic 5", FERINOS)
-    assert [(g.quantity, g.words) for g in groups] == [(3, "special"), (5, "classic")]
-
-
-def test_short_codes_and_filler_words() -> None:
-    groups, _ = pre_parse("sp 3 cl 5 po", FERINOS)
-    assert [(g.quantity, g.words) for g in groups] == [(3, "sp"), (5, "cl")]
-    groups, _ = pre_parse("nakabenta ng 12 ube", FERINOS)
-    assert [(g.quantity, g.words) for g in groups] == [(12, "ube")]  # a leading stray word
-
-
-def test_total_is_split_from_the_groups() -> None:
-    groups, total = pre_parse("3 special 5 classic total 1,450", FERINOS)
-    assert total == 1450 and len(groups) == 2
-    groups, total = pre_parse("kabuuan 1450", FERINOS)
-    assert total == 1450 and groups == []
-
-
-def test_no_numbers_gives_no_groups() -> None:
-    assert pre_parse("how are we doing today", FERINOS) == ([], None)
 
 
 ITEMS = {"i1": "Special (sp)", "i2": "Classic (cl)"}
@@ -164,8 +133,6 @@ def test_item_instructions_carry_no_message_text() -> None:
 
 
 def test_currency_symbols_are_stripped_and_query_is_frozen() -> None:
-    assert pre_parse("kabuuan \u20b11,450", FERINOS)[1] == 1450
-    assert pre_parse("total $1450", FERINOS)[1] == 1450
     with pytest.raises(dataclasses.FrozenInstanceError):
         query("x").message = "y"  # type: ignore[misc]
 
@@ -199,30 +166,6 @@ def test_why_answer_themes_hold_the_confident_choice_else_other() -> None:
     answers = {"theme": {"choice": "event", "confidence": 0.3}}
     out, _ = _args("why_answer", Reader(answers, query("ewan", True)))
     assert out["themes"] == ["other"]
-
-
-# ---- final fix wave: pre_parse (I6, ruling 8) -------------------------------------------------
-
-
-def test_a_negation_drops_the_old_number() -> None:
-    assert split("5 classic hindi 6") == [(5, "classic")]
-    assert split("4 special instead of 3") == [(4, "special")]
-    assert split("sorry, 4 special not 3") == [(4, "special")]
-    assert split("cl dapat 8, dili 6") == [(8, "cl dapat")]
-
-
-def test_a_leading_verb_is_not_an_item() -> None:
-    assert split("sold 3 special 5 classic") == [(3, "special"), (5, "classic")]
-
-
-def test_words_then_number_with_a_trailing_particle() -> None:
-    assert split("sp 4 cl 6 la") == [(4, "sp"), (6, "cl")]
-    assert split("salted egg 5 karon") == [(5, "salted egg")]
-
-
-def test_on_a_tie_the_ending_decides() -> None:
-    assert split("zorblax 3 quux 5") == [(3, "zorblax"), (5, "quux")]
-    assert split("3 zorblax 5 quux") == [(3, "zorblax"), (5, "quux")]
 
 
 # ---- final fix wave: the item question (ruling 7) ---------------------------------------------

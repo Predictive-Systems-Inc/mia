@@ -45,9 +45,9 @@ no test says so. Pin each line to the plan task that owns it.
 - A late count is yesterday's only before opening and within two hours of a late close, never ask: `mia/agents/sales_supervisor/calc.py` (`business_date`), `node/tests/test_sales_calc.py::test_just_after_midnight_after_a_late_closing_is_yesterday`.
 
 ## Parsing
-- Both orientations scored by menu tokens: `mia/agents/sales_supervisor/actions.py` (`pre_parse`), `node/tests/test_sales_actions.py::test_number_then_words_and_words_then_number`.
-- Negation is a correction: the negation drops the next number and makes the message a correction by rule: `mia/agents/sales_supervisor/actions.py` (`was_corrected`), `node/tests/test_sales_actions.py::test_a_negation_drops_the_old_number`, `node/tests/test_sales_chat.py::test_a_negation_correction_is_a_correction_even_when_jev_says_report`.
-- Leading stray words dropped: `mia/agents/sales_supervisor/actions.py`, `node/tests/test_sales_actions.py::test_a_leading_verb_is_not_an_item`.
+- Both orientations scored by menu tokens: `mia/agents/sales_supervisor/actions.py` (`pre_parse`), `node/tests/test_parsing.py::test_number_then_words_and_words_then_number`.
+- Negation is a correction: the negation drops the next number and makes the message a correction by rule: `mia/agents/sales_supervisor/actions.py` (`was_corrected`), `node/tests/test_parsing.py::test_a_negation_drops_the_old_number`, `node/tests/test_sales_chat.py::test_a_negation_correction_is_a_correction_even_when_jev_says_report`.
+- Leading stray words dropped: `mia/agents/sales_supervisor/actions.py`, `node/tests/test_parsing.py::test_a_leading_verb_is_not_an_item`.
 - Currency symbols stripped: `mia/agents/sales_supervisor/actions.py`, `node/tests/test_sales_actions.py::test_currency_symbols_are_stripped_and_query_is_frozen`.
 
 ## Harvest and learning

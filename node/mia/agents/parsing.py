@@ -1,0 +1,163 @@
+"""Number and time parsing shared by the agents that read counts from a message.
+
+Code splits the numbers (and clock times) out of the message (rule 7); the model only maps each
+group to an item. Pure functions, no database access.
+"""
+
+import datetime as dt
+import re
+from collections.abc import Collection, Iterable, Sequence
+from dataclasses import dataclass
+
+TOTAL_WORDS = ("total", "kabuuan", "tanan", "yhteensä", "sum")
+FILLER = {
+    "po", "na", "pcs", "pc", "pieces", "piece", "kpl", "ng", "nga", "sa", "ang", "yung", "ka",
+    "pa", "lang",
+}  # fmt: skip
+# A negation word marks the number after it as the old value (sorry 4 special not 3): both go.
+NEGATIONS = {
+    "not", "hindi", "dili", "diri", "indi", "bako", "ali", "aliwa", "ei", "instead", "saan",
+    "haan",
+}  # fmt: skip
+
+
+@dataclass(frozen=True)
+class Group:
+    quantity: int | None
+    words: str
+    raw: str
+
+
+def menu_tokens(items: Iterable[tuple[str, Sequence[str]]]) -> set[str]:
+    """The casefolded words of the item names and the short codes, from (name, codes) pairs."""
+    return {
+        w for name, codes in items for w in (*name.casefold().split(), *map(str.casefold, codes))
+    }
+
+
+def _orient(kept: list[str], words_first: bool) -> list[tuple[int, list[str]]]:
+    """(quantity, words) groups: words after each number (words_first=False; words before the
+    first number are stray and dropped) or before it (True; words after the last are dropped)."""
+    groups: list[tuple[int, list[str]]] = []
+    pending: list[str] = []
+    for tok in kept:
+        if tok.isdigit():
+            groups.append((int(tok), pending if words_first else []))
+            pending = []
+        elif words_first or not groups:
+            pending.append(tok)
+        else:
+            groups[-1][1].append(tok)
+    return groups
+
+
+def _negated(tokens: list[str], numbers: list[int]) -> set[int]:
+    """Indexes to drop: each negation word, and the number after it (with the filler and "of"
+    in between)."""
+    drop: set[int] = set()
+    for i, tok in enumerate(tokens):
+        if tok not in NEGATIONS:
+            continue
+        drop.add(i)
+        j = i + 1
+        while j < len(tokens) and (tokens[j] in FILLER or tokens[j] == "of"):
+            j += 1
+        if j in numbers:
+            drop.update(range(i + 1, j + 1))
+    return drop
+
+
+def _tokens(text: str) -> list[str]:
+    text = re.sub(r"(?<!\w)[\u20b1\u20ac$p](?=\d)", "", text.lower())  # a currency symbol
+    return re.sub(r"(?<=\d),(?=\d)", "", text).replace(",", " ").split()
+
+
+def was_corrected(text: str) -> bool:
+    """True when a negation word dropped a number (the old value of a correction), the same
+    rule pre_parse applies. Pure."""
+    tokens = _tokens(text)
+    numbers = [i for i, tok in enumerate(tokens) if tok.isdigit()]
+    return any(i in numbers for i in _negated(tokens, numbers))
+
+
+def pre_parse(text: str, menu_tokens: Collection[str]) -> tuple[list[Group], int | None]:
+    """Groups of (quantity, item words) and the stated total if any. Pure; item words are not
+    matched to the menu here (Jev does that). A negation word drops itself and the number after
+    it (the old value of a correction). Both orientations are built, number-then-words and
+    words-then-number, and the one whose words hold more `menu_tokens` (casefolded item name
+    words and short codes) wins; on a tie, words-then-number only when the message ends with a
+    number and every number follows words."""
+    tokens = _tokens(text)
+    numbers = [i for i, tok in enumerate(tokens) if tok.isdigit()]
+    drop = _negated(tokens, numbers)
+    numbers = [i for i in numbers if i not in drop]
+    total: int | None = None
+    for i, tok in enumerate(tokens):
+        if tok not in TOTAL_WORDS:
+            continue
+        drop.add(i)
+        near = [j for j in (i + 1, i - 1) if j in numbers]
+        if near:
+            total = int(tokens[near[0]])
+            drop.add(near[0])
+        elif len(numbers) > 1:  # the last number when it dwarfs the rest
+            *rest, last = (int(tokens[j]) for j in numbers)
+            if last >= 10 * max(rest):
+                total = last
+                drop.add(numbers[-1])
+    kept = [tok for i, tok in enumerate(tokens) if i not in drop and tok not in FILLER]
+    menu = {m.casefold() for m in menu_tokens}
+    after, before = _orient(kept, False), _orient(kept, True)
+
+    def score(groups: list[tuple[int, list[str]]]) -> int:
+        return sum(w in menu for _, words in groups for w in words)
+
+    ends = bool(kept) and kept[-1].isdigit()
+    follows = all(
+        k > 0 and not kept[k - 1].isdigit() for k, tok in enumerate(kept) if tok.isdigit()
+    )
+    if score(before) != score(after):
+        groups = before if score(before) > score(after) else after
+    else:
+        groups = before if ends and follows else after
+    return [Group(n, " ".join(w), f"{n} {' '.join(w)}".strip()) for n, w in groups], total
+
+
+# ponytail: "alas n" is pm for 1 to 6 (a shop is open in the afternoon, not at 2 am), else am.
+ALAS = {
+    "una": 1, "dos": 2, "tres": 3, "kuwatro": 4, "singko": 5, "sais": 6, "siyete": 7,
+    "otso": 8, "nuwebe": 9, "diyes": 10, "onse": 11, "dose": 12,
+}  # fmt: skip
+_CLOCK = re.compile(
+    r"(?P<h12>\d{1,2})(?::(?P<m12>\d{2}))?\s*(?P<ap>am|pm)\b"
+    r"|\b(?P<h24>[01]?\d|2[0-3]):(?P<m24>[0-5]\d)\b"
+    rf"|\balas\s+(?P<alas>\d{{1,2}}|{'|'.join(ALAS)})\b",
+    re.IGNORECASE,
+)
+
+
+def _hour(n: int, pm: bool) -> int:
+    """The 24-hour hour of a 12-hour clock hour (12 am is 0, 12 pm is 12)."""
+    return n % 12 + (12 if pm else 0)
+
+
+def find_times(text: str) -> list[tuple[str, dt.time]]:
+    """Clock times in the message in text order as (id "t0", "t1", ..., time): 12-hour with
+    am/pm, 24-hour HH:MM, and Filipino "alas <n>". A bare number is never a time. Pure."""
+    found: list[tuple[str, dt.time]] = []
+    for m in _CLOCK.finditer(text):
+        if m["h12"]:
+            hour, minute = int(m["h12"]), int(m["m12"] or 0)
+            if not 1 <= hour <= 12 or minute > 59:
+                continue
+            at = dt.time(_hour(hour, m["ap"].lower() == "pm"), minute)
+        elif m["h24"]:
+            at = dt.time(int(m["h24"]), int(m["m24"]))
+        else:
+            word = m["alas"].lower()
+            n = ALAS.get(word) or int(word)
+            if not 1 <= n <= 12:
+                continue
+            at = dt.time(_hour(n, n <= 6))
+        found.append((f"t{len(found)}", at))
+    return found

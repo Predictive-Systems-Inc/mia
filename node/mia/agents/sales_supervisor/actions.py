@@ -8,8 +8,6 @@ group; with groups, a period question reads its item from `item_0` (ruling 7).
 
 import calendar
 import datetime as dt
-import re
-from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,22 +15,13 @@ from sqlmodel import col, or_, select
 
 from mia.agents.base import AgentDeps
 from mia.agents.decider import NOT_STATED, Action
+from mia.agents.parsing import Group, menu_tokens, pre_parse, was_corrected
 from mia.agents.sales_supervisor import MANIFEST
 from mia.agents.shift_supervisor.classifier import EN_WEEKDAYS, FI_WEEKDAYS
 from mia.core.models import Branch
 from mia.i18n import t
 from mia.templates.retail.models import RetailItem
 
-TOTAL_WORDS = ("total", "kabuuan", "tanan", "yhteensä", "sum")
-FILLER = {
-    "po", "na", "pcs", "pc", "pieces", "piece", "kpl", "ng", "nga", "sa", "ang", "yung", "ka",
-    "pa", "lang",
-}  # fmt: skip
-# A negation word marks the number after it as the old value (sorry 4 special not 3): both go.
-NEGATIONS = {
-    "not", "hindi", "dili", "diri", "indi", "bako", "ali", "aliwa", "ei", "instead", "saan",
-    "haan",
-}  # fmt: skip
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 NONE = "none"
 FIL_WEEKDAYS = ["lunes", "martes", "miyerkules", "huwebes", "biyernes", "sabado", "linggo"]
@@ -148,13 +137,6 @@ ACTIONS: dict[str, Action] = {
 
 
 @dataclass(frozen=True)
-class Group:
-    quantity: int | None
-    words: str
-    raw: str
-
-
-@dataclass(frozen=True)
 class Query:
     """Everything one Jev request is built from; no database access after build_query."""
 
@@ -172,101 +154,6 @@ class Query:
     lang: str = "en"
     message_id: str | None = None  # the user message, kept as a count's source
     previous_id: str | None = None  # Mia's previous message, kept when it is the why question
-
-
-def menu_tokens(items: Iterable[tuple[str, Sequence[str]]]) -> set[str]:
-    """The casefolded words of the item names and the short codes, from (name, codes) pairs."""
-    return {
-        w for name, codes in items for w in (*name.casefold().split(), *map(str.casefold, codes))
-    }
-
-
-def _orient(kept: list[str], words_first: bool) -> list[tuple[int, list[str]]]:
-    """(quantity, words) groups: words after each number (words_first=False; words before the
-    first number are stray and dropped) or before it (True; words after the last are dropped)."""
-    groups: list[tuple[int, list[str]]] = []
-    pending: list[str] = []
-    for tok in kept:
-        if tok.isdigit():
-            groups.append((int(tok), pending if words_first else []))
-            pending = []
-        elif words_first or not groups:
-            pending.append(tok)
-        else:
-            groups[-1][1].append(tok)
-    return groups
-
-
-def _negated(tokens: list[str], numbers: list[int]) -> set[int]:
-    """Indexes to drop: each negation word, and the number after it (with the filler and "of"
-    in between)."""
-    drop: set[int] = set()
-    for i, tok in enumerate(tokens):
-        if tok not in NEGATIONS:
-            continue
-        drop.add(i)
-        j = i + 1
-        while j < len(tokens) and (tokens[j] in FILLER or tokens[j] == "of"):
-            j += 1
-        if j in numbers:
-            drop.update(range(i + 1, j + 1))
-    return drop
-
-
-def _tokens(text: str) -> list[str]:
-    text = re.sub(r"(?<!\w)[\u20b1\u20ac$p](?=\d)", "", text.lower())  # a currency symbol
-    return re.sub(r"(?<=\d),(?=\d)", "", text).replace(",", " ").split()
-
-
-def was_corrected(text: str) -> bool:
-    """True when a negation word dropped a number (the old value of a correction), the same
-    rule pre_parse applies. Pure."""
-    tokens = _tokens(text)
-    numbers = [i for i, tok in enumerate(tokens) if tok.isdigit()]
-    return any(i in numbers for i in _negated(tokens, numbers))
-
-
-def pre_parse(text: str, menu_tokens: Collection[str]) -> tuple[list[Group], int | None]:
-    """Groups of (quantity, item words) and the stated total if any. Pure; item words are not
-    matched to the menu here (Jev does that). A negation word drops itself and the number after
-    it (the old value of a correction). Both orientations are built, number-then-words and
-    words-then-number, and the one whose words hold more `menu_tokens` (casefolded item name
-    words and short codes) wins; on a tie, words-then-number only when the message ends with a
-    number and every number follows words."""
-    tokens = _tokens(text)
-    numbers = [i for i, tok in enumerate(tokens) if tok.isdigit()]
-    drop = _negated(tokens, numbers)
-    numbers = [i for i in numbers if i not in drop]
-    total: int | None = None
-    for i, tok in enumerate(tokens):
-        if tok not in TOTAL_WORDS:
-            continue
-        drop.add(i)
-        near = [j for j in (i + 1, i - 1) if j in numbers]
-        if near:
-            total = int(tokens[near[0]])
-            drop.add(near[0])
-        elif len(numbers) > 1:  # the last number when it dwarfs the rest
-            *rest, last = (int(tokens[j]) for j in numbers)
-            if last >= 10 * max(rest):
-                total = last
-                drop.add(numbers[-1])
-    kept = [tok for i, tok in enumerate(tokens) if i not in drop and tok not in FILLER]
-    menu = {m.casefold() for m in menu_tokens}
-    after, before = _orient(kept, False), _orient(kept, True)
-
-    def score(groups: list[tuple[int, list[str]]]) -> int:
-        return sum(w in menu for _, words in groups for w in words)
-
-    ends = bool(kept) and kept[-1].isdigit()
-    follows = all(
-        k > 0 and not kept[k - 1].isdigit() for k, tok in enumerate(kept) if tok.isdigit()
-    )
-    if score(before) != score(after):
-        groups = before if score(before) > score(after) else after
-    else:
-        groups = before if ends and follows else after
-    return [Group(n, " ".join(w), f"{n} {' '.join(w)}".strip()) for n, w in groups], total
 
 
 def _periods(lang: str) -> dict[str, str]:

@@ -3,7 +3,8 @@ test_sales_supervisor_evals.py)."""
 
 from collections import Counter
 
-from mia.agents.sales_supervisor.actions import ACTIONS, menu_tokens, pre_parse
+from mia.agents.parsing import menu_tokens, pre_parse
+from mia.agents.sales_supervisor.actions import ACTIONS
 from mia.templates.retail.seed import ITEMS as MENU
 from tests.evals.sales_cases import CASES, GATED_LANGS, SCENARIOS
 
