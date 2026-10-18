@@ -18,6 +18,7 @@ def tree(tmp_path: Path) -> Path:
     for rel in (
         "node/mia",
         "node/config",
+        "node/tests/jev_fake.py",  # ruff sees `tests` as first-party
         "node/tests/test_access.py",
         "node/tests/evals/router_cases.py",
         "docs/layout.md",
@@ -145,6 +146,44 @@ def test_a_stub_is_built_with_its_router_description(tree: Path) -> None:
     assert (tree / "node/mia/i18n/strings.py").read_text().count("agent.bookkeeper.label") == 2
 
 
+def _ruff_imports(root: Path, files: list[Path]) -> subprocess.CompletedProcess[str]:
+    cmd = [sys.executable, "-m", "ruff", "check", "--select", "I", *map(str, files)]
+    return subprocess.run(cmd, cwd=root, capture_output=True, text=True, check=False)
+
+
+def test_rendered_imports_are_sorted_for_ids_before_and_after_the_shared_modules(
+    tree: Path,
+) -> None:
+    """bookkeeper sorts before decider, warehouse_officer after shift_supervisor."""
+    written = scaffold.run(
+        tree, "bookkeeper", label_en="Bookkeeper", label_fi="x", roles=["owner"], description=""
+    )
+    written += _run(tree, "warehouse_officer")
+    done = _ruff_imports(tree, [p for p in written if p.suffix == ".py"])
+    assert done.returncode == 0, done.stdout
+
+
+def test_a_built_agent_is_refused_even_with_force(tree: Path) -> None:
+    from mia.agents.sales_supervisor import MANIFEST
+
+    with pytest.raises(ValueError, match="already built"):
+        _run(tree, MANIFEST.id, force=True)
+
+
+def test_a_label_that_could_break_the_rendered_code_is_refused(tree: Path) -> None:
+    for label in ('Quality "Officer"', "Quality\\Officer", "Quality\nOfficer"):
+        with pytest.raises(ValueError, match="label"):
+            scaffold.run(
+                tree,
+                "quality_officer",
+                label_en=label,
+                label_fi="x",
+                roles=["owner"],
+                description="d; not e",
+            )
+    assert not (tree / "node/mia/agents/quality_officer").exists()
+
+
 def test_the_command_refuses_a_bad_id_before_writing() -> None:
     from mia.cli import build_parser
 
@@ -232,6 +271,11 @@ def test_edit_router_pending_adds_the_id_sorted() -> None:
     assert scaffold.edit_router_pending(out, "a_one") == out
 
 
+def test_edit_router_pending_skips_an_id_that_has_cases() -> None:
+    text = 'PENDING: set[str] = set()\nSEEDS = [\n    ("b_two", "hello"),\n]\n'
+    assert scaffold.edit_router_pending(text, "b_two") == text
+
+
 def test_edit_layout_adds_a_line_before_the_role_skill_line() -> None:
     text = "        sales_supervisor/   manifest.yaml\n        <role>/skill/       role.yaml\n"
     out = scaffold.edit_layout(text, "q_o", "Quality")
@@ -247,7 +291,10 @@ def test_scaffold_then_checks_in_a_temp_copy(tmp_path: Path) -> None:
     copy = tmp_path / "repo"
     skip = (".git", ".venv", "data", "node_modules", ".superpowers", "__pycache__", "*_cache")
     shutil.copytree(REPO, copy, ignore=shutil.ignore_patterns(*skip))
-    _run(copy, "demo_officer")
+    _run(copy, "demo_officer")  # brand new: no router cases yet (PENDING)
+    scaffold.run(  # a stub promoted: sorts before decider, keeps its router cases
+        copy, "bookkeeper", label_en="Bookkeeper", label_fi="x", roles=["owner"], description=""
+    )
     env = {**os.environ, "PYTHONPATH": str(copy / "node")}
 
     def check(*args: str) -> None:
@@ -267,6 +314,7 @@ def test_scaffold_then_checks_in_a_temp_copy(tmp_path: Path) -> None:
     check(
         "pytest",
         "node/tests/test_demo_officer_chat.py",
+        "node/tests/test_bookkeeper_chat.py",
         "node/tests/evals/test_router_cases.py",
         "node/tests/test_agent_router.py::test_router_descriptions_carry_a_contrast_line",
         "node/tests/test_architecture.py",

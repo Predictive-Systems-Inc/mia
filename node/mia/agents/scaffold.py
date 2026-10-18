@@ -14,6 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from string import Template
 
+from mia.agents.registry import BUILT
 from mia.core.models import STANDARD_VERSION
 from mia.core.people import HUMAN_ROLES
 
@@ -21,6 +22,7 @@ TEMPLATE = Path(__file__).resolve().parent / "_template"
 ID = re.compile(r"^[a-z][a-z0-9_]*$")
 MODULES = ("fil", "ceb", "ilo", "hil", "war", "bcl", "pam", "pag")  # i18n beyond en and fi
 LABEL = re.compile(r'^\s+"agent\.[a-z0-9_]+\.label": ')
+LABEL_TEXT = re.compile(r"^[\w .'-]+$")  # no quote or backslash can reach the rendered code
 
 
 def _targets(agent_id: str) -> dict[str, str]:
@@ -48,6 +50,25 @@ def _router_literal(text: str) -> str:
     return "(\n" + "".join(f"        {line}\n" for line in lines) + "    )"
 
 
+def _module_key(line: str) -> list[str]:
+    """The isort key of a `from X import` or `import X` line: X's dotted parts."""
+    return line.split()[1].split(".")
+
+
+def sort_agent_imports(text: str) -> str:
+    """text with each run of one-line `from mia.agents` imports in isort order, so a rendered
+    module is sorted whatever its id sorts against decider or shift_supervisor."""
+    lines = text.splitlines(keepends=True)
+    i = 0
+    while i < len(lines):
+        j = i
+        while j < len(lines) and lines[j].startswith("from mia.agents") and "(" not in lines[j]:
+            j += 1
+        lines[i:j] = sorted(lines[i:j], key=_module_key)
+        i = max(j, i + 1)
+    return "".join(lines)
+
+
 def stub_description(stubs: str, agent_id: str) -> str | None:
     """The router description of a stub in stubs.py's DESCRIPTIONS, or None when it has none."""
     for node in ast.parse(stubs).body:
@@ -66,7 +87,8 @@ def edit_registry(text: str, agent_id: str) -> str:
         return text
     lines = text.splitlines(keepends=True)
     agents = [i for i, x in enumerate(lines) if x.startswith("from mia.agents.")]
-    at = next((i for i in agents if lines[i].split()[1] > f"mia.agents.{agent_id}.turn"), None)
+    key = _module_key(line)
+    at = next((i for i in agents if _module_key(lines[i]) > key), None)
     lines.insert(agents[-1] + 1 if at is None else at, line + "\n")
     out = "".join(lines)
     start = out.index("BUILT = [\n")
@@ -134,14 +156,16 @@ def edit_schema(text: str, agent_id: str) -> str:
         return text
     lines = text.splitlines(keepends=True)
     block = [i for i, x in enumerate(lines) if x.startswith("import mia.")]
-    sorted_block = sorted([*(lines[i] for i in block), line], key=lambda x: x.split()[1])
+    sorted_block = sorted([*(lines[i] for i in block), line], key=_module_key)
     return "".join(lines[: block[0]] + sorted_block + lines[block[-1] + 1 :])
 
 
 def edit_router_pending(text: str, agent_id: str) -> str:
-    """router_cases.py with the id in PENDING (agents without router cases yet), sorted."""
+    """router_cases.py with the id in PENDING (sorted) when no case names it yet."""
     lines = text.splitlines(keepends=True)
     at = next(i for i, x in enumerate(lines) if x.startswith("PENDING: set[str] = "))
+    if any(f'"{agent_id}"' in x for i, x in enumerate(lines) if i != at):
+        return text  # it has router cases already (a promoted stub)
     rhs = lines[at].split("=", 1)[1].strip()
     ids = set() if rhs == "set()" else set(ast.literal_eval(rhs))
     ids.add(agent_id)
@@ -171,7 +195,7 @@ def run(
     force: bool = False,
 ) -> list[Path]:
     """Render the package and its tests under `root` (the repository root) and apply the shared
-    edits; returns every file written. Raises ValueError for a bad id, role or label, or a
+    edits; returns every file written. Raises ValueError for a bad or built id, role or label, or a
     description without the "; not " contrast line (a stub's own is used when empty), and
     FileExistsError when a rendered file exists and not force. Nothing is written unless every
     check passed."""
@@ -180,8 +204,10 @@ def run(
         raise ValueError(f"agent id must match {ID.pattern} and not be a module: {agent_id!r}")
     if not roles or any(r not in HUMAN_ROLES for r in roles):
         raise ValueError(f"roles must be one or more of {', '.join(HUMAN_ROLES)}")
-    if not label_en.strip() or not label_fi.strip():
-        raise ValueError("--label-en and --label-fi are required")
+    if agent_id in {spec.id for spec in BUILT}:
+        raise ValueError(f"{agent_id} is already built; --force never overwrites a built agent")
+    if not all(LABEL_TEXT.match(label) for label in (label_en, label_fi)):
+        raise ValueError(f"--label-en and --label-fi must match {LABEL_TEXT.pattern}")
     stubs_py = agents / "stubs.py"
     description = description.strip() or stub_description(stubs_py.read_text(), agent_id) or ""
     if "; not " not in description:  # test_router_descriptions_carry_a_contrast_line
@@ -198,7 +224,9 @@ def run(
         "standard_version": STANDARD_VERSION,
     }
     rendered = {
-        root / out: Template((TEMPLATE / src).read_text(encoding="utf-8")).substitute(values)
+        root / out: sort_agent_imports(
+            Template((TEMPLATE / src).read_text(encoding="utf-8")).substitute(values)
+        )
         for src, out in _targets(agent_id).items()
     }
     existing = [str(p.relative_to(root)) for p in rendered if p.exists()]
