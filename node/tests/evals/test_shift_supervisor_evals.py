@@ -24,10 +24,10 @@ from sqlmodel import Session, select
 
 from mia.agents.shift_supervisor import tools
 from mia.agents.shift_supervisor.agent import AGENT_DIR, MANIFEST, create_agent
-from mia.agents.shift_supervisor.classifier import detect_language
 from mia.chat.service import run_turn
 from mia.core import db
 from mia.core.models import Event, Person
+from mia.learning.checks import hint_language
 from mia.schema import create_all
 from mia.templates.cleaning.seed import seed
 
@@ -146,7 +146,7 @@ async def _run_once(scenario: dict[str, Any], db_path: Path) -> list[str]:
         failures = []
     # A reply the hint words cannot place ("?", a card of site and item names) is not a wrong
     # language; only a reply that reads as the other language fails.
-    found = detect_language(text, "?")
+    found = hint_language(text, "?")
     if "reply_lang" in scenario and found not in ("?", scenario["reply_lang"]):
         # The whole reply (cards too): a model may answer with blocks and no separate text.
         failures.append(f"reply language is not {scenario['reply_lang']}: {text[:160]!r}")

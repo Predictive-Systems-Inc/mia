@@ -18,8 +18,10 @@ def add_person(
     roles: list[str],
     language: str = "fi",
     skills: list[str] | None = None,
+    language_known: bool = True,
 ) -> Person:
-    """Create an active person and emit `person.created`.
+    """Create an active person and emit `person.created`; with language_known (the default)
+    also `person.language_chosen`, so the person is never asked for their language.
 
     Raises ValueError for an empty name, no roles, an unknown role or language, or an unknown
     branch, before anything is written.
@@ -36,7 +38,19 @@ def add_person(
     person = Person(
         branch_id=branch_id, name=name, roles=list(roles), language=language, skills=skills or []
     )
-    return store.insert(session, person, actor)
+    store.insert(session, person, actor)
+    return set_language(session, actor, person, language) if language_known else person
+
+
+def set_language(session: Session, actor: Actor, person: Person, language: str) -> Person:
+    """Set the person's reply language and emit `person.language_chosen` (also when it is the
+    language they already had: the event says the choice is made). Raises ValueError for a
+    language outside LANGUAGES, before anything is written."""
+    if language not in LANGUAGES:
+        raise ValueError(f"language must be one of {', '.join(LANGUAGES)}")
+    return store.update(
+        session, person, {"language": language}, actor, action="person.language_chosen"
+    )
 
 
 def deactivate(session: Session, actor: Actor, person: Person) -> Person:

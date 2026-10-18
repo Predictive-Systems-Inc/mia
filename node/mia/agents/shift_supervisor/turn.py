@@ -1,5 +1,6 @@
-"""The shift supervisor's answer to one chat turn: the emergency script, template replies, Did
-you mean questions, Jev (MIA_DECIDER=jev) or the Pydantic AI agent."""
+"""The shift supervisor's answer to one chat turn: template replies, Did you mean questions,
+Jev (MIA_DECIDER=jev) or the Pydantic AI agent. The emergency script runs before this, in
+chat.service, for every agent."""
 
 import asyncio
 import datetime as dt
@@ -27,14 +28,13 @@ from mia.chat.replies import (
     reply_capped,
     reply_text,
     store_reply,
-    tell_supervisors,
     wrap_user_text,
 )
 from mia.core import events
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError
-from mia.core.models import Event, Message, Organisation, Thread
+from mia.core.models import Event, Message, Thread
 from mia.i18n import t
 from mia.i18n.strings import STRINGS
 from mia.learning import catalogue
@@ -312,19 +312,6 @@ async def _jev_turn(
     return await asyncio.to_thread(_jev_act, session, deps, thread, decision)
 
 
-def _reply_emergency(session: Session, deps: AgentDeps, thread: Thread, text: str) -> ChatReply:
-    """Safety script first; every supervisor of the branch is told, urgently."""
-    org = session.get(Organisation, deps.organisation_id)
-    guess = "PH" if deps.branch.timezone.startswith("Asia/Manila") else "FI"
-    country = org.country.upper() if org is not None else guess
-    if f"safety.emergency_{country}" not in STRINGS["en"]:
-        country = "FI"
-    tell_supervisors(
-        session, deps, "safety.supervisor_notice", name=deps.person.name, text=text[:200]
-    )
-    return reply_text(session, deps, thread, t(f"safety.emergency_{country}", deps.lang))
-
-
 def _template_text(decided: Route, lang: str) -> str | None:
     """The reply text of a template route, or None when it has no text (the agent answers)."""
     if decided.kind != "template" or not decided.intent:
@@ -338,14 +325,12 @@ def resolve_turn(
 ) -> tuple[ChatReply | None, str]:
     """Classify and route one turn (shared by run_turn and the AG-UI run).
 
-    Returns (reply, ""), already stored (the caller commits), for the emergency script, a
-    template reply or a "Did you mean" question; or (None, text_for_the_agent) with deps.intent
-    set when the agent should answer. With jev=True only the emergency script is decided here.
+    Returns (reply, ""), already stored (the caller commits), for a template reply or a "Did
+    you mean" question; or (None, text_for_the_agent) with deps.intent set when the agent should
+    answer. With jev=True nothing is decided here. The caller ran the emergency script first.
     """
     decided, agent_text = _classify_turn(session, deps, thread, text)
-    if decided.kind == "emergency":
-        return _reply_emergency(session, deps, thread, text), ""
-    if jev:  # the safety step stays; Jev decides everything else (run_turn)
+    if jev:  # Jev decides everything (the service already ran the emergency script)
         return None, text
     if decided.kind == "clarify":
         return _reply_clarify(session, deps, thread, decided.options), ""
@@ -357,8 +342,8 @@ def resolve_turn(
 
 
 async def handle_turn(turn: Turn) -> ChatReply:
-    """The shift supervisor's answer to one stored message: the emergency script, a template,
-    a Did you mean question, Jev (MIA_DECIDER=jev) or the Pydantic AI agent. The caller commits."""
+    """The shift supervisor's answer to one stored message: a template, a Did you mean
+    question, Jev (MIA_DECIDER=jev) or the Pydantic AI agent. The caller commits."""
     session, deps, thread, text = turn.session, turn.deps, turn.thread, turn.text
     jev = get_settings().MIA_DECIDER == "jev"
     reply, agent_text = await asyncio.to_thread(resolve_turn, session, deps, thread, text, jev)

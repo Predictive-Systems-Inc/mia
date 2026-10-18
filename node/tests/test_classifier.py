@@ -4,7 +4,7 @@ import datetime as dt
 
 import pytest
 
-from mia.agents.shift_supervisor.classifier import classify, detect_language, parse_date, parse_time
+from mia.agents.shift_supervisor.classifier import classify, parse_date, parse_time
 
 TODAY = dt.date(2026, 9, 30)  # a Wednesday
 
@@ -28,7 +28,7 @@ TODAY = dt.date(2026, 9, 30)  # a Wednesday
     ],
 )
 def test_intents(text: str, intent: str, lang: str) -> None:
-    result = classify(text, TODAY, "en")
+    result = classify(text, TODAY, lang)  # lang is the person's, never detected
     assert (result.name, result.lang) == (intent, lang)
 
 
@@ -75,16 +75,6 @@ def test_dates() -> None:
     assert parse_time("no time") is None
 
 
-def test_language_default() -> None:
-    assert detect_language("12345", "fi") == "fi"
-
-
-def test_language_is_the_majority_not_the_first_finnish_letter() -> None:
-    """Finnish places and names in an English sentence do not make it Finnish."""
-    assert detect_language("I'm sick, can't do the Töölö visit with Mäkinen", "fi") == "en"
-    assert detect_language("Olen kipeä, en pääse Töölöön", "en") == "fi"
-
-
 @pytest.mark.parametrize(
     ("text", "intent", "lang"),
     [
@@ -101,7 +91,7 @@ def test_language_is_the_majority_not_the_first_finnish_letter() -> None:
     ],
 )
 def test_field_work_intents(text: str, intent: str, lang: str) -> None:
-    got = classify(text, TODAY)
+    got = classify(text, TODAY, lang)
     assert (got.name, got.lang) == (intent, lang)
 
 

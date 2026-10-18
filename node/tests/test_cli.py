@@ -50,7 +50,7 @@ def test_migrate_seed_chat_assign_confirm(
     assert "approved by Helena" in capsys.readouterr().out
 
     assert main(["chat", "Show me Maria's visits.", "--as", "Juha"]) == 0
-    assert "only see your own visits" in capsys.readouterr().out
+    assert "näet vain omat käyntisi" in capsys.readouterr().out  # Juha: fi
 
 
 def test_unknown_person(capsys: pytest.CaptureFixture[str]) -> None:

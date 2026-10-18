@@ -7,11 +7,34 @@ from collections.abc import Iterable
 
 from pydantic import BaseModel, Field
 
-from mia.agents.shift_supervisor.classifier import detect_language
 from mia.learning.schema import OTHER, Record, RoleSpec
 
 LEAK = 0.85  # character 3-gram Jaccard at or above this is a paraphrase
 _PUNCT = str.maketrans("", "", string.punctuation)
+
+FINNISH_HINT = re.compile(
+    r"\w*[äöå]\w*|\b(olen|en|ei|ja|tai|kun|klo|että|mikä|mitä|voin|sinun|huomenna|tänään|kuka|"
+    r"voi|näytä|minun|kaikki|vain|aamu|valitse|anna|tuurata|kiitos|moi|hei|parhaat)\b",
+    re.IGNORECASE,
+)
+ENGLISH_HINT = re.compile(
+    r"\b(i|i'm|my|me|the|to|at|for|and|is|are|you|your|who|what|show|can|assign|sick|"
+    r"tomorrow|today|visits?|all|only|please|hello|hi|hey|thanks|thank|best)\b",
+    re.IGNORECASE,
+)
+
+
+def hint_language(text: str, default: str = "en") -> str:
+    """The language with more hint words ('fi' or 'en'); the default on a tie. A data check for
+    training records and eval replies only: chat replies use person.language (ADR 016).
+
+    Counting, not first match: an English message that names a Finnish place (Töölö) or person
+    stays English.
+    """
+    fi, en = len(FINNISH_HINT.findall(text)), len(ENGLISH_HINT.findall(text))
+    if fi == en:
+        return default
+    return "fi" if fi > en else "en"
 
 
 class CheckReport(BaseModel):
@@ -58,7 +81,7 @@ def check_records(
             report.errors.append(f"unknown intent {r.intent} in {r.id}")
         if r.negative_of and r.negative_of not in labels:
             report.errors.append(f"unknown negative_of {r.negative_of} in {r.id}")
-        if r.lang in ("fi", "en") and detect_language(r.text, r.lang) not in (r.lang, "?"):
+        if r.lang in ("fi", "en") and hint_language(r.text, r.lang) not in (r.lang, "?"):
             report.warnings.append(f"{r.id} may not be {r.lang}: {r.text!r}")
     _check_one_text_one_intent(records, report)
     _check_conversation_examples(records, conversation_examples, report)

@@ -1,4 +1,4 @@
-from mia.learning.checks import check_records, normalize, similarity
+from mia.learning.checks import check_records, hint_language, normalize, similarity
 from mia.learning.schema import IntentSpec, Record, RoleSpec, Targets
 
 
@@ -197,3 +197,13 @@ def test_punctuation_only_text_does_not_equal_a_punctuation_example() -> None:
     recs = [rec(1, "??", "train")]
     report = check_records(role(train=0, dev=0, test=0), recs, [], conversation_examples=["..."])
     assert [w for w in report.warnings if "conversation.yaml example" in w] == []
+
+
+def test_hint_language_default() -> None:
+    assert hint_language("12345", "fi") == "fi"
+
+
+def test_hint_language_is_the_majority_not_the_first_finnish_letter() -> None:
+    """Finnish places and names in an English sentence do not make it Finnish."""
+    assert hint_language("I'm sick, can't do the Töölö visit with Mäkinen", "fi") == "en"
+    assert hint_language("Olen kipeä, en pääse Töölöön", "en") == "fi"

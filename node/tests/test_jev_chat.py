@@ -88,7 +88,7 @@ def test_egress_none_gives_the_unavailable_reply(
     reply = _turn(session, people["Juha"], "I'm sick today")
     assert jev == [] and _tools(session) == []
     assert session.exec(select(Event).where(Event.action == "decision.failed")).first()
-    assert reply.text().startswith("Sorry")
+    assert reply.text().startswith("Anteeksi")  # Juha: fi
 
 
 def test_an_answer_missing_a_question_gives_the_unavailable_reply(
@@ -104,7 +104,7 @@ def test_an_answer_missing_a_question_gives_the_unavailable_reply(
 
     monkeypatch.setattr(jev_core, "_inner", lambda: fake_jev(partial, jev))
     reply = _turn(session, people["Juha"], "I'm sick today")
-    assert _tools(session) == [] and reply.text().startswith("Sorry")
+    assert _tools(session) == [] and reply.text().startswith("Anteeksi")  # Juha: fi
 
 
 def test_a_cleaner_cannot_run_a_supervisor_tool(

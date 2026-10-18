@@ -23,7 +23,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
-from mia.agents.shift_supervisor.classifier import Intent, classify, detect_language
+from mia.agents.shift_supervisor.classifier import Intent, classify
 from mia.chat.blocks import (
     AgentReply,
     ApprovalCardBlock,
@@ -323,7 +323,7 @@ def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     """FunctionModel entry point."""
     today, default_lang = _context(info)
     text = _last_user_text(messages)
-    lang = detect_language(text, default_lang)
+    lang = default_lang  # the person's language (ADR 016)
     last = messages[-1]
     output_tools = {tool.name for tool in info.output_tools}
     if isinstance(last, ModelRequest) and not any(

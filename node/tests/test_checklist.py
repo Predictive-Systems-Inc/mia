@@ -112,9 +112,9 @@ def test_checklist_needs_permission(
         tools.checklist(deps_for(session, branch, viewer), tools.ChecklistInput(), "c1")
 
 
-def test_tick_reply_language_follows_the_prefix_word() -> None:
-    assert classify("Tehty: Wipe the surfaces", TODAY).lang == "fi"
-    assert classify("Done: Pyyhi pinnat", TODAY).lang == "en"
+def test_tick_reply_language_is_the_persons_not_the_prefix_words() -> None:
+    assert classify("Tehty: Wipe the surfaces", TODAY, "en").lang == "en"
+    assert classify("Done: Pyyhi pinnat", TODAY, "fi").lang == "fi"
 
 
 def _with_items(session: Session, visit: Visit, items: list[str]) -> None:

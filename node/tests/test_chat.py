@@ -74,7 +74,7 @@ def test_demo_2_3_supervisor_assigns_and_cleaner_confirms(
     card = blocks_of(cover, "card")[0]
     assert card["fields"][0]["label"] == "Mikael Nieminen" and len(card["fields"]) <= 3
     assert "km added travel" in card["fields"][0]["value"]
-    assert "Assign Mikael" in blocks_of(cover, "quick_replies")[0]["options"]
+    assert "Valitse Mikael" in blocks_of(cover, "quick_replies")[0]["options"]  # Sanna: fi
 
     assign = say(client, sanna, "Assign Mikael.", cover["thread_id"])
     assert blocks_of(assign, "approval_card") == []  # the instruction is the approval (D1)
@@ -122,7 +122,7 @@ def test_demo_4_cleaner_cannot_see_other_visits(
     client: TestClient, people: dict[str, Person], session: Session
 ) -> None:
     reply = say(client, people["Juha"], "Show me Maria's visits.")
-    assert "only see your own visits" in blocks_of(reply, "text")[0]["text"]
+    assert "näet vain omat käyntisi" in blocks_of(reply, "text")[0]["text"]  # Juha: fi
     assert blocks_of(reply, "card") == []
     denied = session.exec(select(Event).where(Event.action == "rbac.deny")).all()
     assert denied and denied[-1].on_behalf_of == people["Juha"].id

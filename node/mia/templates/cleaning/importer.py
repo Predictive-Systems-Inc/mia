@@ -23,7 +23,7 @@ from mia.core.models import (
     Person,
     WorkLimit,
 )
-from mia.core.people import HUMAN_ROLES
+from mia.core.people import HUMAN_ROLES, set_language
 from mia.i18n import SUPPORTED
 from mia.templates.cleaning.models import CleaningChecklist, CleaningSite
 
@@ -268,6 +268,7 @@ def load(session: Session, data: ImportFile, branch: Branch) -> Counts:
             ),
             actor,
         )
+        set_language(session, actor, person, person.language)
         store.insert(
             session,
             WorkLimit(

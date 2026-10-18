@@ -48,6 +48,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.registry import AGENTS
 from mia.agents.shift_supervisor.turn import resolve_turn
+from mia.chat import service
 from mia.chat.blocks import AgentReply, ApprovalCardBlock, ChatReply
 from mia.chat.replies import USAGE_LIMITS, finish, reply_capped, wrap_user_text
 from mia.chat.service import _prepare
@@ -225,8 +226,15 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
         thread, past, deps, ctx = await asyncio.to_thread(
             _prepare, session, person, text, run.thread_id, create=True
         )
-        lang = deps.lang
-        reply, agent_text = await asyncio.to_thread(resolve_turn, session, deps, thread, text)
+        before = await asyncio.to_thread(service._before_agent, session, deps, thread, text)
+        lang = deps.lang  # a language tap changes it
+        reply: ChatReply | None = None
+        agent_text = ""
+        if isinstance(before, ChatReply):
+            reply = before
+        else:
+            text = before
+            reply, agent_text = await asyncio.to_thread(resolve_turn, session, deps, thread, text)
         if reply is not None:  # emergency, template or question: the agent does not run
             await asyncio.to_thread(session.commit)
             await run.push(RunStartedEvent(thread_id=run.thread_id, run_id=run.run_id))

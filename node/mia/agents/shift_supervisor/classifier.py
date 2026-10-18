@@ -44,16 +44,6 @@ INJECTION = re.compile(
     r"unohda (kaikki |aiemmat )?(ohjeet|säännöt)|älä välitä (ohjeista|säännöistä)",
     re.IGNORECASE,
 )
-FINNISH_HINT = re.compile(
-    r"\w*[äöå]\w*|\b(olen|en|ei|ja|tai|kun|klo|että|mikä|mitä|voin|sinun|huomenna|tänään|kuka|"
-    r"voi|näytä|minun|kaikki|vain|aamu|valitse|anna|tuurata|kiitos|moi|hei|parhaat)\b",
-    re.IGNORECASE,
-)
-ENGLISH_HINT = re.compile(
-    r"\b(i|i'm|my|me|the|to|at|for|and|is|are|you|your|who|what|show|can|assign|sick|"
-    r"tomorrow|today|visits?|all|only|please|hello|hi|hey|thanks|thank|best)\b",
-    re.IGNORECASE,
-)
 ABSENCE = re.compile(
     r"\b(sick|ill|unwell|fever|flu|absent|can'?t (come|make it|work)|cannot (come|work)|"
     r"won'?t make it|running late|be late|leave early|leaving early|"
@@ -176,18 +166,6 @@ class Intent(BaseModel):
     injection: bool = False
 
 
-def detect_language(text: str, default: str = "en") -> str:
-    """The language with more hint words ('fi' or 'en'); the default on a tie.
-
-    Counting, not first match: an English message that names a Finnish place (Töölö) or person
-    stays English.
-    """
-    fi, en = len(FINNISH_HINT.findall(text)), len(ENGLISH_HINT.findall(text))
-    if fi == en:
-        return default
-    return "fi" if fi > en else "en"
-
-
 def parse_date(text: str, today: dt.date) -> dt.date | None:
     """Relative and absolute dates in Finnish and English."""
     low = text.lower()
@@ -231,17 +209,16 @@ def _place(text: str) -> str | None:
 
 
 def classify(text: str, today: dt.date, default_lang: str = "en") -> Intent:
-    """Classify one message. Deterministic; unit tested in tests/test_classifier.py."""
-    lang = detect_language(text, default_lang)
+    """Classify one message. Deterministic; unit tested in tests/test_classifier.py. The
+    intent's lang is default_lang (the person's language; nothing detects it)."""
+    lang = default_lang
     if INJECTION.search(text):
         return Intent(name="other", lang=lang, injection=True)
     if EMPTY_TICK.search(text):  # "Done:" with nothing after it: an aborted tick, not a check-out
         return Intent(name="other", lang=lang)
     if m := TICK.search(text):
         # The bot's own quick reply ("Tehty: Korvaa pyyhkeet"): before every other intent, so
-        # a cover or absence word inside the item never routes it elsewhere; the prefix word
-        # says the language.
-        lang = "en" if m["word"].lower() == "done" else "fi"
+        # a cover or absence word inside the item never routes it elsewhere.
         return Intent(name="checklist", lang=lang, item=m["item"][:200])
     if ACCEPT.search(text):
         return Intent(name="cover_reply", lang=lang, accept=True)

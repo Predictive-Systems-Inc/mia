@@ -50,6 +50,8 @@ class OrgSettings(BaseModel):
     alerts: AlertSettings = Field(default_factory=AlertSettings)
     cover_confirmation: CoverConfirmation = Field(default_factory=CoverConfirmation)
     channels: dict[str, ChannelConfig] = Field(default_factory=dict)
+    # Offered in the language question; fewer than two: nobody is asked.
+    languages: list[str] = Field(default_factory=list)
 
 
 @lru_cache

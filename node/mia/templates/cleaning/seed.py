@@ -24,6 +24,7 @@ from mia.core.models import (
     Visit,
     WorkLimit,
 )
+from mia.core.people import set_language
 from mia.core.scheduling import local_dt, occurs_on
 from mia.templates.cleaning.models import CleaningChecklist, CleaningSite
 
@@ -190,6 +191,7 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
             ),
             actor,
         )
+        set_language(session, actor, person, lang)
         if home:
             _cache(session, branch.id, home[0], home[1], home[2], actor)
         people[name] = person
