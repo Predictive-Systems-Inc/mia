@@ -20,12 +20,13 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps, AgentSpec, Turn
 from mia.agents.registry import AGENTS, DEFAULT
 from mia.agents.shift_supervisor.classifier import classify
-from mia.chat import agent_router, deferred, language
+from mia.chat import agent_router, deferred, language, route_memory
 from mia.chat.access import agents_for
 from mia.chat.blocks import ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.channels import NOTIFICATION
 from mia.chat.replies import history, latest_message, reply_text, store_reply, tell_supervisors
 from mia.core import events, people, store
+from mia.core.db import utcnow
 from mia.core.egress import EgressContext, Pseudonymiser, egress_context
 from mia.core.jev import JevError, JevUnreachable
 from mia.core.models import Actor, Branch, Event, Message, Organisation, Person, Thread
@@ -218,9 +219,12 @@ def _pending(session: Session, thread: Thread) -> Message | None:
     return row
 
 
-def _route_tapped(session: Session, thread: Thread, text: str) -> tuple[str, str | None] | None:
-    """(agent id, original message id) for a tap on the "Is this about" question that is the
-    thread's last Mia message; otherwise None (a stale button is plain text)."""
+def _route_tapped(
+    session: Session, thread: Thread, text: str
+) -> tuple[str, str | None, dict[str, Any]] | None:
+    """(agent id, original message id, the question's event after) for a tap on the "Is this
+    about" question that is the thread's last Mia message; otherwise None (a stale button is
+    plain text)."""
     asked = session.exec(
         select(Event)
         .where(Event.action == ROUTE_ASKED)
@@ -232,7 +236,7 @@ def _route_tapped(session: Session, thread: Thread, text: str) -> tuple[str, str
     if last is None or after.get("message_id") != last.id:
         return None
     agent_id = (after.get("options") or {}).get(text.strip())
-    return (str(agent_id), after.get("original_message_id")) if agent_id else None
+    return (str(agent_id), after.get("original_message_id"), after) if agent_id else None
 
 
 def _ask_route(
@@ -241,9 +245,12 @@ def _ask_route(
     thread: Thread,
     agents: list[AgentSpec],
     original_id: str | None = None,
+    picked: str | None = None,
+    confidence: float | None = None,
 ) -> ChatReply:
     """ "Is this about" with one button per agent of the person; the tap answers the message
-    (`original_id`, by default the thread's latest user message)."""
+    (`original_id`, by default the thread's latest user message). The event keeps Jev's pick
+    and confidence (None without Jev) for the route memory."""
     options = {t(a.label_key, deps.lang): a.id for a in agents}
     reply = store_reply(
         session,
@@ -263,6 +270,8 @@ def _ask_route(
             "options": options,
             "message_id": reply.message_id,
             "original_message_id": original_id,
+            "picked": picked,
+            "confidence": confidence,
         },
         deps.actor,
     )
@@ -285,8 +294,8 @@ Chosen = tuple[AgentSpec | None, list[AgentSpec], str | None, str, bool]
 def _choose(session: Session, deps: AgentDeps, thread: Thread, text: str) -> ChatReply | Chosen:
     """The steps before the router: no agent (a stored reply), a tap on "Is this about", a
     pending question, one agent, an injection. Returns Chosen; spec None means the router
-    decides. A tap on another agent than the active one is a switch (chat.agent_switched).
-    Commits nothing."""
+    decides. A tap on another agent than the active one is a switch (chat.agent_switched);
+    every tap is remembered (chat.route_chosen). Commits nothing."""
     agents = agents_for(session, deps.person)
     if not agents:
         return reply_text(session, deps, thread, t("reply.no_agent", deps.lang))
@@ -303,6 +312,9 @@ def _choose(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Cha
             after = {"from": active, "to": spec.id}
             actor = _deps_for(deps, spec).actor
             events.emit(session, "chat.agent_switched", ("thread", thread.id), None, after, actor)
+        options = [str(a) for a in (tap[2].get("options") or {}).values()]
+        asked_pick, asked_p = tap[2].get("picked"), tap[2].get("confidence")
+        route_memory.remember(session, deps, thread, tap[1], tap[0], asked_pick, asked_p, options)
         return ids[tap[0]], agents, active, original or text, True
     pending = _pending(session, thread)
     if pending is not None and pending.agent_id in ids:
@@ -336,7 +348,8 @@ def _settle(
             session, "chat.route_failed", ("thread", thread.id), None, {"error": error}, deps.actor
         )
     if picked.kind == "ask" or picked.agent_id is None:
-        return _ask_route(session, deps, thread, agents)
+        p = picked.confidence if picked.raw is not None else None  # no Jev, no confidence
+        return _ask_route(session, deps, thread, agents, None, picked.raw, p)
     spec = AGENTS[picked.agent_id]
     chosen = _deps_for(deps, spec)
     if picked.kind == "switch":
@@ -351,6 +364,20 @@ def _settle(
             chosen.actor,
         )
     return chosen
+
+
+def _recalled(
+    session: Session, deps: AgentDeps, text: str, agents: list[AgentSpec], active: str | None
+) -> agent_router.Route | None:
+    """The learned route for the message (route_memory), or None when nothing is learned for
+    its key or the learned agent is no longer one of the person's (rule 4). The active agent
+    learned is a keep; another one is a switch, or chosen when no agent is active."""
+    hit = route_memory.recall(session, deps.branch.id, utcnow()).get(route_memory.key_of(text))
+    if hit is None or hit not in {a.id for a in agents}:
+        return None
+    if hit == active:
+        return agent_router.Route("keep", hit)
+    return agent_router.Route("switch" if active else "chosen", hit)
 
 
 async def route_turn(
@@ -380,9 +407,12 @@ async def route_turn(
         agent_deps = _deps_for(deps, spec)
     else:
         error: str | None = None
+        recalled = await asyncio.to_thread(_recalled, session, deps, text, agents, active)
+        if recalled is not None:
+            picked = recalled  # an exact repeat of a learned tap: no Jev request
         # configuration, not an outage: no request, no failure event. The router is gated like
         # the shift supervisor's decider (D18): MIA_DECIDER=jev turns both on.
-        if ctx.level == "none" or get_settings().MIA_DECIDER != "jev":
+        elif ctx.level == "none" or get_settings().MIA_DECIDER != "jev":
             picked = agent_router.fallback(agents, active)
         else:
             previous, pseudo = await asyncio.to_thread(_router_input, session, deps, thread)

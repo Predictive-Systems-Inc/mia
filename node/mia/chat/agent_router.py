@@ -21,6 +21,7 @@ class Route:
     kind: Literal["keep", "switch", "chosen", "ask", "small_talk"]
     agent_id: str | None  # who answers; None when kind is "ask"
     confidence: float = 1.0
+    raw: str | None = None  # Jev's pick as answered (None for the fallback)
 
 
 def build_request(
@@ -71,12 +72,14 @@ def decide(answers: dict[str, Any], agents: list[AgentSpec], active: str | None)
     sure = confidence >= THRESHOLD and picked != UNCLEAR
     if active is not None:
         if picked == active or not sure:
-            return Route("keep", active, confidence)
-        return Route("switch", picked, confidence)
+            return Route("keep", active, confidence, picked)
+        return Route("switch", picked, confidence, picked)
     if picked == UNCLEAR and confidence >= THRESHOLD:
         # a confident "for no agent" is small talk: the lead agent greets back, no buttons
-        return Route("small_talk", agents[0].id, confidence)
-    return Route("chosen", picked, confidence) if sure else Route("ask", None, confidence)
+        return Route("small_talk", agents[0].id, confidence, picked)
+    if sure:
+        return Route("chosen", picked, confidence, picked)
+    return Route("ask", None, confidence, picked)
 
 
 async def route(

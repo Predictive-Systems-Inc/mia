@@ -1,13 +1,19 @@
 """What people chose when Mia asked "Is this about": exact repeats are routed by code before
-any Jev call (spec 2026-10-18-router-follow-up, decision 4b). This module is pure; the chat
-reads the events and applies the result. Only agent ids are learned, never text as a rule
-(rule 8)."""
+any Jev call (spec 2026-10-18-router-follow-up, decision 4b). The rules (`learned`) are pure;
+`remember` writes the tap event and `recall` reads the branch's events, both in the caller's
+session. Only agent ids are learned, never text as a rule (rule 8)."""
 
 import datetime as dt
 import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+
+from sqlmodel import Session, col, select
+
+from mia.agents.base import AgentDeps
+from mia.core import events
+from mia.core.models import Event, Message, Thread
 
 CHOSEN = "chat.route_chosen"
 FORGOTTEN = "chat.route_forgotten"
@@ -86,3 +92,72 @@ def learned(
         for key, c in votes.items()
         if len(c) == 1 and next(iter(c.values())) >= MIN_TAPS
     }
+
+
+def remember(
+    session: Session,
+    deps: AgentDeps,
+    thread: Thread,
+    original_message_id: str | None,
+    agent_id: str,
+    picked: str | None,
+    confidence: float | None,
+    options: list[str],
+) -> None:
+    """Emits chat.route_chosen for a tap in the caller's transaction (it commits nothing). The
+    event carries the message's key, not its text. No event when the original message is
+    unknown: there is nothing to learn from."""
+    message = session.get(Message, original_message_id) if original_message_id else None
+    if message is None:
+        return
+    after = {
+        "original_message_id": message.id,
+        "agent_id": agent_id,
+        "picked": picked,
+        "confidence": confidence,
+        "options": options,
+        "lang": deps.lang,
+        "key": key_of(message.text),
+    }
+    events.emit(session, CHOSEN, ("thread", thread.id), None, after, deps.actor)
+
+
+def _branch_events(session: Session, branch_id: str, action: str) -> Sequence[Event]:
+    return session.exec(
+        select(Event).where(Event.action == action).where(Event.branch_id == branch_id)
+    ).all()
+
+
+def _switches(session: Session, branch_id: str) -> list[Switch]:
+    """The branch's chat.agent_switched events as Switch rows, keyed by the thread's latest
+    user message before the switch (the message that was switched on)."""
+    out: list[Switch] = []
+    for ev in _branch_events(session, branch_id, "chat.agent_switched"):
+        from_agent = (ev.after or {}).get("from")
+        message = session.exec(
+            select(Message)
+            .where(Message.thread_id == ev.entity_id)
+            .where(Message.role == "user")
+            .where(col(Message.id) < ev.id)  # ULIDs are ordered (core/ids.new_id)
+            .order_by(col(Message.id).desc())
+        ).first()
+        if message is not None and from_agent:
+            out.append(Switch(key_of(message.text), str(from_agent), ev.timestamp, ev.entity_id))
+    return out
+
+
+def recall(session: Session, branch_id: str, now: dt.datetime) -> dict[str, str]:
+    """The branch's learned keys (key to agent id) by the rules of `learned`. Reads only;
+    sync, so call it through asyncio.to_thread (rule 12)."""
+    # ponytail: a scan of the branch's route events per message; cache or index when a branch
+    # passes thousands of taps.
+    taps = [
+        Tap(str(a["key"]), str(a["agent_id"]), ev.timestamp, ev.entity_id, ev.id)
+        for ev in _branch_events(session, branch_id, CHOSEN)
+        if (a := ev.after or {}).get("key") and a.get("agent_id")
+    ]
+    forgotten: dict[str, dt.datetime] = {}
+    for ev in _branch_events(session, branch_id, FORGOTTEN):
+        key = str((ev.after or {}).get("key"))
+        forgotten[key] = max(forgotten.get(key, ev.timestamp), ev.timestamp)
+    return learned(taps, _switches(session, branch_id), forgotten, now)

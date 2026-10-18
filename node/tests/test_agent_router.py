@@ -71,7 +71,7 @@ def test_the_decision_table(
     answer: str, p: float, active: str | None, expected: tuple[str, str | None]
 ) -> None:
     got = agent_router.decide({"agent": choice(answer, p)}, _agents(*TWO), active)
-    assert (got.kind, got.agent_id) == expected
+    assert (got.kind, got.agent_id, got.raw) == (*expected, answer)
 
 
 def test_an_answer_outside_the_options_fails() -> None:
@@ -365,6 +365,9 @@ def test_the_router_is_gated_like_the_decider(
     failed = session.exec(select(Event).where(Event.action == "chat.route_failed")).all()
     assert failed == []  # the setting is the record
     assert any(isinstance(b, QuickRepliesBlock) for b in reply.blocks)  # no active agent: ask
+    asked = session.exec(select(Event).where(Event.action == "chat.route_asked")).one()
+    assert asked.after is not None
+    assert asked.after["picked"] is None and asked.after["confidence"] is None  # no Jev
 
 
 def test_small_talk_is_answered_by_the_lead_agent_without_buttons(
@@ -398,3 +401,115 @@ def test_router_descriptions_carry_a_contrast_line() -> None:
     """Each description says what it is not, so sales, stock and shifts stay apart."""
     for spec in AGENTS.values():
         assert "; not " in spec.router_description, spec.id
+
+
+# Route memory (chat.route_chosen)
+def _ask_then_tap(
+    session: Session,
+    sanna: Person,
+    monkeypatch: pytest.MonkeyPatch,
+    seen: list[dict[str, Any]],
+    text: str,
+    agent: str,
+) -> ChatReply:
+    """Jev is unsure, Mia asks "Is this about" in a new thread, Sanna taps `agent`."""
+    _router_answers(monkeypatch, seen, "unclear", 0.4)
+    asked = _turn(session, sanna, text)
+    options = next(b.options for b in asked.blocks if isinstance(b, QuickRepliesBlock))
+    return _turn(session, sanna, options[TWO.index(agent)], asked.thread_id)  # agents_for order
+
+
+def test_a_route_tap_is_remembered(
+    session: Session,
+    people: dict[str, Person],
+    two_agents: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ask_then_tap(session, people["Sanna"], monkeypatch, two_agents, "3 sp 2 cl", TWO[1])
+    ev = session.exec(select(Event).where(Event.action == "chat.route_chosen")).one()
+    assert ev.after is not None and ev.after["agent_id"] == TWO[1]
+    assert ev.after["picked"] == "unclear" and ev.after["confidence"] == 0.4
+    assert ev.after["key"] == "# sp # cl" and ev.after["lang"] == "fi"
+    assert set(ev.after["options"]) == set(TWO)
+
+
+def test_the_third_repeat_is_routed_without_jev(
+    session: Session,
+    people: dict[str, Person],
+    two_agents: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ask_then_tap(session, people["Sanna"], monkeypatch, two_agents, "3 sp 2 cl", TWO[1])
+    _ask_then_tap(session, people["Sanna"], monkeypatch, two_agents, "5 sp 1 cl", TWO[1])
+    before = len(two_agents)
+    reply = _turn(session, people["Sanna"], "4 sp 4 cl")
+    assert reply.agent_id == TWO[1]
+    assert not any(isinstance(b, QuickRepliesBlock) for b in reply.blocks)
+    assert len(two_agents) == before  # no Jev request
+
+
+def test_a_learned_route_with_another_agent_active_is_a_switch(
+    session: Session,
+    people: dict[str, Person],
+    two_agents: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ask_then_tap(session, people["Sanna"], monkeypatch, two_agents, "3 sp 2 cl", TWO[1])
+    _ask_then_tap(session, people["Sanna"], monkeypatch, two_agents, "5 sp 1 cl", TWO[1])
+    _router_answers(monkeypatch, two_agents, TWO[0], 0.95)
+    first = _turn(session, people["Sanna"], SHIFT)
+    before = len(two_agents)
+    reply = _turn(session, people["Sanna"], "2 sp 2 cl", first.thread_id)
+    assert first.agent_id == TWO[0] and reply.agent_id == TWO[1]
+    assert len(two_agents) == before  # no Jev request
+    assert reply.blocks[0].text == "(Myyntipäällikkö)"  # type: ignore[union-attr]  # the notice
+    switched = session.exec(select(Event).where(Event.action == "chat.agent_switched")).all()
+    assert switched[-1].after == {"from": TWO[0], "to": TWO[1]}
+
+
+def test_a_learned_agent_the_person_lost_is_ignored(
+    session: Session,
+    people: dict[str, Person],
+    two_agents: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ask_then_tap(session, people["Sanna"], monkeypatch, two_agents, "3 sp 2 cl", TWO[1])
+    _ask_then_tap(session, people["Sanna"], monkeypatch, two_agents, "5 sp 1 cl", TWO[1])
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings(agents=TWO[:1]))
+    reply = _turn(session, people["Sanna"], "4 sp 4 cl")
+    assert reply.agent_id == TWO[0]  # the only agent left; no error, no memory hit
+
+
+def test_a_learned_agent_not_offered_falls_through_to_jev(
+    session: Session,
+    people: dict[str, Person],
+    two_agents: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rule 4 with the router still running: a learned agent no longer in agents_for is not
+    used, Jev decides."""
+    _ask_then_tap(session, people["Sanna"], monkeypatch, two_agents, "3 sp 2 cl", TWO[1])
+    _ask_then_tap(session, people["Sanna"], monkeypatch, two_agents, "5 sp 1 cl", TWO[1])
+    others = [TWO[0], "inventory_manager"]
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings(agents=others))
+    _router_answers(monkeypatch, two_agents, TWO[0], 0.95)
+    before = len(two_agents)
+    reply = _turn(session, people["Sanna"], "4 sp 4 cl")
+    assert reply.agent_id == TWO[0] and len(two_agents) == before + 1
+
+
+def test_a_switch_away_within_the_hour_unlearns(
+    session: Session,
+    people: dict[str, Person],
+    two_agents: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = _ask_then_tap(session, people["Sanna"], monkeypatch, two_agents, "3 sp 2 cl", TWO[1])
+    _router_answers(monkeypatch, two_agents, TWO[0], 0.95)  # the person moves on at once
+    _turn(session, people["Sanna"], "5 sp 1 cl", first.thread_id)
+    switched = session.exec(select(Event).where(Event.action == "chat.agent_switched")).one()
+    assert switched.after == {"from": TWO[1], "to": TWO[0]}
+    _ask_then_tap(session, people["Sanna"], monkeypatch, two_agents, "6 sp 1 cl", TWO[1])
+    before = len(two_agents)
+    _turn(session, people["Sanna"], "7 sp 1 cl")
+    assert len(two_agents) == before + 1  # Jev was asked: one counted tap learns nothing
