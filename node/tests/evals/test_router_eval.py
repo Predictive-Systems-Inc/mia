@@ -1,7 +1,9 @@
 """Real-Jev router evaluation (spec 2026-10-18, Testing). Run:
 MIA_TYPESAFE_KEY=... uv run pytest node/tests/evals/test_router_eval.py -m evals -s
-Synthetic data only (D18). Prints per language and per agent: right at >= 0.6, wrong at
->= 0.6, ask-back rate, p50 and p95 latency, and cost (tokens) per message."""
+Synthetic data only (D18). Prints per language, agent, group and half: right at >= 0.6, wrong
+at >= 0.6, ask-back rate, real messages answered as small talk, p50 and p95 latency, and cost
+(tokens) per message. The gate asserts run over the gate half only; the tune half is for tuning
+descriptions and thresholds."""
 
 import asyncio
 import json
@@ -24,7 +26,7 @@ from mia.core.db import utcnow
 from mia.core.egress import EgressContext, egress_context
 from mia.core.models import Actor, Branch, Event, Person, UsageCloudRequest
 from mia.settings import get_settings
-from tests.evals.router_cases import CASES, Case
+from tests.evals.router_cases import CASES, GATED_LANGS, Case
 
 pytestmark = pytest.mark.evals
 
@@ -36,7 +38,7 @@ ROSTER = [
     "hr_officer",
     "branch_manager",
 ]
-GATED = ["en", "fil", "ceb", "hil", "war", "bcl"]
+SCORES = ("right", "wrong", "ask", "small_talk", "other")
 PURPOSE = "chat.route.eval"
 CONCURRENCY = 4
 REPORT = Path(__file__).parents[3] / "docs" / "research" / f"router-{utcnow():%Y-%m-%d}.raw.json"
@@ -89,11 +91,14 @@ async def _one(i: int, case: Case, engine: Engine, branch: Branch, sem: asyncio.
 
 
 def _score(r: dict[str, Any]) -> str:
-    """right, wrong (another agent at >= 0.6), ask, or other (kept a wrong agent, an error)."""
+    """right, wrong (another agent at >= 0.6), ask, small_talk (a real message answered as small
+    talk: a miss, counted apart from wrong), or other (kept a wrong agent, an error)."""
     if r["kind"] == "ask":
         return "ask"
     if r["kind"] == "error":
         return "other"
+    if r["kind"] == "small_talk":
+        return "right" if r["expected"] in ("any", "small_talk") else "small_talk"
     if r["expected"] == "any" or r["agent"] == r["expected"]:
         return "right"
     return "wrong" if r["kind"] in ("switch", "chosen") else "other"
@@ -102,7 +107,7 @@ def _score(r: dict[str, Any]) -> str:
 def _row(rows: list[dict[str, Any]]) -> dict[str, Any]:
     n = len(rows)
     secs = sorted(r["seconds"] for r in rows if r.get("seconds"))
-    count = {s: sum(r["score"] == s for r in rows) for s in ("right", "wrong", "ask", "other")}
+    count = {s: sum(r["score"] == s for r in rows) for s in SCORES}
     return {
         "n": n,
         **{s: round(c / n, 3) for s, c in count.items()},
@@ -121,12 +126,10 @@ def _table(results: list[dict[str, Any]], key: str) -> dict[str, Any]:
 
 
 def _print(title: str, table: dict[str, Any]) -> None:
-    print(f"\n{title}\n{'':18}{'n':>5}{'right':>7}{'wrong':>7}{'ask':>7}{'other':>7}", end="")
+    print(f"\n{title}\n{'':18}{'n':>5}", "".join(f"{s[:5]:>7}" for s in SCORES), end="")
     print(f"{'err':>5}{'p50':>6}{'p95':>6}{'tok':>6}")
     for k, v in table.items():
-        print(
-            f"{k:18}{v['n']:>5}{v['right']:>7}{v['wrong']:>7}{v['ask']:>7}{v['other']:>7}", end=""
-        )
+        print(f"{k:18}{v['n']:>5}", "".join(f"{v[s]:>7}" for s in SCORES), end="")
         print(f"{v['errors']:>5}{v['p50']:>6}{v['p95']:>6}{v['tokens']:>6}")
 
 
@@ -152,16 +155,20 @@ def test_router(engine: Engine, branch: Branch) -> None:
         "by_language": _table(results, "lang"),
         "by_agent": _table(results, "expected"),
         "by_group": _table(results, "group"),
+        "by_half": _table(results, "half"),
     }
-    for name in ("by_language", "by_agent", "by_group"):
+    gate = [r for r in results if r["half"] == "gate"]
+    summary["gate"] = {"all": _row(gate), "by_language": _table(gate, "lang")}
+    for name in ("by_language", "by_agent", "by_group", "by_half"):
         _print(name, summary[name])
     _print("all", {"all": summary["all"]})
     REPORT.write_text(
         json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8",
     )
-    assert summary["all"]["wrong"] <= 0.02, summary["all"]
-    low = {k: v["right"] for k, v in summary["by_language"].items() if k in GATED}
+    _print("gate by_language", summary["gate"]["by_language"])
+    assert summary["gate"]["all"]["wrong"] <= 0.02, summary["gate"]["all"]
+    low = {k: v["right"] for k, v in summary["gate"]["by_language"].items() if k in GATED_LANGS}
     assert all(v >= 0.9 for v in low.values()), low
 
 
