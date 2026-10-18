@@ -8,6 +8,7 @@ from pathlib import Path
 
 from sqlmodel import Session, col, select
 
+from mia.agents.shift_supervisor import MANIFEST
 from mia.agents.shift_supervisor.classifier import classify
 from mia.core.egress import Pseudonymiser
 from mia.core.models import Event, Message
@@ -104,7 +105,7 @@ def _sensitive(session: Session, original_id: str, ev: Event) -> bool:
     if classify(message.text, ev.timestamp.date()).injection:
         return True
     return (
-        runtime.get_classifier("shift_supervisor")
+        runtime.get_classifier(MANIFEST.id)
         .classify(message.text)
         .intent.startswith(SENSITIVE_PREFIXES)
     )
