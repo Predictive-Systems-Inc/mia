@@ -160,3 +160,93 @@ item question only without a number group.
 1. `tests/evals/gate.py` and the conftest patterns the scaffold needs (already there after the
    rerun fix). 2. `mia agent scaffold` with its test. 3. The skill files. 4. A dry run on
    `inventory_manager` after branch_manager, with the measurements of section 7.
+
+## Carried over from the whole-branch review (19 Oct 2026)
+
+Minor findings ruled as follow-up after the fix wave (77dfe36 fixed I1, I2, the greeting wording, the kept-label notice, PENDING parsing and the edit guards). Pick them up with the next scaffold change.
+
+
+1. **`reply.not_built` is the wrong capabilities line.**
+   - Where: `_template/replies.py.tmpl:7-8`, pinned by `test_chat.py.tmpl:51`.
+   - What: a greeting is answered "Hi! What can I do for you today? / Mia cannot help with
+     that yet." There is no "that" to refer to, and the greeting has just offered help.
+     "What can you do?" and an injection both get "Mia cannot help with that yet", which reads
+     as a refusal of the question.
+   - The spec (section 4) asks for an agent that "greets and says it cannot do anything else
+     yet".
+   - Fix: add one shared key in ten languages, rendered with the label, for example
+     `agent.scaffolded.capabilities`: "I am the {agent}. I cannot do anything else yet."
+   - It is unreachable for Ferino's today (see Declined), so Minor.
+2. **Label flags are silently ignored when the key already exists.**
+   - Where: `scaffold.py:112` (`if marker in text: return text`).
+   - What: in the dry run, `--label-fi "Varastovastaava"` was dropped and the repo keeps
+     "Varastopäällikkö". `strings.py` is simply missing from the printed file list. The same
+     happens for every promoted stub, because all stubs have their labels already.
+   - Fix: when the key exists with another value, raise, or print the kept value. Or make the
+     label flags optional for a stub.
+3. **Some anchors fail silently, and some failures surface badly.** Ranked by which breaks
+   first as the shared files evolve:
+   - a. `router_cases.PENDING` (`scaffold.py:170`). The one-line set passes 100 columns at the
+     fourth pending id (146 columns at six). `ruff format` then wraps it, the line becomes
+     `{`, and the next scaffold raises SyntaxError with a raw traceback. The CLI catches only
+     ValueError and FileExistsError (`cli.py:268`). This surfaces, but badly.
+   - b. `edit_schema` (`scaffold.py:160`) silently drops any non-`import mia.` line between
+     the first and last `import mia.` lines (a comment, a blank line, a conditional import).
+     Probe: `"import mia.a.models\n# keep\n..."` loses `# keep`. This one hides.
+   - c. `edit_stubs` (`scaffold.py:103`) is a no-op when an entry is not in the
+     `"<id>": (\n ... ),\n` shape, for example a one-line entry. Since
+     `AGENTS = {... for s in [*BUILT, *STUBS]}`, the stub then silently **shadows** the built
+     agent. `test_access`'s stub-set assertion catches it, but the scaffold does not.
+   - d. `edit_layout` (`scaffold.py:184`) and `edit_module` (a module with no label group)
+     are no-ops when their anchor is gone. These hide; the i18n coverage test catches the
+     second.
+   - e. `edit_registry` raises `ValueError("substring not found")` when `BUILT` is reformatted
+     to one line. This surfaces, but the message names nothing.
+   - Fix (one guard for all of them): after computing the edits in `run()`, check the
+     post-conditions on the new texts and raise a ValueError naming the file:
+     - the import and `{CONST},` are in registry;
+     - `stub_description(new_stubs, id) is None`;
+     - the label key is in every i18n file;
+     - the layout line is there;
+     - the id is in `PENDING` or in a case;
+     - the line count of schema.py grew by exactly one.
+4. **`edit_policy` writes redundant lines for inherited roles.**
+   - What: the dry run added `p, owner, *, agent:inventory_manager, use, allow`, which owner
+     already has through `owner > admin > supervisor`. It is harmless, but noise in a security
+     file.
+   - Fix: skip a role that `rbac` already allows for the resource, or document why the lines
+     are explicit.
+5. **The rendered `_unavailable` dropped the sales supervisor's once-per-process warning.**
+   - Where: `_template/turn.py.tmpl:104`.
+   - What: with the default `MIA_DECIDER=agent` (`.env.example:30`), an org that enables the
+     agent now gets "Sorry, I cannot answer right now. Please try again in a minute."
+     permanently. As a stub, it answered the honest `reply.not_built`.
+   - This is consistent with the D18 gate, but nothing is logged.
+   - Fix: keep the `log.warning("%s answers only with MIA_DECIDER=jev", MANIFEST.id)` once,
+     as in sales.
+6. **`prompts/reviewer.md` misses two of the questions the parts kept producing.**
+   - It names branch scoping (tools) and midnight windows (due). It has no "pseudonymised,
+     lists item by item" question in the actions block. It also has no business-date question
+     ("a late count is yesterday's only before opening and within two hours of a late close";
+     "branch local clock, never `now.date()` in UTC").
+   - Both are in checklist.md, which reviewer.md says to run whole, so Minor.
+   - Fix: add one line to `## actions` and one to `## due`.
+7. **No offline cases-shape test is rendered.**
+   - What: sales has `test_sales_cases.py` (ten per language, scenario and half; no text in
+     both halves; split by seed). The scaffold renders the harness but no shape test, although
+     the checklist's Evals lines require one.
+   - Fix: render `test_<id>_cases.py.tmpl`, which skips while `CASES` is empty.
+8. **The em-dash guard is narrow.**
+   - What: `test_skill_files.py` checks checklist.md only, and `test_scaffold.py` checks the
+     rendered `.py` files only. SKILL.md, the prompts and the `.md`, `.yaml` templates are
+     unchecked. They are clean today (I grepped).
+   - Fix: extend the loop to every file under the skill and `_template/`.
+9. **`$label_lower` lowercases acronyms.** "HR Officer" renders "the hr officer's tables" in
+   docstrings and in the Jev instruction "Mia, the shop's hr officer". Fix: lowercase only the
+   first letter of each word that is not all caps, or pass a `label_lower` that the caller can
+   override.
+10. **The CLI help names a registered id.** `cli.py:749`: `help="snake_case job title, e.g.
+    inventory_manager"`. It is not a bare id, so the architecture scan passes, but rule 15
+    (focus 6) prefers no registered id in node/mia outside stubs and orgconfig. Use a
+    non-roster example (`quality_officer`).
+
