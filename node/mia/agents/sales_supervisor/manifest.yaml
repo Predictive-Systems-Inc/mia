@@ -27,7 +27,7 @@ roles:
   denies: [tool:*:approve]
 tools:
   - {id: sales_supervisor.record_counts, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_supervisor_counts, sales_supervisor_targets], writes: [sales_supervisor_counts]}
-  - {id: sales_supervisor.correct_count, kind: agent, risk: write_internal, approval: never, reads: [retail_items, sales_supervisor_counts], writes: [sales_supervisor_counts]}
+  - {id: sales_supervisor.correct_count, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_supervisor_counts], writes: [sales_supervisor_counts]}
   - {id: sales_supervisor.today, kind: agent, risk: read, approval: never, reads: [retail_items, retail_branch_hours, sales_supervisor_counts, sales_supervisor_targets, person, branch]}
   - {id: sales_supervisor.period_report, kind: agent, risk: read, approval: never, reads: [retail_items, sales_supervisor_counts, branch]}
   - {id: sales_supervisor.set_target, kind: agent, risk: write_internal, approval: never, reads: [branch], writes: [sales_supervisor_targets]}

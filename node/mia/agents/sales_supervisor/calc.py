@@ -59,8 +59,9 @@ def _month_days(start: dt.date) -> list[dt.date]:
 
 def day_share(target: Target, day: dt.date, open_days: Callable[[dt.date], bool]) -> int | None:
     """The part of `target` that falls on `day`: a day target's amount on its own date; a month
-    target's amount divided by the open days of its month (rounded half up to the minor unit) for a day
-    in that month on or after starts_on; None when the target does not cover the day."""
+    target's amount divided by the open days of its month (rounded half up to the minor unit)
+    for a day in that month on or after starts_on; None when the target does not cover the
+    day."""
     if target.period == "day":
         return target.amount if day == target.starts_on else None
     same_month = (day.year, day.month) == (target.starts_on.year, target.starts_on.month)
