@@ -203,8 +203,16 @@ def _approved_for(deps: AgentDeps, spec: ToolSpec) -> bool:
     return False
 
 
-def guard(deps: AgentDeps, spec: ToolSpec, tool_call_id: str, summary: str = "") -> None:
-    """Permission check, then the approval rule. Raises before the tool body can run."""
+def guard(
+    deps: AgentDeps,
+    spec: ToolSpec,
+    tool_call_id: str,
+    summary: str = "",
+    args: BaseModel | None = None,
+) -> None:
+    """Permission check, then the approval rule. Raises before the tool body can run. A risky
+    tool's approval carries the validated input in its evidence (`input`), so what runs on
+    approve is exactly what the approver saw."""
     get_rbac().require(
         deps.actor,
         Resource(kind="tool", name=spec.id),
@@ -221,7 +229,8 @@ def guard(deps: AgentDeps, spec: ToolSpec, tool_call_id: str, summary: str = "")
             deps.actor,
             deps.manifest.roles.approvers[spec.id],
             risk=spec.risk,
-            evidence={"tool_call_id": tool_call_id},
+            evidence={"tool_call_id": tool_call_id}
+            | ({"input": args.model_dump(mode="json")} if args is not None else {}),
             tool_call_id=tool_call_id,
         )
         raise ApprovalRequired(approval.id)
@@ -248,7 +257,7 @@ def call_tool(
     spec = deps.manifest.tool(binding.tool_id)
     out: dict[str, Any]
     try:
-        guard(deps, spec, tool_call_id, summary)
+        guard(deps, spec, tool_call_id, summary, args)
         out = binding.impl(deps, args, tool_call_id).model_dump(mode="json")
     except PermissionDenied as exc:
         out = ToolRefusal(status="denied", message=str(exc)).model_dump(mode="json")

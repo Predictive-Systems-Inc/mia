@@ -7,10 +7,10 @@ read_all or write_all action on the data resource in RBAC (admin, and the owner 
 hierarchy); anyone else gets PermissionDenied.
 
 A supplier order is money: the manifest gives draft_order risk money, so the guard in
-agents/base.py creates the approval (evidence: the tool call id) and stops before this body
+agents/base.py creates the approval (evidence: the tool call id and the validated input) and stops before this body
 runs. Nothing is stored before the decision. On approve, apply_order_approval (registered with
 mia.core.approvals) re-runs draft_order as the requester with the approval in deps.approved,
-reading the requested input from the call's `tool.called` event; the order is written as
+with the input the approver saw (the approval's evidence); the order is written as
 approved (event inventory.order_approved) and the requester is notified. On reject,
 apply_order_rejection logs inventory.order_rejected and notifies the requester.
 """
@@ -31,7 +31,7 @@ from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
 from mia.core import approvals, events, store
 from mia.core.db import utcnow
-from mia.core.models import Actor, Approval, Branch, Event, Person
+from mia.core.models import Actor, Approval, Branch, Person
 from mia.core.rbac import Resource, get_rbac
 from mia.i18n import t
 from mia.templates.retail.models import RetailBranchHours, RetailIngredient, RetailItem
@@ -478,23 +478,13 @@ def draft_order(deps: AgentDeps, args: DraftOrderInput, tool_call_id: str) -> Or
     return _order_out(row)
 
 
-def _requested_input(session: Session, approval: Approval) -> DraftOrderInput:
-    """The draft_order input of the tool call that raised the approval: the requester's latest
-    tool.called event of draft_order with the approval's tool call id (written by
-    agents.base.call_tool). Raises LookupError when there is none."""
-    call_id = approval.evidence.get("tool_call_id")
-    stmt = (
-        select(Event)
-        .where(Event.action == "tool.called")
-        .where(Event.entity_id == DRAFT_ORDER)
-        .where(Event.tool_call_id == call_id)
-        .where(Event.on_behalf_of == approval.requester_on_behalf_of)
-        .order_by(col(Event.id).desc())
-    )
-    called = session.exec(stmt).first()
-    if call_id is None or called is None or called.before is None:
-        raise LookupError("the requested order is not in the events log")
-    return DraftOrderInput.model_validate(called.before["input"])
+def _requested_input(approval: Approval) -> DraftOrderInput:
+    """The draft_order input the approver saw: the approval's evidence `input`, written by the
+    guard in agents.base. Raises LookupError when there is none."""
+    raw = approval.evidence.get("input")
+    if raw is None:
+        raise LookupError("the approval carries no order")
+    return DraftOrderInput.model_validate(raw)
 
 
 def apply_order_approval(session: Session, approval: Approval, decider: Actor) -> None:
@@ -505,7 +495,7 @@ def apply_order_approval(session: Session, approval: Approval, decider: Actor) -
     branch = session.get(Branch, person.branch_id) if person is not None else None
     if person is None or branch is None:
         raise LookupError("the requester of the order")
-    args = _requested_input(session, approval)
+    args = _requested_input(approval)
     lang = person.language or "en"
     deps = AgentDeps(
         session=session,
@@ -529,7 +519,7 @@ def apply_order_rejection(session: Session, approval: Approval, decider: Actor) 
     person = session.get(Person, approval.requester_on_behalf_of or "")
     if person is None:
         raise LookupError("the requester of the order")
-    args = _requested_input(session, approval)
+    args = _requested_input(approval)
     after = {"supplier": args.supplier, "reason": approval.reason}
     events.emit(
         session, "inventory.order_rejected", approval, None, after, decider, approval_id=approval.id

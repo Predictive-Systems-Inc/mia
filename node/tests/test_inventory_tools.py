@@ -17,7 +17,7 @@ from mia.agents.inventory_manager.tools import (
     ReceiveDeliveryInput,
     RecordEventsInput,
 )
-from mia.core import approvals, store
+from mia.core import approvals, events, store
 from mia.core.models import Actor, Approval, Branch, Event, Message, Person
 from mia.core.rbac import PermissionDenied
 from mia.templates.retail.models import RetailBranchHours, RetailIngredient, RetailItem
@@ -328,3 +328,53 @@ def test_a_rejected_order_tells_the_requester_from_the_system(
     told = session.exec(select(Message).where(Message.agent_id == MANIFEST.id)).all()
     (note,) = [m for m in told if m.role == "notification"]
     assert note.sender_id == "system"
+
+
+def test_the_approved_order_is_the_one_the_owner_saw(session: Session, ferinos: Ferinos) -> None:
+    _, people = ferinos
+    marites = people["Marites"]
+    out = order_eggs(session, marites, "seen")
+    approval = session.get(Approval, out["approval_id"])
+    assert approval is not None
+    bigger = DraftOrderInput(
+        supplier="Aling Nena",
+        lines=[LineIn(ingredient_id=ingredient(session, "Eggs"), quantity=500)],
+    )
+    deps = deps_for(session, marites)
+    events.emit(
+        session,
+        "tool.called",
+        ("tool", tools.DRAFT_ORDER),
+        {"input": bigger.model_dump(mode="json")},
+        {"output": {}},
+        deps.actor,
+        tool_call_id="seen",
+    )
+    approvals.decide(
+        session, approval.id, Actor.person(people["Rosa"]), "approved",
+        stepped_up_at=approvals.utcnow(),
+    )  # fmt: skip
+    stmt = select(SupplierOrder).where(SupplierOrder.approval_id == approval.id)
+    order = session.exec(stmt).one()
+    assert order.lines[0]["quantity"] == 10 == approval.evidence["input"]["lines"][0]["quantity"]
+
+
+def test_an_approval_without_input_is_refused(session: Session, ferinos: Ferinos) -> None:
+    _, people = ferinos
+    out = order_eggs(session, people["Marites"])
+    approval = session.get(Approval, out["approval_id"])
+    assert approval is not None
+    store.update(
+        session, approval, {"evidence": {"tool_call_id": "o1"}}, Actor.system(approval.branch_id)
+    )
+    session.commit()
+    with pytest.raises(LookupError):
+        approvals.decide(
+            session, approval.id, Actor.person(people["Rosa"]), "approved",
+            stepped_up_at=approvals.utcnow(),
+        )  # fmt: skip
+    session.rollback()
+    session.refresh(approval)
+    assert approval.status == "pending"
+    stmt = select(SupplierOrder).where(SupplierOrder.approval_id == approval.id)
+    assert session.exec(stmt).all() == []

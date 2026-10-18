@@ -212,6 +212,7 @@ def test_money_tool_without_approval_raises_and_does_not_execute(
 
     approval = session.get(Approval, out["approval_id"])
     assert approval is not None and approval.channel == "app_only"
+    assert approval.evidence == {"tool_call_id": "call-2", "input": {"amount_minor": 5000}}
     co_owner = store.insert(
         session,
         Person(branch_id=branch.id, name="Otto Osakas", roles=["owner"]),
