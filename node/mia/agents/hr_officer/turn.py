@@ -1,25 +1,30 @@
 """The hr officer's answer to one chat turn: Jev picks the action (MIA_DECIDER=jev), code
-words the reply. The emergency script runs before this, in chat.service, for every agent."""
+runs the tool and words the reply. The emergency script runs before this, in chat.service, for every agent."""
 
 import asyncio
 import html
 from dataclasses import replace
+from typing import Any
 from zoneinfo import ZoneInfo
 
+from pydantic import ValidationError
 from sqlmodel import Session, col, select
 
-from mia.agents.base import AgentDeps, AgentSpec, Turn
+from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
 from mia.agents.decider import Decision
-from mia.agents.hr_officer import MANIFEST, actions, decider, replies
+from mia.agents.hr_officer import MANIFEST, actions, decider, replies, tools
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import reply_text, store_reply
 from mia.core import events
 from mia.core.egress import EgressContext, egress_context
+from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
 from mia.core.models import Event, Message, Thread
 from mia.i18n import t
 from mia.settings import get_settings
+
+_BINDINGS = {b.tool_id: b for b in tools.BINDINGS}  # importing tools registers its handlers
 
 
 def _last_question(session: Session, thread: Thread) -> Message | None:
@@ -86,8 +91,37 @@ def _did_you_mean(
     return reply
 
 
+def _refusal(
+    session: Session, deps: AgentDeps, thread: Thread, tool: str, out: dict[str, Any]
+) -> ChatReply:
+    """The reply to a refused tool call: another person's records (or a certificate by someone
+    who may not issue one) is not allowed; nothing on record yet says so."""
+    if out["status"] == "denied":
+        key = "hr.not_allowed.certificate" if tool == "certificate_text" else "hr.not_allowed"
+    else:
+        key = "hr.no_record"
+    return reply_text(session, deps, thread, t(key, deps.lang))
+
+
+def _run(
+    session: Session, deps: AgentDeps, thread: Thread, tool: str, args: dict[str, Any]
+) -> ChatReply:
+    """Run the tool through the guard (rbac first) and word the reply from its result."""
+    binding = _BINDINGS[f"{MANIFEST.id}.{tool}"]
+    try:
+        inp = binding.input_type.model_validate(args)
+    except ValidationError:
+        return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
+    out = call_tool(deps, binding, inp, new_id())
+    if "status" in out and "message" in out:  # a ToolRefusal
+        return _refusal(session, deps, thread, tool, out)
+    blocks = replies.tool_reply(tool, out, args, deps.lang, deps.branch.timezone)
+    return store_reply(session, deps, thread, blocks)
+
+
 def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) -> ChatReply:
-    """Log the decision, then ask, word a conversation reply, or say a tool is not there yet."""
+    """Log the decision, then ask "Did you mean", run its tool through the guard, or word a
+    conversation reply."""
     after = decision.model_dump(mode="json")
     events.emit(session, "decision.made", ("thread", thread.id), None, after, deps.actor)
     if decision.action == "clarify":
@@ -95,8 +129,8 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     spec = actions.ACTIONS.get(decision.action)
     if spec is None:  # a tapped decision of another agent
         return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
-    if spec.tool is not None:  # ponytail: tools.BINDINGS is empty; run it through call_tool
-        return reply_text(session, deps, thread, t("reply.unavailable", deps.lang))
+    if spec.tool is not None:
+        return _run(session, deps, thread, spec.tool, decision.args)
     kind = str(decision.args.get("kind", "other"))
     return store_reply(session, deps, thread, replies.conversation_reply(kind, deps.lang))
 
