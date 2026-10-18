@@ -9,7 +9,6 @@ import asyncio
 import datetime as dt
 from typing import Any
 
-import httpx
 from pydantic import BaseModel, Field
 
 from mia.agents.shift_supervisor.actions import (
@@ -20,18 +19,14 @@ from mia.agents.shift_supervisor.actions import (
     Query,
     build_request,
 )
-from mia.core.egress import EgressBlocked, EgressTransport, Pseudonymiser, current_context
+from mia.core import jev
+from mia.core.egress import EgressBlocked, Pseudonymiser, current_context
+from mia.core.jev import JevError
 from mia.settings import get_settings
 
-RETRY_STATUS = {429, 529}
-RETRIES = 2
-BACKOFF = 0.5  # seconds, doubled per retry
-TIMEOUT = 10.0
 
-
-class DecideError(Exception):
-    """Jev gave no usable answer: no key, blocked egress, an error status, a timeout, or an
-    answer outside the request's options."""
+class DecideError(JevError):
+    """Jev answered outside the request's options."""
 
 
 class Alternative(BaseModel):
@@ -48,11 +43,6 @@ class Decision(BaseModel):
     raw_action: str = ""  # Jev's own pick, before the threshold
     alternatives: list[Alternative] = Field(default_factory=list)
     missing: str | None = None  # a required input that was not found
-
-
-def _inner() -> httpx.AsyncBaseTransport | None:
-    """The network below egress; tests replace this with an httpx.MockTransport."""
-    return None
 
 
 def _period(value: str | None, today: dt.date) -> tuple[str | None, str | None]:
@@ -242,34 +232,12 @@ def _pseudonymised(body: dict[str, Any], pseudo: Pseudonymiser) -> dict[str, Any
 
 
 async def decide(q: Query) -> Decision:
-    """One Jev request for the query. Raises DecideError when no usable answer came back."""
-    settings = get_settings()
-    if not settings.MIA_TYPESAFE_KEY:
-        raise DecideError("MIA_TYPESAFE_KEY is not set")
+    """One Jev request for the query. Raises JevUnreachable when Jev cannot be reached, and
+    JevError (DecideError for an answer outside the options) when no usable answer came."""
     try:
         ctx = current_context()
     except EgressBlocked as exc:
-        raise DecideError(str(exc)) from exc
+        raise JevError(str(exc)) from exc
     pseudo = await asyncio.to_thread(Pseudonymiser.for_branch, ctx.session, ctx.actor.branch_id)
-    body = _pseudonymised(build_request(q, settings.MIA_JEV_MODEL), pseudo)
-    headers = {"Authorization": f"Bearer {settings.MIA_TYPESAFE_KEY}"}
-    # The body is pseudonymised above; the transport still logs, meters and enforces the level.
-    transport = EgressTransport(_inner(), pseudonymise=False)
-    async with httpx.AsyncClient(transport=transport, timeout=TIMEOUT) as client:
-        for attempt in range(RETRIES + 1):
-            try:
-                response = await client.post(settings.MIA_TYPESAFE_URL, json=body, headers=headers)
-            except EgressBlocked as exc:
-                raise DecideError(str(exc)) from exc
-            except httpx.HTTPError as exc:
-                raise DecideError(type(exc).__name__) from exc
-            if response.status_code in RETRY_STATUS and attempt < RETRIES:
-                await asyncio.sleep(BACKOFF * 2**attempt)
-                continue
-            if response.status_code != 200:
-                raise DecideError(f"status {response.status_code}: {response.text[:300]}")
-            try:
-                return parse(response.json()["answers"], q)
-            except (KeyError, TypeError, ValueError, AttributeError) as exc:
-                raise DecideError(f"unexpected answer: {exc!r}") from exc
-    raise DecideError("no answer")  # not reached: the loop returns or raises
+    body = _pseudonymised(build_request(q, get_settings().MIA_JEV_MODEL), pseudo)
+    return parse(await jev.ask(body), q)

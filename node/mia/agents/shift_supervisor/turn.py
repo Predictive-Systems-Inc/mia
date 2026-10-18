@@ -33,6 +33,7 @@ from mia.chat.replies import (
 from mia.core import events
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
+from mia.core.jev import JevError
 from mia.core.models import Event, Message, Organisation, Thread
 from mia.i18n import t
 from mia.i18n.strings import STRINGS
@@ -305,7 +306,7 @@ async def _jev_turn(
         try:
             with egress_context(replace(ctx, provider="typesafe", purpose=f"{MANIFEST.id}.decide")):
                 decision = await decider.decide(query)
-        except decider.DecideError as exc:
+        except JevError as exc:
             return await asyncio.to_thread(_jev_failed, session, deps, thread, str(exc))
     assert decision is not None
     return await asyncio.to_thread(_jev_act, session, deps, thread, decision)

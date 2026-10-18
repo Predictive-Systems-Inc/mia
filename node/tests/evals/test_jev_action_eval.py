@@ -23,6 +23,7 @@ from sqlmodel import Session, select
 from mia.agents.shift_supervisor import actions, decider
 from mia.chat.service import _prepare
 from mia.core.egress import egress_context
+from mia.core.jev import JevError
 from mia.core.models import Branch, Person
 from mia.settings import get_settings
 from tests.evals.intents import load_dataset
@@ -72,7 +73,7 @@ def test_jev_actions(session: Session, branch: Branch) -> None:
         expected = INTENT_ACTION.get(r.intent, "reply_only")
         try:
             raw, acted, conf, secs = asyncio.run(_one(session, r.text, r.role))
-        except decider.DecideError as exc:
+        except JevError as exc:
             raw, acted, conf, secs = f"error: {exc}", "error", 0.0, 0.0
         session.commit()
         results.append(

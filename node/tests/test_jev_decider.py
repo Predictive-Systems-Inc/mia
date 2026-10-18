@@ -7,7 +7,9 @@ from sqlmodel import Session, select
 
 from mia.agents.shift_supervisor import actions, decider
 from mia.agents.shift_supervisor.agent import MANIFEST
+from mia.core import jev
 from mia.core.egress import EgressContext, egress_context
+from mia.core.jev import JevError
 from mia.core.models import Actor, Branch, EgressLog, Person, UsageCloudRequest
 from mia.settings import get_settings
 from tests.jev_fake import answers_for, choice, fake_jev
@@ -218,7 +220,7 @@ def test_a_wrongly_shaped_answer_is_a_decide_error() -> None:
 
 
 @pytest.mark.parametrize("payload", [[1, 2], None, {"answers": None}])
-def test_a_body_that_is_not_an_answer_object_is_a_decide_error(
+def test_a_body_that_is_not_an_answer_object_is_a_jev_error(
     payload: Any,
     session: Session,
     people: dict[str, Person],
@@ -229,9 +231,9 @@ def test_a_body_that_is_not_an_answer_object_is_a_decide_error(
     import httpx
 
     monkeypatch.setattr(
-        decider, "_inner", lambda: httpx.MockTransport(lambda r: httpx.Response(200, json=payload))
+        jev, "_inner", lambda: httpx.MockTransport(lambda r: httpx.Response(200, json=payload))
     )
-    with egress_context(_ctx(session, people, branch)), pytest.raises(decider.DecideError):
+    with egress_context(_ctx(session, people, branch)), pytest.raises(JevError):
         _run(_query())
 
 
@@ -262,7 +264,7 @@ def test_decide_goes_through_egress(
 ) -> None:
     seen: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        decider, "_inner", lambda: fake_jev(lambda b: answers_for(b, "reply_only"), seen)
+        jev, "_inner", lambda: fake_jev(lambda b: answers_for(b, "reply_only"), seen)
     )
     with egress_context(_ctx(session, people, branch)):
         d = _run(_query())
@@ -292,7 +294,7 @@ def test_a_name_that_prefixes_a_key_leaves_keys_and_ids_alone(
     session.commit()
     seen: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        decider,
+        jev,
         "_inner",
         lambda: fake_jev(lambda b: answers_for(b, "get_my_visits", period="tomorrow"), seen),
     )
@@ -315,22 +317,22 @@ def test_egress_none_blocks_before_the_network(
     key: None,
 ) -> None:
     seen: list[dict[str, Any]] = []
-    monkeypatch.setattr(decider, "_inner", lambda: fake_jev(lambda b: {}, seen))
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(lambda b: {}, seen))
     with (
         egress_context(_ctx(session, people, branch, level="none")),
-        pytest.raises(decider.DecideError),
+        pytest.raises(JevError),
     ):
         _run(_query())
     assert seen == []
 
 
-def test_no_key_is_a_decide_error() -> None:
-    with pytest.raises(decider.DecideError):
+def test_no_key_is_a_jev_error() -> None:
+    with pytest.raises(JevError):
         _run(_query())
 
 
 @pytest.mark.parametrize("status", [400, 401, 422, 529])
-def test_error_status_is_a_decide_error(
+def test_error_status_is_a_jev_error(
     status: int,
     session: Session,
     people: dict[str, Person],
@@ -338,9 +340,9 @@ def test_error_status_is_a_decide_error(
     monkeypatch: pytest.MonkeyPatch,
     key: None,
 ) -> None:
-    monkeypatch.setattr(decider, "BACKOFF", 0.0)
+    monkeypatch.setattr(jev, "BACKOFF", 0.0)
     seen: list[dict[str, Any]] = []
-    monkeypatch.setattr(decider, "_inner", lambda: fake_jev(lambda b: {}, seen, status=status))
-    with egress_context(_ctx(session, people, branch)), pytest.raises(decider.DecideError):
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(lambda b: {}, seen, status=status))
+    with egress_context(_ctx(session, people, branch)), pytest.raises(JevError):
         _run(_query())
     assert len(seen) == (3 if status == 529 else 1)  # 429 and 529 retry twice

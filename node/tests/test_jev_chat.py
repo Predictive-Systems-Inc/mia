@@ -4,10 +4,10 @@ from typing import Any
 import pytest
 from sqlmodel import Session, select
 
-from mia.agents.shift_supervisor import decider
 from mia.agents.shift_supervisor.agent import get_agent
 from mia.chat.blocks import ChatReply, QuickRepliesBlock
 from mia.chat.service import run_turn
+from mia.core import jev as jev_core
 from mia.core.models import Event, Person
 from mia.settings import get_settings
 from tests.jev_fake import answers_for, fake_jev
@@ -23,7 +23,7 @@ def jev(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
 
 def _answer(monkeypatch: pytest.MonkeyPatch, seen: list[dict[str, Any]], **kw: Any) -> None:
-    monkeypatch.setattr(decider, "_inner", lambda: fake_jev(lambda b: answers_for(b, **kw), seen))
+    monkeypatch.setattr(jev_core, "_inner", lambda: fake_jev(lambda b: answers_for(b, **kw), seen))
 
 
 def _turn(session: Session, person: Person, text: str, thread: str | None = None) -> ChatReply:
@@ -102,7 +102,7 @@ def test_an_answer_missing_a_question_gives_the_unavailable_reply(
         del answers["date"]
         return answers
 
-    monkeypatch.setattr(decider, "_inner", lambda: fake_jev(partial, jev))
+    monkeypatch.setattr(jev_core, "_inner", lambda: fake_jev(partial, jev))
     reply = _turn(session, people["Juha"], "I'm sick today")
     assert _tools(session) == [] and reply.text().startswith("Sorry")
 
@@ -114,7 +114,7 @@ def test_a_cleaner_cannot_run_a_supervisor_tool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        decider,
+        jev_core,
         "_inner",
         lambda: fake_jev(
             lambda b: answers_for(
@@ -193,7 +193,7 @@ def test_jev_assign_resolves_a_pseudonymised_name(
         assert "Mikael" not in str(body) and token.split()[0] in body["state"]["message"]
         return answers_for(body, "get_my_visits", person=mikael.id)
 
-    monkeypatch.setattr(decider, "_inner", lambda: fake_jev(answer, jev))
+    monkeypatch.setattr(jev_core, "_inner", lambda: fake_jev(answer, jev))
     _turn(session, people["Sanna"], f"show {mikael.name}'s visits")
     row = session.exec(select(Event).where(Event.action == "tool.called")).one()
     assert row.before and row.before["input"]["person_name"] == mikael.name
