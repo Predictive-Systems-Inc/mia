@@ -407,6 +407,9 @@ async def route_turn(
         return await asyncio.to_thread(defer_turn, session, deps, thread, stage, lead_id)
     if spec is not None:
         agent_deps = _deps_for(deps, spec)
+        if tapped and active is not None and spec.id != active:  # _choose emitted the switch
+            label = t(spec.label_key, deps.lang)
+            agent_deps.notice = [TextBlock(text=t("chat.switched", deps.lang, agent=label))]
     else:
         error: str | None = None
         recalled = await asyncio.to_thread(_recalled, session, deps, text, agents, active)

@@ -41,6 +41,13 @@ active agent as today.
 "Is this about" buttons remain for the case they were made for: Jev unsure between agents
 (confidence below 0.6), no active agent, and no learned answer (decision 4).
 
+With an agent active (Q40, 19 Oct): when Jev's top pick is another agent below the threshold,
+the route is `ask`, not keep. The buttons list the person's agents; a tap on another agent
+switches with the switch notice and `chat.agent_switched`, and is remembered like any tap
+(decision 4a). A pick of the active agent, or `unclear` at any confidence, keeps the active
+agent. A low-confidence switch is never silent: the clerk sees buttons instead of the wrong
+agent's reply, and the tap teaches the memory.
+
 ### 2. The gate measures retail traffic
 
 `node/tests/evals/router_cases.py` is rebuilt from the scenario list in

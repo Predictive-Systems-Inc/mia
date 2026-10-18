@@ -63,14 +63,34 @@ def test_small_talk_is_right_for_greetings_and_a_miss_for_real_messages() -> Non
 def test_gated_summary_ignores_reported_languages_and_the_tune_half() -> None:
     from tests.evals.test_router_eval import _gated
 
-    def row(lang: str, half: str, score: str) -> dict[str, object]:
-        return {"lang": lang, "half": half, "score": score, "kind": "chosen", "tokens": 0}
+    def row(lang: str, half: str, score: str, expected: str = "bookkeeper") -> dict[str, object]:
+        return {
+            "lang": lang,
+            "half": half,
+            "score": score,
+            "kind": "chosen",
+            "tokens": 0,
+            "expected": expected,
+        }
 
     results = [row("en", "gate", "right")] * 10 + [row("fi", "gate", "wrong")] * 90
-    results += [row("en", "tune", "wrong")] * 5
+    results += [row("en", "tune", "wrong")] * 5 + [row("en", "gate", "ask", "any")] * 2
     gated = _gated(results)
-    assert gated["all"]["n"] == 10 and gated["all"]["wrong"] == 0
+    assert gated["all"]["n"] == 12 and gated["all"]["wrong"] == 0
     assert set(gated["by_language"]) == {"en"}
+    assert gated["by_language"]["en"]["right"] == 1.0  # greetings are reported apart
+    assert gated["any"]["n"] == 2 and gated["any"]["ask"] == 1.0
+
+
+def test_the_gate_is_the_q40_bar() -> None:
+    from tests.evals.test_router_eval import _gate_failures
+
+    def gated(wrong: float, right: float, ask: float) -> dict[str, object]:
+        return {"all": {"wrong": wrong}, "by_language": {"en": {"right": right, "ask": ask}}}
+
+    assert _gate_failures(gated(0.02, 0.80, 0.15)) == []
+    assert _gate_failures(gated(0.021, 0.80, 0.15)) == ["wrong 0.021"]
+    assert _gate_failures(gated(0.0, 0.79, 0.16)) == ["en right 0.79", "en ask 0.16"]
 
 
 def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:

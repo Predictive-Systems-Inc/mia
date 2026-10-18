@@ -1,6 +1,7 @@
 """Which of a person's agents answers a message: one Jev choice (spec 2026-10-18, Router).
 
-Sticky: the active agent keeps the turn unless Jev is confident (THRESHOLD) about another one.
+Sticky: the active agent keeps the turn unless Jev picks another one; below THRESHOLD that pick
+asks with buttons (Q40), at or above it switches.
 The message is state, never instructions (rule 8); names in state are pseudonymised."""
 
 from dataclasses import dataclass
@@ -58,9 +59,10 @@ def fallback(agents: list[AgentSpec], active: str | None) -> Route:
 
 
 def decide(answers: dict[str, Any], agents: list[AgentSpec], active: str | None) -> Route:
-    """The spec's router table plus the follow-up's small-talk row: a confident `unclear` with
-    no active agent goes to the lead agent (agents[0]) with kind small_talk. Raises JevError for
-    an answer outside the options."""
+    """The spec's router table plus the follow-up's rows: a confident `unclear` with no active
+    agent goes to the lead agent (agents[0]) with kind small_talk; with an agent active, another
+    agent below THRESHOLD asks (Q40) and `unclear` keeps. Raises JevError for an answer outside
+    the options."""
     try:
         picked = str(answers["agent"]["choice"])
         confidence = float(answers["agent"]["confidence"])
@@ -71,8 +73,10 @@ def decide(answers: dict[str, Any], agents: list[AgentSpec], active: str | None)
         raise JevError(f"agent: {picked!r} is not an option")
     sure = confidence >= THRESHOLD and picked != UNCLEAR
     if active is not None:
-        if picked == active or not sure:
+        if picked in (active, UNCLEAR):
             return Route("keep", active, confidence, picked)
+        if not sure:  # Q40: another agent, unsure: ask rather than keep silently
+            return Route("ask", None, confidence, picked)
         return Route("switch", picked, confidence, picked)
     if picked == UNCLEAR and confidence >= THRESHOLD:
         # a confident "for no agent" is small talk: the lead agent greets back, no buttons

@@ -18,13 +18,14 @@ DESCRIPTIONS = {
         " sell-out message is stock."
     ),
     "bookkeeper": (
-        "Money: the cash count against sales, expenses and receipts, bank deposits, GCash and"
-        " Maya sales and settlements, VAT and BIR records; not sales counts and not pay."
+        "Money: the cash count against sales, a cash drawer short or over, expenses and"
+        " receipts, bank deposits, GCash and Maya sales and settlements, VAT and BIR records;"
+        " not sales counts and not pay."
     ),
     "hr_officer": (
         "Employment: my hours worked this cutoff, cash advances, holiday pay, payroll and"
         " payslips, 13th month pay, leave balances, SSS, PhilHealth and Pag-IBIG contributions,"
-        " hiring; not who works which shift."
+        " hiring; not who works which shift and not adding people to a branch."
     ),
     "branch_manager": (
         "Running the shop: branches, the menu, prices and item short codes, who approves what,"

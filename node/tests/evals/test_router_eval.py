@@ -136,9 +136,29 @@ def _table(results: list[dict[str, Any]], key: str) -> dict[str, Any]:
 
 
 def _gated(results: list[dict[str, Any]]) -> dict[str, Any]:
-    """The rows the gate asserts read: the gate half of the gated languages only."""
+    """The rows the gate asserts read: the gate half of the gated languages only. `all` (wrong)
+    has every row; `by_language` (right, ask) leaves out the greetings and thanks (`any`), which
+    are reported apart in `any`."""
     rows = [r for r in results if r["half"] == "gate" and r["lang"] in GATED_LANGS]
-    return {"all": _row(rows), "by_language": _table(rows, "lang")}
+    real = [r for r in rows if r["expected"] != "any"]
+    greetings = [r for r in rows if r["expected"] == "any"]
+    return {
+        "all": _row(rows),
+        "by_language": _table(real, "lang"),
+        "any": _row(greetings) if greetings else {},
+    }
+
+
+def _gate_failures(gated: dict[str, Any]) -> list[str]:
+    """The Q40 bar on a fresh gate half: wrong at most 2% (hard), and per gated language right
+    at least 80% and ask at most 15% (greetings left out). Empty when the gate passes."""
+    failed = [f"wrong {gated['all']['wrong']}"] if gated["all"]["wrong"] > 0.02 else []
+    for lang, v in gated["by_language"].items():
+        if v["right"] < 0.80:
+            failed.append(f"{lang} right {v['right']}")
+        if v["ask"] > 0.15:
+            failed.append(f"{lang} ask {v['ask']}")
+    return failed
 
 
 def _print(title: str, table: dict[str, Any]) -> None:
@@ -178,15 +198,15 @@ def test_router(engine: Engine, branch: Branch) -> None:
     for name in ("by_language", "by_agent", "by_group", "by_half"):
         _print(f"{name} (all languages, reported)", summary[name])
     _print("all languages (reported)", {"all": summary["all"]})
-    _print("gated languages, gate half (asserted)", summary["gated"]["by_language"])
-    _print("gated languages, gate half (asserted)", {"all": summary["gated"]["all"]})
+    _print("gated languages, gate half, no greetings (asserted)", summary["gated"]["by_language"])
+    _print("gated languages, gate half (wrong asserted)", {"all": summary["gated"]["all"]})
+    if summary["gated"]["any"]:
+        _print("gated languages, gate half, greetings (reported)", {"any": summary["gated"]["any"]})
     report.write_text(
         json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8",
     )
-    assert summary["gated"]["all"]["wrong"] <= 0.02, summary["gated"]["all"]
-    low = {k: v["right"] for k, v in summary["gated"]["by_language"].items()}
-    assert all(v >= 0.9 for v in low.values()), low
+    assert not _gate_failures(summary["gated"]), _gate_failures(summary["gated"])
 
 
 def test_deferral_and_recovery(

@@ -58,8 +58,9 @@ def _agents(*ids: str) -> list[Any]:
     [
         ("shift_supervisor", 0.3, "shift_supervisor", ("keep", "shift_supervisor")),
         ("sales_supervisor", 0.9, "shift_supervisor", ("switch", "sales_supervisor")),
-        ("sales_supervisor", 0.5, "shift_supervisor", ("keep", "shift_supervisor")),
+        ("sales_supervisor", 0.5, "shift_supervisor", ("ask", None)),  # Q40: ask, not keep
         ("unclear", 0.9, "shift_supervisor", ("keep", "shift_supervisor")),
+        ("unclear", 0.4, "shift_supervisor", ("keep", "shift_supervisor")),
         ("sales_supervisor", 0.9, None, ("chosen", "sales_supervisor")),
         ("sales_supervisor", 0.5, None, ("ask", None)),
         ("unclear", 0.9, None, ("small_talk", "shift_supervisor")),
@@ -114,7 +115,7 @@ def test_a_confident_other_agent_switches_with_a_notice(
     assert stored is not None and stored.sender_id == "agent.sales_supervisor"
 
 
-def test_an_unsure_answer_keeps_the_active_agent(
+def test_an_unsure_unclear_keeps_the_active_agent(
     session: Session,
     people: dict[str, Person],
     two_agents: list[dict[str, Any]],
@@ -122,10 +123,33 @@ def test_an_unsure_answer_keeps_the_active_agent(
 ) -> None:
     _router_answers(monkeypatch, two_agents, "shift_supervisor")
     first = _turn(session, people["Sanna"], SHIFT)
-    _router_answers(monkeypatch, two_agents, "sales_supervisor", 0.4)
+    _router_answers(monkeypatch, two_agents, "unclear", 0.4)
     second = _turn(session, people["Sanna"], "ok", first.thread_id)
     assert second.agent_id == "shift_supervisor"
     assert len(two_agents) == 2  # routed: no pending question skipped the router
+
+
+def test_an_unsure_other_agent_asks_and_a_tap_switches_with_the_notice(
+    session: Session,
+    people: dict[str, Person],
+    two_agents: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Q40: with an agent active, Jev's top pick of another agent below the threshold asks
+    (no silent keep, no switch); the tap switches with the notice and its event."""
+    _router_answers(monkeypatch, two_agents, "shift_supervisor")
+    first = _turn(session, people["Sanna"], SHIFT)
+    _router_answers(monkeypatch, two_agents, "sales_supervisor", 0.5)
+    asked = _turn(session, people["Sanna"], "how much did we sell?", first.thread_id)
+    buttons = next(b.options for b in asked.blocks if isinstance(b, QuickRepliesBlock))
+    assert buttons == ["Vuoropäällikkö", "Myyntipäällikkö"]
+    assert not session.exec(select(Event).where(Event.action == "chat.agent_switched")).all()
+    tapped = _turn(session, people["Sanna"], "Myyntipäällikkö", asked.thread_id)
+    assert tapped.agent_id == "sales_supervisor"
+    assert tapped.blocks[0].text == "(Myyntipäällikkö)"  # type: ignore[union-attr]
+    switched = session.exec(select(Event).where(Event.action == "chat.agent_switched")).one()
+    assert switched.after == {"from": "shift_supervisor", "to": "sales_supervisor"}
+    assert len(two_agents) == 2  # the tap made no router request
 
 
 def test_with_no_active_agent_an_unsure_answer_asks_and_a_tap_answers(
@@ -461,9 +485,10 @@ def test_a_learned_route_is_not_applied_while_another_agent_is_active(
     _router_answers(monkeypatch, two_agents, TWO[0], 0.95)
     first = _turn(session, people["Sanna"], SHIFT)
     before = len(two_agents)
-    _router_answers(monkeypatch, two_agents, TWO[1], 0.4)  # unsure: the active agent sticks
+    _router_answers(monkeypatch, two_agents, TWO[1], 0.4)  # unsure: ask, never a learned switch
     reply = _turn(session, people["Sanna"], "2 sp 2 cl", first.thread_id)
-    assert first.agent_id == TWO[0] and reply.agent_id == TWO[0]
+    assert first.agent_id == TWO[0]
+    assert any(isinstance(b, QuickRepliesBlock) for b in reply.blocks)
     assert len(two_agents) == before + 1  # Jev was asked
     assert not session.exec(select(Event).where(Event.action == "chat.agent_switched")).all()
 
