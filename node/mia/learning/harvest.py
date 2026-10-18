@@ -8,10 +8,12 @@ from pathlib import Path
 
 from sqlmodel import Session, col, select
 
+from mia.agents.shift_supervisor.classifier import classify
 from mia.core.egress import Pseudonymiser
 from mia.core.models import Event, Message
 from mia.learning.schema import OTHER, Record, Review, load_records
 from mia.settings import get_settings
+from mia.skills import runtime
 
 UNDO = ("absence.cancelled", "cover.cancelled")
 SENSITIVE_PREFIXES = ("conversation.privacy_", "conversation.health_")
@@ -93,14 +95,36 @@ def _route_forgotten(session: Session, ev: Event) -> bool:
     return any((e.after or {}).get("key") == key for e in later)
 
 
-def _candidates(session: Session, role: str, ev: Event) -> tuple[str, str] | None:
-    """(intent, original message id) when this event may become a candidate, else None."""
+def _sensitive(session: Session, original_id: str, ev: Event) -> bool:
+    """True when the tapped message is an injection or classifies as a privacy or health intent
+    (never harvested). A missing message is not sensitive; harvest skips it later."""
+    message = session.get(Message, original_id)
+    if message is None:
+        return False
+    if classify(message.text, ev.timestamp.date()).injection:
+        return True
+    return (
+        runtime.get_classifier("shift_supervisor")
+        .classify(message.text)
+        .intent.startswith(SENSITIVE_PREFIXES)
+    )
+
+
+def _pick(session: Session, role: str, ev: Event) -> tuple[str, str] | None:
+    """Filters one event of the role's action and extracts (intent, original message id);
+    None when it is incomplete, sensitive, corrected, undone or forgotten."""
     after = ev.after or {}
     original_id = after.get("original_message_id")
     if role == "router":
         intent = after.get("agent_id")
-        dropped = _route_undone(session, ev) or _route_forgotten(session, ev)
-        return (intent, original_id) if intent and original_id and not dropped else None
+        if not intent or not original_id:
+            return None
+        dropped = (
+            _route_undone(session, ev)
+            or _route_forgotten(session, ev)
+            or _sensitive(session, original_id, ev)
+        )
+        return None if dropped else (intent, original_id)
     intent = after.get("intent")
     if not intent or not original_id or intent == OTHER or intent.startswith(SENSITIVE_PREFIXES):
         return None
@@ -135,7 +159,7 @@ def harvest(session: Session, role: str, branch_id: str) -> list[Record]:
         .order_by(col(Event.id))
     ):
         rid = f"{role}/real/{(ev.after or {}).get('original_message_id')}"
-        if rid in seen or (picked := _candidates(session, role, ev)) is None:
+        if rid in seen or (picked := _pick(session, role, ev)) is None:
             continue
         intent, original_id = picked
         message = session.get(Message, original_id)
