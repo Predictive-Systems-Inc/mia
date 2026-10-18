@@ -5,6 +5,7 @@ that lands on the owner's approval, a rejected order, conversation and injection
 import asyncio
 import datetime as dt
 import functools
+import zoneinfo
 from collections.abc import Callable
 from typing import Any
 
@@ -16,7 +17,7 @@ from mia.agents.inventory_manager.models import StockEvent, SupplierOrder
 from mia.chat.access import agents_for
 from mia.chat.blocks import ApprovalCardBlock, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.service import run_turn
-from mia.core import approvals, jev, orgconfig
+from mia.core import approvals, jev, orgconfig, store
 from mia.core.models import Actor, Approval, Branch, Event, Message, Person, Thread
 from mia.i18n import t
 from mia.settings import get_settings
@@ -214,7 +215,7 @@ def test_a_clerk_is_not_offered_an_order(
     assert reply.text() == t("stock.low", FIL, ingredient="Rice flour")
 
 
-def test_a_clerk_cannot_place_an_order(
+def test_a_clerk_asking_to_order_is_told_who_can(
     session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _, people = ferinos
@@ -313,3 +314,104 @@ def test_only_the_given_roles_are_offered_the_agent(
         assert [a.id for a in agents_for(session, person)] == [MANIFEST.id], role
     outsider = Person(name="x", roles=["viewer"], branch_id=branch.id)
     assert agents_for(session, outsider) == []
+
+
+def _sell_outs_on_same_weekdays(session: Session, person: Person, branch: Branch) -> None:
+    """Special sold out at noon on the last two days sharing tomorrow's weekday."""
+    zone = zoneinfo.ZoneInfo(branch.timezone)
+    today = dt.datetime.now(zone).date()
+    for back in (6, 13):  # the same weekday as tomorrow, 6 and 13 days ago
+        day = today - dt.timedelta(days=back)
+        row = StockEvent(
+            branch_id=branch.id,
+            kind="sold_out",
+            item_id=_id(session, "Special"),
+            at=dt.datetime.combine(day, dt.time(12, 0), zone),
+            reported_by=person.id,
+            business_date=day,
+        )
+        store.insert(session, row, Actor.system(branch.id), action="stock.sold_out")
+    session.commit()
+
+
+def test_the_bake_plan_follows_the_last_four_same_weekdays(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    branch, people = ferinos
+    _sell_outs_on_same_weekdays(session, people["Ana"], branch)
+    _answers(monkeypatch, "bake_plan")
+    reply = _turn(session, people["Ana"], "what do we bake tomorrow")
+    texts = [b.text for b in reply.blocks if isinstance(b, TextBlock)]
+    assert t("stock.plan.more", FIL, item="Special") in texts
+    assert t("stock.plan.same", FIL, item="Ube") in texts
+    assert texts[-1] == t("stock.plan.heuristic", FIL)
+    assert len(texts) == 9  # eight items and the heuristic line
+
+
+def test_what_is_low_lists_items_under_the_reorder_point(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    _answers(monkeypatch, "whats_low")
+    reply = _turn(session, people["Marites"], "what is low")
+    lpg = RetailIngredient  # the seed counts LPG at 0, under its reorder point of 1
+    line = t("stock.low_list.line", FIL, ingredient="LPG", count="0", unit="tank", reorder="1")
+    assert line in [b.text for b in reply.blocks if isinstance(b, TextBlock)], lpg
+
+
+def _order_eggs(
+    session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> tuple[ChatReply, Approval]:
+    _answers(monkeypatch, "place_order", item_0=_id(session, "Eggs"), supplier="Aling Nena")
+    reply = _turn(session, people["Marites"], "order 10 trays of eggs from Aling Nena")
+    card = next(b for b in reply.blocks if isinstance(b, ApprovalCardBlock))
+    approval = session.get(Approval, card.approval_id)
+    assert approval is not None
+    return reply, approval
+
+
+def _approve(session: Session, approval: Approval, rosa: Person) -> None:
+    """The owner's decision, as the app's approvals inbox makes it (POST /approvals/<id>/decide
+    calls approvals.decide); chat itself only shows the card."""
+    approvals.decide(
+        session, approval.id, Actor.person(rosa), "approved", stepped_up_at=approvals.utcnow()
+    )
+    session.commit()
+
+
+def test_a_supervisor_drafts_an_order_and_the_owner_approves_it(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    marites, rosa = people["Marites"], people["Rosa"]
+    reply, approval = _order_eggs(session, people, monkeypatch)
+    assert approval.status == "pending" and "Aling Nena" in reply.text()
+    assert "10 tray Eggs" in reply.text()
+    _approve(session, approval, rosa)
+    order = session.exec(
+        select(SupplierOrder).where(SupplierOrder.approval_id == approval.id)
+    ).one()
+    assert order.status == "approved" and order.requested_by == marites.id
+    told = t("stock.order_approved", FIL, supplier="Aling Nena")
+    notified = select(Message).where(Message.role == "notification").where(Message.text == told)
+    threads = [session.get(Thread, m.thread_id) for m in session.exec(notified)]
+    assert [(th.person_id, th.agent_id) for th in threads if th] == [(marites.id, MANIFEST.id)]
+
+
+def test_a_delivery_closes_the_order_line(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    marites = people["Marites"]
+    _, approval = _order_eggs(session, people, monkeypatch)
+    _approve(session, approval, people["Rosa"])
+    _answers(monkeypatch, "receive", item_0=_id(session, "Eggs"))
+    said = t("stock.received", FIL, quantity="10", unit="tray", ingredient="Eggs")
+    mine = session.exec(select(SupplierOrder).where(SupplierOrder.approval_id == approval.id)).one()
+    # the seed's older open egg order takes the first delivery, then this one takes the next
+    for expected in ("approved", "received"):
+        assert _turn(session, marites, "received 10 trays of eggs").text() == said
+        session.refresh(mine)
+        assert mine.status == expected
+    assert mine.lines[0]["received"] == 10
+    assert len(_logged(session, "inventory.order_received")) == 2

@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from mia.agents.decider import Decision
 from mia.agents.inventory_manager.tools import (
     EventOut,
+    LowOut,
     LowStockOutput,
     PlanOutput,
     ReceiveDeliveryOutput,
@@ -69,6 +70,19 @@ def _text(key: str, lang: str, **values: Any) -> list[Block]:
     return [TextBlock(text=t(key, lang, **values))]
 
 
+def _low_line(i: LowOut, lang: str) -> str:
+    """One low ingredient: its count against the reorder point, or reported low (never counted)."""
+    key = "stock.low_list.line" if i.latest_count is not None else "stock.low_list.reported"
+    return t(
+        key,
+        lang,
+        ingredient=i.name,
+        count=format_int(i.latest_count or 0, lang),
+        unit=i.unit,
+        reorder=format_int(i.reorder_point, lang),
+    )
+
+
 def tool_reply(
     tool: str, out: dict[str, Any], args: dict[str, Any], lang: str, zone: str
 ) -> list[Block]:
@@ -80,13 +94,13 @@ def tool_reply(
         return [TextBlock(text=event_line(e, lang, zone)) for e in recorded]
     if tool == "plan_tomorrow":
         plan = PlanOutput.model_validate(out)
-        lines = ", ".join(t(f"stock.plan.{p.plan}", lang, item=p.item) for p in plan.lines)
-        return _text("stock.plan", lang, lines=lines)
+        said = [TextBlock(text=t(f"stock.plan.{p.plan}", lang, item=p.item)) for p in plan.lines]
+        return [*said, *(_text("stock.plan.heuristic", lang) if plan.note_heuristic else [])]
     if tool == "low_stock":
         low = LowStockOutput.model_validate(out).ingredients
         if not low:
             return _text("stock.low_list.empty", lang)
-        return _text("stock.low_list", lang, lines=", ".join(i.name for i in low))
+        return [TextBlock(text=_low_line(i, lang)) for i in low]
     return _text("clarify.rephrase", lang)
 
 
