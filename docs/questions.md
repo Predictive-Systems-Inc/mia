@@ -489,3 +489,9 @@ Format for each entry:
 - Question: Regular holidays and special non-working days for 2026 as published by proclamation.
 - Assumed answer: the list is a draft to verify; the owner can edit the file.
 - Blocking: no.
+
+## Q63: The service incentive leave balance
+- Where: node/mia/agents/hr_officer/calendar.py (`sil_balance`)
+- Question: How do the five service incentive leave days a year build up?
+- Assumed answer: 0 before one year of service; five days credited in full at each service anniversary, less the days used in the current service year, never negative. The owner may prefer monthly accrual.
+- Blocking: no.

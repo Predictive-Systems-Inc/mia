@@ -57,11 +57,11 @@ def leave_days(start: dt.date, end: dt.date, rest_day: int, holidays: Mapping[dt
 
 
 def sil_balance(start_date: dt.date, today: dt.date, used: int) -> int:
-    """Service incentive leave left: 0 before one year of service; after it, five days a year
-    pro rata by the completed months of the current service year (rounded down), less the days
-    used in it, never negative."""
+    """Service incentive leave left: 0 before one year of service; from each service
+    anniversary, five days credited in full less the days used in the current service year,
+    never negative (Q63)."""
     months = (today.year - start_date.year) * 12 + today.month - start_date.month
     months -= today.day < start_date.day
     if months < 12:
         return 0
-    return max(0, SIL_DAYS * (months % 12) // 12 - used)
+    return max(0, SIL_DAYS - used)

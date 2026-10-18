@@ -48,11 +48,10 @@ def test_leave_days_skip_the_rest_day_and_a_regular_holiday() -> None:
     assert working_days(D(2026, 10, 2), D(2026, 10, 1), SUNDAY, {}) == 0
 
 
-def test_sil_balance_pro_rata_and_never_negative() -> None:
+def test_sil_balance_five_days_at_each_anniversary_less_used() -> None:
     start = D(2025, 4, 19)
+    assert sil_balance(start, D(2026, 3, 19), 0) == 0  # eleven months
     assert sil_balance(start, D(2026, 4, 18), 0) == 0  # a day short of one year
-    assert sil_balance(start, D(2026, 4, 19), 0) == 0  # the year done, no month yet
-    assert sil_balance(start, D(2026, 10, 19), 0) == 2  # six months: 5 * 6 // 12
-    assert sil_balance(start, D(2026, 10, 18), 0) == 2  # five months: 25 // 12
-    assert sil_balance(start, D(2027, 3, 19), 1) == 3  # eleven months: 4, one used
-    assert sil_balance(start, D(2026, 10, 19), 5) == 0
+    assert sil_balance(start, D(2026, 4, 19), 0) == 5  # exactly one year
+    assert sil_balance(start, D(2027, 4, 19), 2) == 3  # two years, 2 used this year
+    assert sil_balance(start, D(2027, 4, 19), 7) == 0  # never negative

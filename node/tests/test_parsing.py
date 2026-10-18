@@ -160,3 +160,13 @@ def test_find_dates_never_a_bare_number() -> None:
     assert find_dates("3 special 5 classic", MONDAY, "en") == []
     assert find_dates("may 3 special po", MONDAY, "fil") == []
     assert find_dates("Feb 30 or 2026-13-01", MONDAY, "en") == []
+
+
+def test_find_dates_a_filipino_week_phrase_alone_is_not_a_sunday() -> None:
+    assert find_dates("sa susunod na linggo po", MONDAY, "fil") == []
+    assert find_dates("susunod na linggo", MONDAY, "fil") == []
+    assert find_dates("ngayong linggo", MONDAY, "fil") == []
+    assert find_dates("sa susunod na linggo Lunes", MONDAY, "fil") == [
+        ("d0", dt.date(2026, 10, 26))
+    ]
+    assert find_dates("sa Linggo", MONDAY, "fil") == [("d0", dt.date(2026, 10, 25))]

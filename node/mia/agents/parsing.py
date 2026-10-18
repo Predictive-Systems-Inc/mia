@@ -242,6 +242,8 @@ _DATE = re.compile(
     rf"|\b(?P<d1>\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?(?P<m1>{_MON})\b\.?"
     rf"|\b(?P<m2>{_MON})\.?\s+(?P<d2>\d{{1,2}})(?:st|nd|rd|th)?\b(?!:)"
     rf"|\b(?P<rel>{_alt(DAY_WORDS)})\b"
+    # "(sa) susunod na linggo" and "ngayong linggo" name a week: consumed, never a Sunday.
+    r"|\b(?P<week>(?:sa\s+)?susunod\s+na\s+linggo|ngayong\s+linggo)\b"
     rf"|\b(?P<wd>{_WD})\w*",
     re.IGNORECASE,
 )
@@ -269,7 +271,8 @@ def find_dates(text: str, today: dt.date, lang: str) -> list[tuple[str, dt.date]
     or after the date before it in the message, so "next week Monday to Wednesday" is one
     week), "next week <weekday>" (that weekday of the following week), "<d> <month>" and
     "<month> <d>" with English or Filipino month names (the year nearest to today), and ISO
-    dates. A bare number is never a date; an invalid date is skipped."""
+    dates. A bare number is never a date; an invalid date is skipped; "(sa) susunod na linggo"
+    and "ngayong linggo" without a weekday after them are a week, not a date."""
     found: list[dt.date] = []
     for m in _DATE.finditer(text):
         day: dt.date | None
@@ -287,6 +290,8 @@ def find_dates(text: str, today: dt.date, lang: str) -> list[tuple[str, dt.date]
             if month == "may" and lang != "en":
                 continue
             day = _month_day(MONTHS[month], int(m["d1"] or m["d2"]), today)
+        elif m["week"]:
+            continue
         elif m["rel"]:
             day = today + dt.timedelta(days=DAY_WORDS[m["rel"].lower()])
         else:
