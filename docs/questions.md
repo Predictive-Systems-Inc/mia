@@ -409,3 +409,15 @@ Format for each entry:
 - Question: The spec says the other groups are recorded while one group's item is asked. The turn records nothing until every group has an item, so a clerk who ignores the which-item question loses the whole message.
 - Assumed answer: keep the whole-message hold in v1 (one reply, no half-recorded message); the closing reminder catches clerks with no count at all.
 - Blocking: no.
+
+## Q51: Should the scaffold write the eight-language label drafts?
+- Where: docs/superpowers/specs/2026-10-19-mia-build-agent-design.md (section 8); mia/agents/scaffold.py
+- Question: should the scaffold also write the eight-language label drafts, or leave them to the i18n task?
+- Assumed answer: write the English label into the eight modules with the review note, so the coverage test is green from the first commit.
+- Blocking: no.
+
+## Q52: Does /mia-build-agent run the real-Jev gates itself?
+- Where: .claude/skills/mia-build-agent/SKILL.md (step 7)
+- Question: does `/mia-build-agent` run the real-Jev gates itself, or hand the command to the developer?
+- Assumed answer: it runs them when `MIA_TYPESAFE_KEY` is set and reports; the developer decides on tuning.
+- Blocking: no.

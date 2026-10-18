@@ -111,6 +111,13 @@ messages, then runs:
 Harvested candidates stay in `MIA_LEARNING_DIR/<role>/candidates.jsonl` on the node. If a stale
 Hugging Face token gives 401 errors when training, set `HF_HUB_DISABLE_IMPLICIT_TOKEN=1`.
 
+## Building a new agent
+
+`/mia-build-agent <agent_id>` (a Claude Code skill in `.claude/skills/mia-build-agent`) carries a
+job title from `docs/agents-catalogue.md` to a reviewed, gated agent: data standard check, spec,
+plan, `uv run mia agent scaffold`, the subagent-driven build with the review checklist, and the
+eval gates.
+
 ## Messaging channels
 
 People can talk to Mia on WhatsApp as well as in the app (ADR 007). Try it without a Meta

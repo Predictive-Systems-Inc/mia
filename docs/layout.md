@@ -8,6 +8,7 @@ mia/
   uv.lock
   .env.example              every MIA_* variable with a comment
   .pre-commit-config.yaml   ruff, mypy, detect-secrets (.secrets.baseline)
+  .claude/skills/mia-build-agent/  SKILL.md, checklist.md, prompts/ (spec, plan, reviewer): /mia-build-agent
   .github/workflows/ci.yml  jobs: lint, types, tests, evals, docker (build, smoke and restore test)
   Dockerfile                the node image (ADR 010); .dockerignore beside it
   deploy/                   docker-compose.yml (node, litestream, tunnel), litestream.yml,
