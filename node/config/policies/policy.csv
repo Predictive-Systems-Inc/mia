@@ -85,6 +85,30 @@ p, admin, *, data:sales_supervisor_*, write, allow
 p, admin, *, data:sales_supervisor_*, read_all, allow
 p, admin, *, data:sales_supervisor_*, write_all, allow
 
+# clerk: report stock, ask what is low and the bake plan (own branch; no orders)
+p, clerk, *, tool:inventory_manager.record_events, execute, allow
+p, clerk, *, tool:inventory_manager.low_stock, execute, allow
+p, clerk, *, tool:inventory_manager.plan_tomorrow, execute, allow
+p, clerk, *, data:inventory_manager_stock_events, write_own, allow
+p, clerk, *, data:inventory_manager_stock_events, read_own, allow
+p, clerk, *, data:retail_ingredients, read, allow
+
+# supervisor: the same, plus request a supplier order (it waits for the owner) and receive it
+p, supervisor, *, tool:inventory_manager.record_events, execute, allow
+p, supervisor, *, tool:inventory_manager.low_stock, execute, allow
+p, supervisor, *, tool:inventory_manager.plan_tomorrow, execute, allow
+p, supervisor, *, tool:inventory_manager.draft_order, request, allow
+p, supervisor, *, tool:inventory_manager.receive_delivery, execute, allow
+p, supervisor, *, data:inventory_manager_stock_events, read, allow
+p, supervisor, *, data:inventory_manager_stock_events, write, allow
+p, supervisor, *, data:inventory_manager_orders, read, allow
+p, supervisor, *, data:inventory_manager_orders, write, allow
+p, supervisor, *, data:retail_ingredients, read, allow
+
+# admin: stock and orders of every branch; owner inherits
+p, admin, *, data:inventory_manager_*, read_all, allow
+p, admin, *, data:inventory_manager_*, write_all, allow
+
 # agents a role may talk to (chat/access.py); owner inherits admin > supervisor > staff
 p, staff, *, agent:shift_supervisor, use, allow
 p, clerk, *, agent:sales_supervisor, use, allow
