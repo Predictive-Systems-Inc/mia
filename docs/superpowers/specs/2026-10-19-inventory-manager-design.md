@@ -185,4 +185,7 @@ and replies for scenarios 1 to 4. 5. Scenarios 5 to 8. 6. Due work (9, 10). 7. T
 8. Evals, gates, docs.
 
 ## Carried over
-(none yet)
+- Decider gate (19 Oct, docs/research/inventory-manager-2026-10-19.md): fails on the gate half
+  after one tuning edit. Wrong 3.3% (bar 2%; nine of ten are an ingredient count read as an
+  order); right en 90%, fil 56%, ceb 56%, hil 66%, war 64%, bcl 64% (bar 80%); ask 8% to 36%.
+  Router gate not rerun (PENDING already empty, router description unchanged).

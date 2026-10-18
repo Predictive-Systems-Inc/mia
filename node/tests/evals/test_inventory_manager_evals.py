@@ -2,19 +2,25 @@
 Run: MIA_DECIDER=jev uv run pytest node/tests/evals/test_inventory_manager_evals.py -m evals -s
 (needs MIA_TYPESAFE_KEY; skips while the case list is empty). Each case runs build_query and
 decider.decide on Ferino's seeded demo through egress (pseudonymised, rule 6). The gate reads
-the gate half only; the tune half is for tuning the action descriptions."""
+the gate half only; the tune half is for tuning the action descriptions. Scores: right (the
+expected action; for a count, order or delivery the expected (name, quantity) pairs, for a
+report the expected kind; a waste without a reason is right when Mia asks the reason), wrong
+(another action at >= the threshold), wrong_items (the expected action with other items, kind
+or a guessed reason: a wrong write, counted apart), ask (clarify or another missing input),
+other (an error)."""
 
 import asyncio
 import datetime as dt
 import json
-from collections import defaultdict
+import time
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import Engine
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps
 from mia.agents.decider import THRESHOLD
@@ -22,14 +28,17 @@ from mia.agents.inventory_manager import MANIFEST, decider
 from mia.agents.inventory_manager.actions import build_query
 from mia.core import jev
 from mia.core.egress import EgressContext, egress_context
-from mia.core.models import Actor, Branch, Person
+from mia.core.models import Actor, Branch, Person, UsageCloudRequest
 from mia.settings import get_settings
+from mia.templates.retail.models import RetailIngredient, RetailItem
 from tests.evals import gate
 from tests.evals.inventory_manager_cases import CASES, GATED_LANGS, Case
 
 pytestmark = pytest.mark.evals
 
-SCORES = ("right", "wrong", "ask", "other")
+SCORES = ("right", "wrong", "wrong_items", "ask", "other")
+PURPOSE = f"{MANIFEST.id}.decide.eval"
+SENDERS = {"clerk": "Ana", "supervisor": "Marites", "owner": "Rosa"}
 RESEARCH = Path(__file__).parents[3] / "docs" / "research"
 Ferinos = tuple[Branch, dict[str, Person]]
 
@@ -59,8 +68,12 @@ def _deps(session: Session, case: Case, person_id: str) -> AgentDeps:
     )
 
 
-async def _one(case: Case, engine: Engine, person_id: str, sem: asyncio.Semaphore) -> Any:
-    result: dict[str, Any] = {**case.__dict__, "action": None, "error": None}
+async def _one(
+    i: int, case: Case, engine: Engine, person_id: str, sem: asyncio.Semaphore
+) -> dict[str, Any]:
+    """One decided case; its egress purpose carries the case index so its tokens can be found
+    afterwards. Backs off on overload rather than raise concurrency."""
+    result: dict[str, Any] = {"i": i, **case.__dict__, "action": None, "error": "not run"}
     async with sem:
         with Session(engine, expire_on_commit=False) as session:
             deps = _deps(session, case, person_id)
@@ -70,36 +83,99 @@ async def _one(case: Case, engine: Engine, person_id: str, sem: asyncio.Semaphor
                 actor=deps.actor,
                 organisation_id=deps.organisation_id,
                 agent_id=MANIFEST.id,
-                purpose=f"{MANIFEST.id}.decide.eval",
+                purpose=f"{PURPOSE}/{i}",
                 level="pseudonymised",
                 provider="typesafe",
             )
-            try:
-                with egress_context(ctx):
-                    decision = await asyncio.wait_for(decider.decide(query), timeout=30)
-                result |= {"action": decision.action, "missing": decision.missing}
-                result["confidence"] = decision.confidence
-            except (jev.JevError, TimeoutError) as exc:
-                result["error"] = str(exc) or type(exc).__name__
+            for attempt in range(4):
+                start = time.perf_counter()
+                try:
+                    with egress_context(ctx):
+                        decision = await asyncio.wait_for(decider.decide(query), timeout=30)
+                except (jev.JevUnreachable, TimeoutError) as exc:
+                    result["error"] = str(exc) or type(exc).__name__
+                    if attempt < 3:
+                        await asyncio.sleep(5 * (attempt + 1))
+                    continue
+                except jev.JevError as exc:
+                    result["error"] = str(exc)
+                    break
+                result |= {"error": None, "action": decision.action, "missing": decision.missing}
+                result |= {"raw_action": decision.raw_action, "confidence": decision.confidence}
+                result |= {"args": decision.args, "seconds": time.perf_counter() - start}
+                break
             session.commit()  # the egress log and usage rows
     return result
 
 
+def _found(args: dict[str, Any], names: dict[str, str]) -> tuple[str, list[tuple[Any, ...]]]:
+    """The kind and the (name, quantity) pairs a decision's args would write: a report's
+    events, or an order's or a delivery's lines."""
+    rows = args.get("events") or args.get("lines") or []
+    pairs = [
+        (names.get(str(e.get("item_id") or e.get("ingredient_id")), "?"), e.get("quantity"))
+        for e in rows
+    ]
+    return (rows[0].get("kind") or "") if rows else "", pairs
+
+
 def _score(r: dict[str, Any]) -> str:
-    """right, wrong (another action at >= the threshold), ask (clarify or a missing input), or
-    other (an error, or another action below the threshold)."""
+    """right, wrong, wrong_items, ask or other (the module docstring)."""
     if r["error"] is not None:
         return "other"
-    if r["action"] == "clarify" or r["missing"] is not None:
-        return "ask"
-    if r["action"] == r["expected_action"]:
-        return "right"
-    return "wrong" if r["confidence"] >= THRESHOLD else "other"
+    expected_missing = r["expected_missing"]
+    action = r["action"]
+    if action == "clarify":
+        asks_expected = r["missing"] is not None and r["missing"] == expected_missing
+        if not asks_expected or r["confidence"] < THRESHOLD:
+            return "ask"
+        action = r["raw_action"]  # the reason buttons: the turn asks what is missing
+    if action != r["expected_action"]:
+        return "wrong" if r["confidence"] >= THRESHOLD else "other"
+    if r["missing"] != expected_missing:
+        return "wrong_items"  # a guessed reason
+    if r["found_kind"] != r["expected_kind"] and r["expected_kind"]:
+        return "wrong_items"
+    expected = Counter(tuple(p) for p in r["expected_items"])
+    return "right" if Counter(tuple(p) for p in r["found_items"]) == expected else "wrong_items"
 
 
 def _row(rows: list[dict[str, Any]]) -> dict[str, Any]:
     n = len(rows) or 1
-    return {"n": len(rows), **{s: round(sum(r["score"] == s for r in rows) / n, 3) for s in SCORES}}
+    secs = sorted(r["seconds"] for r in rows if r.get("seconds"))
+    return {
+        "n": len(rows),
+        **{s: round(sum(r["score"] == s for r in rows) / n, 3) for s in SCORES},
+        "errors": sum(r["error"] is not None for r in rows),
+        "p50": round(secs[len(secs) // 2], 2) if secs else 0.0,
+        "p95": round(secs[int(len(secs) * 0.95)], 2) if secs else 0.0,
+        "tokens": round(sum(r["tokens"] for r in rows) / n),
+    }
+
+
+def _table(rows: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for r in rows:
+        groups[r[key]].append(r)
+    return {k: _row(v) for k, v in sorted(groups.items())}
+
+
+def _confusions(results: list[dict[str, Any]]) -> list[tuple[str, int]]:
+    """The ten most common misses as 'expected -> got (score)'."""
+    misses = Counter(
+        f"{r['expected_action']} -> {r.get('raw_action') or r['action']} ({r['score']})"
+        for r in results
+        if r["score"] != "right"
+    )
+    return misses.most_common(10)
+
+
+def _print(title: str, table: dict[str, Any]) -> None:
+    print(f"\n{title}\n{'':16}{'n':>5}", "".join(f"{s[:7]:>8}" for s in SCORES), end="")
+    print(f"{'err':>5}{'p50':>6}{'p95':>6}{'tok':>6}")
+    for k, v in table.items():
+        print(f"{k:16}{v['n']:>5}", "".join(f"{v[s]:>8}" for s in SCORES), end="")
+        print(f"{v['errors']:>5}{v['p50']:>6}{v['p95']:>6}{v['tokens']:>6}")
 
 
 def test_decider(engine: Engine, session: Session, ferinos: Ferinos) -> None:
@@ -110,25 +186,48 @@ def test_decider(engine: Engine, session: Session, ferinos: Ferinos) -> None:
         pytest.skip("needs MIA_TYPESAFE_KEY and MIA_DECIDER=jev")
     report = _report_path(dt.datetime.now().astimezone())  # before the run, not after it
     _, staff = ferinos
-    senders = {c.role: next(p.id for p in staff.values() if c.role in p.roles) for c in CASES}
+    senders = {role: staff[name].id for role, name in SENDERS.items()}
+    names = {i.id: i.name for i in session.exec(select(RetailItem)).all()}
+    names |= {i.id: i.name for i in session.exec(select(RetailIngredient)).all()}
 
     async def run() -> list[dict[str, Any]]:
         sem = asyncio.Semaphore(4)
-        return list(await asyncio.gather(*(_one(c, engine, senders[c.role], sem) for c in CASES)))
+        return list(
+            await asyncio.gather(
+                *(_one(i, c, engine, senders[c.role], sem) for i, c in enumerate(CASES))
+            )
+        )
 
+    started = time.perf_counter()
     results = asyncio.run(run())
+    wall = time.perf_counter() - started
+    usage = session.exec(
+        select(UsageCloudRequest).where(col(UsageCloudRequest.task).startswith(PURPOSE))
+    ).all()
+    tokens = {int(u.task.rsplit("/", 1)[1]): u.input_tokens + u.output_tokens for u in usage}
     for r in results:
-        r["score"] = _score(r)
+        r["found_kind"], r["found_items"] = _found(r.get("args") or {}, names)
+        r["tokens"], r["score"] = tokens.get(r["i"], 0), _score(r)
     gated_rows = [r for r in results if r["half"] == "gate" and r["lang"] in GATED_LANGS]
-    by_lang: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for r in gated_rows:
-        by_lang[r["lang"]].append(r)
+    tune_rows = [r for r in results if r["half"] == "tune"]
     gated = {
         "all": _row(gated_rows),
-        "by_language": {k: _row(v) for k, v in sorted(by_lang.items())},
+        "by_language": _table(gated_rows, "lang"),
+        "by_scenario": _table(gated_rows, "scenario"),
     }
-    print(json.dumps(gated, indent=1))
-    text = json.dumps({"gated": gated, "results": results}, ensure_ascii=False, indent=1)
+    summary = {
+        "model": settings.MIA_JEV_MODEL,
+        "wall_seconds": round(wall, 1),
+        "gated": gated,
+        "tune": {"all": _row(tune_rows), "by_language": _table(tune_rows, "lang")},
+        "confusions": _confusions(results),
+    }
+    _print("tune half by language", summary["tune"]["by_language"])
+    _print("gate half by language (asserted)", gated["by_language"])
+    _print("gate half by scenario", gated["by_scenario"])
+    _print("gate half (asserted)", {"all": gated["all"]})
+    print(f"\nconfusions: {summary['confusions']}\nwall {wall:.0f} s")
+    text = json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1)
     report.write_text(text + "\n", encoding="utf-8")
     failed = gate.gate_failures(gated)  # the Q40 bar, as the router's
     assert not failed, failed

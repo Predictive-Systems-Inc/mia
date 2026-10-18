@@ -225,6 +225,15 @@ is asked. The sales supervisor answers only with `MIA_DECIDER=jev` (it has no LL
 Jev it replies that it is unavailable). `mia person add --ask-language` adds a person whose
 language Mia asks in their first chat (channel sign-up); `--lang` takes any supported language.
 
+The inventory manager hears what the shop has: sell-outs with their time, counts left,
+leftovers and waste (a reason asked with buttons), low ingredients with an offer to draft an
+order, tomorrow's bake plan, what is low, supplier orders (a `risk: money` tool, approved by the
+owner on a card) and deliveries received. Like the sales supervisor it answers only with
+`MIA_DECIDER=jev`. Its decider eval (600 synthetic messages in six languages, gated on the
+gate half at the Q40 bar):
+`MIA_DECIDER=jev uv run pytest node/tests/evals/test_inventory_manager_evals.py -m evals -s`
+(needs `MIA_TYPESAFE_KEY`; writes `docs/research/inventory-manager-<date>-<HHMM>.raw.json`).
+
 To evaluate a model: `MIA_EVAL_MODEL=gateway/<route>` or `local/<model>`, then
 `uv run pytest node/tests/evals -m evals`.
 
