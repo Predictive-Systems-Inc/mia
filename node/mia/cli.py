@@ -264,8 +264,9 @@ def agent_scaffold(args: argparse.Namespace) -> int:
             roles=args.roles,
             description=args.description,
             force=args.force,
+            say=print,
         )
-    except (ValueError, FileExistsError) as exc:
+    except (ValueError, FileExistsError, RuntimeError) as exc:
         raise SystemExit(str(exc)) from exc
     for path in written:
         print(path.relative_to(NODE_DIR.parent))
@@ -746,7 +747,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="agent_command", required=True
     )
     p = agent.add_parser("scaffold", help="render a new agent package and wire it in")
-    p.add_argument("agent_id", help="snake_case job title, e.g. inventory_manager")
+    p.add_argument("agent_id", help="snake_case job title, e.g. quality_officer")
     p.add_argument("--label-en", required=True)
     p.add_argument("--label-fi", required=True)
     p.add_argument("--role", dest="roles", action="append", required=True)

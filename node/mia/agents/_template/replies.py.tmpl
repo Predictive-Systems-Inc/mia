@@ -15,8 +15,5 @@ CONVERSATION_KEYS = {
 
 def conversation_reply(kind: str, lang: str) -> list[Block]:
     """The reply to a message that needs no action: a greeting, thanks or goodbye, else (an
-    injection included) what the agent can do; a greeting is followed by what it can do."""
-    blocks: list[Block] = [TextBlock(text=t(CONVERSATION_KEYS.get(kind, CAPABILITIES), lang))]
-    if kind == "greeting":
-        blocks.append(TextBlock(text=t(CAPABILITIES, lang)))
-    return blocks
+    injection included) what the agent can do."""
+    return [TextBlock(text=t(CONVERSATION_KEYS.get(kind, CAPABILITIES), lang))]

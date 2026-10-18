@@ -184,6 +184,29 @@ def test_a_label_that_could_break_the_rendered_code_is_refused(tree: Path) -> No
     assert not (tree / "node/mia/agents/quality_officer").exists()
 
 
+def test_a_missing_anchor_raises_before_any_write(tree: Path) -> None:
+    layout = tree / "docs/layout.md"
+    layout.write_text(layout.read_text().replace("<role>/skill/", "<role>/other/"))
+    before = {p: p.read_bytes() for p in tree.rglob("*") if p.is_file()}
+    with pytest.raises(RuntimeError, match=r"docs/layout\.md.*<role>/skill/"):
+        _run(tree)
+    assert before == {p: p.read_bytes() for p in tree.rglob("*") if p.is_file()}
+
+
+def test_a_label_flag_on_a_promoted_stub_prints_the_kept_label(
+    tree: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from mia import cli
+
+    monkeypatch.setattr(cli, "NODE_DIR", tree / "node")
+    argv = ["agent", "scaffold", "bookkeeper", "--role", "owner", "--label-en", "Bookkeeper"]
+    args = cli.build_parser().parse_args([*argv, "--label-fi", "Kirjanpitäjä-x"])
+    assert args.func(args) == 0
+    out = capsys.readouterr().out
+    assert "label for bookkeeper already set in fi: kept " in out
+    assert "already set in en" not in out
+
+
 def test_the_command_refuses_a_bad_id_before_writing() -> None:
     from mia.cli import build_parser
 
@@ -269,6 +292,21 @@ def test_edit_router_pending_adds_the_id_sorted() -> None:
     out = scaffold.edit_router_pending(out, "a_one")
     assert 'PENDING: set[str] = {"a_one", "b_two"}\n' in out
     assert scaffold.edit_router_pending(out, "a_one") == out
+
+
+def test_edit_router_pending_reads_a_wrapped_literal_and_writes_it_sorted() -> None:
+    text = 'X = 1\nPENDING: set[str] = {\n    "c_three",\n    "a_one",\n    "b_two",\n}\nY = 2\n'
+    out = scaffold.edit_router_pending(text, "d_four")
+    assert out.splitlines()[1:8] == [
+        "PENDING: set[str] = {",
+        '    "a_one",',
+        '    "b_two",',
+        '    "c_three",',
+        '    "d_four",',
+        "}",
+        "Y = 2",
+    ]
+    assert scaffold.edit_router_pending(out, "d_four") == out
 
 
 def test_edit_router_pending_skips_an_id_that_has_cases() -> None:

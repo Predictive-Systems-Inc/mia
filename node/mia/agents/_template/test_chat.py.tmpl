@@ -40,12 +40,37 @@ def _answers(monkeypatch: pytest.MonkeyPatch, action: str, **slots: Any) -> None
     monkeypatch.setattr(jev, "_inner", lambda: fake_jev(answer))
 
 
-def test_a_greeting_is_answered_with_what_it_cannot_do_yet(
-    session: Session, sender: Person, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _answers(monkeypatch, "reply_only", conversation="greeting")
+def _texts(
+    session: Session, sender: Person, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> list[str]:
+    _answers(monkeypatch, "reply_only", conversation=kind)
     reply = asyncio.run(run_turn(session, None, sender, "hello po", None))
     session.commit()
-    texts = [b.text for b in reply.blocks if isinstance(b, TextBlock)]
-    lang = sender.language
-    assert texts == [t("conversation.greeting", lang), t("reply.not_built", lang)]
+    return [b.text for b in reply.blocks if isinstance(b, TextBlock)]
+
+
+def test_a_greeting_is_answered_with_the_greeting_only(
+    session: Session, sender: Person, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    texts = _texts(session, sender, monkeypatch, "greeting")
+    assert texts == [t("conversation.greeting", sender.language)]
+
+
+def test_a_question_about_what_it_can_do_gets_the_not_built_line(
+    session: Session, sender: Person, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    texts = _texts(session, sender, monkeypatch, "capabilities")
+    assert texts == [t("reply.not_built", sender.language)]
+
+
+def test_only_the_given_roles_are_offered_the_agent(
+    session: Session, sender: Person, ferinos: Ferinos
+) -> None:
+    """The scaffold was given roles $roles; a role outside them (and what inherits them) is not
+    offered the agent, so the policy lines are the whole door."""
+    branch, _ = ferinos
+    for role in $roles_list:
+        person = Person(name="x", roles=[role], branch_id=branch.id)
+        assert [a.id for a in agents_for(session, person)] == [MANIFEST.id], role
+    outsider = Person(name="x", roles=["$denied_role"], branch_id=branch.id)
+    assert agents_for(session, outsider) == []

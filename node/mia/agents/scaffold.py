@@ -161,16 +161,27 @@ def edit_schema(text: str, agent_id: str) -> str:
 
 
 def edit_router_pending(text: str, agent_id: str) -> str:
-    """router_cases.py with the id in PENDING (sorted) when no case names it yet."""
+    """router_cases.py with the id in PENDING (sorted) when no case names it yet. PENDING is
+    parsed with ast, so it may span lines; more than three ids (or a long line) go one per line."""
     lines = text.splitlines(keepends=True)
-    at = next(i for i, x in enumerate(lines) if x.startswith("PENDING: set[str] = "))
-    if any(f'"{agent_id}"' in x for i, x in enumerate(lines) if i != at):
+    node = next(
+        n
+        for n in ast.parse(text).body
+        if isinstance(n, ast.AnnAssign) and getattr(n.target, "id", "") == "PENDING"
+    )
+    first, last = node.lineno - 1, (node.end_lineno or node.lineno)
+    if any(f'"{agent_id}"' in x for i, x in enumerate(lines) if not first <= i < last):
         return text  # it has router cases already (a promoted stub)
-    rhs = lines[at].split("=", 1)[1].strip()
-    ids = set() if rhs == "set()" else set(ast.literal_eval(rhs))
-    ids.add(agent_id)
-    lines[at] = "PENDING: set[str] = {" + ", ".join(json.dumps(i) for i in sorted(ids)) + "}\n"
-    return "".join(lines)
+    assert node.value is not None
+    value = ast.literal_eval(node.value) if isinstance(node.value, ast.Set) else set()
+    ids = sorted({*value, agent_id})
+    one = "PENDING: set[str] = {" + ", ".join(json.dumps(i) for i in ids) + "}\n"
+    if len(ids) <= 3 and len(one) <= 101:
+        new = one
+    else:
+        body = "".join(f"    {json.dumps(i)},\n" for i in ids)
+        new = "PENDING: set[str] = {\n" + body + "}\n"
+    return "".join(lines[:first] + [new] + lines[last:])
 
 
 def edit_layout(text: str, agent_id: str, label_en: str) -> str:
@@ -184,6 +195,32 @@ def edit_layout(text: str, agent_id: str, label_en: str) -> str:
     return text if at is None else "".join(lines[:at] + [line] + lines[at:])
 
 
+def denied_role(policy: str, roles: list[str]) -> str:
+    """A human role that neither is one of `roles` nor inherits one (policy.csv `g, a, b, *`
+    lines: a inherits b), else "" when every role would be allowed."""
+    parents: dict[str, set[str]] = {}
+    for line in policy.splitlines():
+        cells = [c.strip() for c in line.split(",")]
+        if cells[0] == "g" and len(cells) >= 3:
+            parents.setdefault(cells[1], set()).add(cells[2])
+
+    def allowed(role: str) -> bool:
+        return role in roles or any(allowed(p) for p in parents.get(role, ()))
+
+    return next((r for r in reversed(HUMAN_ROLES) if not allowed(r)), "")
+
+
+def _kept_labels(strings: str, key: str, given: tuple[str, str]) -> list[tuple[str, str]]:
+    """(language, existing label) for each of en and fi whose label in strings.py is already set
+    and differs from the one given."""
+    found = [json.loads(m) for m in re.findall(rf"{re.escape(key)}: (\".*\"),", strings)]
+    return [
+        (lang, old)
+        for lang, old, new in zip(("en", "fi"), found, given, strict=False)
+        if old != new
+    ]
+
+
 def run(
     root: Path,
     agent_id: str,
@@ -193,12 +230,15 @@ def run(
     roles: list[str],
     description: str,
     force: bool = False,
+    say: Callable[[str], None] = lambda _line: None,
 ) -> list[Path]:
     """Render the package and its tests under `root` (the repository root) and apply the shared
     edits; returns every file written. Raises ValueError for a bad or built id, role or label, or a
     description without the "; not " contrast line (a stub's own is used when empty), and
     FileExistsError when a rendered file exists and not force. Nothing is written unless every
-    check passed."""
+    check passed. `say` gets one line per label flag that differs from a label already set (the
+    existing one is kept; a promoted stub has its labels). Raises RuntimeError, before any write,
+    naming the file and anchor when a shared edit did not leave its line there."""
     agents = root / "node/mia/agents"
     if not ID.match(agent_id) or (agents / f"{agent_id}.py").exists():
         raise ValueError(f"agent id must match {ID.pattern} and not be a module: {agent_id!r}")
@@ -221,6 +261,10 @@ def run(
         "description": description,
         "router_description": _router_literal(description),
         "roles": ", ".join(roles),
+        "roles_list": json.dumps(roles),
+        "denied_role": denied_role(
+            (root / "node/config/policies/policy.csv").read_text(encoding="utf-8"), roles
+        ),
         "standard_version": STANDARD_VERSION,
     }
     rendered = {
@@ -233,21 +277,66 @@ def run(
     if existing and not force:
         raise FileExistsError(f"refusing to overwrite (pass --force): {', '.join(existing)}")
     i18n = root / "node/mia/i18n"
-    edits: dict[Path, Callable[[str], str]] = {
-        agents / "registry.py": lambda s: edit_registry(s, agent_id),
-        stubs_py: lambda s: edit_stubs(s, agent_id),
-        i18n / "strings.py": lambda s: edit_strings(s, agent_id, label_en, label_fi),
-        **{i18n / f"{m}.py": lambda s: edit_module(s, agent_id, label_en) for m in MODULES},
-        root / "node/config/policies/policy.csv": lambda s: edit_policy(s, agent_id, roles),
-        root / "node/mia/schema.py": lambda s: edit_schema(s, agent_id),
-        root / "docs/layout.md": lambda s: edit_layout(s, agent_id, label_en),
-        root / "node/tests/evals/router_cases.py": lambda s: edit_router_pending(s, agent_id),
+    label_key = f'"agent.{agent_id}.label"'
+    # path -> (edit, anchor the edit needs, what must hold in the new text). A promoted stub
+    # may leave stubs.py (no entry) and the i18n files (labels exist) unchanged; the check holds
+    # in both cases, so a rerun with force passes too.
+    edits: dict[Path, tuple[Callable[[str], str], str, Callable[[str], bool]]] = {
+        agents / "registry.py": (
+            lambda s: edit_registry(s, agent_id),
+            "BUILT = [",
+            lambda s: f"    {agent_id.upper()},\n" in s,
+        ),
+        stubs_py: (
+            lambda s: edit_stubs(s, agent_id),
+            f'    "{agent_id}": (',
+            lambda s: stub_description(s, agent_id) is None,
+        ),
+        i18n / "strings.py": (
+            lambda s: edit_strings(s, agent_id, label_en, label_fi),
+            "agent.*.label",
+            lambda s: s.count(label_key) >= 2,
+        ),
+        **{
+            i18n / f"{m}.py": (
+                lambda s: edit_module(s, agent_id, label_en),
+                "agent.*.label",
+                lambda s: label_key in s,
+            )
+            for m in MODULES
+        },
+        root / "node/config/policies/policy.csv": (
+            lambda s: edit_policy(s, agent_id, roles),
+            "agent:*, use",
+            lambda s: all(f"p, {r}, *, agent:{agent_id}, use, allow\n" in s for r in roles),
+        ),
+        root / "node/mia/schema.py": (
+            lambda s: edit_schema(s, agent_id),
+            "import mia.",
+            lambda s: f"import mia.agents.{agent_id}.models\n" in s,
+        ),
+        root / "docs/layout.md": (
+            lambda s: edit_layout(s, agent_id, label_en),
+            "        <role>/skill/",
+            lambda s: f"        {agent_id}/" in s,
+        ),
+        root / "node/tests/evals/router_cases.py": (
+            lambda s: edit_router_pending(s, agent_id),
+            "PENDING: set[str] =",
+            lambda s: f'"{agent_id}"' in s,
+        ),
     }
-    for path, edit in edits.items():
+    for path, (edit, anchor, holds) in edits.items():
         before = path.read_text(encoding="utf-8")
         after = edit(before)
+        if not holds(after):
+            raise RuntimeError(f"{path.relative_to(root)}: anchor {anchor!r} not found, no edit")
         if after != before:
             rendered[path] = after
+    for lang, kept in _kept_labels(
+        (i18n / "strings.py").read_text(encoding="utf-8"), label_key, (label_en, label_fi)
+    ):
+        say(f"label for {agent_id} already set in {lang}: kept {kept}")
     for path, text in rendered.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")

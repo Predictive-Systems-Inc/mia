@@ -25,13 +25,13 @@ no test says so. Pin each line to the plan task that owns it.
 
 ## Rules 11 and 12: transactions and threads
 - Commit before the Jev await: `mia/agents/sales_supervisor/turn.py` (`_jev_turn`); no dedicated test, the reviewer reads the order.
-- Sync DB work in threads, one Session per thread: `mia/agents/sales_supervisor/turn.py` (`asyncio.to_thread`), `node/tests/test_egress.py::test_egress_db_work_is_off_the_event_loop`.
+- Sync DB work in threads, one Session per thread: `mia/agents/sales_supervisor/turn.py` (`asyncio.to_thread`); no dedicated test for the turn, the reviewer reads it (`node/tests/test_egress.py::test_egress_db_work_is_off_the_event_loop` covers egress's own DB work only).
 - Per-branch commits in due work: `mia/agents/shift_supervisor/alerts.py` (`_each_branch`); no dedicated test, the reviewer reads it.
 
 ## Taps
 - A button value is a stored decision, validated against the agent's own ACTIONS: `mia/agents/sales_supervisor/turn.py` (`_tapped`), `node/tests/test_sales_chat.py::test_a_tapped_decision_of_another_agent_asks_to_rephrase`.
 - Stale after a notification: `mia/chat/service.py` (`_route_tapped`, `_last_mia`), `node/tests/test_agent_router.py::test_a_notification_after_the_route_question_makes_its_buttons_stale`.
-- Never replayed across a date: `mia/agents/sales_supervisor/tools.py` (`_asked_day`), `node/tests/test_sales_chat.py::test_a_why_answer_the_next_morning_is_stored_on_the_good_day`.
+- Never replayed across a date: `mia/agents/sales_supervisor/turn.py` (`_tapped`, the asked-today check), `node/tests/test_jev_chat.py::test_a_clarify_button_from_another_day_goes_to_jev`.
 
 ## Due work
 - Windows as datetimes that may cross midnight: `mia/agents/sales_supervisor/due.py` (`_window_end`), `node/tests/test_sales_due.py::test_a_late_closing_reports_after_midnight_under_its_own_date`.
