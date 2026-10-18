@@ -453,3 +453,39 @@ Format for each entry:
 - Question: a delivery closes the branch's oldest approved order line of the ingredient, whatever the supplier; two open egg orders from two suppliers can be closed out of order.
 - Assumed answer: acceptable for v1 (one supplier per ingredient at Ferino's); match by supplier when the delivery names one, later.
 - Blocking: no.
+
+## Q57: Cash advances are a money tool
+- Where: docs/superpowers/specs/2026-10-19-hr-officer-design.md (section 1); CLAUDE.md "Ask before: adding a risky tool"
+- Question: Staff cash advances (deducted from the next payslip) need a money-risk tool. May the HR officer have one? The inventory manager's `draft_order` is a money tool added without asking (it executes only on the owner's approval tap); should it stay?
+- Assumed answer: cash advances stay out of v1 until the owner answers; `draft_order` stays, behind the owner's approval, unless the owner says otherwise.
+- Blocking: for cash advances, yes.
+
+## Q58: Withholding tax
+- Where: docs/superpowers/specs/2026-10-19-hr-officer-design.md (section 1); mia/agents/hr_officer/ph.py
+- Question: Payslips in v1 deduct SSS, PhilHealth and Pag-IBIG only. Withholding tax needs the BIR table and each person's status; the accountant's call.
+- Assumed answer: out of v1; the payslip says "before tax".
+- Blocking: no.
+
+## Q59: HR tables move to core with the sales and inventory tables
+- Where: docs/superpowers/specs/2026-10-19-hr-officer-design.md (section 2)
+- Question: `hr_officer_contracts`, `hr_officer_payslips`, `hr_officer_leave` are agent-owned; the bookkeeper (payroll cost) and the shift supervisor (leave in rosters) will read them.
+- Assumed answer: promoted with Q39 and Q53 as data standard 1.5.
+- Blocking: no now; yes before the bookkeeper reads payroll or rosters read leave.
+
+## Q60: The cutoff and payday rule
+- Where: node/mia/agents/hr_officer/calendar.py; config/org/ferinos/settings.yaml `payroll`
+- Question: Ferino's pays how and when?
+- Assumed answer: semi-monthly cutoffs (1st to 15th, 16th to month end), paid five days after the cutoff, moved to the previous working day when payday falls on a Sunday or a holiday.
+- Blocking: no.
+
+## Q61: SSS, PhilHealth and Pag-IBIG tables
+- Where: node/mia/agents/hr_officer/ph.py (`TABLES_AS_OF`)
+- Question: The employee contribution tables are dated constants written from memory of the 2026 schedules.
+- Assumed answer: verify every bracket with the accountant before a real payslip is issued; the mechanism is tested, the figures are not authoritative.
+- Blocking: yes before real payslips.
+
+## Q62: The 2026 holiday list
+- Where: config/org/ferinos/holidays.yaml
+- Question: Regular holidays and special non-working days for 2026 as published by proclamation.
+- Assumed answer: the list is a draft to verify; the owner can edit the file.
+- Blocking: no.
