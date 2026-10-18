@@ -36,7 +36,9 @@ method (subagent-driven recommended).
 
 ## 5. Scaffold
 `uv run mia agent scaffold <agent_id> --label-en "..." --label-fi "..." --role <role>
---description "...; not ..."`. It renders the package, wires the registry, the label in ten
+[--role <role> ...] [--description "...; not ..."] [--force]` (`--label-en`, `--label-fi` and at
+least one `--role` are required; `--force` overwrites the rendered files, so omit it).
+It renders the package, wires the registry, the label in ten
 languages, policy, schema and layout, appends the id to `router_cases.PENDING` (step 7 empties
 it) and refuses to overwrite. Gate: the full checks are green (the agent greets) and the
 scaffold is committed.

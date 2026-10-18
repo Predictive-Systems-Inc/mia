@@ -1,65 +1,75 @@
 # Review checklist
 
-What every review asks, from the findings parts 1 and 2 kept producing. Each line ends with the
-file or test that proves the point in the built agents. Pin each line to the plan task that
-owns it.
+What every review asks, from the findings parts 1 and 2 kept producing. Each line has the shape
+"claim: source file (symbol), test file::test name", the proof in the built agents. A line with
+no test says so. Pin each line to the plan task that owns it.
 
 ## Rule 15: names
-- No bare agent id literal; ids from `MANIFEST.id`; label keys built from it: `sales_supervisor/__init__.py`, `tests/test_architecture.py`.
+- No bare agent id literal; ids from `MANIFEST.id`, label keys built from it: `mia/agents/sales_supervisor/actions.py` (`ACTIONS`), `node/tests/test_architecture.py::test_no_module_spells_an_agent_id`.
 
 ## Rules 8 and 6: data, not instructions
-- The message and any list of its parts go to Jev as state, pseudonymised (lists item by item); nothing from the message in instructions: `mia.agents.decider.pseudonymised`, `test_jev_decider.py`.
-- Requests only inside the egress context: `mia.agents.decider`, `tests/test_architecture.py`.
+- The message and any list of its parts go to Jev as state, pseudonymised (lists item by item): `mia/agents/decider.py` (`pseudonymised`), `node/tests/test_jev_decider.py::test_pseudonymised_covers_lists_of_strings_in_the_state`.
+- Nothing from the message in instructions: `mia/agents/sales_supervisor/actions.py`, `node/tests/test_sales_actions.py::test_item_instructions_carry_no_message_text`.
+- Requests only inside the egress context: `mia/agents/decider.py` (`decide`), `node/tests/test_jev_decider.py::test_decide_goes_through_egress`.
+- A message is data, an injected instruction is not followed: `mia/agents/sales_supervisor/turn.py`, `node/tests/test_sales_chat.py::test_injection_is_data`.
 
 ## Rule 7: code calculates
-- Every number computed by code: `sales_supervisor/calc.py`, `test_sales_calc.py`.
-- Money typed in major units is converted once to minor units: `sales_supervisor/actions.py`, `test_sales_calc.py`.
-- Dates from the branch's local clock, never `now.date()` in UTC; business date: `calc.business_date`, `test_sales_calc.py`.
+- Every number computed by code: `mia/agents/sales_supervisor/calc.py`, `node/tests/test_sales_calc.py::test_month_share_rounds_half_up`.
+- Money typed in major units is converted once to minor units: `mia/agents/sales_supervisor/decider.py` (`_minor`), `node/tests/test_sales_actions.py::test_set_target_amount_from_total_and_periods`.
+- Dates from the branch's local clock, never `now.date()` in UTC: `mia/agents/sales_supervisor/calc.py` (`business_date`), `node/tests/test_sales_calc.py::test_business_date_uses_the_branch_time_zone`.
 
 ## Rule 4: permissions
-- Branch scoping through casbin (`read_all`, `write_all`): `sales_supervisor/tools._branch`, `policy.csv`, `test_sales_tools.py`.
-- Every read and write `_check`ed; a denial is visible as an event or a `tool.called` refusal: `sales_supervisor/tools.py`, `test_sales_tools.py`.
-- `read_own` gates by role only; say so where it is used: `policy.csv`, `test_sales_tools.py`.
+- Branch scoping through casbin (`read_all`, `write_all`): `mia/agents/sales_supervisor/tools.py` (`_branch`), `node/config/policies/policy.csv`, `node/tests/test_sales_tools.py::test_a_clerk_reads_only_their_branch`.
+- Every read and write `_check`ed; a denial is visible as an event or a `tool.called` refusal: `mia/agents/sales_supervisor/tools.py` (`_check`), `node/tests/test_sales_tools.py::test_a_supervisor_reading_another_branch_is_an_rbac_deny`.
+- `read_own` gates by role only, so say so where it is used: `node/config/policies/policy.csv`, `node/tests/test_sales_tools.py::test_call_tool_refuses_a_clerk_the_report`.
 
 ## Rules 11 and 12: transactions and threads
-- Commit before the Jev await: `sales_supervisor/turn.py`, `test_sales_chat.py`.
-- Sync DB work in threads, one Session per thread: `sales_supervisor/turn.py`, `test_sales_chat.py`.
-- Per-branch commits in due work: `sales_supervisor/due.py`, `test_sales_due.py`.
+- Commit before the Jev await: `mia/agents/sales_supervisor/turn.py` (`_jev_turn`); no dedicated test, the reviewer reads the order.
+- Sync DB work in threads, one Session per thread: `mia/agents/sales_supervisor/turn.py` (`asyncio.to_thread`), `node/tests/test_egress.py::test_egress_db_work_is_off_the_event_loop`.
+- Per-branch commits in due work: `mia/agents/shift_supervisor/alerts.py` (`_each_branch`); no dedicated test, the reviewer reads it.
 
 ## Taps
-- A button value is a stored decision, validated against the agent's own ACTIONS: `sales_supervisor/actions.py`, `test_sales_chat.py`.
-- Stale after a notification, never replayed across a date: `sales_supervisor/turn.py`, `test_sales_chat.py`.
+- A button value is a stored decision, validated against the agent's own ACTIONS: `mia/agents/sales_supervisor/turn.py` (`_tapped`), `node/tests/test_sales_chat.py::test_a_tapped_decision_of_another_agent_asks_to_rephrase`.
+- Stale after a notification: `mia/chat/service.py` (`_route_tapped`, `_last_mia`), `node/tests/test_agent_router.py::test_a_notification_after_the_route_question_makes_its_buttons_stale`.
+- Never replayed across a date: `mia/agents/sales_supervisor/tools.py` (`_asked_day`), `node/tests/test_sales_chat.py::test_a_why_answer_the_next_morning_is_stored_on_the_good_day`.
 
 ## Due work
-- Windows as datetimes that may cross midnight (midnight windows): `sales_supervisor/due.py`, `test_sales_due.py`.
-- Business date from the closing's day: `sales_supervisor/due.py`, `test_sales_due.py`.
-- Markers per branch and date, written with the send: `sales_supervisor/due.py`, `test_sales_due.py`.
-- End-of-shift messages urgent, reminders and morning messages not: `sales_supervisor/due.py`, `test_sales_due.py`.
-- Nothing sent when there is nothing to say: `sales_supervisor/due.py`, `test_sales_due.py`.
+- Windows as datetimes that may cross midnight: `mia/agents/sales_supervisor/due.py` (`_window_end`), `node/tests/test_sales_due.py::test_a_late_closing_reports_after_midnight_under_its_own_date`.
+- Business date from the closing's day: `mia/agents/sales_supervisor/due.py` (`_after_close`), `node/tests/test_sales_due.py::test_after_close_window_ends_at_the_next_opening`.
+- Markers per branch and date, written with the send: `mia/agents/sales_supervisor/due.py` (`_branch_due`), `node/tests/test_sales_due.py::test_reminder_once_per_branch_and_day`.
+- End-of-shift messages urgent, reminders and morning messages not: `mia/agents/sales_supervisor/due.py` (`_send`), `node/tests/test_sales_due.py::test_end_of_shift_messages_are_not_held_by_quiet_hours`.
+- Reminders wait for quiet hours: `mia/agents/sales_supervisor/due.py`, `node/tests/test_sales_due.py::test_reminder_waits_for_quiet_hours`.
+- Nothing sent when there is nothing to say: `mia/agents/sales_supervisor/due.py` (`_morning_text`), `node/tests/test_sales_due.py::test_morning_with_neither_yesterday_nor_a_target_says_nothing`.
 
 ## Business dates
-- A late count is yesterday's only before opening and within two hours of a late close; never ask: `calc.business_date`, `test_sales_calc.py`.
+- A late count is yesterday's only before opening and within two hours of a late close, never ask: `mia/agents/sales_supervisor/calc.py` (`business_date`), `node/tests/test_sales_calc.py::test_just_after_midnight_after_a_late_closing_is_yesterday`.
 
 ## Parsing
-- Both orientations scored by menu tokens: `sales_supervisor/actions.py`, `test_sales_actions.py`.
-- Negation is a correction: the negation drops the next number and the message is a correction by rule: `actions.was_corrected`, `sales_supervisor/decider._parse`.
-- Leading stray words dropped, currency symbols stripped: `sales_supervisor/actions.py`, `test_sales_actions.py`.
+- Both orientations scored by menu tokens: `mia/agents/sales_supervisor/actions.py` (`pre_parse`), `node/tests/test_sales_actions.py::test_number_then_words_and_words_then_number`.
+- Negation is a correction: the negation drops the next number and makes the message a correction by rule: `mia/agents/sales_supervisor/actions.py` (`was_corrected`), `node/tests/test_sales_actions.py::test_a_negation_drops_the_old_number`, `node/tests/test_sales_chat.py::test_a_negation_correction_is_a_correction_even_when_jev_says_report`.
+- Leading stray words dropped: `mia/agents/sales_supervisor/actions.py`, `node/tests/test_sales_actions.py::test_a_leading_verb_is_not_an_item`.
+- Currency symbols stripped: `mia/agents/sales_supervisor/actions.py`, `node/tests/test_sales_actions.py::test_currency_symbols_are_stripped_and_query_is_frozen`.
 
 ## Harvest and learning
-- Sensitive skip depends on an active role model; records pending review (D27): `mia/learning`, `test_learning_harvest.py`.
+- Sensitive skip depends on an active role model: `mia/learning/harvest.py` (`_sensitive`), `node/tests/learning/test_harvest.py::test_route_taps_on_sensitive_or_injected_messages_are_not_harvested`.
+- Records are pending review (D27): `mia/learning/harvest.py`, `node/tests/learning/test_harvest.py::test_clarified_choice_becomes_a_pending_pseudonymised_candidate`.
 
 ## i18n
-- Every key in ten languages through the coverage test, placeholders identical, no digits: `mia/i18n`, `test_i18n.py`.
-- Filipino (fil), never Tagalog, in labels, comments and docs: `mia/i18n/fil.py`.
-- Tests assert through `t(...)`: `test_sales_chat.py`.
+- Every key in ten languages through the coverage test: `node/mia/i18n/strings.py`, `node/tests/test_i18n_languages.py::test_every_new_key_exists_in_every_language`.
+- Placeholders identical across languages: `node/mia/i18n/strings.py`, `node/tests/test_i18n_variants.py::test_variants_share_their_placeholders_across_languages`.
+- Filipino (fil), never Tagalog, in labels, comments, docs and cases: `node/mia/i18n/fil.py`, `node/tests/evals/test_router_cases.py::test_no_case_names_tagalog`.
+- Tests assert through `t(...)`: `mia/agents/sales_supervisor/replies.py`, `node/tests/test_sales_chat.py::test_greeting_is_answered_in_filipino`.
 
 ## Evals
-- A fresh gate half per run, split by seed, no text in both halves: `tests/evals/gate.py`, `router_cases.PENDING`.
-- The raw file named by local time, never overwritten: `tests/evals/gate.py`, `test_sales_supervisor_evals.py`.
-- The report in the research shape with the gate stated as it is: `docs/research/*.md`.
-- The gate bar is Q40: `tests/evals/gate.py`, `docs/questions.md` Q40.
+- A fresh gate half per run, split by seed, ten cases per language, scenario and half: `node/tests/evals/sales_cases.py`, `node/tests/evals/test_sales_cases.py::test_ten_cases_per_language_scenario_and_half`.
+- No text in both halves: `node/tests/evals/router_cases.py`, `node/tests/evals/test_router_cases.py::test_no_text_appears_in_both_halves`.
+- The router shape test skips an id in `PENDING`, so the gates step empties it: `node/tests/evals/router_cases.py` (`PENDING`), `node/tests/evals/test_router_cases.py::test_every_gated_language_covers_every_agent_and_group`.
+- The raw file named by local time, never overwritten: `node/tests/evals/test_sales_supervisor_evals.py` (`_report_path`), `node/tests/evals/test_router_cases.py::test_the_raw_report_is_named_by_local_minute_and_never_overwritten`.
+- The gate bar is Q40: `node/tests/evals/gate.py` (`gate_failures`), `node/tests/evals/test_router_cases.py::test_the_gate_is_the_q40_bar`.
+- The report in the research shape with the gate stated as it is, numbers recomputed from the raw file: `docs/research/*.md`; no test, the reviewer recomputes.
 
 ## Tests
-- Through `run_turn` with the fake Jev: `test_sales_chat.py`.
-- Negative tests for permissions, approvals and egress: `test_sales_tools.py`, `test_architecture.py`.
+- Through `run_turn` with the fake Jev: `node/tests/jev_fake.py`, `node/tests/test_sales_chat.py::test_a_count_is_recorded_and_echoed`.
+- Negative tests for permissions: `node/tests/test_sales_tools.py::test_a_clerk_cannot_set_a_target`.
+- Negative tests for egress: `node/tests/test_architecture.py::test_no_provider_sdk_outside_egress_and_model_factory`.
 - The plan's Review Focus list pinned to tasks, each with a named test: `docs/superpowers/plans/2026-10-19-sales-supervisor.md`.
