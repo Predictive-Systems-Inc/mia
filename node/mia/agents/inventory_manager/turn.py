@@ -12,7 +12,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
 from mia.agents.decider import THRESHOLD, Decision
-from mia.agents.inventory_manager import MANIFEST, actions, decider, replies, tools
+from mia.agents.inventory_manager import MANIFEST, actions, decider, due, replies, tools
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import reply_text, store_reply
@@ -273,6 +273,6 @@ SPEC = AgentSpec(
         " many were sold. A sell-out message is stock."
     ),
     handle_turn=handle_turn,
-    run_due=None,
+    run_due=due.run_due,
     stream_agent=None,
 )
