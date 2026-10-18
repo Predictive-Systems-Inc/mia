@@ -447,3 +447,9 @@ Format for each entry:
 - Question: pack prices are optional seed data; without one the approval card shows the lines and no total.
 - Assumed answer: acceptable; the owner approves the lines.
 - Blocking: no.
+
+## Q56: A delivery is matched to an order by ingredient only
+- Where: mia/agents/inventory_manager/tools.py (receive_delivery)
+- Question: a delivery closes the branch's oldest approved order line of the ingredient, whatever the supplier; two open egg orders from two suppliers can be closed out of order.
+- Assumed answer: acceptable for v1 (one supplier per ingredient at Ferino's); match by supplier when the delivery names one, later.
+- Blocking: no.

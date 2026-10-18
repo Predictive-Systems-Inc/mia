@@ -51,7 +51,7 @@ sales supervisor. Policy lines: `agent:inventory_manager, use` exists for clerk 
    `test_a_clerk_counts_what_is_left`.
 3. **Closing leftovers and waste.** "3 trays leftover", "threw away 8 classic, too dry" (reason
    from a fixed list: too_dry, burnt, expired, dropped, other). Reply echoes; a waste without a
-   reason asks one with buttons. Tests `test_waste_with_a_reason_is_recorded`,
+   reason, or with an unsure one, asks one with buttons ("8 Classic thrown away. Why?"). Tests `test_waste_with_a_reason_is_recorded`,
    `test_waste_without_a_reason_asks_one`.
 4. **Low ingredient.** "running low on rice flour", "LPG is almost empty", "need more banana
    leaves by Friday". Reply: noted, and when the ingredient has a supplier, "Shall I draft an
@@ -62,14 +62,17 @@ sales supervisor. Policy lines: `agent:inventory_manager, use` exists for clerk 
 6. **Supplier order draft with approval.** "order 10 trays of eggs from Aling Nena": the tool
    has `risk: money`, so it calls `approvals.request()` and stops; the owner gets an approval
    card with the lines and the total when prices are known; a tap approves or rejects; the
-   requester is told. Tests `test_an_order_waits_for_the_owners_approval`,
+   requester is told. An order decision on a message with no buy word (parsing.BUY_WORDS)
+   asks "Did you mean" first, place an order the first button. Tests `test_an_order_waits_for_the_owners_approval`,
    `test_a_clerk_cannot_place_an_order`, `test_an_approved_order_tells_the_requester`.
 7. **Delivery received.** "eggs delivered, 10 trays" closes the order's line (or records a
-   receipt without an order). Test `test_a_delivery_closes_the_order_line`.
+   receipt without an order); only a supervisor or owner receives (receive_delivery), and a
+   receipt is no report kind. Test `test_a_delivery_closes_the_order_line`.
 8. **What is low.** "what are we low on" lists ingredients at or under their reorder point
    from the latest counts. Test `test_what_is_low_lists_items_under_the_reorder_point`.
 9. **Closing stock summary.** At closes plus 45 minutes head staff get: sell-outs with times,
-   leftovers, waste with reasons, low ingredients; owners get it per branch. Test
+   leftovers, waste with reasons, low ingredients; owners get it per branch. A quiet night
+   (nothing of these) sends nothing. Test
    `test_closing_summary_goes_to_head_staff_once`.
 10. **Bake plan message.** At opens minus 60 minutes the clerks and supervisors of the branch
     get tomorrow's plan (scenario 5) as a notification. Test `test_bake_plan_message_before_opening`.
@@ -95,7 +98,7 @@ Rule 14: edit `0000_initial` in place; rebuild dev databases.
 
 **Actions** (threshold 0.6): `report_stock` (tool `record_events`; slots per group: `item_<i>`
 over items and ingredients plus none, `kind` over sold_out, count, leftover, waste, low,
-received, `reason` over the waste reasons plus not_stated, `time` over the pre-parsed time
+`reason` over the waste reasons plus not_stated (an unsure reason is not stated), `time` over the pre-parsed time
 candidates plus now), `bake_plan` (`plan_tomorrow`), `whats_low` (`low_stock`), `place_order`
 (`draft_order`; slots `supplier` over the branch's known suppliers plus not_stated), `receive`
 (`receive_delivery`), `answer_offer` (yes or no to "Shall I draft an order?", valid only when
@@ -131,8 +134,9 @@ clerks and supervisors. Markers `inventory.summary_sent`, `inventory.plan_sent`.
   imports from there; its tests stay green). Menu tokens here are item and ingredient names
   and codes.
 - Times: code finds `(\d{1,2})(:\d{2})?\s*(am|pm)` and 24-hour `HH:MM`, and the Filipino
-  "alas <n>" with a small number-word list (una to dose); candidates go to Jev's `time` slot
-  as ids; `now` is the default.
+  "alas <n>" with a small number-word list (una to dose; 1 to 6 and 12 are pm); candidates go
+  to Jev's `time` slot as ids; `now` is the default. The times are stripped before
+  `pre_parse`, so "3 pm" is never a count group.
 - Kind without a word: a bare count ("5 ube") is `count`; "ubos", "sold out", "wala na" are
   sell-out words in a per-language list used only as criteria text, never matched in code.
 - The bake plan (pure, `calc.plan`): for each active item over the last four same weekdays
@@ -154,9 +158,11 @@ ten languages (eight as machine drafts, Q28 to Q35). The label exists.
 ## 9. Seed and configuration
 
 The Ferino's seed adds the eight ingredients, two suppliers (Aling Nena for eggs and coconut,
-Metro Supply for the rest), four days of stock events per branch (a sell-out at 14:00 on two
+Metro Supply for the rest), a fortnight of stock events per branch (a sell-out at 14:00 on two
 Saturdays for Special, leftovers for Classic on two weekdays, a waste row, a count under the
-reorder point for LPG) and one approved order. `config/org/ferinos/settings.yaml` lists
+reorder point for LPG) and one received egg order (its delivery seeded, so no seeded order is
+open). No item and ingredient share a name or a short code, and a code is one word (eggs carry
+`itlog`; the ingredient is "Salted duck eggs" with `maalat` and `pula`). `config/org/ferinos/settings.yaml` lists
 `inventory_manager` after `sales_supervisor` in `agents`.
 
 ## 10. Testing and gates
@@ -189,3 +195,24 @@ and replies for scenarios 1 to 4. 5. Scenarios 5 to 8. 6. Due work (9, 10). 7. T
   after one tuning edit. Wrong 3.3% (bar 2%; nine of ten are an ingredient count read as an
   order); right en 90%, fil 56%, ceb 56%, hil 66%, war 64%, bcl 64% (bar 80%); ask 8% to 36%.
   Router gate not rerun (PENDING already empty, router description unchanged).
+- Follow-ups from the final review (19 Oct), not fixed in v1:
+  - M1: a count is stored in the ingredient's unit ("12 eggs" is 12 trays) and the reply does
+    not say the unit; a unit question later.
+  - M3: an order's business_date is the approve-time date, not the request date.
+  - M4: a handler failure on approve (an ingredient deactivated, the requester's role changed)
+    leaves the approval pending with no notice; catch it, reject with a reason and notify.
+  - M5: `SupplierOrder.requested_by`, `SupplierOrder.approval_id` and `StockEvent.order_id`
+    have no foreign keys.
+  - M6: `_stock_rows` loads the branch's whole stock history for each low list and summary;
+    bound it by the latest count per ingredient.
+  - M8: the street stall opens at 06:00 as Ferino's quiet hours end, so its bake plan arrives
+    at opening; decide whether the plan is exempt from quiet hours.
+  - M9: a waste whose reason is never tapped is not recorded (Q50 holds); record it as other
+    after the day closes, or accept it.
+  - M10: events reported after the summary went out, still on its business date, reach no
+    summary.
+  - M11: fixed by the seed codes (no shared item and ingredient name or code).
+  - Q56: a delivery closes the oldest open order line of the ingredient whatever the supplier;
+    match by supplier later.
+  - The fix wave's local reason words and spaced times were read off the spent gate half: the
+    rerun needs a fresh gate half (new seeds), with spaced times in it.

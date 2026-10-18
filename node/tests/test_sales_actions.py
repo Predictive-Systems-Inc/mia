@@ -132,7 +132,7 @@ def test_item_instructions_carry_no_message_text() -> None:
     assert request["questions"]["item_1"]["instructions"].count("index 1") == 1
 
 
-def test_currency_symbols_are_stripped_and_query_is_frozen() -> None:
+def test_query_is_frozen() -> None:
     with pytest.raises(dataclasses.FrozenInstanceError):
         query("x").message = "y"  # type: ignore[misc]
 

@@ -16,7 +16,7 @@ no test says so. Pin each line to the plan task that owns it.
 ## Rule 7: code calculates
 - Every number computed by code: `mia/agents/sales_supervisor/calc.py`, `node/tests/test_sales_calc.py::test_month_share_rounds_half_up`.
 - Money typed in major units is converted once to minor units: `mia/agents/sales_supervisor/decider.py` (`_minor`), `node/tests/test_sales_actions.py::test_set_target_amount_from_total_and_periods`.
-- Dates from the branch's local clock, never `now.date()` in UTC: `mia/agents/sales_supervisor/calc.py` (`business_date`), `node/tests/test_sales_calc.py::test_business_date_uses_the_branch_time_zone`.
+- Dates from the branch's local clock, never `now.date()` in UTC: `mia/templates/retail/hours.py` (`business_date`), `node/tests/test_sales_calc.py::test_business_date_uses_the_branch_time_zone`.
 
 ## Rule 4: permissions
 - Branch scoping through casbin (`read_all`, `write_all`): `mia/agents/sales_supervisor/tools.py` (`_branch`), `node/config/policies/policy.csv`, `node/tests/test_sales_tools.py::test_a_clerk_reads_only_their_branch`.
@@ -34,21 +34,22 @@ no test says so. Pin each line to the plan task that owns it.
 - Never replayed across a date: `mia/agents/sales_supervisor/turn.py` (`_tapped`, the asked-today check), `node/tests/test_jev_chat.py::test_a_clarify_button_from_another_day_goes_to_jev`.
 
 ## Due work
-- Windows as datetimes that may cross midnight: `mia/agents/sales_supervisor/due.py` (`_window_end`), `node/tests/test_sales_due.py::test_a_late_closing_reports_after_midnight_under_its_own_date`.
-- Business date from the closing's day: `mia/agents/sales_supervisor/due.py` (`_after_close`), `node/tests/test_sales_due.py::test_after_close_window_ends_at_the_next_opening`.
+- Windows as datetimes that may cross midnight: `mia/templates/retail/hours.py` (`window_end`), `node/tests/test_sales_due.py::test_a_late_closing_reports_after_midnight_under_its_own_date`.
+- Business date from the closing's day: `mia/templates/retail/hours.py` (`after_close`), `node/tests/test_sales_due.py::test_after_close_window_ends_at_the_next_opening`.
 - Markers per branch and date, written with the send: `mia/agents/sales_supervisor/due.py` (`_branch_due`), `node/tests/test_sales_due.py::test_reminder_once_per_branch_and_day`.
 - End-of-shift messages urgent, reminders and morning messages not: `mia/agents/sales_supervisor/due.py` (`_send`), `node/tests/test_sales_due.py::test_end_of_shift_messages_are_not_held_by_quiet_hours`.
 - Reminders wait for quiet hours: `mia/agents/sales_supervisor/due.py`, `node/tests/test_sales_due.py::test_reminder_waits_for_quiet_hours`.
 - Nothing sent when there is nothing to say: `mia/agents/sales_supervisor/due.py` (`_morning_text`), `node/tests/test_sales_due.py::test_morning_with_neither_yesterday_nor_a_target_says_nothing`.
 
 ## Business dates
-- A late count is yesterday's only before opening and within two hours of a late close, never ask: `mia/agents/sales_supervisor/calc.py` (`business_date`), `node/tests/test_sales_calc.py::test_just_after_midnight_after_a_late_closing_is_yesterday`.
+- A late count is yesterday's only before opening and within two hours of a late close, never ask: `mia/templates/retail/hours.py` (`business_date`), `node/tests/test_sales_calc.py::test_just_after_midnight_after_a_late_closing_is_yesterday`.
 
 ## Parsing
-- Both orientations scored by menu tokens: `mia/agents/sales_supervisor/actions.py` (`pre_parse`), `node/tests/test_parsing.py::test_number_then_words_and_words_then_number`.
-- Negation is a correction: the negation drops the next number and makes the message a correction by rule: `mia/agents/sales_supervisor/actions.py` (`was_corrected`), `node/tests/test_parsing.py::test_a_negation_drops_the_old_number`, `node/tests/test_sales_chat.py::test_a_negation_correction_is_a_correction_even_when_jev_says_report`.
-- Leading stray words dropped: `mia/agents/sales_supervisor/actions.py`, `node/tests/test_parsing.py::test_a_leading_verb_is_not_an_item`.
-- Currency symbols stripped: `mia/agents/sales_supervisor/actions.py`, `node/tests/test_sales_actions.py::test_currency_symbols_are_stripped_and_query_is_frozen`.
+- Both orientations scored by menu tokens: `mia/agents/parsing.py` (`pre_parse`), `node/tests/test_parsing.py::test_number_then_words_and_words_then_number`.
+- Negation is a correction: the negation drops the next number and makes the message a correction by rule: `mia/agents/parsing.py` (`was_corrected`), `node/tests/test_parsing.py::test_a_negation_drops_the_old_number`, `node/tests/test_sales_chat.py::test_a_negation_correction_is_a_correction_even_when_jev_says_report`.
+- Leading stray words dropped: `mia/agents/parsing.py`, `node/tests/test_parsing.py::test_a_leading_verb_is_not_an_item`.
+- Currency symbols stripped: `mia/agents/parsing.py`, `node/tests/test_parsing.py::test_currency_symbols_are_stripped`.
+- A clock time with a space ("3 pm", "alas 2") is no count group: `mia/agents/parsing.py` (`strip_times`), `node/tests/test_parsing.py::test_times_with_a_space_are_not_count_groups`.
 
 ## Harvest and learning
 - Sensitive skip depends on an active role model: `mia/learning/harvest.py` (`_sensitive`), `node/tests/learning/test_harvest.py::test_route_taps_on_sensitive_or_injected_messages_are_not_harvested`.
