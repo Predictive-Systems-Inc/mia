@@ -389,7 +389,8 @@ SPEC = AgentSpec(
     router_description=(
         "Shifts and attendance: rosters and who works when, being sick, late or absent,"
         " finding and answering cover, checking in and out, the day's plan, problems at a"
-        " site or the shop, cleaning checklists; not what was sold and not pay."
+        " site or the shop (a broken oven, a power cut), cleaning checklists; not what was"
+        " sold, not a correction of a sales count, not the best sales day and not pay."
     ),
     handle_turn=handle_turn,
     run_due=_run_due,

@@ -12,15 +12,15 @@ from mia.i18n import t
 
 DESCRIPTIONS = {
     "inventory_manager": (
-        "Stock: items sold out or running low, how many are left, leftovers and waste at"
-        " closing, what to prepare or bake tomorrow, ingredients and packaging to buy before a"
+        "Stock: items sold out or running low, how many are left, leftovers (trays left over)"
+        " and waste (items thrown away) at closing, what to prepare or bake tomorrow, ingredients and packaging to buy before a"
         " day, placing supplier orders (not who approves them); not how many were sold. A"
         " sell-out message is stock."
     ),
     "bookkeeper": (
         "Money: the cash count against sales, a cash drawer short or over, expenses and"
-        " receipts, bank deposits, GCash and Maya sales and settlements, VAT and BIR records;"
-        " not sales counts and not pay."
+        " receipts, bank deposits, GCash and Maya sales and settlements, Grab payouts, VAT and"
+        " BIR records; not sales counts, not a morning's or day's sales total and not pay."
     ),
     "hr_officer": (
         "Employment: my hours worked this cutoff, cash advances, holiday pay, payroll and"
@@ -28,7 +28,7 @@ DESCRIPTIONS = {
         " hiring; not who works which shift and not adding people to a branch."
     ),
     "branch_manager": (
-        "Running the shop: branches, the menu, prices and item short codes, who approves what,"
+        "Running the shop: branches, the menu and new menu items, prices and item short codes, who approves what,"
         " shop opening hours, people and their roles, permits, the weekly summary, coaching and"
         " tips for staff; not a day's counts and not a shift change."
     ),

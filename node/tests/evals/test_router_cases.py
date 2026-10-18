@@ -43,6 +43,22 @@ def test_halves_are_balanced_per_language_and_group() -> None:
         assert abs(halves["tune"] - halves["gate"]) <= 1, (lang, group, halves)
 
 
+def test_no_text_appears_in_both_halves() -> None:
+    """The gate half is fresh: no text (casefolded) of it is in the tune half, and every
+    language of one seed falls in one half."""
+    halves: dict[str, set[str]] = defaultdict(set)
+    for c in CASES:
+        halves[c.half].add(c.text.casefold().strip())
+    assert not halves["tune"] & halves["gate"], halves["tune"] & halves["gate"]
+
+
+def test_gate_context_texts_are_not_singles() -> None:
+    """In the gate half a text belongs to one group only."""
+    gate = [c for c in CASES if c.half == "gate"]
+    singles = {c.text for c in gate if c.group == "single"}
+    assert not singles & {c.text for c in gate if c.group != "single"}
+
+
 def test_no_case_names_tagalog() -> None:
     assert not any("tagalog" in c.text.casefold() for c in CASES)
 

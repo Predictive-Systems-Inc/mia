@@ -16,6 +16,10 @@ on repeated messages going to zero after two confirmations.
 
 Result (19 Oct 2026, docs/research/router-2026-10-19.md): gate FAILED. Gate half, six gated languages: right 64.3% to 78.6% per language, wrong 6.7% (all gated).
 
+Rerun (19 Oct 2026, docs/research/router-2026-10-19-rerun.md, Q40 rules and bar, fresh gate
+half): gate FAILED. Wrong 2.2% (bar 2%), right 73.8% to 90.0% per language without greetings
+(bar 80%, English only passes), ask 7.5% to 18.8% (bar 15%).
+
 ## What the evaluation showed
 
 - 74.5% of greetings, thanks and conversation intents ask. Jev says `unclear` at 0.8 to 0.95:
