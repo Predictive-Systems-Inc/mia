@@ -346,3 +346,9 @@ def test_error_status_is_a_jev_error(
     with egress_context(_ctx(session, people, branch)), pytest.raises(JevError):
         _run(_query())
     assert len(seen) == (3 if status == 529 else 1)  # 429 and 529 retry twice
+
+
+def test_shared_threshold_is_the_shift_supervisors() -> None:
+    from mia.agents import decider as shared
+
+    assert shared.THRESHOLD is actions.THRESHOLD

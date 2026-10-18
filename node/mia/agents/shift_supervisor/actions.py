@@ -14,25 +14,14 @@ from typing import Any
 from sqlmodel import col, select
 
 from mia.agents.base import AgentDeps
+from mia.agents.decider import NOT_STATED, THRESHOLD, Action  # noqa: F401 (THRESHOLD re-exported)
 from mia.agents.shift_supervisor import MANIFEST, cover, tools
 from mia.agents.shift_supervisor.classifier import EN_WEEKDAYS, FI_WEEKDAYS
 from mia.core.models import Event, Location, Person, Visit
 
-NOT_STATED = "not_stated"
 ANOTHER_DAY = "another_day"  # a day outside the listed dates: asked, never assumed
-# ponytail: one threshold for every action, set from the dev split (Task 7); per action if the
-# measurement shows writes need a higher bar than reads.
-THRESHOLD = 0.6
 MAX_OPTIONS = 250  # Jev takes up to 255 options per choice; the nearest or first ones are kept
 SUPERVISING = {"supervisor", "admin", "owner"}
-
-
-@dataclass(frozen=True)
-class Action:
-    description: str
-    tool: str | None  # the tool name without the agent prefix; None for clarify and reply_only
-    slots: tuple[str, ...] = ()
-    label_key: str | None = None  # the "Did you mean" button label; None is never offered
 
 
 ACTIONS: dict[str, Action] = {

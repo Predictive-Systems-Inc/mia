@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from mia.agents.base import AgentSpec
-from mia.agents.shift_supervisor.actions import THRESHOLD
+from mia.agents.decider import THRESHOLD
 from mia.core import jev
 from mia.core.egress import Pseudonymiser
 from mia.core.jev import JevError

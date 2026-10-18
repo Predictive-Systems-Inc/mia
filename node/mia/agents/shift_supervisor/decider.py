@@ -2,47 +2,19 @@
 
 decide() runs no tool. The request leaves only through the egress transport (rule 6), which
 pseudonymises it and writes egress_log and usage; the caller sets the egress context and holds
-no write lock (rule 11). parse() is pure: answers in, a Decision out.
+no write lock (rule 11). The generic half lives in mia.agents.decider; this module keeps the
+shift supervisor's argument mapping.
 """
 
-import asyncio
 import datetime as dt
+from functools import partial
 from typing import Any
 
-from pydantic import BaseModel, Field
+from mia.agents import decider as shared
+from mia.agents.decider import Alternative, DecideError, Decision, Reader
+from mia.agents.shift_supervisor.actions import ACTIONS, ANOTHER_DAY, Query, build_request
 
-from mia.agents.shift_supervisor.actions import (
-    ACTIONS,
-    ANOTHER_DAY,
-    NOT_STATED,
-    THRESHOLD,
-    Query,
-    build_request,
-)
-from mia.core import jev
-from mia.core.egress import EgressBlocked, Pseudonymiser, current_context
-from mia.core.jev import JevError
-from mia.settings import get_settings
-
-
-class DecideError(JevError):
-    """Jev answered outside the request's options."""
-
-
-class Alternative(BaseModel):
-    action: str
-    args: dict[str, Any] = Field(default_factory=dict)
-    probability: float
-    missing: str | None = None
-
-
-class Decision(BaseModel):
-    action: str  # what code does: an action id, clarify after a low confidence
-    args: dict[str, Any] = Field(default_factory=dict)  # the tool input; reply_only: {"kind"}
-    confidence: float
-    raw_action: str = ""  # Jev's own pick, before the threshold
-    alternatives: list[Alternative] = Field(default_factory=list)
-    missing: str | None = None  # a required input that was not found
+__all__ = ["Alternative", "DecideError", "Decision", "decide", "parse"]
 
 
 def _period(value: str | None, today: dt.date) -> tuple[str | None, str | None]:
@@ -59,44 +31,6 @@ def _period(value: str | None, today: dt.date) -> tuple[str | None, str | None]:
     return None, None  # the tool's default
 
 
-class _Reader:
-    """Reads the slot answers one action uses, checking each against the request's options."""
-
-    def __init__(self, answers: dict[str, Any], q: Query) -> None:
-        self.answers, self.q = answers, q
-        self.confidences: list[float] = []
-
-    def pick(
-        self,
-        slot: str,
-        options: dict[str, str] | set[str],
-        fallback: bool = False,
-        count_unstated: bool = False,
-    ) -> str | None:
-        """The chosen option, or None when not stated. Only a stated value counts toward the
-        confidence (not stated means the tool's default applies), unless count_unstated: for
-        slots whose default is consequential (an absence's day and person). With fallback=True
-        an uncertain value is dropped instead, for slots that code can resolve another way."""
-        answer = self.answers[slot]
-        value = str(answer["choice"])
-        if value != NOT_STATED and value not in options:
-            raise DecideError(f"{slot}: {value!r} is not an option")
-        confidence = float(answer["confidence"])
-        if value == NOT_STATED:
-            if count_unstated:
-                self.confidences.append(confidence)
-            return None
-        if fallback and confidence < THRESHOLD:
-            return None
-        self.confidences.append(confidence)
-        return value
-
-    def yes(self, slot: str) -> bool:
-        p = float(self.answers[slot]["noul"])
-        self.confidences.append(max(p, 1 - p))
-        return p >= 0.5
-
-
 def _ambiguous(person: str | None, q: Query) -> bool:
     """True when the picked person shares a first name with someone else in the branch and the
     message names neither their surname nor their full name: the pseudonymiser gives a shared
@@ -110,9 +44,9 @@ def _ambiguous(person: str | None, q: Query) -> bool:
     return len(namesakes) > 1 and not any(part.lower() in message for part in rest)
 
 
-def _args(action: str, r: _Reader) -> tuple[dict[str, Any], str | None]:
+def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     """The tool input for one action and the required slot that is missing, if any."""
-    q = r.q
+    q: Query = r.q
     if action == "get_my_visits":
         period = r.pick("period", {"today", "tomorrow", "this_week", "next_week"})
         start, end = _period(period, q.today)
@@ -177,67 +111,15 @@ def _args(action: str, r: _Reader) -> tuple[dict[str, Any], str | None]:
 
 
 def parse(answers: dict[str, Any], q: Query) -> Decision:
-    """Turn Jev's answers into a Decision. The confidence is the least certain judgment the
-    chosen action used; below THRESHOLD, or with a required input missing, the decision is
-    clarify with up to three alternatives (the top pick first). Raises DecideError for an
-    answer outside the options."""
-    try:
-        top = answers["action"]
-        raw = str(top["choice"])
-        if raw not in ACTIONS:
-            raise DecideError(f"action: {raw!r} is not an option")
-        probabilities = {str(k): float(v) for k, v in top["probabilities"].items()}
-        reader = _Reader(answers, q)
-        args, missing = _args(raw, reader)
-        confidence = min([float(top["confidence"]), *reader.confidences])
-        ranked = sorted(probabilities.items(), key=lambda kv: -kv[1])
-        alternatives: list[Alternative] = []
-        for action, p in ranked:
-            if action == "clarify" or action not in ACTIONS or p < 0.05:
-                continue
-            alt_reader = _Reader(answers, q)
-            alt_args, alt_missing = _args(action, alt_reader)
-            if alt_missing is None and min(alt_reader.confidences, default=1.0) < THRESHOLD:
-                alt_missing = "uncertain"  # a button must not carry the input that was in doubt
-            alternatives.append(
-                Alternative(action=action, args=alt_args, probability=p, missing=alt_missing)
-            )
-    except (KeyError, TypeError, ValueError, AttributeError) as exc:
-        raise DecideError(f"unexpected answer: {exc!r}") from exc
-    if raw == "clarify" or missing is not None or confidence < THRESHOLD:
-        return Decision(
-            action="clarify",
-            confidence=confidence,
-            raw_action=raw,
-            alternatives=alternatives[:3],
-            missing=missing,
-        )
-    others = [a for a in alternatives if a.action != raw][:3]
-    return Decision(
-        action=raw, args=args, confidence=confidence, raw_action=raw, alternatives=others
-    )
-
-
-def _pseudonymised(body: dict[str, Any], pseudo: Pseudonymiser) -> dict[str, Any]:
-    """The request with names replaced in the values that can carry them (the state and the
-    option descriptions) and nowhere else: question keys, option ids and instructions leave as
-    they are. The shared pseudonymiser also takes words that start with a name (a "Per" takes
-    "person"), so it never sees the whole body."""
-    state = {k: pseudo.apply(v) if isinstance(v, str) else v for k, v in body["state"].items()}
-    questions = {
-        qid: {**q, "criteria": {key: pseudo.apply(text) for key, text in q["criteria"].items()}}
-        for qid, q in body["questions"].items()
-    }
-    return {**body, "state": state, "questions": questions}
+    """The shared parse over the shift supervisor's ACTIONS and argument mapping."""
+    return shared.parse(answers, q, actions=ACTIONS, args=_args)
 
 
 async def decide(q: Query) -> Decision:
     """One Jev request for the query. Raises JevUnreachable when Jev cannot be reached, and
     JevError (DecideError for an answer outside the options) when no usable answer came."""
-    try:
-        ctx = current_context()
-    except EgressBlocked as exc:
-        raise JevError(str(exc)) from exc
-    pseudo = await asyncio.to_thread(Pseudonymiser.for_branch, ctx.session, ctx.actor.branch_id)
-    body = _pseudonymised(build_request(q, get_settings().MIA_JEV_MODEL), pseudo)
-    return parse(await jev.ask(body), q)
+    return await shared.decide(
+        q,
+        build_request=build_request,
+        parse=partial(shared.parse, q=q, actions=ACTIONS, args=_args),
+    )
