@@ -46,16 +46,11 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from sqlmodel import Session, col, select
 
-from mia.agents.shift_supervisor.agent import get_agent
+from mia.agents.registry import AGENTS
+from mia.agents.shift_supervisor.turn import resolve_turn
 from mia.chat.blocks import AgentReply, ApprovalCardBlock, ChatReply
-from mia.chat.service import (
-    USAGE_LIMITS,
-    _finish,
-    _prepare,
-    reply_capped,
-    resolve_turn,
-    wrap_user_text,
-)
+from mia.chat.replies import USAGE_LIMITS, finish, reply_capped, wrap_user_text
+from mia.chat.service import _prepare
 from mia.core.db import get_engine
 from mia.core.egress import egress_context
 from mia.core.ids import new_id
@@ -245,12 +240,14 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
         clean = run_input.model_copy(
             update={"messages": [], "tools": [], "state": None, "context": [], "resume": None}
         )
-        agent = get_agent()
+        stream_agent = AGENTS[deps.manifest.id].stream_agent
+        assert stream_agent is not None  # only agents with a stream_agent are streamed
+        agent = stream_agent()
         adapter = AGUIAdapter(agent=agent, run_input=clean)
 
         async def on_complete(result: AgentRunResult[AgentReply]) -> AsyncIterator[BaseEvent]:
             nonlocal replying
-            reply = await asyncio.to_thread(_finish, session, deps, thread, result)
+            reply = await asyncio.to_thread(finish, session, deps, thread, result)
             await asyncio.to_thread(session.commit)
             replying = True
             for event in _reply_events(reply):

@@ -14,16 +14,17 @@ Guarantees for every agent built here:
 import asyncio
 import datetime as dt
 import ipaddress
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit
 
 import httpx
 import yaml
 from pydantic import BaseModel, Field, model_validator
 from pydantic_ai import Agent, RunContext, Tool
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.output import OutputSpec
@@ -33,11 +34,14 @@ from sqlmodel import Session
 
 from mia.core import approvals, events
 from mia.core.approvals import RISKY, ApprovalRequired
-from mia.core.egress import EgressTransport
+from mia.core.egress import EgressContext, EgressTransport
 from mia.core.ids import new_id
-from mia.core.models import Actor, Approval, Branch, Person
+from mia.core.models import Actor, Approval, Branch, Person, Thread
 from mia.core.rbac import PermissionDenied, Resource, get_rbac
 from mia.settings import get_settings
+
+if TYPE_CHECKING:
+    from mia.chat.blocks import ChatReply
 
 Risk = Literal["read", "write_internal", "external", "money", "delete"]
 
@@ -149,6 +153,35 @@ class AgentDeps:
     intent: str | None = None  # set when the role's classifier is confident (skills.routing)
     tool_log: list[ToolLogEntry] = field(default_factory=list)
     approved: set[str] = field(default_factory=set)  # approval ids approved for this run
+
+
+@dataclass
+class Turn:
+    """One turn handed to an agent: the user message is stored and committed."""
+
+    session: Session
+    deps: AgentDeps
+    thread: Thread
+    text: str
+    past: list[ModelMessage]
+    ctx: EgressContext
+    agent: "Agent[AgentDeps, Any] | None" = None  # a Pydantic AI agent a caller passes in (tests)
+
+
+@dataclass(frozen=True)
+class AgentSpec:
+    """What the chat needs from one agent. The id is the manifest's (rule 15)."""
+
+    manifest: Manifest
+    label_key: str  # agent.<id>.label, the shown name
+    router_description: str  # English, for the Jev router's option text
+    handle_turn: "Callable[[Turn], Awaitable[ChatReply]]"
+    run_due: Callable[[Session, dt.datetime], int] | None = None
+    stream_agent: "Callable[[], Agent[AgentDeps, Any]] | None" = None  # AG-UI streaming
+
+    @property
+    def id(self) -> str:
+        return self.manifest.id
 
 
 class ToolRefusal(BaseModel):

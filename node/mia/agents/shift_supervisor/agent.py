@@ -2,22 +2,18 @@
 
 import html
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 import httpx
 from pydantic_ai import Agent, RunContext, TextOutput
 
-from mia.agents.base import AgentDeps, Manifest, build_agent, build_model
-from mia.agents.shift_supervisor import cover
+from mia.agents.base import AgentDeps, build_agent, build_model
+from mia.agents.shift_supervisor import AGENT_DIR, MANIFEST, cover
 from mia.agents.shift_supervisor.classifier import classify
 from mia.agents.shift_supervisor.rules import rules_model
 from mia.agents.shift_supervisor.tools import BINDINGS
 from mia.chat.blocks import AgentReply, TextBlock
 from mia.settings import get_settings
-
-AGENT_DIR = Path(__file__).resolve().parent
-MANIFEST = Manifest.load(AGENT_DIR / "manifest.yaml")
 
 
 def text_reply(text: str) -> AgentReply:

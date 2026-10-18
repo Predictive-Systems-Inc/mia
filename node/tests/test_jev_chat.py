@@ -168,7 +168,7 @@ def test_a_clarify_button_from_another_day_goes_to_jev(
     """A stored decision holds that day's "today"; tapped on a later day it must not run."""
     import datetime as dt
 
-    from mia.chat import service
+    from mia.agents.shift_supervisor import turn as service
 
     probs = {"record_absence": 0.45, "get_my_visits": 0.40}
     _answer(monkeypatch, jev, action="record_absence", confidence=0.45, probabilities=probs)

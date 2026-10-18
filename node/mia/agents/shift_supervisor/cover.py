@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, col, select
 
-from mia.agents.shift_supervisor import scoring
+from mia.agents.shift_supervisor import MANIFEST, scoring
 from mia.channels.base import TemplateCall
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.chat.channels import call_adapter, notify
@@ -27,7 +27,7 @@ from mia.core.orgconfig import OrgSettings
 from mia.core.orgconfig import load as load_org
 from mia.i18n import t
 
-AGENT_ID = "shift_supervisor"
+AGENT_ID = MANIFEST.id
 OVERRIDE_TYPE = "shift_supervisor.cover_override"
 OVERRIDE_APPROVERS = ["admin", "owner"]
 OPEN = ("awaiting_approval", "asking")

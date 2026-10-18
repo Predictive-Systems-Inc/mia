@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, col, select
 
 import mia
-from mia.agents.shift_supervisor import cover
+from mia.agents.registry import AGENTS
 from mia.api.auth import router as auth_router
 from mia.api.deps import DbSession, PersonAuth, check_mode
 from mia.api.schedule import router as schedule_router
@@ -38,17 +38,9 @@ log = logging.getLogger(__name__)
 
 
 def tick() -> int:
-    """Run due work once (cover confirmation escalation). Returns how many items advanced."""
+    """Run every registered agent's due work once. Returns how many items advanced."""
     with session_scope() as session:
-        return cover.process_due(session, utcnow())
-
-
-def _alerts() -> int:
-    """The ticker's alerts: missed check-ins, unstaffed visits tomorrow, the daily plan."""
-    from mia.agents.shift_supervisor import alerts
-
-    with session_scope() as session:
-        return alerts.run_due(session, utcnow())
+        return sum(s.run_due(session, utcnow()) for s in AGENTS.values() if s.run_due)
 
 
 def _generate_visits() -> int:
@@ -67,9 +59,6 @@ async def run_due_work() -> tuple[int, int]:
     for inbound_id in await asyncio.to_thread(channel_service.pending_inbound, stale):
         await channel_service.handle_inbound(inbound_id)  # lost to a restart before handling
     sent = await outbox.send_due(utcnow())  # on-demand channels (the simulator) are left alone
-    alerted = await asyncio.to_thread(_alerts)  # queued now, sent on the next tick
-    if alerted:
-        log.info("queued %d alert(s)", alerted)
     return advanced, sent
 
 

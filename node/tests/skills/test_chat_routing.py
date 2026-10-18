@@ -7,11 +7,12 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlmodel import Session, select
 
 from mia.agents.base import AgentDeps, build_agent
+from mia.agents.shift_supervisor import turn as service
 from mia.agents.shift_supervisor.agent import AGENT_DIR, MANIFEST, create_agent
 from mia.agents.shift_supervisor.tools import BINDINGS
-from mia.chat import service
 from mia.chat.blocks import AgentReply
-from mia.chat.service import run_turn, wrap_user_text
+from mia.chat.replies import wrap_user_text
+from mia.chat.service import run_turn
 from mia.core.models import Event, Message, Organisation, Person
 from mia.i18n import STRINGS, t
 from mia.learning import catalogue

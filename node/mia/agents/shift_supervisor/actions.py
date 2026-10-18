@@ -14,7 +14,7 @@ from typing import Any
 from sqlmodel import col, select
 
 from mia.agents.base import AgentDeps
-from mia.agents.shift_supervisor import cover, tools
+from mia.agents.shift_supervisor import MANIFEST, cover, tools
 from mia.agents.shift_supervisor.classifier import EN_WEEKDAYS, FI_WEEKDAYS
 from mia.core.models import Event, Location, Person, Visit
 
@@ -204,7 +204,7 @@ def _last_cover_visit(deps: AgentDeps) -> str | None:
     row = deps.session.exec(
         select(Event)
         .where(Event.action == "tool.called")
-        .where(Event.entity_id == "shift_supervisor.find_replacements")
+        .where(Event.entity_id == f"{MANIFEST.id}.find_replacements")
         .where(Event.on_behalf_of == deps.person.id)
         .order_by(col(Event.id).desc())
     ).first()

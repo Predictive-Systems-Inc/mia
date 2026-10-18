@@ -30,7 +30,7 @@ def test_migrate_seed_chat_assign_confirm(capsys: pytest.CaptureFixture[str]) ->
     assert main(["inbox", "--as", "Sanna"]) == 0
     assert "hyväksyi" in capsys.readouterr().out
     assert main(["tick"]) == 0
-    assert "advanced 0" in capsys.readouterr().out
+    assert "advanced " in capsys.readouterr().out  # alerts due on the clock count too
 
     # An override approval (Liisa is not available at 09:00) goes to admin or owner.
     assert main(["chat", "Who can cover Kamppi tomorrow at 9:00?", "--as", "Sanna"]) == 0

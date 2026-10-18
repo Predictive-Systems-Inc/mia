@@ -13,8 +13,7 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, col, select
 
-from mia.agents.shift_supervisor import timesheets
-from mia.agents.shift_supervisor.agent import MANIFEST
+from mia.agents.shift_supervisor import MANIFEST, timesheets
 from mia.agents.shift_supervisor.rules import _visit_card
 from mia.agents.shift_supervisor.tools import visit_info
 from mia.chat.blocks import Block, TextBlock

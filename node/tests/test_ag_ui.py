@@ -5,6 +5,7 @@ assert_well_formed() checks the stream rules of the AG-UI lifecycle spec and cli
 """
 
 import asyncio
+import dataclasses
 import json
 from collections.abc import AsyncIterator
 from typing import Any
@@ -26,17 +27,24 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from sqlmodel import Session, select
 
 from mia.agents.base import AgentDeps
+from mia.agents.registry import AGENTS, DEFAULT
 from mia.api.main import app
 from mia.chat import router as chat_router
 from mia.chat import runs
 from mia.chat.blocks import AgentReply
-from mia.chat.service import wrap_user_text
+from mia.chat.replies import wrap_user_text
 from mia.core import approvals, store
 from mia.core.ids import new_id
 from mia.core.models import Actor, Message, Person, Thread
 from mia.i18n.strings import STRINGS
 
 Ev = dict[str, Any]
+
+
+def _stream_with(monkeypatch: pytest.MonkeyPatch, agent: Agent[AgentDeps, Any]) -> None:
+    """Make the shift supervisor's streamed runs use this test agent."""
+    spec = dataclasses.replace(AGENTS[DEFAULT], stream_agent=lambda: agent)
+    monkeypatch.setitem(AGENTS, DEFAULT, spec)
 
 
 @pytest.fixture
@@ -297,7 +305,7 @@ def test_agent_errors_reach_the_client_without_details(
         raise RuntimeError("secret /var/db detail")
 
     agent = Agent(FunctionModel(broken), deps_type=AgentDeps, output_type=AgentReply)
-    monkeypatch.setattr(runs, "get_agent", lambda: agent)
+    _stream_with(monkeypatch, agent)
     res = post(client, "/ag-ui", people["Juha"], body("Olen kipeä huomenna."))
     events = parse(res.text)
     assert_well_formed(events)
@@ -359,7 +367,7 @@ def test_a_failed_reply_store_still_closes_the_run_once(
     def fail(*_args: Any, **_kw: Any) -> Any:
         raise RuntimeError("secret store detail")
 
-    monkeypatch.setattr(runs, "_finish", fail)
+    monkeypatch.setattr(runs, "finish", fail)
     res = post(client, "/ag-ui", people["Juha"], body("Olen kipeä huomenna."))
     events = parse(res.text)
     assert_well_formed(events)
@@ -386,7 +394,7 @@ def test_turns_on_one_thread_see_earlier_questions(
     agent = Agent(
         FunctionModel(answer, stream_function=stream), deps_type=AgentDeps, output_type=AgentReply
     )
-    monkeypatch.setattr(runs, "get_agent", lambda: agent)
+    _stream_with(monkeypatch, agent)
     monkeypatch.setattr(chat_router, "get_agent", lambda: agent)
     juha = people["Juha"]
     payload = body("Ensimmäinen")
@@ -470,7 +478,7 @@ def test_a_plain_text_answer_reaches_the_client_once(
         deps_type=AgentDeps,
         output_type=[AgentReply, TextOutput(text_reply)],
     )
-    monkeypatch.setattr(runs, "get_agent", lambda: agent)
+    _stream_with(monkeypatch, agent)
     payload = body("Olen kipeä huomenna.")
     events = parse(post(client, "/ag-ui", people["Juha"], payload).text)
     assert_well_formed(events)
@@ -510,7 +518,7 @@ def test_emergency_streamed_run_never_calls_the_agent(
         raise AssertionError("the agent must not run")
 
     agent = Agent(FunctionModel(never), deps_type=AgentDeps, output_type=AgentReply)
-    monkeypatch.setattr(runs, "get_agent", lambda: agent)
+    _stream_with(monkeypatch, agent)
     payload = body("someone collapsed")
     events = parse(post(client, "/ag-ui", people["Juha"], payload).text)
     assert_well_formed(events)
@@ -579,7 +587,7 @@ def test_a_capped_run_ends_with_the_translated_reply(
     def ping() -> str:
         return "pong"
 
-    monkeypatch.setattr(runs, "get_agent", lambda: agent)
+    _stream_with(monkeypatch, agent)
     res = post(client, "/ag-ui", people["Juha"], body("Olen kipeä huomenna."))
     events = parse(res.text)
     assert_well_formed(events)

@@ -170,3 +170,17 @@ def test_every_route_depends_on_auth_or_is_public() -> None:
             continue
         names = {d.call.__name__ for d in dependant.dependencies}
         assert names & {"current_auth", "current_person", "current_client"}, path
+
+
+def test_no_module_spells_an_agent_id() -> None:
+    """Agent ids come from the manifest (rule 15); stubs.py holds the ids of agents with none."""
+    from mia.agents.registry import AGENTS
+
+    allowed = {MIA / "agents" / "stubs.py"}
+    pattern = re.compile("|".join(rf"[\"']{re.escape(a)}[\"']" for a in AGENTS))
+    offenders = [
+        str(p.relative_to(MIA))
+        for p in MIA.rglob("*.py")
+        if p not in allowed and pattern.search(p.read_text(encoding="utf-8"))
+    ]
+    assert offenders == []

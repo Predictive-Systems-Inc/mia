@@ -175,7 +175,7 @@ def inbox(args: argparse.Namespace) -> int:
                 {
                     "thread_id": row.thread_id,
                     "message_id": row.id,
-                    "agent_id": "shift_supervisor",
+                    "agent_id": row.agent_id or "",
                     "blocks": row.blocks,
                 }
             )

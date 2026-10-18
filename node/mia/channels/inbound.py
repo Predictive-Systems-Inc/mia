@@ -17,7 +17,8 @@ from pydantic import BaseModel
 from sqlalchemy import text as sql
 from sqlmodel import Session, col, select
 
-from mia.agents.shift_supervisor.agent import MANIFEST, get_agent
+from mia.agents.shift_supervisor import MANIFEST
+from mia.agents.shift_supervisor.agent import get_agent
 from mia.channels import linking, outbox, registry, transport
 from mia.channels.base import InboundMessage
 from mia.channels.service import deliver
