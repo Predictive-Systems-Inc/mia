@@ -435,7 +435,7 @@ git commit -m "agents: the dispatcher is renamed shift_supervisor (package, mani
 
 **Files:**
 - Create: `docs/adr/014-shift-supervisor-and-shared-tables.md`
-- Modify: `docs/adr/README.md` (index line), `docs/layout.md`, `README.md`, `docs/questions.md` (Q20 answered by 1.4), `docs/plan.md` and `docs/spec.md` only where they describe the current agent id or tables
+- Modify: `CLAUDE.md` (rules 9 and 15), `docs/adr/README.md` (index line), `docs/layout.md`, `README.md`, `docs/questions.md` (Q20 answered by 1.4), `docs/plan.md` and `docs/spec.md` only where they describe the current agent id or tables
 
 - [ ] **Step 1: Write ADR 014**
 
@@ -478,12 +478,37 @@ timesheets, and a shop's broken oven is the same record as a cleaner's site prob
 Run: `grep -n "dispatcher" docs/layout.md README.md docs/adr/README.md`
 Expected: no output except deliberate history notes.
 
+- [ ] **Step 2b: Update the coding rules in CLAUDE.md**
+
+Replace rule 9 (`CLAUDE.md` lines 28 and 29) with:
+
+```markdown
+9. Shared data follows the data standard in mia/core/models.py. A table more than one agent
+   reads or writes is shared (absences, cover_requests, timesheets, incidents); only data no
+   other agent needs is agent-owned and prefixed with the agent id (sales_supervisor_*).
+   Industry fields live in mia/templates (cleaning_*). Moving a table between these is a data
+   standard change: ask first, then a migration and an ADR.
+```
+
+Add after rule 14:
+
+```markdown
+15. Agents are named after the real job they do, as a snake_case job title (shift_supervisor,
+    sales_supervisor, inventory_manager, bookkeeper, hr_officer, branch_manager), never after
+    a mechanism (dispatcher, router, bot). The id is used everywhere: package mia/agents/<id>/,
+    manifest id, agent role agent.<id>, tool and intent ids <id>.<name>, i18n keys. The shown
+    name is an i18n label. Event rows are never renamed (rule 2); dated docs keep old names.
+```
+
+Run: `grep -n "dispatcher" CLAUDE.md`
+Expected: only the word inside rule 15's "never after a mechanism (dispatcher, ...)".
+
 - [ ] **Step 3: Check and commit**
 
 Run: `grep -c "—" docs/adr/014-shift-supervisor-and-shared-tables.md`
 Expected: `0`.
 
 ```bash
-git add docs README.md
-git commit -m "docs: ADR 014 (dispatcher becomes shift_supervisor, data standard 1.4 shared tables); layout, README and Q20 follow"
+git add docs README.md CLAUDE.md
+git commit -m "docs: ADR 014 (dispatcher becomes shift_supervisor, data standard 1.4 shared tables); CLAUDE.md rules 9 and 15 (shared tables, agents named after jobs); layout, README and Q20 follow"
 ```
