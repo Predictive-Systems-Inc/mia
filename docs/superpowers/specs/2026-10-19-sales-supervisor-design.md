@@ -22,7 +22,7 @@ Roles already exist (`clerk` is in `HUMAN_ROLES` since part 1; `supervisor`, `ow
 
 ## 3. Scenarios (the acceptance list)
 
-1. **Counts in free text.** "3 special 5 classic 2 salted egg", "sp 3 cl 5", "nakabenta ng 12 ube", mixed languages, typos. Code splits numbers from words; Jev maps each word group to one item from the branch's menu (a choice per group over item names and short codes, "none" allowed); a group Jev is unsure about becomes a "Did you mean" with the three nearest items. Amount is quantity times the item's current price unless the clerk states a total.
+1. **Counts in free text.** "3 special 5 classic 2 salted egg", "sp 3 cl 5", "nakabenta ng 12 ube", mixed languages, typos. Code splits numbers from words; Jev maps each word group to one item from the branch's menu (a choice per group over item names and short codes, "none" allowed); a group Jev is unsure about becomes a "Did you mean" with the three nearest items (nothing in the message is recorded until every group has an item, Q50). Amount is quantity times the item's current price unless the clerk states a total.
 2. **Correction.** "sorry, 4 special not 3" replaces the last count of that item today by that clerk; the old row is kept and marked superseded. "Cancel the last one" supersedes the last count.
 3. **How are we doing.** Today's total and per item for the branch, against the target when one exists, in one short message; for owners, per branch.
 4. **Closing reminder.** At the branch's closing time minus 30 minutes, every clerk on shift today (from `core.visit` or, with no roster, every active clerk of the branch) who has sent no count today gets one reminder; 30 minutes after closing head staff gets the list of who has not reported. Quiet hours (`OrgSettings.quiet_hours`) are respected.
@@ -58,7 +58,7 @@ Price history is the event log (`retail.item_priced`), not a table. Items and ho
 
 Alternative considered: core tables from the start (data standard 1.5 now). Deferred because changing the data standard needs the owner's explicit yes (CLAUDE.md) and the promotion costs no extra migration before the first candidate release.
 
-Money is integer minor units plus currency (PHP, EUR), times ISO 8601 with offset, ids ULIDs (rule 10). `business_date` is the branch's local date at `reported_at`, so a count sent at 00:30 after a late close belongs to the day the clerk means: the agent asks when `reported_at` is within two hours after closing and the previous day has counts ("for today or yesterday?").
+Money is integer minor units plus currency (PHP, EUR), times ISO 8601 with offset, ids ULIDs (rule 10). `business_date` is the branch's local date at `reported_at`, except that a count sent before today's opening and within two hours after yesterday's closing (00:30 after a 23:00 close) belongs to yesterday. The agent never asks which day (final fix wave ruling); a day the user names is accepted only as today or yesterday. A turn resumed after a Jev outage uses the user message's time.
 
 ## 5. The agent
 
@@ -66,7 +66,7 @@ Package `mia/agents/sales_supervisor/` in the shape of `shift_supervisor`: `mani
 
 **Actions** (Jev choice, threshold 0.6 as everywhere): `report_sales`, `correct_sales`, `sales_today`, `sales_period`, `set_target`, `why_answer` (only when the why question is the thread's last Mia message), `reply_only` (greeting, thanks, capabilities, other), `clarify`.
 
-**Slots:** `items` (one choice per pre-parsed group over the branch's item names and codes plus `none`), `period` (`today`, `yesterday`, `this_week`, `last_week`, `this_month`, `last_month`, a weekday name, `not_stated`), `branch` (the person's branches by name, `all`, `not_stated`), `amount` (a pre-parsed number chosen from candidates, `not_stated`), `target_period` (`day`, `month`).
+**Slots:** `items` (one choice per pre-parsed group over the branch's item names and codes plus `none`), `period` (`today`, `yesterday`, `this_week`, `last_week`, `this_month`, `last_month`, a weekday name, `not_stated`), `branch` (every branch of the organisation by name, `all`, `not_stated`; the tools refuse a branch the person may not reach, and an owner or admin who names none sees every branch), `amount` (a pre-parsed number chosen from candidates, `not_stated`), `target_period` (`day`, `month`), `target_start` (`today`, `tomorrow`, `this_month`, `next_month`, `m01` to `m12` for the next such month, `not_stated`). The `item` slot of a period question is asked only when the message has no number group; with groups it is read from `item_0`.
 
 **Tools** (each with `rbac.require`, a manifest row, unit tests with mocked dependencies):
 
@@ -87,7 +87,7 @@ No money, external or delete risk in v1, so no approvals. A target is a plan, no
 
 ## 6. Parsing counts (rule 7 in detail)
 
-`actions.pre_parse(text) -> list[Group]` is pure code: split on numbers, keep the words before or after a number as the item phrase (both orders occur: "3 special" and "special 3"), keep a trailing "total 1450" or "1,450 total" as the amount candidate, strip filler words per language from a small list (`po`, `na`, `pcs`, `pieces`, `kpl`). Jev gets one choice per group over the branch's items (names and codes as criteria text, pseudonymised state is just the message) plus `none`. Confidence below threshold on any group: a "Did you mean" for that group with the three most probable items, the other groups recorded. Unit tests for `pre_parse` cover the ten seed phrasings per language.
+`actions.pre_parse(text, menu_tokens) -> (groups, total)` is pure code: split on numbers, keep the words before or after a number as the item phrase (both orders occur: "3 special" and "special 3"), keep a trailing "total 1450" or "1,450 total" as the amount candidate, strip filler words per language from a small list (`po`, `na`, `pcs`, `pieces`, `kpl`). A negation word (not, hindi, dili, diri, indi, bako, ali, aliwa, ei, instead, saan, haan) drops itself and the number after it, the old value of a correction. Both orientations are built and the one whose words hold more menu tokens (item name words and short codes) wins; on a tie, words-then-number only when the message ends with a number and every number follows words. Jev gets one choice per group over the branch's items (names and codes as criteria text, pseudonymised state is just the message) plus `none`. Confidence below threshold on any group: a "Did you mean" for that group with the three most probable items, the other groups recorded. Unit tests for `pre_parse` cover the ten seed phrasings per language.
 
 ## 7. i18n
 

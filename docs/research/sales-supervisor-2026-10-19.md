@@ -161,7 +161,7 @@ A sales request is about three times a router request (864) because each count g
 - **Corrections are the weak scenario (30% right on the gate half).** Two causes, both in the
   shape of the request rather than the descriptions: "5 classic hindi 6" splits into two
   groups, Jev reads it as a report of two counts, and the second group ("6", no words) has no
-  item, so it asks which item (10 of 20 gate-half correction asks). "gawin mong 9 ang special"
+  item, so it asks which item (11 of 20 gate-half correction asks). "gawin mong 9 ang special"
   (make special 9) and "ayusin: classic ay 10" read as reports below 0.6. In the chat a
   report whose action is clear (>= 0.6) with an unknown item asks which item for the second
   number; if the clerk taps an item, that would record two new counts instead of a correction.

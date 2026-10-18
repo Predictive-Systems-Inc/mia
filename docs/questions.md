@@ -367,3 +367,45 @@ Format for each entry:
 - Question: The why question goes to everyone who reported that day; should the owner get it too?
 - Assumed answer: no, owners read the notes.
 - Blocking: no.
+
+## Q44: A stated day total is not stored
+- Where: docs/superpowers/specs/2026-10-19-sales-supervisor-design.md (section 3, scenario 1); mia/agents/sales_supervisor/tools.py (record_counts)
+- Question: Scenario 1 says the amount is quantity times price "unless the clerk states a total". Should a stated total be stored (on the counts or as its own event) and shown instead of the computed sum?
+- Assumed answer: not in v1. Rows keep quantity times price and the reply shows the branch's running total; the stated total is parsed but dropped. Revisit when the bookkeeper reconciles cash.
+- Blocking: no.
+
+## Q45: "Box of 4" carries a number in its name
+- Where: mia/templates/retail/seed.py (ITEMS); mia/agents/sales_supervisor/actions.py (pre_parse)
+- Question: "2 box of 4 3 sp" pre-parses into three groups, one a "4" with no words. Rename the item ("Box (4 pcs)") or let pre_parse protect menu phrases?
+- Assumed answer: rename the demo item when the seed is next touched; protect menu phrases only if a real menu needs numbers in names.
+- Blocking: no.
+
+## Q46: Units glued to a number and money with centavos
+- Where: mia/agents/sales_supervisor/actions.py (pre_parse)
+- Question: "3pcs", "x3", "3x" and "1,450.50" become words and lose the number. Split the known suffixes and accept a decimal total?
+- Assumed answer: yes, in the next pre_parse change, with the seed phrasings measured again.
+- Blocking: no.
+
+## Q47: "Cancel the last one" and head staff correcting a clerk
+- Where: docs/superpowers/specs/2026-10-19-sales-supervisor-design.md (scenario 2, tool table); mia/agents/sales_supervisor/tools.py (correct_count)
+- Question: Scenario 2 names "Cancel the last one", and the tool table lets supervisors, owners and admins correct counts. Neither exists: correct_count only replaces the reporter's own latest count.
+- Assumed answer: a follow-up adds a cancel action (supersede the reporter's last count) and a correction on behalf of a named clerk for head staff.
+- Blocking: no.
+
+## Q48: One end-of-day report per branch, not per owner
+- Where: docs/superpowers/specs/2026-10-19-sales-supervisor-design.md (scenario 5); mia/agents/sales_supervisor/due.py (_report)
+- Question: Scenario 5 says one notification per owner and admin; the due work sends one per branch, an hour after each branch closes.
+- Assumed answer: one per branch while the branches close at different times (19:00 and 21:00 at Ferino's); combine the reports when both windows are open at once.
+- Blocking: no.
+
+## Q49: Period replies show ISO dates and no line per branch for "all"
+- Where: mia/agents/sales_supervisor/replies.py (tool_reply, period_report)
+- Question: Period replies read "2026-10-01 to 2026-10-31; best day 2026-10-15", and "all" without an item gives one grand total, though the rows per branch are there.
+- Assumed answer: word the dates in the person's language and add one line per branch in the next replies change.
+- Blocking: no.
+
+## Q50: Nothing in a count message is recorded until every group has an item
+- Where: docs/superpowers/specs/2026-10-19-sales-supervisor-design.md (section 3, scenario 1); mia/agents/sales_supervisor/turn.py (_act)
+- Question: The spec says the other groups are recorded while one group's item is asked. The turn records nothing until every group has an item, so a clerk who ignores the which-item question loses the whole message.
+- Assumed answer: keep the whole-message hold in v1 (one reply, no half-recorded message); the closing reminder catches clerks with no count at all.
+- Blocking: no.
