@@ -8,10 +8,19 @@ from mia.templates.retail.seed import ITEMS as MENU
 from tests.evals.sales_cases import CASES, GATED_LANGS, SCENARIOS
 
 
-def test_ten_cases_per_language_and_scenario() -> None:
-    counts = Counter((c.lang, c.scenario) for c in CASES)
-    assert set(counts) == {(lang, s) for lang in GATED_LANGS for s in SCENARIOS}
+def test_ten_cases_per_language_scenario_and_half() -> None:
+    counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
+    assert set(counts) == {
+        (lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in ("tune", "gate")
+    }
     assert set(counts.values()) == {10}
+
+
+def test_no_text_appears_in_both_halves() -> None:
+    """The gate half is fresh: none of its texts (casefolded) is in the tune half."""
+    tune = {c.text.casefold().strip() for c in CASES if c.half == "tune"}
+    gate = {c.text.casefold().strip() for c in CASES if c.half == "gate"}
+    assert not tune & gate, tune & gate
 
 
 def test_expected_actions_are_actions_and_counts_name_items() -> None:

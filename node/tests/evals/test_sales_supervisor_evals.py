@@ -30,6 +30,7 @@ from mia.core.models import Actor, Branch, Person, UsageCloudRequest
 from mia.settings import get_settings
 from mia.templates.retail.models import RetailItem
 from tests.evals.sales_cases import CASES, GATED_LANGS, Case
+from tests.evals.test_router_eval import _gate_failures
 
 pytestmark = pytest.mark.evals
 
@@ -227,6 +228,5 @@ def test_sales_supervisor_decider(engine: Engine, session: Session, ferinos: Fer
         json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8",
     )
-    assert summary["gated"]["all"]["wrong"] <= 0.02, summary["gated"]["all"]
-    right = {k: v["right"] for k, v in summary["gated"]["by_language"].items()}
-    assert all(v >= 0.9 for v in right.values()), right
+    failed = _gate_failures(summary["gated"])  # the Q40 bar, as the router's
+    assert not failed, failed
