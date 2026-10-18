@@ -380,7 +380,9 @@ async def route_turn(
         agent_deps = _deps_for(deps, spec)
     else:
         error: str | None = None
-        if ctx.level == "none":  # configuration, not an outage: no request, no failure event
+        # configuration, not an outage: no request, no failure event. The router is gated like
+        # the shift supervisor's decider (D18): MIA_DECIDER=jev turns both on.
+        if ctx.level == "none" or get_settings().MIA_DECIDER != "jev":
             picked = agent_router.fallback(agents, active)
         else:
             previous, pseudo = await asyncio.to_thread(_router_input, session, deps, thread)

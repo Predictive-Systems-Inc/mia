@@ -187,6 +187,7 @@ def test_an_agent_the_person_may_not_use_is_never_run(
     three = ["shift_supervisor", "bookkeeper", "sales_supervisor"]
     monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings(agents=three))
     monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")  # the router's gate (D18)
     get_settings.cache_clear()
     _router_answers(monkeypatch, [], "bookkeeper")  # Sanna (supervisor) may not use it
     reply = _turn(session, people["Sanna"], "what were our expenses?")
@@ -359,6 +360,6 @@ def test_the_router_is_gated_like_the_decider(
     _router_answers(monkeypatch, two_agents, "sales_supervisor")
     reply = _turn(session, people["Sanna"], "how much did we sell?")
     assert two_agents == []  # nothing left the node
-    failed = session.exec(select(Event).where(Event.action == "chat.route_failed")).one()
-    assert failed.after == {"error": "gated"}
+    failed = session.exec(select(Event).where(Event.action == "chat.route_failed")).all()
+    assert failed == []  # the setting is the record
     assert any(isinstance(b, QuickRepliesBlock) for b in reply.blocks)  # no active agent: ask

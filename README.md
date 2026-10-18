@@ -206,6 +206,10 @@ Two kinds of model, chosen with `MIA_MODEL` in `.env`; no code changes:
   `http://localhost:11434/v1`). Nothing leaves the node, so egress is skipped and it works with
   `MIA_EGRESS_LEVEL=none`. The URL must be localhost or a private IP address.
 
+Jev (TypeSafe, `MIA_TYPESAFE_KEY`): `MIA_DECIDER=jev` turns on both the shift supervisor's Jev
+decider and the agent router; otherwise a person with several agents stays on the active one or
+is asked.
+
 To evaluate a model: `MIA_EVAL_MODEL=gateway/<route>` or `local/<model>`, then
 `uv run pytest node/tests/evals -m evals`.
 

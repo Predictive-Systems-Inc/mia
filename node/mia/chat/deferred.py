@@ -242,62 +242,96 @@ def _close(session: Session, due: dict[str, Any], closing: dict[str, Any]) -> No
     session.commit()
 
 
+def _release_fresh(due: dict[str, Any]) -> None:
+    """_release in its own session (the turn's session may still be in use by a worker
+    thread when the task is cancelled); never raises, so the original error stays."""
+    try:
+        with Session(get_engine(), expire_on_commit=False) as fresh:
+            _release(fresh, due)
+    except Exception as exc:  # noqa: BLE001 - a stale claim is taken over after MAX_WAIT
+        log.error("releasing turn %s failed: %s", due["id"], type(exc).__name__)
+
+
+async def _resume(
+    session: Session, due: dict[str, Any], later: list[dict[str, Any]], now: dt.datetime
+) -> dict[str, Any]:
+    """Answer or expire one claimed turn; returns its closing. A failure other than
+    JevUnreachable (which propagates) closes it as failed, with the unavailable reply when
+    the thread and person are known."""
+    from mia.chat import service  # service imports this module
+    from mia.core.jev import JevUnreachable
+
+    after = due["after"]
+    closing: dict[str, Any] = {"message_id": after["message_id"], "deferred_event_id": due["id"]}
+    thread: Thread | None = None
+    person: Person | None = None
+    try:
+        message, thread, person = await asyncio.to_thread(_load, session, due)
+        gone = message is None or thread is None or person is None or person.status != "active"
+        expired = gone or now - due["at"] > MAX_WAIT
+        closing["expired"] = expired
+        # one question per thread: an expired turn with a later open one closes silently
+        gone = gone or (expired and any(d["thread_id"] == due["thread_id"] for d in later))
+        if message and thread and person and not gone:
+            await service.respond(
+                session,
+                person,
+                thread,
+                message,
+                resumed=True,
+                expire=expired,
+                stage=after["stage"],
+                agent_id=after["agent_id"],
+            )
+    except JevUnreachable:
+        raise
+    except Exception as exc:  # noqa: BLE001 - one broken turn must not hold the queue
+        log.error("resuming deferred turn %s failed: %s", due["id"], type(exc).__name__)
+        closing.setdefault("expired", False)
+        closing |= {"failed": True, "error": type(exc).__name__}
+        if thread is not None and person is not None:
+            await asyncio.to_thread(_fail, session, due, person, thread)
+        else:
+            await asyncio.to_thread(session.rollback)
+    return closing
+
+
 async def retry_due(now: dt.datetime) -> int:
     """Resume or expire open turns oldest first; stop at the first that still cannot reach
     Jev. Each closed turn commits with its reply, so a resumed turn never runs again; an
     expired turn asks only when it is its thread's latest open one (older ones close with no
     reply, so the thread gets one question); a turn that fails otherwise is closed as failed
     with the unavailable reply. Closes the outage when none are left and at least one was
-    answered since it started. Returns how many turns were closed. DB work runs in worker threads (rule 12); no transaction is open across a Jev call.
-    Each turn is claimed under the write lock first (turn.claimed, committed before Jev), so
-    two workers (`mia serve` and `mia tick`) never answer one turn twice; a worker that meets
-    another's claim stops its round."""
-    from mia.chat import service  # service imports this module
+    answered since it started. Returns how many turns were closed. DB work runs in worker
+    threads (rule 12); no transaction is open across a Jev call. Each turn is claimed under
+    the write lock first (turn.claimed, committed before Jev), so two workers (`mia serve` and
+    `mia tick`) never answer one turn twice; a claim is released on JevUnreachable and on
+    cancellation, and a thread another worker holds is skipped (its order kept) while the
+    other threads go on."""
     from mia.core.jev import JevUnreachable
 
     done = 0
+    held: set[str] = set()  # threads another worker is running
     session = Session(get_engine(), expire_on_commit=False)
     try:
         dues = await asyncio.to_thread(_due, session)
         for i, due in enumerate(dues):
+            if due["thread_id"] in held:
+                continue
             claim = await asyncio.to_thread(_claim, session, due, now)
             if claim == "busy":
-                break  # another worker is running the queue, in order
+                held.add(due["thread_id"])
+                continue
             if claim == "closed":
                 continue
-            after = due["after"]
-            message, thread, person = await asyncio.to_thread(_load, session, due)
-            gone = message is None or thread is None or person is None or person.status != "active"
-            expired = gone or now - due["at"] > MAX_WAIT
-            # one question per thread: an expired turn with a later open one closes silently
-            gone = gone or (
-                expired and any(d["thread_id"] == due["thread_id"] for d in dues[i + 1 :])
-            )
-            closing: dict[str, Any] = {
-                "message_id": after["message_id"],
-                "deferred_event_id": due["id"],
-                "expired": expired,
-            }
             try:
-                if message and thread and person and not gone:
-                    await service.respond(
-                        session,
-                        person,
-                        thread,
-                        message,
-                        resumed=True,
-                        expire=expired,
-                        stage=after["stage"],
-                        agent_id=after["agent_id"],
-                    )
+                closing = await _resume(session, due, dues[i + 1 :], now)
             except JevUnreachable:
                 await asyncio.to_thread(_release, session, due)
                 break
-            except Exception as exc:  # noqa: BLE001 - one broken turn must not hold the queue
-                log.error("resuming deferred turn %s failed: %s", due["id"], type(exc).__name__)
-                closing |= {"failed": True, "error": type(exc).__name__}
-                assert thread is not None and person is not None  # respond ran, so they exist
-                await asyncio.to_thread(_fail, session, due, person, thread)
+            except BaseException:
+                await asyncio.to_thread(_release_fresh, due)
+                raise
             await asyncio.to_thread(_close, session, due, closing)
             done += 1
         await asyncio.to_thread(_end_outage, session)

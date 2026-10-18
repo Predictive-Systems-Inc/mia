@@ -433,3 +433,60 @@ def test_a_route_tap_to_another_agent_is_a_switch(
     _turn(session, sanna, t("agent.sales_supervisor.label", sanna.language), first.thread_id)
     (switched,) = _events(session, "chat.agent_switched")
     assert switched.after == {"from": "shift_supervisor", "to": "sales_supervisor"}
+
+
+def test_a_load_failure_closes_the_turn_and_strands_no_claim(
+    session: Session,
+    people: dict[str, Person],
+    jev_down: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _turn(session, people["Sanna"], "show my visits today")
+
+    def broken(_s: Session, _due: dict[str, Any]) -> Any:
+        raise RuntimeError("db hiccup")
+
+    monkeypatch.setattr(deferred, "_load", broken)
+    jev_down["up"] = True
+    assert _retry() == 1
+    (closed,) = _events(session, "turn.resumed")
+    assert closed.after and closed.after["failed"] is True
+    assert deferred.open_turns(session) == []
+
+
+def test_a_cancelled_resume_releases_its_claim(
+    session: Session,
+    people: dict[str, Person],
+    jev_down: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _turn(session, people["Sanna"], "show my visits today")
+    original = AGENTS[DEFAULT].handle_turn
+
+    async def cancelled(turn: Turn) -> ChatReply:
+        raise asyncio.CancelledError
+
+    _spy(monkeypatch, cancelled)
+    jev_down["up"] = True
+    with pytest.raises(asyncio.CancelledError):
+        _retry()
+    assert len(_events(session, "turn.released")) == 1
+    _spy(monkeypatch, original)
+    assert _retry() == 1  # the next tick resumes it
+
+
+def test_a_claimed_thread_never_holds_another_threads_turn(
+    session: Session,
+    people: dict[str, Person],
+    jev_down: dict[str, Any],
+) -> None:
+    _turn(session, people["Sanna"], "show my visits today")  # thread A
+    _turn(session, people["Sanna"], "who can cover Kamppi tomorrow?")  # thread B, a new thread
+    a, _b = deferred.open_turns(session)
+    other = Session(session.get_bind(), expire_on_commit=False)
+    due_a = {"id": a.id, "thread_id": a.entity_id, "branch_id": a.branch_id, "after": a.after}
+    assert deferred._claim(other, due_a, utcnow()) == "ok"  # another worker holds thread A
+    other.close()
+    jev_down["up"] = True
+    assert _retry() == 1
+    assert [e.id for e in deferred.open_turns(session)] == [a.id]
