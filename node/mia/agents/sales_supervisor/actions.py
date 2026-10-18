@@ -4,6 +4,7 @@ Code splits the numbers out of the message (pre_parse, rule 7); Jev only maps ea
 words to a menu item and classifies the rest. One `item_<i>` question per group.
 """
 
+import calendar
 import datetime as dt
 import re
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from sqlmodel import col, or_, select
 
 from mia.agents.base import AgentDeps
 from mia.agents.decider import NOT_STATED, Action
+from mia.agents.shift_supervisor.classifier import EN_WEEKDAYS, FI_WEEKDAYS
 from mia.core.models import Branch
 from mia.i18n import t
 from mia.templates.retail.models import RetailItem
@@ -25,6 +27,19 @@ FILLER = {
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 SUPERVISING = {"owner", "admin"}
 NONE = "none"
+FIL_WEEKDAYS = ["lunes", "martes", "miyerkules", "huwebes", "biyernes", "sabado", "linggo"]
+CEB_WEEKDAYS = ["lunes", "martes", "miyerkules", "huwebes", "biyernes", "sabado", "dominggo"]
+DAY_NAMES = {"en": EN_WEEKDAYS, "fi": FI_WEEKDAYS, "fil": FIL_WEEKDAYS, "ceb": CEB_WEEKDAYS}
+THEMES = {
+    "weather": "The weather",
+    "foot_traffic": "Many people passing by or visiting",
+    "event": "A local event, concert or holiday",
+    "promo": "A promotion, discount or advertising",
+    "staffing": "Who was working, or how the team worked",
+    "supply": "Stock or supply: what was or was not available",
+    "technique": "How the item was made or sold",
+    "other": "Anything else",
+}
 
 ACTIONS: dict[str, Action] = {
     "report_sales": Action(
@@ -99,6 +114,7 @@ class Query:
     branches: dict[str, str]  # branch id -> name
     periods: dict[str, str]  # period id -> description
     why_asked: bool
+    lang: str = "en"
 
 
 def _number(token: str) -> int | None:
@@ -143,7 +159,9 @@ def pre_parse(text: str) -> tuple[list[Group], int | None]:
     return [Group(n, " ".join(w), f"{n} {' '.join(w)}".strip()) for n, w in groups], total
 
 
-def _periods() -> dict[str, str]:
+def _periods(lang: str) -> dict[str, str]:
+    """The period ids with their descriptions; weekday names in the person's language (en, fi,
+    fil, ceb; any other language gets English). The ids stay the same."""
     ids = {
         "today": "Today",
         "yesterday": "Yesterday",
@@ -152,8 +170,37 @@ def _periods() -> dict[str, str]:
         "this_month": "This month",
         "last_month": "Last month",
     }
-    names = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    names = DAY_NAMES.get(lang, EN_WEEKDAYS)
     return {**ids, **{d: f"The most recent {n}" for d, n in zip(WEEKDAYS, names, strict=True)}}
+
+
+def _month(first: dt.date) -> tuple[dt.date, dt.date]:
+    return first, first.replace(day=calendar.monthrange(first.year, first.month)[1])
+
+
+def _period(value: str | None, today: dt.date, lang: str) -> tuple[dt.date, dt.date] | None:
+    """The (start, end) dates of a period id, or of a weekday name in `lang` (the most recent
+    such weekday, today included); None for anything else."""
+    names = [n.lower() for n in DAY_NAMES.get(lang, EN_WEEKDAYS)]
+    if value is not None and value.lower() in names:
+        value = WEEKDAYS[names.index(value.lower())]
+    monday = today - dt.timedelta(days=today.weekday())
+    if value == "today":
+        return today, today
+    if value == "yesterday":
+        return today - dt.timedelta(days=1), today - dt.timedelta(days=1)
+    if value == "this_week":
+        return monday, monday + dt.timedelta(days=6)
+    if value == "last_week":
+        return monday - dt.timedelta(days=7), monday - dt.timedelta(days=1)
+    if value == "this_month":
+        return _month(today.replace(day=1))
+    if value == "last_month":
+        return _month((today.replace(day=1) - dt.timedelta(days=1)).replace(day=1))
+    if value in WEEKDAYS:
+        day = today - dt.timedelta(days=(today.weekday() - WEEKDAYS.index(value)) % 7)
+        return day, day
+    return None
 
 
 def build_query(deps: AgentDeps, message: str, previous_mia_message: str) -> Query:
@@ -183,8 +230,9 @@ def build_query(deps: AgentDeps, message: str, previous_mia_message: str) -> Que
         total=total,
         items=items,
         branches=branches,
-        periods=_periods(),
+        periods=_periods(deps.lang),
         why_asked=previous_mia_message == t("sales.why", deps.lang),
+        lang=deps.lang,
     )
 
 
@@ -219,6 +267,11 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
             "Which branch does the sender ask about?",
             {**q.branches, "all": "Every branch", **unsaid},
         ),
+        "item": _choice(
+            "Which one menu item does the sender ask about, for a question about sales over a"
+            " period? Not stated if the question is about all items.",
+            {**q.items, **unsaid},
+        ),
         "target_period": _choice(
             "Is the target for a day or for a month?",
             {"day": "One day", "month": "A month", **unsaid},
@@ -234,6 +287,10 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
             },
         ),
     }
+    if q.why_asked:
+        questions["theme"] = _choice(
+            "What is the main reason the sender gives for why sales went well?", THEMES
+        )
     for i in range(len(q.groups)):
         questions[f"item_{i}"] = _choice(
             f"Which menu item do the words of the group at index {i} of `groups` in the state"

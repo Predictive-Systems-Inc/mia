@@ -18,7 +18,7 @@ from mia.agents.sales_supervisor import MANIFEST, actions, decider, replies
 from mia.agents.sales_supervisor.tools import BINDINGS
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
-from mia.chat.replies import latest_message, reply_text, store_reply
+from mia.chat.replies import reply_text, store_reply
 from mia.core import events
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
@@ -68,7 +68,7 @@ def _query(
         return tapped, None
     if classify(html.unescape(text), deps.today, deps.lang).injection:
         return Decision(action="reply_only", args={"kind": "injection"}, confidence=1), None
-    last = latest_message(session, thread, "assistant")
+    last = _last_question(session, thread)  # a notification (the why question) counts
     return None, actions.build_query(deps, text, last.text if last else "")
 
 
@@ -164,7 +164,10 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
         action = decision.raw_action  # the action is clear, one count's item is not
     if action == "clarify":
         return _did_you_mean(session, deps, thread, decision)
-    tool = actions.ACTIONS[action].tool
+    spec = actions.ACTIONS.get(action)
+    if spec is None:  # a tapped decision of another agent
+        return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
+    tool = spec.tool
     if tool is None:  # reply_only
         kind = str(decision.args.get("kind", "other"))
         return store_reply(session, deps, thread, replies.conversation_reply(kind, deps.lang))

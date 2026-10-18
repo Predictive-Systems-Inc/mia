@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from mia.agents.decider import Reader
-from mia.agents.sales_supervisor.actions import Query, build_request, pre_parse
+from mia.agents.sales_supervisor.actions import Query, _period, build_request, pre_parse
 from mia.agents.sales_supervisor.decider import _args
 
 TODAY = dt.date(2026, 10, 19)  # a Monday
@@ -56,7 +56,9 @@ def query(message: str, why_asked: bool = False) -> Query:
 
 
 def args(action: str, message: str, picks: dict[str, str], why_asked: bool = False) -> Any:
-    answers = {k: {"choice": v, "confidence": 0.9} for k, v in picks.items()}
+    answers = {
+        k: {"choice": v, "confidence": 0.9} for k, v in {"item": "not_stated", **picks}.items()
+    }
     return _args(action, Reader(answers, query(message, why_asked)))
 
 
@@ -81,7 +83,7 @@ def test_group_picked_none_is_missing() -> None:
 
 def test_why_answer_outside_the_why_flow_is_missing() -> None:
     assert args("why_answer", "good weather", {})[1] == "why"
-    out, missing = args("why_answer", "good weather", {}, why_asked=True)
+    out, missing = args("why_answer", "good weather", {"theme": "other"}, why_asked=True)
     assert missing is None and out["text"] == "good weather"
 
 
@@ -144,3 +146,34 @@ def test_currency_symbols_are_stripped_and_query_is_frozen() -> None:
     assert pre_parse("total $1450")[1] == 1450
     with pytest.raises(dataclasses.FrozenInstanceError):
         query("x").message = "y"  # type: ignore[misc]
+
+
+def test_weekday_period_is_the_most_recent_one() -> None:
+    monday = dt.date(2026, 10, 19)
+    sat = dt.date(2026, 10, 17)
+    assert _period("sat", monday, "en") == (sat, sat)
+    assert _period("mon", monday, "en") == (monday, monday)  # today counts
+    assert _period("sabado", monday, "ceb") == (sat, sat)
+    assert _period("lauantai", monday, "fi") == (sat, sat)
+    assert _period("last_month", monday, "en") == (dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+    assert _period("whenever", monday, "en") is None
+
+
+def test_period_criteria_are_in_the_persons_language() -> None:
+    from mia.agents.sales_supervisor.actions import _periods
+
+    assert "sabado" in _periods("fil")["sat"] and "lauantai" in _periods("fi")["sat"]
+    assert "saturday" in _periods("de")["sat"] and set(_periods("ceb")) == set(_periods("en"))
+
+
+def test_the_theme_question_is_asked_only_for_a_why_answer() -> None:
+    assert "theme" not in build_request(query("x"), "m")["questions"]
+    assert "theme" in build_request(query("x", why_asked=True), "m")["questions"]
+
+
+def test_why_answer_themes_hold_the_confident_choice_else_other() -> None:
+    out, missing = args("why_answer", "may concert", {"theme": "event"}, why_asked=True)
+    assert missing is None and out["themes"] == ["event"]
+    answers = {"theme": {"choice": "event", "confidence": 0.3}}
+    out, _ = _args("why_answer", Reader(answers, query("ewan", True)))
+    assert out["themes"] == ["other"]

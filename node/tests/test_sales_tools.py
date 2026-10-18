@@ -245,10 +245,10 @@ def test_a_supervisor_cannot_report_all_branches(session: Session, ferinos: Feri
 
 def test_record_note_stores_the_answer(session: Session, ferinos: Ferinos) -> None:
     _, people = ferinos
-    args = RecordNoteInput(text="maraming tao sa mall")
+    args = RecordNoteInput(text="maraming tao sa mall", themes=["event"])
     out = tools.record_note(deps_for(session, people["Ana"]), args, "c8")
     note = session.get(SalesNote, out.note_id)
-    assert note is not None and note.text == "maraming tao sa mall"
+    assert note is not None and note.text == "maraming tao sa mall" and note.themes == ["event"]
     assert note.person_id == people["Ana"].id and out.business_date == today()
     assert session.exec(select(Event).where(Event.action == "sales.note_recorded")).one()
 

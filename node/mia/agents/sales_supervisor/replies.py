@@ -88,6 +88,10 @@ def tool_reply(tool: str, out: dict[str, Any], args: dict[str, Any], lang: str) 
         start, end = str(args["start"]), str(args["end"])
         if rep.best_day is None:
             return _text("sales.period.empty", lang, start=start, end=end)
+        if args.get("branch_id") == "all" and args.get("item_id"):
+            ranked = sorted(rep.rows, key=lambda r: -r.quantity)
+            lines = ", ".join(f"{r.branch} {format_int(r.quantity, lang)}" for r in ranked)
+            return _text("sales.period.by_branch", lang, item=ranked[0].item, lines=lines)
         total = format_money(rep.total, rep.currency, lang)
         best = rep.best_day.isoformat()
         return _text("sales.period", lang, start=start, end=end, total=total, best_day=best)

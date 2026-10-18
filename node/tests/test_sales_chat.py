@@ -9,11 +9,14 @@ from typing import Any
 import pytest
 from sqlmodel import Session, col, select
 
-from mia.agents.sales_supervisor.models import SalesCount
-from mia.chat.blocks import ChatReply, QuickRepliesBlock
+from mia.agents.decider import Decision
+from mia.agents.sales_supervisor import MANIFEST
+from mia.agents.sales_supervisor.models import SalesCount, SalesNote, SalesTarget
+from mia.chat import channels
+from mia.chat.blocks import ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.service import run_turn
-from mia.core import jev, orgconfig
-from mia.core.models import Branch, Event, Person
+from mia.core import events, jev, orgconfig
+from mia.core.models import Actor, Branch, Event, Person
 from mia.i18n import t
 from mia.settings import get_settings
 from mia.templates.retail.models import RetailItem
@@ -233,3 +236,104 @@ def test_today_reply_shows_the_share_of_the_target_reached() -> None:
     assert text == "Mall kiosk today: 1,200 Special. Total ₱54,000.00 of ₱36,000.00 (150%)."
     fi = tool_reply("today", out, {}, "fi")[0].text  # type: ignore[union-attr]
     assert "54\u202f000,00\xa0₱" in fi and "(150 %)" in fi
+
+
+def test_owner_sets_a_month_target_and_today_uses_its_share(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kiosk, people = ferinos
+    _answers(monkeypatch, "set_target", target_period="month", branch=kiosk.id, item_0="none")
+    reply = _turn(session, people["Rosa"], "target for the mall this month is 480,000")
+    assert "\u20b1480,000.00" in reply.text()
+    target = session.exec(select(SalesTarget).order_by(col(SalesTarget.created_at).desc())).first()
+    assert target is not None and target.amount == 48_000_000
+    _answers(monkeypatch, "report_sales", item_0=_item(session, "Special"))
+    first = _turn(session, people["Ana"], "3 sp")
+    _answers(monkeypatch, "sales_today", period="today")
+    today = _turn(session, people["Ana"], "how are we doing", first.thread_id)
+    assert "%" in today.text() and "\u20b1" in today.text()
+
+
+def test_best_day_this_month(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    _answers(monkeypatch, "sales_period", period="this_month", branch="all")
+    reply = _turn(session, people["Rosa"], "best day this month?")
+    assert "best day" in reply.text() or "no sales counted" in reply.text()
+
+
+def test_which_branch_sells_most_ube(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    _answers(
+        monkeypatch, "sales_period", period="last_week", branch="all", item=_item(session, "Ube")
+    )
+    reply = _turn(session, people["Rosa"], "which branch sells the most ube last week")
+    text = reply.text()
+    assert text.startswith("Ube: ") and "Mall kiosk" in text and "Street stall" in text
+    quantities = [
+        int(x.rsplit(" ", 1)[1].replace(",", "")) for x in text[5:].rstrip(".").split(", ")
+    ]
+    assert quantities == sorted(quantities, reverse=True)
+
+
+def test_a_why_answer_is_stored_with_a_theme(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kiosk, people = ferinos
+    ana = people["Ana"]
+    why = channels.notify(
+        session,
+        ana,
+        [TextBlock(text=t("sales.why", ana.language))],
+        Actor.system(kiosk.id),
+        MANIFEST.id,
+    )
+    session.commit()
+    _answers(monkeypatch, "why_answer", theme="event")
+    reply = _turn(session, ana, "maraming tao, may concert", why.thread_id)
+    assert reply.text() == t("sales.note_thanks", ana.language)
+    note = session.exec(select(SalesNote)).one()
+    assert note.themes == ["event"] and note.person_id == ana.id
+
+
+def test_an_unsure_theme_is_other(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kiosk, people = ferinos
+    ana = people["Ana"]
+    why = channels.notify(
+        session,
+        ana,
+        [TextBlock(text=t("sales.why", ana.language))],
+        Actor.system(kiosk.id),
+        MANIFEST.id,
+    )
+    session.commit()
+    _answers(monkeypatch, "why_answer", raw={"theme": choice("event", 0.3)})
+    _turn(session, ana, "ewan ko", why.thread_id)
+    assert session.exec(select(SalesNote)).one().themes == ["other"]
+
+
+def test_a_tapped_decision_of_another_agent_asks_to_rephrase(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kiosk, people = ferinos
+    ana = people["Ana"]
+    _answers(monkeypatch, "reply_only", conversation="greeting")
+    first = _turn(session, ana, "hi")
+    foreign = Decision(action="report_absence", confidence=1.0).model_dump(mode="json")
+    after = {"options": {"Go": foreign}, "message_id": first.message_id}
+    events.emit(
+        session,
+        "decision.clarify_asked",
+        ("thread", first.thread_id),
+        None,
+        after,
+        Actor.system(kiosk.id),
+    )
+    session.commit()
+    reply = _turn(session, ana, "Go", first.thread_id)
+    assert reply.text() == t("clarify.rephrase", ana.language)

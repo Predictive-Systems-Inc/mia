@@ -511,6 +511,7 @@ def set_target(deps: AgentDeps, args: SetTargetInput, tool_call_id: str) -> SetT
 class RecordNoteInput(BaseModel):
     text: str = Field(min_length=1, max_length=2000, description="The user's own words")
     asked_message_id: str | None = None
+    themes: list[str] = Field(default_factory=list, description="Why sales went well, by theme")
 
 
 class RecordNoteOutput(BaseModel):
@@ -529,6 +530,7 @@ def record_note(deps: AgentDeps, args: RecordNoteInput, tool_call_id: str) -> Re
             person_id=deps.person.id,
             text=args.text,
             asked_message_id=args.asked_message_id,
+            themes=args.themes,
         ),
         deps.actor,
         action="sales.note_recorded",

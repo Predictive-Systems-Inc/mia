@@ -4,8 +4,6 @@ Code does the arithmetic and the dates (rule 7); Jev's picks are item ids, perio
 branch. decide() runs no tool.
 """
 
-import calendar
-import datetime as dt
 from functools import partial
 from typing import Any
 
@@ -14,36 +12,13 @@ from mia.agents.decider import Decision, Reader
 from mia.agents.sales_supervisor.actions import (
     ACTIONS,
     NONE,
+    THEMES,
     WEEKDAYS,
     Query,
+    _month,
+    _period,
     build_request,
 )
-
-THIS_MONTH = "this_month"
-
-
-def _month(first: dt.date) -> tuple[dt.date, dt.date]:
-    return first, first.replace(day=calendar.monthrange(first.year, first.month)[1])
-
-
-def _period(value: str | None, today: dt.date) -> tuple[dt.date, dt.date]:
-    """The (start, end) dates of a period id; a weekday id is its most recent day (today if
-    it is that weekday); not stated is this month."""
-    monday = today - dt.timedelta(days=today.weekday())
-    if value == "today":
-        return today, today
-    if value == "yesterday":
-        return today - dt.timedelta(days=1), today - dt.timedelta(days=1)
-    if value == "this_week":
-        return monday, monday + dt.timedelta(days=6)
-    if value == "last_week":
-        return monday - dt.timedelta(days=7), monday - dt.timedelta(days=1)
-    if value == "last_month":
-        return _month((today.replace(day=1) - dt.timedelta(days=1)).replace(day=1))
-    if value in WEEKDAYS:
-        day = today - dt.timedelta(days=(today.weekday() - WEEKDAYS.index(value)) % 7)
-        return day, day
-    return _month(today.replace(day=1))
 
 
 def _minor(value: int) -> int:
@@ -117,8 +92,9 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     if action == "sales_today":
         return {"branch_id": _branch(r)}, None
     if action == "sales_period":
-        start, end = _period(r.pick("period", set(WEEKDAYS) | set(q.periods)), q.today)
-        item = _item(r, 0) if q.groups else None
+        picked = r.pick("period", set(WEEKDAYS) | set(q.periods))
+        start, end = _period(picked, q.today, q.lang) or _month(q.today.replace(day=1))
+        item = r.pick("item", set(q.items), fallback=True)
         return {
             "start": start.isoformat(),
             "end": end.isoformat(),
@@ -137,7 +113,12 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         }
         return args, None if amount is not None else "amount"
     if action == "why_answer":
-        args = {"text": q.message[:500], "asked_message_id": None}
+        theme = r.pick("theme", set(THEMES), fallback=True) if q.why_asked else None
+        args = {
+            "text": q.message[:500],
+            "asked_message_id": None,
+            "themes": [theme or "other"],
+        }
         return args, None if q.why_asked else "why"
     if action == "reply_only":
         kinds = {"greeting", "thanks", "goodbye", "capabilities", "other"}
