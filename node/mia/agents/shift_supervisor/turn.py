@@ -380,8 +380,11 @@ async def handle_turn(turn: Turn) -> ChatReply:
 
 
 def _run_due(session: Session, now: dt.datetime) -> int:
-    """Cover escalation, then the alerts (missed check-ins, unstaffed visits, the daily plan)."""
-    return cover.process_due(session, now) + alerts.run_due(session, now)
+    """Cover escalation, then the alerts (missed check-ins, unstaffed visits, the daily plan).
+    The escalation is committed first: the alerts roll back a failing branch's work."""
+    advanced = cover.process_due(session, now)
+    session.commit()
+    return advanced + alerts.run_due(session, now)
 
 
 SPEC = AgentSpec(

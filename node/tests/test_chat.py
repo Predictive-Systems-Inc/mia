@@ -326,7 +326,7 @@ def test_a_turn_stops_after_eight_model_calls(session: Session, people: dict[str
     from pydantic_ai.models.function import AgentInfo, FunctionModel
 
     from mia.agents.base import AgentDeps
-    from mia.chat import replies as service
+    from mia.chat import replies
     from mia.chat.blocks import AgentReply
     from mia.chat.service import run_turn
 
@@ -344,7 +344,7 @@ def test_a_turn_stops_after_eight_model_calls(session: Session, people: dict[str
         return "pong"
 
     reply = asyncio.run(run_turn(session, agent, people["Juha"], "Olen kipeä huomenna."))
-    assert calls == service.MAX_MODEL_CALLS == 8
+    assert calls == replies.MAX_MODEL_CALLS == 8
     assert reply.blocks[0].type == "text" and "esihenkilö" in reply.blocks[0].text.casefold()
     ev = session.exec(select(Event).where(Event.action == "chat.turn_capped")).one()
     assert ev.entity_id == reply.thread_id and ev.after == {"model_calls": 8, "tools": []}

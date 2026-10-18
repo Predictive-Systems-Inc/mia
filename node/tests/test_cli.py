@@ -8,7 +8,9 @@ import pytest
 from mia.cli import main
 
 
-def test_migrate_seed_chat_assign_confirm(capsys: pytest.CaptureFixture[str]) -> None:
+def test_migrate_seed_chat_assign_confirm(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     assert main(["migrate"]) == 0
     assert main(["seed"]) == 0
     assert main(["seed"]) == 0
@@ -29,8 +31,11 @@ def test_migrate_seed_chat_assign_confirm(capsys: pytest.CaptureFixture[str]) ->
     assert "on nyt sinun" in capsys.readouterr().out
     assert main(["inbox", "--as", "Sanna"]) == 0
     assert "hyväksyi" in capsys.readouterr().out
+    from mia.agents.shift_supervisor import alerts
+
+    monkeypatch.setattr(alerts, "run_due", lambda _session, _now: 0)  # the clock decides alerts
     assert main(["tick"]) == 0
-    assert "advanced " in capsys.readouterr().out  # alerts due on the clock count too
+    assert "advanced 0 cover request(s), sent 0" in capsys.readouterr().out
 
     # An override approval (Liisa is not available at 09:00) goes to admin or owner.
     assert main(["chat", "Who can cover Kamppi tomorrow at 9:00?", "--as", "Sanna"]) == 0

@@ -5,6 +5,7 @@ message) is what the tests read, so no channel is needed."""
 import datetime as dt
 from zoneinfo import ZoneInfo
 
+import pytest
 from sqlmodel import Session, select
 
 from mia.agents.shift_supervisor import alerts
@@ -180,3 +181,27 @@ def test_a_bad_branch_does_not_silence_the_others(
     assert (
         alerts.daily_plan(session, _local(branch, today, "17:30")) >= 1
     )  # the good branch still runs
+
+
+def test_a_rolled_back_alert_run_does_not_undo_the_cover_escalation(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The agents' due work shares no uncommitted state (alerts roll back a failing branch)."""
+    from mia.agents.shift_supervisor import alerts, cover
+    from mia.api.main import tick
+    from mia.core import events
+    from mia.core.models import Actor, Event
+
+    def escalate(s: Session, _now: object) -> int:
+        events.emit(s, "test.cover_advanced", ("thread", "t"), None, {}, Actor.system("b"))
+        return 1
+
+    def roll_back(s: Session, _now: object) -> int:
+        s.rollback()
+        return 0
+
+    monkeypatch.setattr(cover, "process_due", escalate)
+    monkeypatch.setattr(alerts, "run_due", roll_back)
+    assert tick() == 1
+    session.expire_all()
+    assert session.exec(select(Event).where(Event.action == "test.cover_advanced")).one()

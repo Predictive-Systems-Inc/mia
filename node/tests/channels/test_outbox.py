@@ -82,14 +82,46 @@ def test_channel_transport_refuses_requests_outside_an_outbox_send() -> None:
 
 
 def test_tick_runs_cover_escalation_and_sends_the_outbox(
-    session: Session, people: dict[str, Person], sim: SimAdapter, link: LinkFn
+    session: Session,
+    people: dict[str, Person],
+    sim: SimAdapter,
+    link: LinkFn,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from mia.agents.shift_supervisor import alerts
     from mia.api.main import run_due_work
 
+    monkeypatch.setattr(alerts, "run_due", lambda _session, _now: 0)  # the clock decides alerts
     _queue(session, people["Juha"], link)
-    advanced, sent = asyncio.run(run_due_work())
-    assert advanced >= 0  # alerts that fall due on the clock add to it and are sent in the round
-    assert sent >= 1 and len(sim.sent) == sent
+    assert asyncio.run(run_due_work()) == (0, 1)
+    assert len(sim.sent) == 1
+
+
+def test_an_alert_that_falls_due_is_sent_in_the_same_round(
+    session: Session,
+    people: dict[str, Person],
+    sim: SimAdapter,
+    link: LinkFn,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mia.agents.shift_supervisor import alerts
+    from mia.api.main import run_due_work
+
+    link(people["Juha"], ADDR, last_inbound_at=utcnow())
+
+    def one_alert(alert_session: Session, _now: dt.datetime) -> int:
+        deliver(
+            alert_session,
+            people["Juha"],
+            [TextBlock(text="Alert")],
+            Actor.system(people["Juha"].branch_id),
+            urgent=True,
+        )
+        return 1
+
+    monkeypatch.setattr(alerts, "run_due", one_alert)
+    assert asyncio.run(run_due_work()) == (1, 1)
+    assert len(sim.sent) == 1
 
 
 def _on_demand_sim(monkeypatch: pytest.MonkeyPatch) -> SimAdapter:

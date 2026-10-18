@@ -38,9 +38,14 @@ log = logging.getLogger(__name__)
 
 
 def tick() -> int:
-    """Run every registered agent's due work once. Returns how many items advanced."""
-    with session_scope() as session:
-        return sum(s.run_due(session, utcnow()) for s in AGENTS.values() if s.run_due)
+    """Run every registered agent's due work once, each in its own session so one agent's
+    failure or rollback never touches another's. Returns how many items advanced."""
+    total = 0
+    for spec in AGENTS.values():
+        if spec.run_due is not None:
+            with session_scope() as session:
+                total += spec.run_due(session, utcnow())
+    return total
 
 
 def _generate_visits() -> int:

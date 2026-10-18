@@ -7,7 +7,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlmodel import Session, select
 
 from mia.agents.base import AgentDeps, build_agent
-from mia.agents.shift_supervisor import turn as service
+from mia.agents.shift_supervisor import turn
 from mia.agents.shift_supervisor.agent import AGENT_DIR, MANIFEST, create_agent
 from mia.agents.shift_supervisor.tools import BINDINGS
 from mia.chat.blocks import AgentReply
@@ -141,8 +141,8 @@ def test_repeated_labels_get_a_numeric_suffix(
 ) -> None:
     deps = AgentDeps.__new__(AgentDeps)
     deps.lang = "en"
-    monkeypatch.setitem(service.STRINGS["en"], "intent.shift_supervisor.assign", "Show my visits")
-    labels = service._unique_labels(["shift_supervisor.my_visits", "shift_supervisor.assign"], deps)
+    monkeypatch.setitem(turn.STRINGS["en"], "intent.shift_supervisor.assign", "Show my visits")
+    labels = turn._unique_labels(["shift_supervisor.my_visits", "shift_supervisor.assign"], deps)
     assert labels == {
         "Show my visits": "shift_supervisor.my_visits",
         "Show my visits 2": "shift_supervisor.assign",
