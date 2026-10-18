@@ -18,7 +18,7 @@ UNCLEAR = "unclear"
 
 @dataclass(frozen=True)
 class Route:
-    kind: Literal["keep", "switch", "chosen", "ask"]
+    kind: Literal["keep", "switch", "chosen", "ask", "small_talk"]
     agent_id: str | None  # who answers; None when kind is "ask"
     confidence: float = 1.0
 
@@ -57,7 +57,9 @@ def fallback(agents: list[AgentSpec], active: str | None) -> Route:
 
 
 def decide(answers: dict[str, Any], agents: list[AgentSpec], active: str | None) -> Route:
-    """The spec's router table. Raises JevError for an answer outside the options."""
+    """The spec's router table plus the follow-up's small-talk row: a confident `unclear` with
+    no active agent goes to the lead agent (agents[0]) with kind small_talk. Raises JevError for
+    an answer outside the options."""
     try:
         picked = str(answers["agent"]["choice"])
         confidence = float(answers["agent"]["confidence"])
@@ -71,6 +73,9 @@ def decide(answers: dict[str, Any], agents: list[AgentSpec], active: str | None)
         if picked == active or not sure:
             return Route("keep", active, confidence)
         return Route("switch", picked, confidence)
+    if picked == UNCLEAR and confidence >= THRESHOLD:
+        # a confident "for no agent" is small talk: the lead agent greets back, no buttons
+        return Route("small_talk", agents[0].id, confidence)
     return Route("chosen", picked, confidence) if sure else Route("ask", None, confidence)
 
 

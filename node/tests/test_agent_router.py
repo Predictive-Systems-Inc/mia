@@ -62,7 +62,9 @@ def _agents(*ids: str) -> list[Any]:
         ("unclear", 0.9, "shift_supervisor", ("keep", "shift_supervisor")),
         ("sales_supervisor", 0.9, None, ("chosen", "sales_supervisor")),
         ("sales_supervisor", 0.5, None, ("ask", None)),
-        ("unclear", 0.9, None, ("ask", None)),
+        ("unclear", 0.9, None, ("small_talk", "shift_supervisor")),
+        ("unclear", 0.4, None, ("ask", None)),
+        ("unclear", 0.9, "sales_supervisor", ("keep", "sales_supervisor")),
     ],
 )
 def test_the_decision_table(
@@ -132,7 +134,7 @@ def test_with_no_active_agent_an_unsure_answer_asks_and_a_tap_answers(
     two_agents: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _router_answers(monkeypatch, two_agents, "unclear", 0.9)
+    _router_answers(monkeypatch, two_agents, "unclear", 0.4)
     asked = _turn(session, people["Sanna"], "hmm")
     buttons = next(b.options for b in asked.blocks if isinstance(b, QuickRepliesBlock))
     assert buttons == ["Vuoropäällikkö", "Myyntipäällikkö"]
@@ -172,7 +174,7 @@ def test_a_stale_route_button_is_routed_as_text(
     two_agents: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _router_answers(monkeypatch, two_agents, "unclear", 0.9)
+    _router_answers(monkeypatch, two_agents, "unclear", 0.4)
     asked = _turn(session, people["Sanna"], "hmm")
     _router_answers(monkeypatch, two_agents, "shift_supervisor")
     _turn(session, people["Sanna"], SHIFT, asked.thread_id)
@@ -252,7 +254,7 @@ def test_a_tap_on_an_agent_no_longer_offered_is_routed(
     two_agents: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _router_answers(monkeypatch, two_agents, "unclear", 0.9)
+    _router_answers(monkeypatch, two_agents, "unclear", 0.4)
     asked = _turn(session, people["Sanna"], "hmm")
     other = orgconfig.OrgSettings(agents=["shift_supervisor", "inventory_manager"])
     monkeypatch.setattr(orgconfig, "load", lambda org=None: other)
@@ -333,7 +335,7 @@ def test_a_notification_after_the_route_question_makes_its_buttons_stale(
     from mia.chat.blocks import TextBlock
     from mia.chat.channels import notify
 
-    _router_answers(monkeypatch, two_agents, "unclear", 0.9)
+    _router_answers(monkeypatch, two_agents, "unclear", 0.4)
     sanna = people["Sanna"]
     asked = _turn(session, sanna, "hmm")
     note = notify(
@@ -363,3 +365,30 @@ def test_the_router_is_gated_like_the_decider(
     failed = session.exec(select(Event).where(Event.action == "chat.route_failed")).all()
     assert failed == []  # the setting is the record
     assert any(isinstance(b, QuickRepliesBlock) for b in reply.blocks)  # no active agent: ask
+
+
+def test_small_talk_is_answered_by_the_lead_agent_without_buttons(
+    session: Session,
+    people: dict[str, Person],
+    monkeypatch: pytest.MonkeyPatch,
+    two_agents: list[dict[str, Any]],
+) -> None:
+    _router_answers(monkeypatch, two_agents, "unclear", 0.9)
+    reply = _turn(session, people["Sanna"], "good morning!")
+    assert not any(isinstance(b, QuickRepliesBlock) for b in reply.blocks)
+    assert reply.agent_id == TWO[0]
+    assert not session.exec(select(Event).where(Event.action == "chat.agent_switched")).all()
+    assert not session.exec(select(Event).where(Event.action == "chat.route_asked")).all()
+
+
+def test_a_confident_unclear_keeps_the_active_agent(
+    session: Session,
+    people: dict[str, Person],
+    monkeypatch: pytest.MonkeyPatch,
+    two_agents: list[dict[str, Any]],
+) -> None:
+    _router_answers(monkeypatch, two_agents, TWO[1], 0.95)
+    first = _turn(session, people["Sanna"], "we sold 12 classic today")
+    _router_answers(monkeypatch, two_agents, "unclear", 0.9)
+    reply = _turn(session, people["Sanna"], "thanks!", first.thread_id)
+    assert reply.agent_id == TWO[1]
