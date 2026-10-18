@@ -175,7 +175,7 @@ def test_ag_ui_endpoint_runs_the_agent(
     assert res.status_code == 200, res.text
     assert "RUN_STARTED" in res.text and "RUN_FINISHED" in res.text
     session.expire_all()
-    assert session.exec(select(Event).where(Event.action == "dispatcher_absences.created")).first()
+    assert session.exec(select(Event).where(Event.action == "absences.created")).first()
 
 
 def test_decide_validates_input(client: TestClient, people: dict[str, Person]) -> None:

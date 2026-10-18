@@ -13,11 +13,10 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from mia.agents.dispatcher import alerts, timesheets
-from mia.agents.dispatcher.models import Timesheet
 from mia.api.main import app
 from mia.cli import main
 from mia.core import scheduling
-from mia.core.models import Actor, Branch, Event, Job, Person, Visit
+from mia.core.models import Actor, Branch, Event, Job, Person, Timesheet, Visit
 from mia.core.rbac import PermissionDenied
 from tests.test_alerts import _notes
 

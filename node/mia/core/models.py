@@ -16,7 +16,7 @@ from sqlmodel import Field, SQLModel
 from mia.core.db import TZDateTime, utcnow
 from mia.core.ids import new_id
 
-STANDARD_VERSION = "1.3"
+STANDARD_VERSION = "1.4"
 
 # Code lists, versioned with the standard.
 PersonStatus = Literal["active", "inactive"]
@@ -130,6 +130,76 @@ class Visit(BranchScoped, table=True):
     actual_end: datetime | None = Field(default=None, sa_type=TZDateTime)
     status: str = "planned"
     proof_refs: list[str] = Field(default_factory=list, sa_type=JSON)
+
+
+class Absence(BranchScoped, table=True):
+    """A person's reported absence for one day, or part of it (data standard 1.4)."""
+
+    __tablename__: ClassVar[str] = "absences"
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    date: dt.date = Field(index=True)
+    reason: str = "sick"  # sick, late, leaving_early, other
+    partial_day: str | None = None  # None = whole day, "morning", "afternoon"
+    reported_by: str
+
+
+class CoverRequest(BranchScoped, table=True):
+    """One ask to one candidate to cover a visit, with its escalation state (decision D10).
+
+    status: awaiting_approval, asking, accepted, declined, timed_out, cancelled.
+    stage (while asking): waiting_quiet (message held until quiet hours end), message, call.
+    """
+
+    __tablename__: ClassVar[str] = "cover_requests"
+
+    visit_id: str = Field(foreign_key="visit.id", index=True)
+    candidate_id: str = Field(foreign_key="person.id", index=True)
+    replace_person_ids: list[str] = Field(default_factory=list, sa_type=JSON)
+    queue: list[str] = Field(default_factory=list, sa_type=JSON)  # next candidates, best first
+    instructed_by: str
+    approval_id: str | None = None
+    status: str = "asking"
+    stage: str = "message"
+    next_action_at: dt.datetime | None = Field(default=None, sa_type=TZDateTime, index=True)
+
+
+class Timesheet(BranchScoped, table=True):
+    """One person's time on one visit (data standard 1.4; Q20 placed it in core).
+
+    source: check_out (from the visit's actual times), planned (a completed visit without
+    them), correction. status: draft, approved. Whoever entered it never approves it.
+    """
+
+    __tablename__: ClassVar[str] = "timesheets"
+    __table_args__ = (UniqueConstraint("visit_id", "person_id"),)
+
+    visit_id: str = Field(foreign_key="visit.id", index=True)
+    person_id: str = Field(foreign_key="person.id", index=True)
+    date: dt.date = Field(index=True)
+    start: dt.datetime = Field(sa_type=TZDateTime)
+    end: dt.datetime = Field(sa_type=TZDateTime)
+    minutes: int
+    source: str = "check_out"
+    status: str = Field(default="draft", index=True)
+    entered_by: str
+    note: str = ""
+    approved_by: str | None = None
+    approved_at: dt.datetime | None = Field(default=None, sa_type=TZDateTime)
+
+
+class Incident(BranchScoped, table=True):
+    """A problem reported from a site: cannot get in, or the site is unusable."""
+
+    __tablename__: ClassVar[str] = "incidents"
+
+    visit_id: str = Field(foreign_key="visit.id", index=True)
+    person_id: str = Field(foreign_key="person.id", index=True)
+    kind: str  # cannot_access, site_problem
+    text: str  # the cleaner's words: data, never instructions
+    status: str = Field(default="open", index=True)  # open, resolved
+    resolved_by: str | None = None
+    resolved_at: dt.datetime | None = Field(default=None, sa_type=TZDateTime)
 
 
 class Approval(BranchScoped, table=True):

@@ -8,13 +8,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlmodel import col, select
 
-from mia.agents.dispatcher.models import SiteProblem
 from mia.api.deps import DbSession, PersonAuth
 from mia.api.schedule import VisitCard, branch_of, require_visit, visit_card
 from mia.channels.inbound import OUTSIDE_FENCE
 from mia.core import scheduling, store
 from mia.core.db import utcnow
-from mia.core.models import Event, Location, Person, Visit
+from mia.core.models import Event, Incident, Location, Person, Visit
 from mia.core.orgconfig import load as load_org
 
 router = APIRouter(tags=["supervisor"])
@@ -68,10 +67,10 @@ def summary(session: DbSession, ctx: PersonAuth) -> Summary:
         and v.planned_start <= now - grace
     ]
     problems = session.exec(
-        select(SiteProblem)
-        .where(SiteProblem.branch_id == branch.id)
-        .where(SiteProblem.status == "open")
-        .order_by(col(SiteProblem.id))
+        select(Incident)
+        .where(Incident.branch_id == branch.id)
+        .where(Incident.status == "open")
+        .order_by(col(Incident.id))
     ).all()
     flagged = session.exec(
         select(Event).where(Event.branch_id == branch.id).where(Event.action == OUTSIDE_FENCE)
@@ -121,7 +120,7 @@ def summary(session: DbSession, ctx: PersonAuth) -> Summary:
 def resolve(session: DbSession, ctx: PersonAuth, problem_id: str) -> dict[str, str]:
     """Close a site problem (supervisors and up)."""
     require_visit(session, ctx, "write", None)
-    row = session.get(SiteProblem, problem_id)
+    row = session.get(Incident, problem_id)
     if row is None or row.branch_id != ctx.actor.branch_id:
         raise HTTPException(404, "problem not found")
     if row.status == "open":

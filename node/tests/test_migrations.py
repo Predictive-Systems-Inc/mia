@@ -103,3 +103,48 @@ def test_upgrade_from_1_2_keeps_link_codes_and_attempts() -> None:
             "whatsapp",
             "358401",
         )
+
+
+RENAMED = {
+    "dispatcher_absences": "absences",
+    "dispatcher_cover_requests": "cover_requests",
+    "dispatcher_timesheets": "timesheets",
+    "dispatcher_site_problems": "incidents",
+    "dispatcher_checklist_ticks": "cleaning_checklist_ticks",
+}
+
+
+def test_upgrade_from_1_3_keeps_agent_rows_in_shared_tables() -> None:
+    """The dispatcher's tables become shared (data standard 1.4) with their rows and indexes."""
+    cfg = _alembic_config()
+    command.upgrade(cfg, "0007")
+    ts = "'2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00'"
+    with get_engine().begin() as conn:
+        conn.execute(text(f"INSERT INTO organisation VALUES ('O', {ts}, 'Org', 'FI', 'fi')"))
+        conn.execute(text(f"INSERT INTO branch VALUES ('B', {ts}, 'O', 'Hki', 'Europe/Helsinki')"))
+        conn.execute(
+            text(
+                f"INSERT INTO person VALUES ('P', {ts}, 'B', 'Pia', 'active', '[\"staff\"]', '[]', "
+                "'employee', 'fi', '', NULL, NULL, 1)"
+            )
+        )
+        conn.execute(
+            text(
+                f"INSERT INTO dispatcher_absences (id, created_at, updated_at, branch_id, person_id,"
+                f" date, reason, partial_day, reported_by) VALUES ('A', {ts}, 'B', 'P',"
+                " '2026-01-02', 'sick', NULL, 'P')"
+            )
+        )
+    command.upgrade(cfg, "head")
+    with get_engine().connect() as conn:
+        tables = set(inspect(conn).get_table_names())
+        assert set(RENAMED.values()) <= tables
+        assert not set(RENAMED) & tables
+        assert conn.execute(text("SELECT reason FROM absences")).scalar() == "sick"
+        indexes = {i["name"] for i in inspect(conn).get_indexes("absences")}
+        assert indexes == {"ix_absences_branch_id", "ix_absences_date", "ix_absences_person_id"}
+    command.downgrade(cfg, "0007")
+    with get_engine().connect() as conn:
+        tables = set(inspect(conn).get_table_names())
+        assert set(RENAMED) <= tables
+        assert conn.execute(text("SELECT reason FROM dispatcher_absences")).scalar() == "sick"

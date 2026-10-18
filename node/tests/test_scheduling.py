@@ -249,7 +249,7 @@ def test_assign_reasons_cover_each_rule(
     store.update(session, job, {"required_skills": ["windows"]}, sanna)
     reasons = scheduling.ineligibility(session, branch, other, people["Mikael"])
     assert any("skill" in r for r in reasons), reasons
-    from mia.agents.dispatcher.models import Absence
+    from mia.core.models import Absence
 
     store.insert(
         session,

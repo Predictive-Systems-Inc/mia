@@ -11,10 +11,9 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.dispatcher import cover, scoring
-from mia.agents.dispatcher.models import Absence
 from mia.core import scheduling, store
 from mia.core.db import utcnow
-from mia.core.models import Job, Location, Person, Visit
+from mia.core.models import Absence, Job, Location, Person, Visit
 from mia.core.rbac import Resource, get_rbac
 
 MORNING_ENDS = dt.time(12, 0)
@@ -171,7 +170,7 @@ def record_absence(
     person = deps.person
     if args.person_name:
         person = find_person(deps.session, deps.branch.id, args.person_name)
-    resource = Resource(kind="data", name="dispatcher_absences", owner_id=person.id)
+    resource = Resource(kind="data", name="core.absence", owner_id=person.id)
     _check(deps, resource, "write", tool_call_id)
     existing = deps.session.exec(
         select(Absence).where(Absence.person_id == person.id).where(Absence.date == args.date)
@@ -601,14 +600,14 @@ def report_site_problem(
     """Record a problem at the acting person's current (or next) visit today and tell the
     supervisors at once."""
     from mia.agents.dispatcher.alerts import supervisors
-    from mia.agents.dispatcher.models import SiteProblem
     from mia.chat.blocks import TextBlock
     from mia.chat.channels import notify
+    from mia.core.models import Incident
     from mia.i18n import t
 
     _check(
         deps,
-        Resource(kind="data", name="dispatcher_site_problems", owner_id=deps.person.id),
+        Resource(kind="data", name="core.incident", owner_id=deps.person.id),
         "write",
         tool_call_id,
     )
@@ -618,7 +617,7 @@ def report_site_problem(
         return ProblemOutput(status="invalid", reason="no_visit")
     row = store.insert(
         deps.session,
-        SiteProblem(
+        Incident(
             branch_id=deps.branch.id,
             visit_id=visit.id,
             person_id=deps.person.id,
@@ -671,8 +670,7 @@ class ChecklistOutput(BaseModel):
 def checklist(deps: AgentDeps, args: ChecklistInput, tool_call_id: str) -> ChecklistOutput:
     """The current visit's checklist with its ticks; with `item`, tick that item (prefix match,
     case-insensitive). Ticking twice is a no-op; an unknown item is reported back."""
-    from mia.agents.dispatcher.models import ChecklistTick
-    from mia.templates.cleaning.models import CleaningChecklist
+    from mia.templates.cleaning.models import CleaningChecklist, CleaningChecklistTick
 
     owner = Resource(kind="data", name="core.visit", owner_id=deps.person.id)
     _check(deps, owner, "read", tool_call_id)
@@ -690,7 +688,9 @@ def checklist(deps: AgentDeps, args: ChecklistInput, tool_call_id: str) -> Check
             reason="no_checklist",
             visit=visit_info(deps.session, visit, deps.branch.timezone),
         )
-    ticks = deps.session.exec(select(ChecklistTick).where(ChecklistTick.visit_id == visit.id)).all()
+    ticks = deps.session.exec(
+        select(CleaningChecklistTick).where(CleaningChecklistTick.visit_id == visit.id)
+    ).all()
     done = {t_.item for t_ in ticks}
     ticked = unknown = None
     if args.item is not None:
@@ -711,15 +711,13 @@ def checklist(deps: AgentDeps, args: ChecklistInput, tool_call_id: str) -> Check
             if ticked not in done:
                 _check(
                     deps,
-                    Resource(
-                        kind="data", name="dispatcher_checklist_ticks", owner_id=deps.person.id
-                    ),
+                    Resource(kind="data", name="cleaning_checklist_ticks", owner_id=deps.person.id),
                     "write",
                     tool_call_id,
                 )
                 store.insert(
                     deps.session,
-                    ChecklistTick(
+                    CleaningChecklistTick(
                         branch_id=deps.branch.id,
                         visit_id=visit.id,
                         item=ticked,

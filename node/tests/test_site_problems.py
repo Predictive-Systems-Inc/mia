@@ -9,11 +9,10 @@ from sqlmodel import Session, select
 
 from mia.agents.dispatcher import tools
 from mia.agents.dispatcher.classifier import classify
-from mia.agents.dispatcher.models import SiteProblem
 from mia.api.main import app
 from mia.chat.channels import NOTIFICATION
 from mia.core import scheduling
-from mia.core.models import Actor, Branch, Job, Message, Person, Thread, Visit
+from mia.core.models import Actor, Branch, Incident, Job, Message, Person, Thread, Visit
 from tests.test_tools import deps_for
 
 TODAY = dt.date(2026, 9, 30)
@@ -64,7 +63,7 @@ def test_report_tool_records_and_tells_the_supervisor(
         deps, tools.ReportProblemInput(kind="cannot_access", text="Ovikoodi ei toimi"), "c1"
     )
     assert out.status == "ok" and out.visit and out.visit.visit_id == visit.id
-    row = session.exec(select(SiteProblem)).one()
+    row = session.exec(select(Incident)).one()
     assert (row.kind, row.status, row.person_id, row.visit_id) == (
         "cannot_access",
         "open",
@@ -200,7 +199,7 @@ def test_long_problem_message_does_not_crash_the_turn(
     login(client, people["Juha"])
     res = client.post("/chat", json={"text": "En pääse sisään, ovi on lukossa. " + "x" * 600})
     assert res.status_code == 200, res.text
-    row = session.exec(select(SiteProblem)).one()
+    row = session.exec(select(Incident)).one()
     assert len(row.text) <= 500
 
 
@@ -290,7 +289,7 @@ def test_problem_of_another_branch_is_invisible(
     )
     problem = store.insert(
         session,
-        SiteProblem(
+        Incident(
             branch_id=other.id,
             visit_id=visit.id,
             person_id=stranger.id,

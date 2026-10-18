@@ -15,13 +15,12 @@ from sqlmodel import Session, col, select
 
 from mia.agents.dispatcher import timesheets
 from mia.agents.dispatcher.agent import MANIFEST
-from mia.agents.dispatcher.models import Timesheet
 from mia.agents.dispatcher.rules import _visit_card
 from mia.agents.dispatcher.tools import visit_info
 from mia.chat.blocks import Block, TextBlock
 from mia.chat.channels import notify
 from mia.core import events
-from mia.core.models import Actor, Branch, Event, Person, Visit
+from mia.core.models import Actor, Branch, Event, Person, Timesheet, Visit
 from mia.core.orgconfig import load as load_org
 from mia.i18n import t
 

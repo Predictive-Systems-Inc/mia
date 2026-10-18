@@ -18,12 +18,11 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, col, select
 
 from mia.agents.dispatcher import scoring
-from mia.agents.dispatcher.models import CoverRequest
 from mia.channels.base import TemplateCall
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.chat.channels import call_adapter, notify
 from mia.core import approvals, events, store
-from mia.core.models import Actor, Approval, Branch, Location, Person, Visit
+from mia.core.models import Actor, Approval, Branch, CoverRequest, Location, Person, Visit
 from mia.core.orgconfig import OrgSettings
 from mia.core.orgconfig import load as load_org
 from mia.i18n import t

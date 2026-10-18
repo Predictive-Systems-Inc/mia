@@ -8,9 +8,9 @@ from sqlmodel import Session, select
 
 from mia.agents.dispatcher import tools
 from mia.agents.dispatcher.classifier import classify
-from mia.agents.dispatcher.models import ChecklistTick
 from mia.api.main import app
 from mia.core.models import Branch, Event, Job, Person, Visit
+from mia.templates.cleaning.models import CleaningChecklistTick
 from tests.test_tools import deps_for
 
 
@@ -69,7 +69,7 @@ def test_show_tick_and_repeat(
     assert [(i.text, i.done) for i in out.items] == [("Empty bins", True), ("Wipe surfaces", False)]
     again = tools.checklist(deps, tools.ChecklistInput(item="Empty bins"), "c3")
     assert again.ticked == "Empty bins"
-    assert len(session.exec(select(ChecklistTick)).all()) == 1  # ticking twice is a no-op
+    assert len(session.exec(select(CleaningChecklistTick)).all()) == 1  # ticking twice is a no-op
     unknown = tools.checklist(deps, tools.ChecklistInput(item="windows"), "c4")
     assert unknown.status == "ok" and unknown.ticked is None and unknown.unknown == "windows"
     assert session.exec(select(Event).where(Event.action == "checklist.ticked")).one()
@@ -144,7 +144,7 @@ def test_exact_match_wins_and_short_prefixes_do_not_tick(
     for empty in ("", "  ", "b"):
         out = tools.checklist(deps, tools.ChecklistInput(item=empty), "c3")
         assert out.ticked is None, empty
-    assert len(session.exec(select(ChecklistTick)).all()) == 2
+    assert len(session.exec(select(CleaningChecklistTick)).all()) == 2
 
 
 def test_long_lists_fit_the_quick_replies_and_long_items_do_not_crash(

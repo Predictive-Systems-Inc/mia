@@ -3,7 +3,6 @@
 from sqlalchemy import Engine
 from sqlmodel import SQLModel
 
-import mia.agents.dispatcher.models
 import mia.core.events
 import mia.core.models
 import mia.templates.cleaning.models  # noqa: F401

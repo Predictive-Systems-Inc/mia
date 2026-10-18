@@ -118,9 +118,7 @@ def test_same_webhook_twice_runs_one_turn(
     assert post(client, sim, body) == 200
     assert post(client, sim, body) == 200
     assert len(session.exec(select(ChannelInbound)).all()) == 1
-    absences = session.exec(
-        select(Event).where(Event.action == "dispatcher_absences.created")
-    ).all()
+    absences = session.exec(select(Event).where(Event.action == "absences.created")).all()
     assert len(absences) == 1
 
 

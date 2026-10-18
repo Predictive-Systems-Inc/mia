@@ -2,8 +2,7 @@
 completed visits, corrections, approval with separation of duties (whoever entered a row
 never approves it), and the payroll export from approved rows only.
 
-Agent-owned (`dispatcher_timesheets`, rule 9) until Q20 places them in the data standard;
-the shape is Q20's, so the move is a rename. All writes go through store (rule 1).
+Shared core table `timesheets` (data standard 1.4, Q20). All writes go through store (rule 1).
 """
 
 import csv
@@ -14,15 +13,14 @@ from typing import TextIO
 
 from sqlmodel import Session, col, select
 
-from mia.agents.dispatcher.models import Timesheet
 from mia.core import events, store
 from mia.core.db import utcnow
-from mia.core.models import Actor, Branch, Event, Location, Person, Visit
+from mia.core.models import Actor, Branch, Event, Location, Person, Timesheet, Visit
 from mia.core.rbac import Resource, get_rbac
 
 log = logging.getLogger(__name__)
 LOOKBACK = dt.timedelta(days=14)  # completed visits older than this never get a draft
-RESOURCE = "dispatcher_timesheets"
+RESOURCE = "core.timesheet"
 
 
 class TimesheetError(ValueError):

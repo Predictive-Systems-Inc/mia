@@ -12,7 +12,7 @@ g, accountant, viewer, *
 p, staff, *, data:core.visit, read_own, allow
 p, staff, *, data:core.person, read_own, allow
 p, staff, *, data:core.location, read, allow
-p, staff, *, data:dispatcher_absences, write_own, allow
+p, staff, *, data:core.absence, write_own, allow
 p, staff, *, tool:dispatcher.get_my_visits, execute, allow
 p, staff, *, tool:dispatcher.record_absence, execute, allow
 p, staff, *, tool:dispatcher.respond_to_cover, execute, allow
@@ -20,19 +20,27 @@ p, staff, *, tool:dispatcher.check_in, execute, allow
 p, staff, *, tool:dispatcher.check_out, execute, allow
 p, staff, *, tool:dispatcher.visit_details, execute, allow
 p, staff, *, tool:dispatcher.report_site_problem, execute, allow
-p, staff, *, data:dispatcher_site_problems, write_own, allow
+p, staff, *, data:core.incident, write_own, allow
 p, staff, *, tool:dispatcher.checklist, execute, allow
-p, staff, *, data:dispatcher_checklist_ticks, write_own, allow
-p, staff, *, data:dispatcher_timesheets, read_own, allow
-p, staff, *, data:dispatcher_timesheets, write_own, allow
+p, staff, *, data:cleaning_checklist_ticks, write_own, allow
+p, staff, *, data:core.timesheet, read_own, allow
+p, staff, *, data:core.timesheet, write_own, allow
 p, staff, *, data:core.visit, write_own, allow
 p, staff, *, data:core.auth_devices, read_own, allow
 p, staff, *, data:core.auth_devices, write_own, allow
 
 # supervisor: schedules and approvals for daily operations
 p, supervisor, *, data:core.*, read, allow
-p, supervisor, *, data:dispatcher_*, write, allow
-p, supervisor, *, data:dispatcher_*, read, allow
+p, supervisor, *, data:core.absence, write, allow
+p, supervisor, *, data:core.absence, read, allow
+p, supervisor, *, data:core.cover_request, write, allow
+p, supervisor, *, data:core.cover_request, read, allow
+p, supervisor, *, data:core.timesheet, write, allow
+p, supervisor, *, data:core.timesheet, read, allow
+p, supervisor, *, data:core.incident, write, allow
+p, supervisor, *, data:core.incident, read, allow
+p, supervisor, *, data:cleaning_checklist_ticks, write, allow
+p, supervisor, *, data:cleaning_checklist_ticks, read, allow
 p, supervisor, *, tool:dispatcher.find_replacements, execute, allow
 p, supervisor, *, tool:dispatcher.assign_cover, execute, allow
 p, supervisor, *, data:core.visit, write, allow

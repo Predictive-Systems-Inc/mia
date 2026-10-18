@@ -134,7 +134,7 @@ def candidate_data(
 ) -> list[scoring.CandidateData]:
     """Everything scoring needs for the active staff of the branch (or `only` those ids):
     availability windows, hour limits, this week's other bookings, absences, site history."""
-    from mia.agents.dispatcher.models import Absence  # absences are the dispatcher's records
+    from mia.core.models import Absence
 
     tz = branch.timezone
     week_start = _monday(visit.date)

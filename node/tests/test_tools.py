@@ -9,10 +9,9 @@ from sqlmodel import Session, select
 from mia.agents.base import AgentDeps, call_tool
 from mia.agents.dispatcher import tools
 from mia.agents.dispatcher.agent import MANIFEST
-from mia.agents.dispatcher.models import Absence
 from mia.core import approvals
 from mia.core.db import utcnow
-from mia.core.models import Actor, Approval, Branch, Event, Person, Visit
+from mia.core.models import Absence, Actor, Approval, Branch, Event, Person, Visit
 from mia.core.rbac import PermissionDenied
 
 
@@ -91,11 +90,8 @@ def test_record_absence_creates_then_updates(
     assert second.affected_visits == []  # both of Juha's visits are before noon
     rows = session.exec(select(Absence)).all()
     assert len(rows) == 1 and rows[0].partial_day == "afternoon"
-    actions = [
-        e.action
-        for e in session.exec(select(Event).where(Event.entity_type == "dispatcher_absences"))
-    ]
-    assert actions == ["dispatcher_absences.created", "dispatcher_absences.updated"]
+    actions = [e.action for e in session.exec(select(Event).where(Event.entity_type == "absences"))]
+    assert actions == ["absences.created", "absences.updated"]
     # Visits are not changed by an absence.
     assert all(
         people["Juha"].id in v.assigned_person_ids
@@ -196,7 +192,7 @@ def test_rule_breaking_instruction_needs_override_approval(
     approvals.decide(
         session, approval.id, Actor.person(people["Helena"]), "approved", stepped_up_at=utcnow()
     )
-    from mia.agents.dispatcher.models import CoverRequest
+    from mia.core.models import CoverRequest
 
     request = session.exec(select(CoverRequest)).one()
     assert request.status == "asking"  # now Liisa is asked to confirm

@@ -12,10 +12,9 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps
 from mia.agents.dispatcher import cover, tools
 from mia.agents.dispatcher.agent import MANIFEST, create_agent
-from mia.agents.dispatcher.models import CoverRequest
 from mia.chat.channels import NOTIFICATION, CallResult, StubCallAdapter, set_call_adapter
 from mia.core import scheduling, store
-from mia.core.models import Actor, Branch, Event, Job, Message, Person, Thread, Visit
+from mia.core.models import Actor, Branch, CoverRequest, Event, Job, Message, Person, Thread, Visit
 from mia.core.orgconfig import OrgSettings, QuietHours
 
 HEL = ZoneInfo("Europe/Helsinki")
