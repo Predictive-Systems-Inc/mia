@@ -162,3 +162,29 @@ all ten languages, machine drafts noted as before.
 2. Decision 2 (retail case set) and the eval run; the gate must pass on the held-out half
    before 4 ships, so that memory does not hide a routing problem.
 3. Decision 4a and 4b, then 5, then 4c.
+
+## Carried over from the part 1 whole-branch review (19 Oct 2026)
+
+Minor findings ruled as follow-up, not fixed in part 1. Pick them up with the work above or
+when the file is next touched.
+
+- `chat/runs.py` calls the shift supervisor's `resolve_turn` for any streaming spec; a second
+  streaming agent needs a `resolve` hook on `AgentSpec`. `chat/replies.py` and
+  `chat/service.py` also import shift supervisor modules; ADR 015's "no chat code imports a
+  specific agent" is not yet true.
+- A single-agent person's expired turn shows "Is this about" with one button; an agent-stage
+  expiry sends `clarify.rephrase` with no hint of which message it means.
+- A resume that fails with JevUnreachable after classification leaves `intent.classified`
+  (and a switch event) behind on every tick while Jev is down. Audit noise.
+- `deferred.open_turns` scans every deferred and resumed event; filter by thread or index
+  when the log grows.
+- Router context: the previous Mia reply is sent to Jev even when the thread or reply is
+  sensitive (access notes repeated in free text). Hold it back for sensitive threads.
+- The rule 15 id test matches whole quoted ids only; prefixed literals pass. Needs a rule for
+  i18n keys first.
+- Tests to add: the 500/503 retry count in `core/jev`; an AG-UI language tap; `resumed_reply`
+  raising; the per-turn longest wait; `keep` overriding a pending question.
+- `service._store` and `replies._store` share a name; rename when next touched.
+- The message is classified twice on first contact (language question context); cost only.
+- Switch texts in the router case set duplicate spike texts (fixed by the retail case set).
+- Native review of the eight machine-drafted languages (Q28 to Q35).
