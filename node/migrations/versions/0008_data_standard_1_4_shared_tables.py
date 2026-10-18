@@ -2,7 +2,8 @@
 
 absences, cover_requests, timesheets and incidents move to core; checklist ticks move to the
 cleaning template. A rename in place: rows, columns and constraints are kept, indexes are
-renamed to match the new table names.
+renamed to match the new table names. The agent id in chat threads, chat messages and approvals
+follows (code looks those up by the new id); events are append-only and stay as written.
 
 Revision ID: 0008
 Revises: 0007
@@ -41,11 +42,47 @@ def _rename(old: str, new: str) -> None:
             b.create_index(name, list(ix["column_names"]), unique=bool(ix["unique"]))
 
 
+def _agent_id(old: str, new: str) -> None:
+    """Rewrite the agent id (and the '<id>.' prefix of approval types) in non-event rows."""
+    conn = op.get_bind()
+    params = {
+        "old": old,
+        "new": new,
+        "old_role": f"agent.{old}",
+        "new_role": f"agent.{new}",
+        "like": f"{old}.%",
+        "cut": len(old) + 2,
+    }
+    for table in ("chat_threads", "chat_messages"):
+        conn.execute(sa.text(f"UPDATE {table} SET agent_id = :new WHERE agent_id = :old"), params)
+    conn.execute(
+        sa.text(
+            "UPDATE chat_messages SET sender_id = :new_role WHERE role = 'assistant' AND sender_id = :old_role"
+        ),
+        params,
+    )
+    conn.execute(
+        sa.text(
+            "UPDATE approval SET type = :new || '.' || substr(type, :cut) WHERE type LIKE :like"
+        ),
+        params,
+    )
+    conn.execute(
+        sa.text(
+            "UPDATE approval SET requester_id = :new_role "
+            "WHERE requester_type = 'agent' AND requester_id = :old_role"
+        ),
+        params,
+    )
+
+
 def upgrade() -> None:
     for old, new in TABLES.items():
         _rename(old, new)
+    _agent_id("dispatcher", "shift_supervisor")
 
 
 def downgrade() -> None:
+    _agent_id("shift_supervisor", "dispatcher")
     for old, new in TABLES.items():
         _rename(new, old)

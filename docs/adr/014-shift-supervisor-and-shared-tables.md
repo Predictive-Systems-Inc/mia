@@ -26,6 +26,9 @@ timesheets, and a shop's broken oven is the same record as a cleaner's site prob
   seed and demo, so no compatibility map; reseed when history matters.
 - Event rows written before 0008 also keep the old table names as entity_type and action (for
   example `dispatcher_absences.created`), not only `dispatcher.*` tool and intent ids.
+- Migration 0008 also renames the agent id in chat threads, chat messages (agent id and
+  assistant sender) and approvals (type prefix and agent requester), because code looks those
+  up by the new id. Events stay as written.
 - Q20 (where timesheets live) is answered: core.
 - New agents start with job ids: sales_supervisor, inventory_manager, bookkeeper, hr_officer,
   branch_manager.

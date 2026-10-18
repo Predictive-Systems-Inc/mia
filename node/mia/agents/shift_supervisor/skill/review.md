@@ -1,3 +1,5 @@
+Note (18 Oct 2026): the role id is now shift_supervisor (ADR 014); commands below use the old id.
+
 # Dispatcher skill data: review notes (Gate 1 package)
 
 Date: 2026-10-12. Plan: role.yaml (13 intents, en and fi, cleaners 80% over WhatsApp,

@@ -19,15 +19,16 @@ mia/
       cli.py                mia migrate | seed | serve | chat | decide | inbox | tick | geocode |
                             backup | verify-db | ...
       core/                 models, db, ids, events, store, rbac, approvals, egress, usage, people,
+                            absences, cover requests, timesheets, incidents (data standard 1.4),
                             geocoding (pluggable providers), orgconfig (organisation settings),
                             keys (master key, HKDF, scrypt, TOTP), auth (sessions, codes,
                             credentials, devices, clients; ADR 011), scheduling (recurrence,
                             visit generation, assignment rules, check-in, inbox), billing
                             (the monthly summary export)
-      templates/cleaning/   models (sites, checklists), seed, importer (master data from YAML)
+      templates/cleaning/   models (sites, checklists, checklist ticks), seed, importer (master data from YAML)
       learning/             role skill data: generate, translate (the eval set by language), train, bakeoff
       agents/               base.py (manifest, guard, model factory)
-        shift_supervisor/   manifest.yaml, job.md, prompts/, models.py, classifier.py,
+        shift_supervisor/   manifest.yaml, job.md, prompts/, classifier.py,
                             scoring.py, cover.py (confirmation flow), alerts.py (missed
                             check-in and check-out, overtime, unstaffed visits, daily plan),
                             timesheets.py (drafts, corrections, approval, payroll rows),
