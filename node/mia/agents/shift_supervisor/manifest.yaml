@@ -12,7 +12,6 @@ roles:
     - data:core.visit:read
     - data:core.location:read
     - data:core.absence:write
-    - data:core.cover_request:write
     - data:core.timesheet:write
     - data:core.incident:write
     - data:cleaning_checklist_ticks:write

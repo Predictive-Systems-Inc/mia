@@ -38,7 +38,10 @@ The package lives in node/mia; paths below are relative to node/ (mia/core means
     (one Session is never used by two threads at once; agent tools are sequential).
 13. API routes get their session through Depends (DbSession), never
     by opening one themselves.
-14. Schema changes need an Alembic migration in node/migrations/versions; create_all is for tests.
+14. Schema changes go through Alembic in node/migrations/versions; create_all is for tests.
+    Until the first candidate release there is one migration, 0000_initial: change it in place
+    and rebuild dev databases (rm data/mia.db && uv run mia migrate && uv run mia seed). From
+    the first candidate on, every change gets its own migration (0001 and on), never an edit.
 15. Agents are named after the real job they do, as a snake_case job title (shift_supervisor,
     sales_supervisor, inventory_manager, bookkeeper, hr_officer, branch_manager), never after
     a mechanism (dispatcher, router, bot). The id is used everywhere: package mia/agents/<id>/,

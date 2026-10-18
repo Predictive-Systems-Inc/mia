@@ -17,11 +17,14 @@ timesheets, and a shop's broken oven is the same record as a cleaner's site prob
 - Data standard 1.4: `absences`, `cover_requests`, `timesheets` and `incidents` (was
   `dispatcher_site_problems`) are core tables; `cleaning_checklist_ticks` belongs to the
   cleaning template.
-- Migrations 0001 to 0008 are squashed into one `0100_initial` (data standard 1.4; a new id so a
-  database stamped with any squashed revision fails loudly). Mia has no
-  production release and all data is seed and demo, so databases are rebuilt from scratch
-  (`mia migrate && mia seed`) instead of upgraded. From here on every schema change gets its
-  own migration again (rule 14).
+- Migrations 0001 to 0008 are squashed into one `0000_initial` (data standard 1.4), an id none
+  of them had, so a database stamped with one of them fails loudly. Mia has no production
+  release and all data is seed and demo, so databases are rebuilt from scratch
+  (`mia migrate && mia seed`) instead of upgraded. Until the first candidate release, schema
+  changes edit `0000_initial` in place and dev databases are reset (rule 14); from the first
+  candidate on, each change gets its own migration, numbered from 0001. Any database left from
+  before the squash must be rebuilt before that first 0001 lands: after it, a database still
+  stamped with the old 0001 would pass as current.
 - Dated documents (research reports, specs and plans before 18 Oct 2026, skill reports) are
   not rewritten: "dispatcher" in them means `shift_supervisor`.
 
