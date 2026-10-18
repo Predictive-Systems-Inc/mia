@@ -3,7 +3,8 @@
 Guarantees: nobody decides a request they made or triggered (checked on principal,
 on_behalf_of and evidence["triggered_by"]); agents never decide; the decider must hold one of
 the approver roles; app_only approvals are decided only in the authenticated app; every
-request and decision is written to the events log; approved requests run their handler.
+request and decision is written to the events log; approved requests run their handler and
+rejected ones their reject handler, in the decision's transaction.
 """
 
 from collections.abc import Callable
@@ -22,6 +23,7 @@ DEFAULT_TTL = timedelta(hours=24)
 
 Handler = Callable[[Session, Approval, Actor], None]
 _handlers: dict[str, Handler] = {}
+_reject_handlers: dict[str, Handler] = {}
 
 
 class ApprovalRequired(Exception):
@@ -46,6 +48,11 @@ class StepUpRequired(ApprovalError):
 def register_handler(approval_type: str, handler: Handler) -> None:
     """Register the service function that applies an approved request of this type."""
     _handlers[approval_type] = handler
+
+
+def register_reject_handler(approval_type: str, handler: Handler) -> None:
+    """Register the service function that follows up a rejected request of this type."""
+    _reject_handlers[approval_type] = handler
 
 
 def request(
@@ -193,6 +200,8 @@ def decide(
     )
     if outcome == "approved" and approval.type in _handlers:
         _handlers[approval.type](session, approval, decider)
+    if outcome == "rejected" and approval.type in _reject_handlers:
+        _reject_handlers[approval.type](session, approval, decider)
     return approval
 
 

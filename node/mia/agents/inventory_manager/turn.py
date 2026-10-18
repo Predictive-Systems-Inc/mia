@@ -1,25 +1,33 @@
 """The inventory manager's answer to one chat turn: Jev picks the action (MIA_DECIDER=jev), code
-words the reply. The emergency script runs before this, in chat.service, for every agent."""
+runs the tool and words the reply. The emergency script runs before this, in chat.service, for every agent."""
 
 import asyncio
 import html
 from dataclasses import replace
+from typing import Any
 from zoneinfo import ZoneInfo
 
+from pydantic import ValidationError
 from sqlmodel import Session, col, select
 
-from mia.agents.base import AgentDeps, AgentSpec, Turn
-from mia.agents.decider import Decision
-from mia.agents.inventory_manager import MANIFEST, actions, decider, replies
+from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
+from mia.agents.decider import THRESHOLD, Decision
+from mia.agents.inventory_manager import MANIFEST, actions, decider, replies, tools
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import reply_text, store_reply
 from mia.core import events
 from mia.core.egress import EgressContext, egress_context
+from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
 from mia.core.models import Event, Message, Thread
+from mia.core.rbac import Resource, get_rbac
 from mia.i18n import t
 from mia.settings import get_settings
+from mia.templates.retail.models import RetailIngredient
+
+_BINDINGS = {b.tool_id: b for b in tools.BINDINGS}  # importing tools registers its handlers
+_ORDER_TOOL = Resource(kind="tool", name=tools.DRAFT_ORDER)
 
 
 def _last_question(session: Session, thread: Thread) -> Message | None:
@@ -29,8 +37,9 @@ def _last_question(session: Session, thread: Thread) -> Message | None:
     return _last_mia(session, thread, questions=True)
 
 
-def _tapped(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Decision | None:
-    """The decision behind a tapped button of the thread's last Mia message, asked today."""
+def _options(session: Session, deps: AgentDeps, thread: Thread) -> replies.Options:
+    """The buttons of the thread's last Mia message (label to the decision a tap runs), when
+    that message is a question asked today in the branch's time zone; else none."""
     asked = session.exec(
         select(Event)
         .where(Event.action == "decision.clarify_asked")
@@ -39,10 +48,15 @@ def _tapped(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Dec
     ).first()
     last = _last_question(session, thread)
     if asked is None or last is None or (asked.after or {}).get("message_id") != last.id:
-        return None
+        return {}
     if asked.timestamp.astimezone(ZoneInfo(deps.branch.timezone)).date() != deps.today:
-        return None
-    chosen = ((asked.after or {}).get("options") or {}).get(text.strip())
+        return {}
+    return dict((asked.after or {}).get("options") or {})
+
+
+def _tapped(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Decision | None:
+    """The decision behind a tapped button of the thread's last Mia message, asked today."""
+    chosen = _options(session, deps, thread).get(text.strip())
     return Decision.model_validate(chosen) if chosen else None
 
 
@@ -56,14 +70,31 @@ def _query(
     if classify(html.unescape(text), deps.today, deps.lang).injection:
         return Decision(action="reply_only", args={"kind": "injection"}, confidence=1), None
     last = _last_question(session, thread)
-    return None, actions.build_query(deps, text, last.text if last else "")
+    said = session.exec(
+        select(Message.id)
+        .where(Message.thread_id == thread.id)
+        .where(Message.role == "user")
+        .order_by(col(Message.id).desc())
+    ).first()
+    query = actions.build_query(deps, text, last.text if last else "", message_id=said)
+    return None, query
+
+
+def _ask(
+    session: Session, deps: AgentDeps, thread: Thread, blocks: list[Block], options: replies.Options
+) -> ChatReply:
+    """Store a question with buttons and remember what each button runs."""
+    reply = store_reply(session, deps, thread, blocks)
+    after = {"options": options, "message_id": reply.message_id}
+    events.emit(session, "decision.clarify_asked", ("thread", thread.id), None, after, deps.actor)
+    return reply
 
 
 def _did_you_mean(
     session: Session, deps: AgentDeps, thread: Thread, decision: Decision
 ) -> ChatReply:
     """Ask "Did you mean" with a button per offerable alternative; with none, ask to rephrase."""
-    options: dict[str, dict[str, object]] = {}  # label -> the decision a tap runs
+    options: replies.Options = {}
     for alt in decision.alternatives:
         spec = actions.ACTIONS.get(alt.action)
         if spec is None or spec.label_key is None or alt.missing is not None:
@@ -80,23 +111,118 @@ def _did_you_mean(
         QuickRepliesBlock(options=[*options, other]),
     ]
     options[other] = Decision(action="clarify", confidence=1.0).model_dump(mode="json")
-    reply = store_reply(session, deps, thread, blocks)
-    after = {"options": options, "message_id": reply.message_id}
-    events.emit(session, "decision.clarify_asked", ("thread", thread.id), None, after, deps.actor)
-    return reply
+    return _ask(session, deps, thread, blocks, options)
+
+
+def _refusal(
+    session: Session,
+    deps: AgentDeps,
+    thread: Thread,
+    tool: str,
+    out: dict[str, Any],
+    named: str | None,
+) -> ChatReply:
+    """The reply to a refused tool call: another branch, an order by someone who may not
+    order, else denied or rephrase."""
+    if out["status"] == "denied" and named is not None and named != deps.branch.id:
+        key, values = "stock.not_allowed.branch", {"branch": deps.branch.name}
+    elif out["status"] == "denied":
+        key, values = ("stock.not_allowed" if tool == "draft_order" else "denied.generic"), {}
+    else:
+        key, values = "clarify.rephrase", {}
+    return reply_text(session, deps, thread, t(key, deps.lang, **values))
+
+
+def _order_summary(session: Session, deps: AgentDeps, order: tools.DraftOrderInput) -> str:
+    """The order in words for the approval and the reply; the total only when every line is in
+    its ingredient's unit with a pack price (as draft_order prices it)."""
+    lines: list[tuple[int, str, str]] = []
+    total: int | None = 0
+    currency = "PHP"
+    for line in order.lines:
+        ing = session.get(RetailIngredient, line.ingredient_id)
+        name, unit = (ing.name, line.unit or ing.unit) if ing else (line.ingredient_id, "")
+        lines.append((line.quantity, unit, name))
+        price = ing.pack_price if ing is not None and unit == ing.unit else None
+        currency = ing.currency if ing is not None else currency
+        total = None if total is None or price is None else total + line.quantity * price
+    return replies.order_text(order.supplier, lines, total, currency, deps.lang)
+
+
+def _offer(
+    session: Session, deps: AgentDeps, out: dict[str, Any]
+) -> tuple[list[Block], replies.Options] | None:
+    """The order offer for the first ingredient reported low that has a supplier, when the
+    person may order (quantity: twice the reorder point, in the ingredient's unit)."""
+    if not get_rbac().check(deps.actor, _ORDER_TOOL, "request"):
+        return None
+    for e in tools.RecordEventsOutput.model_validate(out).recorded:
+        ing = session.get(RetailIngredient, e.ingredient_id or "")
+        if e.kind != "low" or ing is None or not ing.supplier:
+            continue
+        line = {"ingredient_id": ing.id, "quantity": ing.reorder_point * 2, "unit": ing.unit}
+        return replies.ask_offer(ing.name, {"supplier": ing.supplier, "lines": [line]}, deps.lang)
+    return None
+
+
+def _run(
+    session: Session, deps: AgentDeps, thread: Thread, tool: str, args: dict[str, Any]
+) -> ChatReply:
+    """Run the tool through the guard and word the reply: an order lands on the approval path
+    (its words become the approval's summary); a low report offers an order."""
+    binding = _BINDINGS[f"{MANIFEST.id}.{tool}"]
+    if tool == "draft_order":  # ponytail: the person's own branch only; no branch from a decision
+        args = {k: v for k, v in args.items() if k != "branch_id"}
+    try:
+        inp = binding.input_type.model_validate(args)
+    except ValidationError:
+        return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
+    summary = _order_summary(session, deps, inp) if isinstance(inp, tools.DraftOrderInput) else ""
+    out = call_tool(deps, binding, inp, new_id(), summary)
+    if out.get("status") == "approval_required":
+        blocks = replies.order_waiting(summary, str(out["approval_id"]), deps.lang)
+        return store_reply(session, deps, thread, blocks)
+    if "status" in out and "message" in out:  # a ToolRefusal
+        return _refusal(session, deps, thread, tool, out, args.get("branch_id"))
+    blocks = replies.tool_reply(tool, out, args, deps.lang, deps.branch.timezone)
+    offer = _offer(session, deps, out) if tool == "record_events" else None
+    if offer is None:
+        return store_reply(session, deps, thread, blocks)
+    return _ask(session, deps, thread, [*blocks, *offer[0]], offer[1])
+
+
+def _answer_offer(
+    session: Session, deps: AgentDeps, thread: Thread, decision: Decision
+) -> ChatReply:
+    """Yes drafts the offered order (a typed yes or no takes the button's order), No declines."""
+    args = decision.args
+    if "lines" not in args and args.get("yes"):
+        offered = [Decision.model_validate(v) for v in _options(session, deps, thread).values()]
+        args = next((d.args for d in offered if d.action == "answer_offer" and d.args["yes"]), {})
+    if not args.get("yes"):
+        key = "stock.offer_declined" if "yes" in args else "clarify.rephrase"
+        return reply_text(session, deps, thread, t(key, deps.lang))
+    order = {"supplier": args.get("supplier"), "lines": args.get("lines")}
+    return _run(session, deps, thread, "draft_order", order)
 
 
 def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) -> ChatReply:
-    """Log the decision, then ask, word a conversation reply, or say a tool is not there yet."""
+    """Log the decision, then ask what is missing (a waste reason asks with buttons), or run
+    its tool through the guard and word the reply. Nothing is recorded before it is complete."""
     after = decision.model_dump(mode="json")
     events.emit(session, "decision.made", ("thread", thread.id), None, after, deps.actor)
+    sure = decision.confidence >= THRESHOLD
+    if decision.action == "clarify" and decision.missing == "reason" and sure:
+        return _ask(session, deps, thread, *replies.ask_reason(decision, deps.lang))
     if decision.action == "clarify":
         return _did_you_mean(session, deps, thread, decision)
     spec = actions.ACTIONS.get(decision.action)
     if spec is None:  # a tapped decision of another agent
         return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
-    if spec.tool is not None:  # ponytail: tools.BINDINGS is empty; run it through call_tool
-        return reply_text(session, deps, thread, t("reply.unavailable", deps.lang))
+    if decision.action == "answer_offer":
+        return _answer_offer(session, deps, thread, decision)
+    if spec.tool is not None:
+        return _run(session, deps, thread, spec.tool, decision.args)
     kind = str(decision.args.get("kind", "other"))
     return store_reply(session, deps, thread, replies.conversation_reply(kind, deps.lang))
 

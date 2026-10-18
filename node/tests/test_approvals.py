@@ -94,6 +94,23 @@ def test_approved_runs_handler_rejected_does_not(
         approvals.decide(session, first.id, Actor.person(people["Helena"]), "rejected")
 
 
+def test_rejected_runs_the_reject_handler_in_the_same_transaction(
+    session: Session, people: dict[str, Person]
+) -> None:
+    rejected: list[str] = []
+    approvals.register_reject_handler("demo_reject", lambda s, a, d: rejected.append(a.status))
+    requester = Actor.person(people["Sanna"])
+    first, second = (
+        approvals.request(
+            session, "demo_reject", ("visit", "V1"), "x", requester, ["supervisor", "owner"]
+        )
+        for _ in range(2)
+    )
+    approvals.decide(session, first.id, Actor.person(people["Helena"]), "approved")
+    approvals.decide(session, second.id, Actor.person(people["Helena"]), "rejected", "no")
+    assert rejected == ["rejected"]  # the approve path does not run it
+
+
 def test_timeout_escalates_once_then_expires(session: Session, people: dict[str, Person]) -> None:
     sanna = Actor.person(people["Sanna"])
     row = approvals.request(

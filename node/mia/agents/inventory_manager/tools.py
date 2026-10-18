@@ -11,7 +11,8 @@ agents/base.py creates the approval (evidence: the tool call id) and stops befor
 runs. Nothing is stored before the decision. On approve, apply_order_approval (registered with
 mia.core.approvals) re-runs draft_order as the requester with the approval in deps.approved,
 reading the requested input from the call's `tool.called` event; the order is written as
-approved (event inventory.order_approved) and the requester is notified.
+approved (event inventory.order_approved) and the requester is notified. On reject,
+apply_order_rejection logs inventory.order_rejected and notifies the requester.
 """
 
 import datetime as dt
@@ -28,7 +29,7 @@ from mia.agents.inventory_manager.models import StockEvent, SupplierOrder
 from mia.agents.sales_supervisor.calc import business_date
 from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
-from mia.core import approvals, store
+from mia.core import approvals, events, store
 from mia.core.db import utcnow
 from mia.core.models import Actor, Approval, Branch, Event, Person
 from mia.core.rbac import Resource, get_rbac
@@ -501,7 +502,24 @@ def apply_order_approval(session: Session, approval: Approval, decider: Actor) -
     notify(session, person, [TextBlock(text=text)], deps.actor, MANIFEST.id)
 
 
+def apply_order_rejection(session: Session, approval: Approval, decider: Actor) -> None:
+    """Reject handler: log inventory.order_rejected (no order is written) and tell the
+    requester. Raises LookupError when the requester or the requested input cannot be found."""
+    person = session.get(Person, approval.requester_on_behalf_of or "")
+    if person is None:
+        raise LookupError("the requester of the order")
+    args = _requested_input(session, approval)
+    after = {"supplier": args.supplier, "reason": approval.reason}
+    events.emit(
+        session, "inventory.order_rejected", approval, None, after, decider, approval_id=approval.id
+    )
+    text = t("stock.order_rejected", person.language or "en", supplier=args.supplier)
+    actor = Actor.person(person).as_agent(MANIFEST.roles.agent_role)
+    notify(session, person, [TextBlock(text=text)], actor, MANIFEST.id)
+
+
 approvals.register_handler(DRAFT_ORDER, apply_order_approval)
+approvals.register_reject_handler(DRAFT_ORDER, apply_order_rejection)
 
 
 # ---- receive_delivery ---------------------------------------------------------------------

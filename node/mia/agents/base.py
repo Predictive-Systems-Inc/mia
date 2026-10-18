@@ -241,13 +241,14 @@ class ToolBinding:
 
 
 def call_tool(
-    deps: AgentDeps, binding: ToolBinding, args: BaseModel, tool_call_id: str
+    deps: AgentDeps, binding: ToolBinding, args: BaseModel, tool_call_id: str, summary: str = ""
 ) -> dict[str, Any]:
-    """Run one tool through the guard and log it. Returns a JSON-safe result for the model."""
+    """Run one tool through the guard and log it (summary words an approval the guard asks
+    for). Returns a JSON-safe result for the model."""
     spec = deps.manifest.tool(binding.tool_id)
     out: dict[str, Any]
     try:
-        guard(deps, spec, tool_call_id)
+        guard(deps, spec, tool_call_id, summary)
         out = binding.impl(deps, args, tool_call_id).model_dump(mode="json")
     except PermissionDenied as exc:
         out = ToolRefusal(status="denied", message=str(exc)).model_dump(mode="json")

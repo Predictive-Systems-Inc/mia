@@ -108,7 +108,8 @@ ACTIONS: dict[str, Action] = {
 
 
 def offer_texts(lang: str, names: list[str]) -> set[str]:
-    """Every wording of Mia's "Shall I draft an order?" question in lang, one per ingredient."""
+    """Every wording of Mia's "Shall I draft an order?" question in lang, one per ingredient;
+    the question is one line of Mia's message (after the low notice)."""
     return {t("stock.offer_order", lang, ingredient=n) for n in names}
 
 
@@ -168,7 +169,9 @@ def build_query(
         suppliers={s: s for s in sorted(set(supplier_of.values()))},
         units={i.id: i.unit for i in ings},
         supplier_of=supplier_of,
-        offer_asked=previous_mia_message in offer_texts(deps.lang, [i.name for i in ings]),
+        offer_asked=bool(
+            set(previous_mia_message.splitlines()) & offer_texts(deps.lang, [i.name for i in ings])
+        ),
         corrected=was_corrected(message),
         lang=deps.lang,
         message_id=message_id,
