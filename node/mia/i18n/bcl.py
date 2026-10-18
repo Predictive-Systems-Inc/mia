@@ -11,14 +11,14 @@ STRINGS: dict[str, str | list[str]] = {
     "route.question": "Manonongod daw ini sa:",
     "reply.busy": [
         "Okupado si Mia ngunyan asin sasagutan ka niya sa dai pa magluwat.",
-        "Medyo okupado si Mia ngunyan. Makakua ka nin simbag sa dai pa magluwat.",
+        "Medyo okupado si Mia ngunyan. Sasimbagan ka niya sa dai pa magluwat.",
     ],
     "reply.no_agent": (
-        "Mayo pa akong maitatabang saimo digde. Hapoton an saimong supervisor na i-set up si Mia para saimo."
+        "Mayo pa akong maitatabang saimo digde. Sabihon sa saimong supervisor na i-set up si Mia para saimo."
     ),
     "reply.unavailable": [
-        "Pasensya, dai ako makasimbag ngunyan. Pakitrabaho giraray sa mahapot.",
-        "Pasensya, may nagkaproblema saakin. Pakitrabaho giraray sa dai pa magluwat.",
+        "Pasensya, dai ako makasimbag ngunyan. Pakisuway giraray sa mahapot.",
+        "Pasensya, may nagkaproblema saakin. Pakisuway giraray sa dai pa magluwat.",
     ],
     "language.set": "Sige, {language} an gagamiton ko.",
 }

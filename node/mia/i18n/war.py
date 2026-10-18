@@ -10,15 +10,15 @@ STRINGS: dict[str, str | list[str]] = {
     "chat.switched": "({agent})",
     "route.question": "Mahitungod ba iniha:",
     "reply.busy": [
-        "Busy hi Mia yana ngan sasabton ka niya ha diri pa magtatas.",
-        "Medyo busy hi Mia yana. Makakarawat ka hin sabat ha diri pa magtatas.",
+        "Busy hi Mia yana ngan sasabton ka niya ha diri pa madugay.",
+        "Medyo busy hi Mia yana. Makakarawat ka hin sabat ha diri pa madugay.",
     ],
     "reply.no_agent": (
-        "Waray pa ak magiging bulig ha im dinhi. Pakiusa ha im supervisor nga i-set up hi Mia para ha im."
+        "Waray pa ak mabubulig ha im dinhi. Pakisabi ha im supervisor nga i-set up hi Mia para ha im."
     ),
     "reply.unavailable": [
         "Pasensya, diri ak makasabat yana. Pakisulay liwat ha makadiyot.",
-        "Pasensya, may nagkaproblema ha akon. Pakisulay liwat ha diri pa magtatas.",
+        "Pasensya, may nagkaproblema ha akon. Pakisulay liwat ha diri pa madugay.",
     ],
     "language.set": "Sige, an {language} an gagamiton ko.",
 }

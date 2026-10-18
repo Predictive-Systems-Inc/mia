@@ -23,10 +23,11 @@ from mia.core.models import (
     Person,
     WorkLimit,
 )
+from mia.core.people import HUMAN_ROLES
 from mia.i18n import SUPPORTED
 from mia.templates.cleaning.models import CleaningChecklist, CleaningSite
 
-ROLES = ("owner", "admin", "supervisor", "staff", "accountant", "viewer")
+ROLES = HUMAN_ROLES
 
 
 def _supported_language(value: str) -> str:

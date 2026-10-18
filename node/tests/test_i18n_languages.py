@@ -32,3 +32,17 @@ def test_every_language_has_its_own_name_for_the_buttons() -> None:
 
 def test_clerk_is_a_human_role() -> None:
     assert "clerk" in people.HUMAN_ROLES
+
+
+def test_the_importer_accepts_a_clerk_and_checks_the_language() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    from mia.templates.cleaning.importer import OrganisationIn, PersonIn
+
+    assert PersonIn(name="Aino", roles=["clerk"], language="fil").language == "fil"
+    assert OrganisationIn(name="Hype", default_language="fil").default_language == "fil"
+    with pytest.raises(ValidationError):
+        PersonIn(name="Aino", roles=["staff"], language="xx")
+    with pytest.raises(ValidationError):
+        OrganisationIn(name="Hype", default_language="xx")

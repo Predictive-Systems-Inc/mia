@@ -10,8 +10,8 @@ STRINGS: dict[str, str | list[str]] = {
     "chat.switched": "({agent})",
     "route.question": "Maipapan kadi daytoy iti:",
     "reply.busy": [
-        "Napanglaw ni Mia ita ket sungbatannaka inton madamdama.",
-        "Napanglaw ni Mia kanayon. Maawatmo ti sungbat iti dandani.",
+        "Busy ni Mia ita ket sungbatannaka iti dandani.",
+        "Medyo busy ni Mia ita. Masungbatanka iti sungbat iti dandani.",
     ],
     "reply.no_agent": (
         "Awan pay ti maitulongko kenka ditoy. Kiddawem iti supervisormo nga i-set up ni Mia para kenka."
