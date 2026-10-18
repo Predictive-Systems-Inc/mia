@@ -23,7 +23,9 @@ SIX = [
     "hr_officer",
     "branch_manager",
 ]
-SALES_SHIFT_STOCK = ["sales_supervisor", "shift_supervisor", "inventory_manager"]
+# The HR officer serves every employee (staff and up), so it joins each list below.
+SALES_SHIFT_STOCK = ["sales_supervisor", "shift_supervisor", "inventory_manager", "hr_officer"]
+STAFF_AGENTS = ["shift_supervisor", "hr_officer"]
 
 
 def _run_org(monkeypatch: pytest.MonkeyPatch, agents: list[str]) -> None:
@@ -53,7 +55,7 @@ def test_by_default_everyone_has_only_the_shift_supervisor(
 def test_access_per_role(session: Session, people: dict[str, Person], all_enabled: None) -> None:
     assert _ids(session, people["Helena"]) == SIX  # owner: all six
     assert _ids(session, people["Sanna"]) == SALES_SHIFT_STOCK
-    assert _ids(session, people["Juha"]) == ["shift_supervisor"]  # staff
+    assert _ids(session, people["Juha"]) == STAFF_AGENTS  # staff
 
 
 def test_a_clerk_gets_sales_shift_and_inventory(
