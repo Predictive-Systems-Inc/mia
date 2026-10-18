@@ -196,3 +196,22 @@ when the file is next touched.
 - The message is classified twice on first contact (language question context); cost only.
 - Switch texts in the router case set duplicate spike texts (fixed by the retail case set).
 - Native review of the eight machine-drafted languages (Q28 to Q35).
+
+## Carried over from the follow-up's whole-branch review (19 Oct 2026)
+
+Ruled as follow-up after the 19 Oct review (gate result in docs/research/router-2026-10-19.md).
+
+- A memory route leaves no trace of why: add `"via": "memory"` to the switch or chosen event
+  (or `Route.raw = "memory"`) so the on-call developer can tell a learned route from Jev's.
+- Small talk with no active agent goes to `agents[0]`, which may be a stub or an agent the
+  person rarely uses; once a second agent is built, send it to the agent of the person's most
+  recent Mia message, else `agents[0]`.
+- The next measurement: write fresh seeds before looking at any result, split by seed so all
+  languages of one seed fall in one half, never reuse a text across groups or halves, and
+  fold the spent gate half into tuning. Report greetings (`any` rows) apart from the
+  per-language right.
+- Open gate decisions for the owner: who owns "add a person to a branch" (branch manager
+  recommended); ask instead of keep when Jev's top pick differs from the active agent below
+  the threshold; the bar (wrong at most 2% hard, right at least 80% per language, ask at most
+  15%, on a fresh gate half).
+- A one-line test for the equal-instant forget tie in `route_memory.learned`.
