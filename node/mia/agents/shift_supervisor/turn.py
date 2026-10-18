@@ -388,8 +388,8 @@ SPEC = AgentSpec(
     label_key=f"agent.{MANIFEST.id}.label",
     router_description=(
         "Shifts and attendance: rosters and who works when, being sick, late or absent,"
-        " finding and answering cover, checking in and out, the day's plan, problems at"
-        " a site or the shop, cleaning checklists."
+        " finding and answering cover, checking in and out, the day's plan, problems at a"
+        " site or the shop, cleaning checklists; not what was sold and not pay."
     ),
     handle_turn=handle_turn,
     run_due=_run_due,

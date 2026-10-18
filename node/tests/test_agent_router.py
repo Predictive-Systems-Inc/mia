@@ -392,3 +392,9 @@ def test_a_confident_unclear_keeps_the_active_agent(
     _router_answers(monkeypatch, two_agents, "unclear", 0.9)
     reply = _turn(session, people["Sanna"], "thanks!", first.thread_id)
     assert reply.agent_id == TWO[1]
+
+
+def test_router_descriptions_carry_a_contrast_line() -> None:
+    """Each description says what it is not, so sales, stock and shifts stay apart."""
+    for spec in AGENTS.values():
+        assert "; not " in spec.router_description, spec.id

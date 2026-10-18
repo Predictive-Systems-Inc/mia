@@ -12,25 +12,27 @@ from mia.i18n import t
 
 DESCRIPTIONS = {
     "sales_supervisor": (
-        "Sales: clerks reporting how many of each item they sold, daily and mid-day sales"
-        " totals, sales targets, how today's sales compare, why sales went well, selling tips"
-        " and sales experiments."
+        "Sales: clerks reporting how many of each item they sold and for how much, daily and"
+        " mid-day totals, sales targets, how today compares, why sales went well; not how much"
+        " stock is left and not what to bake."
     ),
     "inventory_manager": (
         "Stock: items sold out or running low, how many are left, leftovers and waste at"
-        " closing, what to prepare or bake tomorrow, ordering from suppliers."
+        " closing, what to prepare or bake tomorrow, ingredient and supplier orders; not how"
+        " many were sold. A sell-out message is stock."
     ),
     "bookkeeper": (
-        "Money: the cash count against sales, expenses and receipts, bank deposits, VAT and"
-        " BIR records."
+        "Money: the cash count against sales, expenses and receipts, bank deposits, GCash and"
+        " Maya settlements, VAT and BIR records; not sales counts and not pay."
     ),
     "hr_officer": (
-        "Employment: hours worked, payroll and payslips, 13th month pay, leave balances,"
-        " SSS, PhilHealth and Pag-IBIG contributions."
+        "Employment: hours worked, payroll and payslips, 13th month pay, leave balances, SSS,"
+        " PhilHealth and Pag-IBIG contributions, hiring; not who works which shift."
     ),
     "branch_manager": (
         "Running the shop: branches, the menu, prices and item short codes, people and their"
-        " roles, the weekly summary."
+        " roles, permits, the weekly summary, coaching and tips for staff; not a day's"
+        " counts and not a shift change."
     ),
 }
 
