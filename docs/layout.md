@@ -45,6 +45,7 @@ mia/
                             actions.py and decider.py (Jev), tools.py, calc.py, due.py,
                             replies.py, turn.py, tests/scenarios.yaml (chat scenarios)
         inventory_manager/  Inventory Manager: the mia agent scaffold shape (turn.py, actions.py, ...)
+        hr_officer/         HR Officer: the mia agent scaffold shape (turn.py, actions.py, ...)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
       skills/               classifier runtime and per-turn routing (ADR 013)
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls),

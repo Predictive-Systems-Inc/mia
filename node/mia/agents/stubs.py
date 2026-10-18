@@ -16,11 +16,6 @@ DESCRIPTIONS = {
         " receipts, bank deposits, GCash and Maya sales and settlements, Grab payouts, VAT and"
         " BIR records; not sales counts, not a morning's or day's sales total and not pay."
     ),
-    "hr_officer": (
-        "Employment: my hours worked this cutoff, cash advances, holiday pay, payroll and"
-        " payslips, 13th month pay, leave balances, SSS, PhilHealth and Pag-IBIG contributions,"
-        " hiring; not who works which shift and not adding people to a branch."
-    ),
     "branch_manager": (
         "Running the shop: branches, the menu and new menu items, prices and item short codes,"
         " who approves what, shop opening hours, people and their roles, permits, the weekly"
