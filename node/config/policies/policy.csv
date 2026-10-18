@@ -7,6 +7,7 @@ g, owner, admin, *
 g, admin, supervisor, *
 g, supervisor, staff, *
 g, accountant, viewer, *
+g, clerk, staff, *
 
 # staff: own schedule, own tasks
 p, staff, *, data:core.visit, read_own, allow
@@ -49,3 +50,13 @@ p, admin, *, data:core.*, write, allow
 
 # viewer: read reports
 p, viewer, *, data:reports, read, allow
+
+# agents a role may talk to (chat/access.py); owner inherits admin > supervisor > staff
+p, staff, *, agent:shift_supervisor, use, allow
+p, clerk, *, agent:sales_supervisor, use, allow
+p, clerk, *, agent:inventory_manager, use, allow
+p, supervisor, *, agent:sales_supervisor, use, allow
+p, supervisor, *, agent:inventory_manager, use, allow
+p, owner, *, agent:bookkeeper, use, allow
+p, owner, *, agent:hr_officer, use, allow
+p, owner, *, agent:branch_manager, use, allow

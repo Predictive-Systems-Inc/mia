@@ -52,6 +52,8 @@ class OrgSettings(BaseModel):
     channels: dict[str, ChannelConfig] = Field(default_factory=dict)
     # Offered in the language question; fewer than two: nobody is asked.
     languages: list[str] = Field(default_factory=list)
+    # The agents this organisation runs, in routing order.
+    agents: list[str] = Field(default_factory=lambda: ["shift_supervisor"])
 
 
 @lru_cache
