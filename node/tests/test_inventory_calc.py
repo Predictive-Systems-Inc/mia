@@ -61,5 +61,9 @@ def test_low_lists_counts_at_the_reorder_point_and_todays_reports() -> None:
 
 
 def test_order_total_needs_every_price() -> None:
-    assert order_total([("eggs", 10), ("coco", 4)], {"eggs": 25000, "coco": 3500}) == 264000
-    assert order_total([("eggs", 10), ("coco", 4)], {"eggs": 25000, "coco": None}) is None
+    assert order_total([(10, 25000), (4, 3500)]) == 264000
+    assert order_total([(30, None), (10, 25000)]) is None
+
+
+def test_order_total_prices_each_line_on_its_own() -> None:
+    assert order_total([(10, 25000), (2, 25000)]) == 300000

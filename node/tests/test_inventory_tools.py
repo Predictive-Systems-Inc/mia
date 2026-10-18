@@ -233,7 +233,8 @@ def test_an_approved_order_is_written_and_the_requester_told(
         .where(Event.entity_id == order.id)
     ).one()
     told = session.exec(select(Message).where(Message.agent_id == MANIFEST.id)).all()
-    assert any(m.role == "notification" for m in told)
+    (note,) = [m for m in told if m.role == "notification"]
+    assert note.sender_id == "system"  # Actor.system, not the requester as the agent
     deps = deps_for(session, marites)
     deps.approved = {str(out["approval_id"])}
     again = tools.draft_order(
@@ -268,3 +269,62 @@ def test_receive_closes_the_order_line(session: Session, ferinos: Ferinos) -> No
     assert sorted(r.quantity or 0 for r in rows) == [4, 6]
     with pytest.raises(LookupError):  # a received order is no longer open
         tools.receive_delivery(marites, rest, "r3")
+
+
+def test_a_supervisor_cannot_decide_an_order(session: Session, ferinos: Ferinos) -> None:
+    _, people = ferinos
+    out = order_eggs(session, people["Rosa"])
+    with pytest.raises(approvals.ApprovalError):
+        approvals.decide(
+            session,
+            str(out["approval_id"]),
+            Actor.person(people["Marites"]),
+            "approved",
+            stepped_up_at=approvals.utcnow(),
+        )
+    stmt = select(SupplierOrder).where(SupplierOrder.approval_id == out["approval_id"])
+    assert session.exec(stmt).all() == []
+
+
+def test_the_order_comes_from_the_requesters_own_call(session: Session, ferinos: Ferinos) -> None:
+    _, people = ferinos
+    coconut = DraftOrderInput(
+        supplier="Aling Nena",
+        lines=[LineIn(ingredient_id=ingredient(session, "Coconut"), quantity=99)],
+    )
+    call_tool(deps_for(session, people["Jun"]), BINDING[tools.DRAFT_ORDER], coconut, "same-id")
+    out = order_eggs(session, people["Marites"], "same-id")
+    approvals.decide(
+        session,
+        str(out["approval_id"]),
+        Actor.person(people["Rosa"]),
+        "approved",
+        stepped_up_at=approvals.utcnow(),
+    )
+    stmt = select(SupplierOrder).where(SupplierOrder.approval_id == out["approval_id"])
+    order = session.exec(stmt).one()
+    assert order.lines[0]["ingredient_id"] == ingredient(session, "Eggs")
+    assert order.lines[0]["quantity"] == 10
+
+
+def test_a_rejected_order_tells_the_requester_from_the_system(
+    session: Session, ferinos: Ferinos
+) -> None:
+    _, people = ferinos
+    out = order_eggs(session, people["Marites"])
+    approvals.decide(
+        session,
+        str(out["approval_id"]),
+        Actor.person(people["Rosa"]),
+        "rejected",
+        stepped_up_at=approvals.utcnow(),
+    )
+    assert (
+        session.exec(
+            select(SupplierOrder).where(SupplierOrder.approval_id == out["approval_id"])
+        ).all()
+        == []
+    )
+    told = session.exec(select(Message).where(Message.agent_id == MANIFEST.id)).all()
+    (note,) = [m for m in told if m.role == "notification"]
+    assert note.sender_id == "system"

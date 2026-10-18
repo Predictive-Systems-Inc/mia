@@ -135,6 +135,8 @@ def _ingredients(session: Session, branch_id: str) -> dict[str, RetailIngredient
 
 
 class EventOut(BaseModel):
+    """One recorded stock event with the item's or ingredient's name."""
+
     event_id: str
     kind: str
     item_id: str | None
@@ -249,6 +251,8 @@ class LowStockInput(BaseModel):
 
 
 class LowOut(BaseModel):
+    """A low ingredient: its on-hand count (None when never counted) and reorder point."""
+
     ingredient_id: str
     name: str
     unit: str
@@ -323,6 +327,8 @@ class PlanTomorrowInput(BaseModel):
 
 
 class PlanLine(BaseModel):
+    """Tomorrow's plan for one item: more, same or fewer."""
+
     item_id: str
     item: str
     plan: calc.Plan
@@ -373,11 +379,24 @@ class DraftOrderInput(BaseModel):
     branch_id: str | None = Field(None, description="Another branch (only an owner or admin)")
 
 
+class LineOut(BaseModel):
+    """One order line: quantity in the unit, unit price in minor units (None when unknown), and
+    what has been received so far."""
+
+    ingredient_id: str
+    quantity: int
+    unit: str
+    unit_price: int | None
+    received: int = 0
+
+
 class OrderOut(BaseModel):
+    """A supplier order as written: its lines, total (None without every price) and approval."""
+
     order_id: str
     supplier: str
     status: str
-    lines: list[dict[str, Any]]
+    lines: list[LineOut]
     total: int | None
     currency: str
     approval_id: str | None
@@ -388,7 +407,7 @@ def _order_out(row: SupplierOrder) -> OrderOut:
         order_id=row.id,
         supplier=row.supplier,
         status=row.status,
-        lines=row.lines,
+        lines=[LineOut.model_validate(x) for x in row.lines],
         total=row.total,
         currency=row.currency,
         approval_id=row.approval_id,
@@ -436,7 +455,6 @@ def draft_order(deps: AgentDeps, args: DraftOrderInput, tool_call_id: str) -> Or
                 "unit_price": price,
             }
         )
-    prices = {line["ingredient_id"]: line["unit_price"] for line in lines}
     # ponytail: one currency per branch in v1, taken from the first ingredient
     currency = stocked[args.lines[0].ingredient_id].currency
     row = store.insert(
@@ -446,7 +464,7 @@ def draft_order(deps: AgentDeps, args: DraftOrderInput, tool_call_id: str) -> Or
             supplier=args.supplier,
             lines=lines,
             currency=currency,
-            total=calc.order_total([(x.ingredient_id, x.quantity) for x in args.lines], prices),
+            total=calc.order_total([(x["quantity"], x["unit_price"]) for x in lines]),
             status="approved",
             approval_id=approval.id,
             requested_by=deps.person.id,
@@ -461,14 +479,17 @@ def draft_order(deps: AgentDeps, args: DraftOrderInput, tool_call_id: str) -> Or
 
 
 def _requested_input(session: Session, approval: Approval) -> DraftOrderInput:
-    """The draft_order input of the tool call that raised the approval (its tool.called event,
-    written by agents.base.call_tool). Raises LookupError when there is none."""
+    """The draft_order input of the tool call that raised the approval: the requester's latest
+    tool.called event of draft_order with the approval's tool call id (written by
+    agents.base.call_tool). Raises LookupError when there is none."""
     call_id = approval.evidence.get("tool_call_id")
     stmt = (
         select(Event)
         .where(Event.action == "tool.called")
         .where(Event.entity_id == DRAFT_ORDER)
         .where(Event.tool_call_id == call_id)
+        .where(Event.on_behalf_of == approval.requester_on_behalf_of)
+        .order_by(col(Event.id).desc())
     )
     called = session.exec(stmt).first()
     if call_id is None or called is None or called.before is None:
@@ -499,7 +520,7 @@ def apply_order_approval(session: Session, approval: Approval, decider: Actor) -
     )
     order = draft_order(deps, args, str(approval.evidence.get("tool_call_id")))
     text = t("stock.order_approved", lang, supplier=order.supplier)
-    notify(session, person, [TextBlock(text=text)], deps.actor, MANIFEST.id)
+    notify(session, person, [TextBlock(text=text)], Actor.system(branch.id), MANIFEST.id)
 
 
 def apply_order_rejection(session: Session, approval: Approval, decider: Actor) -> None:
@@ -514,8 +535,7 @@ def apply_order_rejection(session: Session, approval: Approval, decider: Actor) 
         session, "inventory.order_rejected", approval, None, after, decider, approval_id=approval.id
     )
     text = t("stock.order_rejected", person.language or "en", supplier=args.supplier)
-    actor = Actor.person(person).as_agent(MANIFEST.roles.agent_role)
-    notify(session, person, [TextBlock(text=text)], actor, MANIFEST.id)
+    notify(session, person, [TextBlock(text=text)], Actor.system(person.branch_id), MANIFEST.id)
 
 
 approvals.register_handler(DRAFT_ORDER, apply_order_approval)

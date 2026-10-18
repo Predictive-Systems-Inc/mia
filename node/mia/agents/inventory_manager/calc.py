@@ -65,13 +65,10 @@ def low(
     ]
 
 
-def order_total(lines: Sequence[tuple[str, int]], prices: Mapping[str, int | None]) -> int | None:
-    """The sum of quantity times unit price over (ingredient_id, quantity) lines, in minor
-    units; None when any line has no known price."""
-    total = 0
-    for ingredient_id, quantity in lines:
-        price = prices.get(ingredient_id)
-        if price is None:
-            return None
-        total += quantity * price
-    return total
+def order_total(lines: Sequence[tuple[int, int | None]]) -> int | None:
+    """The sum of quantity times unit price over (quantity, unit price) lines, in minor units;
+    None when any line has no price. Each line carries its own price, so two lines of one
+    ingredient in different units are priced apart."""
+    if any(price is None for _, price in lines):
+        return None
+    return sum(quantity * (price or 0) for quantity, price in lines)
