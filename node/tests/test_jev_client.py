@@ -45,7 +45,7 @@ def _ask(ctx: EgressContext) -> dict[str, Any]:
     return asyncio.run(go())
 
 
-@pytest.mark.parametrize("status", [500, 503, 429, 529])
+@pytest.mark.parametrize("status", [500, 503, 408, 429, 529])
 def test_server_errors_and_overload_are_unreachable(
     ctx: EgressContext, monkeypatch: pytest.MonkeyPatch, status: int
 ) -> None:

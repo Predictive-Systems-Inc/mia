@@ -181,20 +181,24 @@ def _before_agent(session: Session, deps: AgentDeps, thread: Thread, text: str) 
 ROUTE_ASKED = "chat.route_asked"
 
 
-def _last_mia(session: Session, thread: Thread, *, questions: bool = False) -> Message | None:
-    """Mia's latest message on the thread (assistant or notification). Unless questions=True,
-    the route and language questions are skipped: they are stored under the default agent but
-    belong to no agent."""
+def _last_mia(
+    session: Session, thread: Thread, *, questions: bool = False, notifications: bool = True
+) -> Message | None:
+    """Mia's latest message on the thread (assistant, or notification unless
+    notifications=False). The busy reply is always skipped (it belongs to no agent and asks
+    nothing); unless questions=True, so are the route and language questions: they are stored
+    under the default agent but belong to no agent."""
+    actions = [deferred.DEFERRED] if questions else [deferred.DEFERRED, ROUTE_ASKED, language.ASKED]
     asked = session.exec(
-        select(Event)
-        .where(Event.entity_id == thread.id)
-        .where(col(Event.action).in_([ROUTE_ASKED, language.ASKED]))
+        select(Event).where(Event.entity_id == thread.id).where(col(Event.action).in_(actions))
     ).all()
-    skip = [] if questions else [str((e.after or {}).get("message_id")) for e in asked]
+    key = {deferred.DEFERRED: "busy_message_id"}
+    skip = [str((e.after or {}).get(key.get(e.action, "message_id"))) for e in asked]
+    roles = ["assistant", NOTIFICATION] if notifications else ["assistant"]
     return session.exec(
         select(Message)
         .where(Message.thread_id == thread.id)
-        .where(col(Message.role).in_(["assistant", NOTIFICATION]))
+        .where(col(Message.role).in_(roles))
         .where(col(Message.id).not_in(skip))
         .order_by(col(Message.id).desc())
     ).first()
@@ -274,13 +278,15 @@ def _deps_for(deps: AgentDeps, spec: AgentSpec) -> AgentDeps:
     )
 
 
-Chosen = tuple[AgentSpec | None, list[AgentSpec], str | None, str]
+# (spec, the person's agents, the active agent id, the text to answer, chosen by a route tap)
+Chosen = tuple[AgentSpec | None, list[AgentSpec], str | None, str, bool]
 
 
 def _choose(session: Session, deps: AgentDeps, thread: Thread, text: str) -> ChatReply | Chosen:
     """The steps before the router: no agent (a stored reply), a tap on "Is this about", a
-    pending question, one agent, an injection. Returns (spec, the person's agents, the active
-    agent id, the text to answer); spec None means the router decides. Commits nothing."""
+    pending question, one agent, an injection. Returns Chosen; spec None means the router
+    decides. A tap on another agent than the active one is a switch (chat.agent_switched).
+    Commits nothing."""
     agents = agents_for(session, deps.person)
     if not agents:
         return reply_text(session, deps, thread, t("reply.no_agent", deps.lang))
@@ -292,20 +298,26 @@ def _choose(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Cha
         original = language.original_text(session, tap[1])
         if original is not None:
             deps.answer_id = tap[1]
-        return ids[tap[0]], agents, active, original or text
+        if active is not None and tap[0] != active:
+            spec = ids[tap[0]]
+            after = {"from": active, "to": spec.id}
+            actor = _deps_for(deps, spec).actor
+            events.emit(session, "chat.agent_switched", ("thread", thread.id), None, after, actor)
+        return ids[tap[0]], agents, active, original or text, True
     pending = _pending(session, thread)
     if pending is not None and pending.agent_id in ids:
-        return ids[pending.agent_id], agents, active, text
+        return ids[pending.agent_id], agents, active, text, False
     if len(agents) == 1:
-        return agents[0], agents, active, text
+        return agents[0], agents, active, text, False
     if classify(html.unescape(text), deps.today, deps.lang).injection:
-        return ids[active] if active else agents[0], agents, active, text
-    return None, agents, active, text
+        return ids[active] if active else agents[0], agents, active, text, False
+    return None, agents, active, text, False
 
 
 def _router_input(session: Session, deps: AgentDeps, thread: Thread) -> tuple[str, Pseudonymiser]:
-    """Mia's last message (the router's context) and the branch's pseudonymiser."""
-    last = _last_mia(session, thread)
+    """Mia's last reply or question in the thread (the router's context; a notification, such
+    as a daily plan or an alert, never leaves) and the branch's pseudonymiser."""
+    last = _last_mia(session, thread, notifications=False)
     return (last.text if last else ""), Pseudonymiser.for_branch(session, deps.branch.id)
 
 
@@ -357,12 +369,13 @@ async def route_turn(
     chosen = await asyncio.to_thread(_choose, session, deps, thread, text)
     if isinstance(chosen, ChatReply):
         return chosen
-    spec, agents, active, text = chosen
+    spec, agents, active, text, tapped = chosen
     if keep is not None and keep in {a.id for a in agents}:
         spec = AGENTS[keep]
     if not deps.resumed and await asyncio.to_thread(deferred.waiting, session, thread):
         lead_id = spec.id if spec is not None else active or agents[0].id
-        return await asyncio.to_thread(defer_turn, session, deps, thread, "route", lead_id)
+        stage: deferred.Stage = "agent" if tapped else "route"  # a tapped agent is kept
+        return await asyncio.to_thread(defer_turn, session, deps, thread, stage, lead_id)
     if spec is not None:
         agent_deps = _deps_for(deps, spec)
     else:

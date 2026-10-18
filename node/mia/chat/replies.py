@@ -1,5 +1,6 @@
-"""Storing Mia's replies: block checks, the assistant message and its event, and the replies every
-agent shares (the cap). Agents and the chat service both import this module; it imports no agent's turn code, only the shift supervisor's manifest (for EXPOSING_TOOLS).
+"""Storing Mia's replies: block checks, the assistant message and its event, and the replies
+every agent shares (the cap). Agents and the chat service both import this module; it imports
+no agent's turn code, only the shift supervisor's manifest (for EXPOSING_TOOLS).
 
 Guarantees: the user's text reaches the model only inside <user_message> tags; approval cards
 in a reply always point to approvals that exist, and every approval created in the turn gets a

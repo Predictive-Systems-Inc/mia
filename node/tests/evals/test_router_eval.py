@@ -171,6 +171,8 @@ def test_deferral_and_recovery(
     """One real router turn, then the network is cut: the next message is deferred, and
     retry_due with the real transport resumes it."""
     _needs_key()
+    monkeypatch.setenv("MIA_DECIDER", "jev")  # the router's gate (D18)
+    get_settings.cache_clear()
     monkeypatch.setattr(
         orgconfig,
         "load",

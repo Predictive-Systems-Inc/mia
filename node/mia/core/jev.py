@@ -10,7 +10,7 @@ import httpx
 from mia.core.egress import EgressBlocked, EgressTransport, current_context
 from mia.settings import get_settings
 
-RETRY_STATUS = {429, 529}
+RETRY_STATUS = {408, 429, 529}
 RETRIES = 2
 BACKOFF = 0.5  # seconds, doubled per retry
 TIMEOUT = 10.0
@@ -22,7 +22,7 @@ class JevError(Exception):
 
 
 class JevUnreachable(JevError):
-    """Jev could not be reached: a network error, a timeout, a 5xx, or 429/529 after the
+    """Jev could not be reached: a network error, a timeout, a 5xx, or 408/429/529 after the
     retries. Waiting may fix it (the chat defers the turn)."""
 
 

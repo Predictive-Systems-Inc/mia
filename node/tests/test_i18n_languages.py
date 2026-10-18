@@ -8,6 +8,12 @@ def test_ten_languages_are_supported() -> None:
     assert people.LANGUAGES == i18n.SUPPORTED
 
 
+def test_new_keys_are_every_key_of_the_new_languages() -> None:
+    from mia.i18n import fil
+
+    assert set(fil.STRINGS) <= set(i18n.NEW_KEYS)
+
+
 def test_every_new_key_exists_in_every_language() -> None:
     missing = [
         (lang, k) for lang in i18n.SUPPORTED for k in i18n.NEW_KEYS if k not in STRINGS[lang]

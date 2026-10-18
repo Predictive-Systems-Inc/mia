@@ -197,3 +197,46 @@ def test_jev_assign_resolves_a_pseudonymised_name(
     _turn(session, people["Sanna"], f"show {mikael.name}'s visits")
     row = session.exec(select(Event).where(Event.action == "tool.called")).one()
     assert row.before and row.before["input"]["person_name"] == mikael.name
+
+
+def test_a_resumed_clarify_question_can_be_tapped(
+    session: Session,
+    people: dict[str, Person],
+    jev: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mia.chat import deferred
+    from mia.core.db import utcnow
+    from mia.core.models import Message
+
+    monkeypatch.setattr(jev_core, "BACKOFF", 0)
+    monkeypatch.setattr(jev_core, "_inner", lambda: fake_jev(lambda b: {}, status=503))
+    first = _turn(session, people["Juha"], "tomorrow")  # deferred at the agent stage
+    probs = {"record_absence": 0.45, "get_my_visits": 0.40}
+    _answer(monkeypatch, jev, action="record_absence", confidence=0.45, probabilities=probs)
+    assert asyncio.run(deferred.retry_due(utcnow())) == 1
+    note = session.exec(
+        select(Message)
+        .where(Message.thread_id == first.thread_id)
+        .where(Message.role == "notification")
+    ).one()
+    label = next(b["options"][0] for b in note.blocks if b["type"] == "quick_replies")
+    _turn(session, people["Juha"], label, first.thread_id)
+    assert _tools(session) == ["shift_supervisor.record_absence"]
+    assert len(jev) == 1  # the tap ran the stored decision
+
+
+def test_a_resumed_did_you_mean_is_the_pending_clarification(
+    session: Session, people: dict[str, Person]
+) -> None:
+    from mia.agents.shift_supervisor import turn
+    from mia.chat.service import _context, _store
+
+    thread, _ = _store(session, people["Juha"], "tomorrow", None)
+    _, deps, _ = _context(session, people["Juha"], thread)
+    deps.resumed = True  # stored as a notification
+    turn._reply_clarify(
+        session, deps, thread, ["shift_supervisor.report_absence", "shift_supervisor.my_visits"]
+    )
+    session.commit()
+    assert turn._pending_clarification(session, thread) is not None

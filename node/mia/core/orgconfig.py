@@ -5,8 +5,9 @@ import datetime as dt
 from functools import lru_cache
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from mia.i18n import SUPPORTED
 from mia.settings import get_settings
 
 
@@ -54,6 +55,15 @@ class OrgSettings(BaseModel):
     languages: list[str] = Field(default_factory=list)
     # The agents this organisation runs, in routing order.
     agents: list[str] = Field(default_factory=lambda: ["shift_supervisor"])
+
+    @field_validator("languages")
+    @classmethod
+    def _supported(cls, value: list[str]) -> list[str]:
+        """Every offered language is one Mia speaks (i18n.SUPPORTED)."""
+        bad = [code for code in value if code not in SUPPORTED]
+        if bad:
+            raise ValueError(f"unsupported language code(s) {bad}; supported: {list(SUPPORTED)}")
+        return value
 
 
 @lru_cache

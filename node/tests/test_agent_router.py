@@ -12,7 +12,7 @@ from mia.core import jev, orgconfig
 from mia.core.jev import JevError
 from mia.core.models import Actor, Event, Message, Person
 from mia.settings import get_settings
-from tests.jev_fake import choice, fake_jev
+from tests.jev_fake import answers_for, choice, fake_jev
 
 TWO = ["shift_supervisor", "sales_supervisor"]
 SHIFT = "show my visits today"  # the shift supervisor answers with no buttons (no pending question)
@@ -23,6 +23,7 @@ def two_agents(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     """Sanna (supervisor) can use both; returns the router requests Jev received."""
     monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings(agents=TWO))
     monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")  # the router's gate (D18)
     get_settings.cache_clear()
     return []
 
@@ -30,10 +31,15 @@ def two_agents(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 def _router_answers(
     monkeypatch: pytest.MonkeyPatch, seen: list[dict[str, Any]], agent: str, p: float = 0.95
 ) -> None:
+    """The router answers `agent` (its requests recorded in `seen`)."""
+
     def answer(body: dict[str, Any]) -> dict[str, Any]:
+        if "agent" not in body["questions"]:  # the shift supervisor's decider (same gate)
+            return answers_for(body, "reply_only")
+        seen.append(body)
         return {"agent": choice(agent, p)}
 
-    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(answer, seen))
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(answer))
 
 
 def _turn(session: Session, person: Person, text: str, thread: str | None = None) -> ChatReply:
@@ -275,8 +281,21 @@ def test_names_are_pseudonymised_before_the_router(
     _turn(session, sanna, "can Maria cover tomorrow?", note.thread_id)
     state = two_agents[0]["state"]
     assert "Maria" not in state["message"] and "Person_" in state["message"]
-    assert "Mikael" not in state["previous_mia_message"]
-    assert "Nieminen" not in state["previous_mia_message"]
+    assert state["previous_mia_message"] is None  # a notification never leaves as context
+
+
+def test_mias_previous_reply_is_the_routers_context(
+    session: Session,
+    people: dict[str, Person],
+    two_agents: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _router_answers(monkeypatch, two_agents, "shift_supervisor")
+    first = _turn(session, people["Sanna"], SHIFT)
+    _turn(session, people["Sanna"], "ok", first.thread_id)
+    stored = session.get(Message, first.message_id)
+    assert stored is not None and stored.role == "assistant"
+    assert two_agents[1]["state"]["previous_mia_message"]  # a reply in the thread is sent
 
 
 def test_the_callers_agent_runs_only_for_its_own_spec(
@@ -327,3 +346,19 @@ def test_a_notification_after_the_route_question_makes_its_buttons_stale(
     assert note.thread_id == asked.thread_id  # the person's latest thread with the agent
     _turn(session, sanna, "Myyntipäällikkö", asked.thread_id)
     assert len(two_agents) == 2  # routed as text, not taken as a tap
+
+
+def test_the_router_is_gated_like_the_decider(
+    session: Session,
+    people: dict[str, Person],
+    two_agents: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MIA_DECIDER", "agent")
+    get_settings.cache_clear()
+    _router_answers(monkeypatch, two_agents, "sales_supervisor")
+    reply = _turn(session, people["Sanna"], "how much did we sell?")
+    assert two_agents == []  # nothing left the node
+    failed = session.exec(select(Event).where(Event.action == "chat.route_failed")).one()
+    assert failed.after == {"error": "gated"}
+    assert any(isinstance(b, QuickRepliesBlock) for b in reply.blocks)  # no active agent: ask

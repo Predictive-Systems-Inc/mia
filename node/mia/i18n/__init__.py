@@ -9,25 +9,13 @@ from mia.i18n.strings import STRINGS
 
 SUPPORTED = ("fi", "en", "fil", "ceb", "ilo", "hil", "war", "bcl", "pam", "pag")
 DEFAULT = "en"
-for _module in (fil, ceb, ilo, hil, war, bcl, pam, pag):
+_NEW_MODULES = (fil, ceb, ilo, hil, war, bcl, pam, pag)
+for _module in _NEW_MODULES:
     STRINGS[_module.__name__.rsplit(".", 1)[-1]] = _module.STRINGS
 
-# Keys every language must have (the rest fall back to English): what a person reads in the
-# routing, language and busy replies.
-NEW_KEYS = (
-    "agent.shift_supervisor.label",
-    "agent.sales_supervisor.label",
-    "agent.inventory_manager.label",
-    "agent.bookkeeper.label",
-    "agent.hr_officer.label",
-    "agent.branch_manager.label",
-    "chat.switched",
-    "route.question",
-    "reply.busy",
-    "reply.no_agent",
-    "reply.unavailable",
-    "language.set",
-)
+# Keys every language must have (the rest fall back to English): every key of the eight new
+# language modules (what a person reads in the routing, language and busy replies).
+NEW_KEYS = tuple(sorted({key for m in _NEW_MODULES for key in m.STRINGS}))
 
 # A key may hold several wordings of one reply; one is picked per use so replies do not read
 # the same every time. tests/conftest.py pins the first variant, so pinned texts stay stable.

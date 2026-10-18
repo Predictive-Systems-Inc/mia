@@ -311,3 +311,9 @@ Format for each entry:
 - Question: Who reviews the Pangasinan strings in mia/i18n/pag.py?
 - Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
 - Blocking: no for the package; yes before a client uses Pangasinan.
+
+## Q36: Accountants and viewers have no agent
+- Where: node/config/policies/policy.csv (no `agent:*` line for `accountant` or `viewer`); node/mia/chat/access.py
+- Question: Should accountants and viewers reach an agent? Before multi-agent routing they could talk to the shift supervisor; now they get `reply.no_agent`.
+- Assumed answer: intended until their agents exist (bookkeeper for accountants, branch_manager for viewers); their `agent:*` lines are added with those agents.
+- Blocking: no.

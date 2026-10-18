@@ -21,7 +21,7 @@ from mia.core.db import utcnow
 from mia.core.models import Actor, Event, Message, Person
 from mia.i18n import t
 from mia.settings import get_settings
-from tests.jev_fake import choice, fake_jev
+from tests.jev_fake import answers_for, choice, fake_jev
 
 TWO = ["shift_supervisor", "sales_supervisor"]
 
@@ -32,6 +32,7 @@ def jev_down(monkeypatch: pytest.MonkeyPatch, people: dict[str, Person]) -> dict
     state: dict[str, Any] = {"up": False, "seen": []}
     monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings(agents=TWO))
     monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")  # the router's gate (D18)
     monkeypatch.setenv("MIA_DEVELOPER_PERSON_ID", people["Helena"].id)
     monkeypatch.setattr(jev, "BACKOFF", 0)
     get_settings.cache_clear()
@@ -39,7 +40,14 @@ def jev_down(monkeypatch: pytest.MonkeyPatch, people: dict[str, Person]) -> dict
     def transport() -> Any:
         if not state["up"]:
             return fake_jev(lambda b: {}, state["seen"], status=503)
-        return fake_jev(lambda b: {"agent": choice("shift_supervisor")}, state["seen"])
+        return fake_jev(
+            lambda b: (
+                {"agent": choice("shift_supervisor")}
+                if "agent" in b["questions"]
+                else answers_for(b, "reply_only")
+            ),  # the shift supervisor's decider
+            state["seen"],
+        )
 
     monkeypatch.setattr(jev, "_inner", transport)
     return state
@@ -313,3 +321,115 @@ def test_an_outage_drained_by_expiry_closes_silently_and_the_next_alerts_again(
     texts = [m.text for m in session.exec(select(Message).where(Message.role == "notification"))]
     assert sum(x.startswith("Jev ei vastaa") for x in texts) == 2
     assert not any(x.startswith("Jev vastaa taas") for x in texts)
+
+
+def test_the_busy_reply_is_not_mias_last_message(
+    session: Session,
+    people: dict[str, Person],
+    jev_down: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _turn(session, people["Sanna"], "how much did we sell today?")
+    seen: list[dict[str, Any]] = []
+    unsure = fake_jev(lambda b: {"agent": choice("sales_supervisor", 0.5)}, seen)
+    monkeypatch.setattr(jev, "_inner", lambda: unsure)
+    assert _retry() == 1
+    assert seen[0]["state"]["active_agent"] is None
+    assert seen[0]["state"]["previous_mia_message"] is None
+    asked = session.exec(select(Message).where(Message.role == "notification")).all()
+    question = t("route.question", people["Sanna"].language)
+    assert any(m.text == question for m in asked)  # no active agent: "Is this about"
+
+
+def test_a_threads_expired_turns_get_one_question_for_the_latest(
+    session: Session,
+    people: dict[str, Person],
+    jev_down: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sanna = people["Sanna"]
+    first = _turn(session, sanna, "how much did we sell today?")
+    _turn(session, sanna, "and yesterday?", first.thread_id)
+    assert _retry(utcnow() + dt.timedelta(hours=2, minutes=1)) == 2
+    resumed = _events(session, "turn.resumed")
+    assert len(resumed) == 2 and all(e.after and e.after["expired"] for e in resumed)
+    (asked,) = _events(session, "chat.route_asked")
+    latest = session.exec(select(Message).where(Message.text == "and yesterday?")).one()
+    assert asked.after and asked.after["original_message_id"] == latest.id
+    texts = _answers_when_up(monkeypatch, jev_down, "sales_supervisor")
+    jev_down["up"] = True
+    _turn(session, sanna, t("agent.sales_supervisor.label", sanna.language), first.thread_id)
+    assert texts == ["and yesterday?"]
+
+
+def test_two_interleaved_retries_answer_a_turn_once(
+    session: Session,
+    people: dict[str, Person],
+    jev_down: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _turn(session, people["Sanna"], "show my visits today")
+    calls: list[str] = []
+
+    async def handle(turn: Turn) -> ChatReply:
+        calls.append(turn.text)
+        await asyncio.sleep(0.2)  # the other worker runs meanwhile
+        return await asyncio.to_thread(
+            _store, turn.session, turn.deps, turn.thread, [TextBlock(text="ok")], []
+        )
+
+    _spy(monkeypatch, handle)
+    jev_down["up"] = True
+
+    async def both() -> list[int]:
+        return list(
+            await asyncio.gather(deferred.retry_due(utcnow()), deferred.retry_due(utcnow()))
+        )
+
+    assert sorted(asyncio.run(both())) == [0, 1]
+    assert len(calls) == 1 and len(_events(session, "turn.resumed")) == 1
+    replies = session.exec(select(Message).where(Message.text == "ok")).all()
+    assert len(replies) == 1
+
+
+def test_a_claim_is_released_when_jev_is_still_down(
+    session: Session, people: dict[str, Person], jev_down: dict[str, Any]
+) -> None:
+    _turn(session, people["Sanna"], "show my visits today")
+    assert _retry() == 0  # claimed, Jev still down, released
+    jev_down["up"] = True
+    assert _retry() == 1  # the next tick resumes it
+
+
+def test_a_route_tap_while_the_thread_waits_is_deferred_with_its_agent(
+    session: Session,
+    people: dict[str, Person],
+    jev_down: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sanna = people["Sanna"]
+    down = jev._inner
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(lambda b: {"agent": choice("x", 0.3)}))
+    asked = _turn(session, sanna, "hmm, the numbers")  # "Is this about"
+    monkeypatch.setattr(jev, "_inner", down)
+    _turn(session, sanna, "how much did we sell today?", asked.thread_id)  # the thread waits
+    _turn(session, sanna, t("agent.sales_supervisor.label", sanna.language), asked.thread_id)
+    queued = _events(session, "turn.deferred")[-1]
+    assert queued.after and queued.after["stage"] == "agent"
+    assert queued.after["agent_id"] == "sales_supervisor"
+
+
+def test_a_route_tap_to_another_agent_is_a_switch(
+    session: Session,
+    people: dict[str, Person],
+    jev_down: dict[str, Any],
+) -> None:
+    sanna = people["Sanna"]
+    jev_down["up"] = True
+    first = _turn(session, sanna, "show my visits today")  # the shift supervisor answers
+    jev_down["up"] = False
+    _turn(session, sanna, "how much did we sell today?", first.thread_id)
+    assert _retry(utcnow() + dt.timedelta(hours=2, minutes=1)) == 1  # "Is this about"
+    _turn(session, sanna, t("agent.sales_supervisor.label", sanna.language), first.thread_id)
+    (switched,) = _events(session, "chat.agent_switched")
+    assert switched.after == {"from": "shift_supervisor", "to": "sales_supervisor"}

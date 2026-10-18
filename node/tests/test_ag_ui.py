@@ -614,6 +614,7 @@ def test_a_routed_run_is_answered_by_the_chosen_agent(
     two = orgconfig.OrgSettings(agents=["shift_supervisor", "sales_supervisor"])
     monkeypatch.setattr(orgconfig, "load", lambda org=None: two)
     monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")  # the router's gate (D18)
     get_settings.cache_clear()
     answer = {"agent": choice("sales_supervisor")}
     monkeypatch.setattr(jev, "_inner", lambda: fake_jev(lambda body: answer))
@@ -633,6 +634,7 @@ def test_jev_down_defers_the_run_instead_of_failing_it(
     two = orgconfig.OrgSettings(agents=["shift_supervisor", "sales_supervisor"])
     monkeypatch.setattr(orgconfig, "load", lambda org=None: two)
     monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")  # the router's gate (D18)
     monkeypatch.setattr(jev, "BACKOFF", 0)
     get_settings.cache_clear()
     monkeypatch.setattr(jev, "_inner", lambda: fake_jev(lambda body: {}, status=503))

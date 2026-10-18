@@ -82,7 +82,11 @@ async def route(
     pseudo: Pseudonymiser,
 ) -> Route:
     """One Jev request (the caller sets the egress context, purpose chat.route). JevUnreachable
-    propagates (the turn is deferred); JevError means no usable answer."""
+    propagates (the turn is deferred); JevError means no usable answer. Gated like the shift
+    supervisor's decider (D18): unless MIA_DECIDER=jev nothing is sent and JevError("gated")
+    makes the caller fall back."""
+    if get_settings().MIA_DECIDER != "jev":
+        raise JevError("gated")
     body = build_request(text, agents, active, previous, get_settings().MIA_JEV_MODEL)
     state = body["state"]
     body["state"] = {k: pseudo.apply(v) if isinstance(v, str) else v for k, v in state.items()}

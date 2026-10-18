@@ -293,6 +293,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
             "Mia is busy at the moment. You will get an answer soon.",
         ],
         "reply.no_agent": "I cannot help you here yet. Ask your supervisor to set up Mia for you.",
+        "reply.not_built": "Mia cannot help with that yet.",
         "language.set": "Okay, I will use {language}.",
         "language.ask": "Which language should I use?\nAnong wika ang gusto mong gamitin ko?",
         "language.name.fi": "Suomi",
@@ -604,6 +605,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "reply.no_agent": (
             "En voi vielä auttaa sinua täällä. Pyydä esihenkilöäsi ottamaan Mia käyttöön sinulle."
         ),
+        "reply.not_built": "Mia ei vielä osaa auttaa tässä.",
         "language.set": "Selvä, käytän kieltä: {language}.",
         "dev.jev_down": "Jev ei vastaa {time} alkaen. Viestit odottavat jonossa.",
         "dev.jev_back": (

@@ -49,8 +49,8 @@ def _manifest(agent_id: str) -> Manifest:
 
 
 async def _not_built(turn: Turn) -> ChatReply:
-    """The unavailable reply; nothing else runs."""
-    text = t("reply.unavailable", turn.deps.lang)
+    """The not-built reply (retrying never helps); nothing else runs."""
+    text = t("reply.not_built", turn.deps.lang)
     return await asyncio.to_thread(reply_text, turn.session, turn.deps, turn.thread, text)
 
 

@@ -71,7 +71,8 @@ def ask(
 
 def tapped(session: Session, thread: Thread, text: str) -> tuple[str, str | None] | None:
     """(language, original message id) when text is a button of the language question that is
-    the thread's last Mia message; otherwise None (a stale button is plain text)."""
+    the thread's last Mia message, typed in any case; otherwise None (a stale button is plain
+    text)."""
     asked = session.exec(
         select(Event)
         .where(Event.action == ASKED)
@@ -82,7 +83,8 @@ def tapped(session: Session, thread: Thread, text: str) -> tuple[str, str | None
     after = (asked.after or {}) if asked is not None else {}
     if last is None or after.get("message_id") != last.id:
         return None
-    code = (after.get("options") or {}).get(text.strip())
+    options = {label.casefold(): code for label, code in (after.get("options") or {}).items()}
+    code = options.get(text.strip().casefold())
     return (str(code), after.get("original_message_id")) if code else None
 
 

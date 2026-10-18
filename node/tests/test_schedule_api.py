@@ -187,3 +187,33 @@ def test_people_list_for_the_office_and_the_board_markup(
     assert staff.get("/schedule/people").status_code == 403
     page = client.get("/").text
     assert 'id="board"' in page and 'id="summary"' in page and "/schedule/people" in page
+
+
+def test_one_agents_failing_due_work_never_stops_the_rest(
+    session: Session, branch: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import dataclasses
+
+    from mia.agents.registry import AGENTS, DEFAULT
+    from mia.api import main as api_main
+    from mia.chat import deferred
+
+    ran: list[str] = []
+
+    def broken(_s: Session, _now: object) -> int:
+        raise RuntimeError("cover failed")
+
+    def works(_s: Session, _now: object) -> int:
+        ran.append("next")
+        return 1
+
+    async def retry(_now: object) -> int:
+        ran.append("retry_due")
+        return 0
+
+    other = next(a for a in AGENTS if a != DEFAULT)
+    monkeypatch.setitem(AGENTS, DEFAULT, dataclasses.replace(AGENTS[DEFAULT], run_due=broken))
+    monkeypatch.setitem(AGENTS, other, dataclasses.replace(AGENTS[other], run_due=works))
+    monkeypatch.setattr(deferred, "retry_due", retry)
+    assert asyncio.run(api_main.run_due_work())[0] == 1
+    assert ran == ["next", "retry_due"]

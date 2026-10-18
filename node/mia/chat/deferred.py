@@ -1,6 +1,7 @@
 """Turns that wait while Jev is unreachable (spec 2026-10-18, Jev unreachable).
 
-A deferred turn is an event, not a row: `turn.deferred` opens it, `turn.resumed` closes it.
+A deferred turn is an event, not a row: `turn.deferred` opens it, `turn.resumed` closes it;
+a worker holds it between `turn.claimed` and the close (or `turn.released`).
 Each tick retries open turns oldest first, one at a time, and stops the round at the first
 that still cannot reach Jev. After MAX_WAIT a turn expires to a question. The developer hears
 when an outage starts and ends, never what anyone wrote.
@@ -28,6 +29,7 @@ from mia.settings import get_settings
 log = logging.getLogger(__name__)
 MAX_WAIT = dt.timedelta(hours=2)
 DEFERRED, RESUMED = "turn.deferred", "turn.resumed"
+CLAIMED, RELEASED = "turn.claimed", "turn.released"
 STARTED, ENDED = "jev.outage_started", "jev.outage_ended"
 Stage = Literal["route", "agent"]
 
@@ -80,9 +82,10 @@ def defer(
 ) -> ChatReply:
     """Record the deferral (the caller commits) with `answer_id`, the message whose text the
     turn answers (deps.answer_id after a tap, else message_id); the busy reply once per waiting
-    stretch of the thread, otherwise an empty reply (nothing stored). The first deferral after
-    a success starts an outage and tells the developer; an outage drained by expiry alone is
-    closed silently first."""
+    stretch of the thread (its id in the event, so it never counts as Mia's last message),
+    otherwise an empty reply (nothing stored). The first deferral after a success starts an
+    outage and tells the developer; an outage drained by expiry alone is closed silently
+    first."""
     waiting_now = open_turns(session)
     first_in_thread = not any(e.entity_id == thread.id for e in waiting_now)
     started = _outage_open(session)
@@ -91,6 +94,9 @@ def defer(
         after = {"count": len(closed), "expired_only": True}
         events.emit(session, ENDED, ("jev", "typesafe"), None, after, deps.actor)
         started = None
+    busy = (
+        reply_text(session, deps, thread, t("reply.busy", deps.lang)) if first_in_thread else None
+    )
     events.emit(
         session,
         DEFERRED,
@@ -102,15 +108,16 @@ def defer(
             "person_id": deps.person.id,
             "stage": stage,
             "agent_id": agent_id,
+            "busy_message_id": busy.message_id if busy else None,
         },
         deps.actor,
     )
     if started is None:
         events.emit(session, STARTED, ("jev", "typesafe"), None, {}, deps.actor)
         _tell_developer(session, "dev.jev_down", agent_id)
-    if first_in_thread:
-        return reply_text(session, deps, thread, t("reply.busy", deps.lang))
-    return ChatReply(thread_id=thread.id, message_id=message_id, agent_id=agent_id, blocks=[])
+    return busy or ChatReply(
+        thread_id=thread.id, message_id=message_id, agent_id=agent_id, blocks=[]
+    )
 
 
 def _closed_since(session: Session, started: Event) -> list[Event]:
@@ -190,6 +197,44 @@ def _fail(session: Session, due: dict[str, Any], person: Person, thread: Thread)
         log.error("the unavailable reply for turn %s failed: %s", due["id"], type(exc).__name__)
 
 
+def _claim(
+    session: Session, due: dict[str, Any], now: dt.datetime
+) -> Literal["ok", "closed", "busy"]:
+    """Claim the turn for this worker under the write lock and commit: "closed" when it was
+    resumed meanwhile, "busy" while another worker's claim holds (a claim older than MAX_WAIT
+    is stale and taken over), else "ok" with a turn.claimed event."""
+    events.write_lock(session)
+    rows = session.exec(
+        select(Event)
+        .where(Event.entity_id == due["thread_id"])
+        .where(col(Event.action).in_([RESUMED, CLAIMED, RELEASED]))
+        .order_by(col(Event.id))
+    ).all()
+    message_id = due["after"]["message_id"]
+    if any(e.action == RESUMED and (e.after or {}).get("message_id") == message_id for e in rows):
+        session.rollback()
+        return "closed"
+    mine = [e for e in rows if (e.after or {}).get("deferred_event_id") == due["id"]]
+    if mine and mine[-1].action == CLAIMED and now - mine[-1].timestamp <= MAX_WAIT:
+        session.rollback()
+        return "busy"
+    after = {"message_id": message_id, "deferred_event_id": due["id"]}
+    events.emit(
+        session, CLAIMED, ("thread", due["thread_id"]), None, after, Actor.system(due["branch_id"])
+    )
+    session.commit()
+    return "ok"
+
+
+def _release(session: Session, due: dict[str, Any]) -> None:
+    """Give the claim back (Jev still unreachable) so the next tick retries the turn."""
+    session.rollback()
+    after = {"message_id": due["after"]["message_id"], "deferred_event_id": due["id"]}
+    actor = Actor.system(due["branch_id"])
+    events.emit(session, RELEASED, ("thread", due["thread_id"]), None, after, actor)
+    session.commit()
+
+
 def _close(session: Session, due: dict[str, Any], closing: dict[str, Any]) -> None:
     """turn.resumed for the deferral, committed with the turn's reply."""
     actor = Actor.system(due["branch_id"])
@@ -199,24 +244,35 @@ def _close(session: Session, due: dict[str, Any], closing: dict[str, Any]) -> No
 
 async def retry_due(now: dt.datetime) -> int:
     """Resume or expire open turns oldest first; stop at the first that still cannot reach
-    Jev. Each closed turn commits with its reply, so a resumed turn never runs again; a turn
-    that fails otherwise is closed as failed with the unavailable reply. Closes the outage when
-    none are left and at least one was answered since it started. Returns how many turns were
-    closed. DB work runs in worker threads (rule 12); no transaction is open across a Jev call.
-    ponytail: one tick worker per node, so no lock is held across the Jev call (rule 11); `mia
-    tick` must not run while `mia serve` ticks (both would retry the same turns). Two workers
-    would need a claim event first."""
+    Jev. Each closed turn commits with its reply, so a resumed turn never runs again; an
+    expired turn asks only when it is its thread's latest open one (older ones close with no
+    reply, so the thread gets one question); a turn that fails otherwise is closed as failed
+    with the unavailable reply. Closes the outage when none are left and at least one was
+    answered since it started. Returns how many turns were closed. DB work runs in worker threads (rule 12); no transaction is open across a Jev call.
+    Each turn is claimed under the write lock first (turn.claimed, committed before Jev), so
+    two workers (`mia serve` and `mia tick`) never answer one turn twice; a worker that meets
+    another's claim stops its round."""
     from mia.chat import service  # service imports this module
     from mia.core.jev import JevUnreachable
 
     done = 0
     session = Session(get_engine(), expire_on_commit=False)
     try:
-        for due in await asyncio.to_thread(_due, session):
+        dues = await asyncio.to_thread(_due, session)
+        for i, due in enumerate(dues):
+            claim = await asyncio.to_thread(_claim, session, due, now)
+            if claim == "busy":
+                break  # another worker is running the queue, in order
+            if claim == "closed":
+                continue
             after = due["after"]
             message, thread, person = await asyncio.to_thread(_load, session, due)
             gone = message is None or thread is None or person is None or person.status != "active"
             expired = gone or now - due["at"] > MAX_WAIT
+            # one question per thread: an expired turn with a later open one closes silently
+            gone = gone or (
+                expired and any(d["thread_id"] == due["thread_id"] for d in dues[i + 1 :])
+            )
             closing: dict[str, Any] = {
                 "message_id": after["message_id"],
                 "deferred_event_id": due["id"],
@@ -235,7 +291,7 @@ async def retry_due(now: dt.datetime) -> int:
                         agent_id=after["agent_id"],
                     )
             except JevUnreachable:
-                await asyncio.to_thread(session.rollback)
+                await asyncio.to_thread(_release, session, due)
                 break
             except Exception as exc:  # noqa: BLE001 - one broken turn must not hold the queue
                 log.error("resuming deferred turn %s failed: %s", due["id"], type(exc).__name__)

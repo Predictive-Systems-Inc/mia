@@ -3,6 +3,7 @@ import asyncio
 import pytest
 from sqlmodel import Session
 
+from mia import i18n
 from mia.agents.base import Turn
 from mia.agents.registry import AGENTS
 from mia.chat import service
@@ -81,4 +82,5 @@ def test_a_stub_answers_that_it_is_not_available(
     stub = next(s for s in STUBS if s.id == "bookkeeper")
     deps.manifest = stub.manifest
     reply = asyncio.run(stub.handle_turn(Turn(session, deps, thread, "hi", past, ctx)))
-    assert t("reply.unavailable", person.language) in reply.text()
+    assert reply.text() == t("reply.not_built", person.language) != t("reply.not_built", "en")
+    assert "reply.not_built" in i18n.NEW_KEYS  # every language has it

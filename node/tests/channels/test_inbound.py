@@ -611,6 +611,7 @@ def test_a_turn_deferred_behind_another_queues_nothing(
     org = orgconfig.load().model_copy(update={"agents": ["shift_supervisor", "sales_supervisor"]})
     monkeypatch.setattr(orgconfig, "load", lambda org_name=None: org)  # sim stays enabled
     monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")  # the router's gate (D18)
     monkeypatch.setattr(jev, "BACKOFF", 0)
     get_settings.cache_clear()
     monkeypatch.setattr(jev, "_inner", lambda: fake_jev(lambda body: {}, status=503))

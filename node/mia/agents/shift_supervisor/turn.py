@@ -44,15 +44,23 @@ from mia.skills.roles import load_role_plan
 from mia.skills.routing import Route, route
 
 
+def _last_question(session: Session, thread: Thread) -> Message | None:
+    """The thread's last Mia message, questions included (chat.service._last_mia)."""
+    from mia.chat.service import _last_mia  # chat.service imports the registry, so this module
+
+    return _last_mia(session, thread, questions=True)
+
+
 def _pending_clarification(session: Session, thread: Thread) -> Event | None:
-    """The clarify question that is the thread's last assistant message, if any."""
+    """The clarify question that is the thread's last Mia message (a reply, or a resumed
+    turn's notification), if any."""
     asked = session.exec(
         select(Event)
         .where(Event.action == "intent.clarify_asked")
         .where(Event.entity_id == thread.id)
         .order_by(col(Event.id).desc())
     ).first()
-    last = latest_message(session, thread, "assistant")
+    last = _last_question(session, thread)
     if asked is None or last is None or (asked.after or {}).get("message_id") != last.id:
         return None
     return asked
@@ -193,15 +201,15 @@ def _jev_tapped(
     session: Session, deps: AgentDeps, thread: Thread, text: str
 ) -> decider.Decision | None:
     """The stored decision behind a tapped Jev clarify button, if text is one. A button only
-    counts while its question is the thread's last assistant message and was asked today (its
-    inputs hold that day's "today")."""
+    counts while its question is the thread's last Mia message (a reply, or a resumed turn's
+    notification) and was asked today (its inputs hold that day's "today")."""
     asked = session.exec(
         select(Event)
         .where(Event.action == "decision.clarify_asked")
         .where(Event.entity_id == thread.id)
         .order_by(col(Event.id).desc())
     ).first()
-    last = latest_message(session, thread, "assistant")
+    last = _last_question(session, thread)
     if asked is None or last is None or (asked.after or {}).get("message_id") != last.id:
         return None
     if _local_day(asked.timestamp, deps.branch.timezone) != deps.today:

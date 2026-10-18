@@ -20,5 +20,6 @@ STRINGS: dict[str, str | list[str]] = {
         "Pasensya, dai ako makasimbag ngunyan. Pakisuway giraray sa mahapot.",
         "Pasensya, may nagkaproblema saakin. Pakisuway giraray sa dai pa magluwat.",
     ],
+    "reply.not_built": "Dai pa ini matabangan ni Mia.",
     "language.set": "Sige, {language} an gagamiton ko.",
 }

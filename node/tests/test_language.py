@@ -179,3 +179,20 @@ def test_an_emergency_is_logged_as_classified(
         "v1",
         "high",
     )
+
+
+def test_a_typed_language_name_matches_in_any_case(
+    session: Session, newcomer: Person, ph_org: None
+) -> None:
+    asked = _turn(session, newcomer, "anong oras ako bukas?")
+    _turn(session, newcomer, " filipino ", asked.thread_id)
+    session.refresh(newcomer)
+    assert newcomer.language == "fil"
+
+
+def test_an_unsupported_organisation_language_fails_at_load() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="tl"):
+        orgconfig.OrgSettings(languages=["fil", "tl"])
+    assert orgconfig.OrgSettings(languages=["fil", "en"]).languages == ["fil", "en"]
