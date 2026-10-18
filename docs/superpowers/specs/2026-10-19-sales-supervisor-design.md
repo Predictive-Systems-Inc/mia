@@ -2,7 +2,7 @@
 
 19 Oct 2026. Part 2 of the retail work (part 1: docs/superpowers/specs/2026-10-18-multi-agent-routing-design.md). The first agent built for a shop, and the template the `/mia-build-agent` skill (part 4) is extracted from. Proof shop: Ferino's Bibingka, a Philippine chain of kiosks with a commissary.
 
-**Status: draft for the owner's review.** One decision in it changes the data standard (new shared tables, section 4) and waits for an explicit yes.
+**Status: in execution (19 Oct 2026).** Section 4 first proposed new core tables (data standard 1.5) and waited for the owner. The owner asked for all use cases to be built; under rule 9 a table is shared only once a second agent reads it, and none does yet, so v1 uses agent-owned `sales_supervisor_*` tables, with promotion to core when the branch_manager (part 3) arrives (Q39). That promotion edits `0000_initial` in place before the first candidate release (rule 14) and gets an ADR; the owner can still say "1.5 now" and the plan's data task moves the tables to core.
 
 ## 1. Goal
 
@@ -35,17 +35,17 @@ Roles already exist (`clerk` is in `HUMAN_ROLES` since part 1; `supervisor`, `ow
 
 Every scenario has an eval case per gated language (en, fil, ceb, hil, war, bcl) in the decider's eval set, and a chat test with the fake Jev.
 
-## 4. Data (asks for a decision)
+## 4. Data
 
-Rule 9: a table more than one agent reads or writes is shared (core); industry fields live in a template. The branch_manager (part 3) reads counts, targets and notes; the inventory_manager will read counts; the bookkeeper will read daily totals. So these are shared from the start.
+Rule 9: a table more than one agent reads or writes is shared (core); industry fields live in a template; data no other agent needs is agent-owned and prefixed with the agent id. Today only the sales supervisor reads these tables, so v1 keeps them agent-owned (Q39). The branch_manager (part 3) will read counts, targets and notes; the inventory_manager will read counts; the bookkeeper will read daily totals. When the first of them is built, the three tables move to core as data standard 1.5 with an ADR (an in-place edit of `0000_initial` before the first candidate, rule 14). Column names below are chosen so the move is a rename of the table only.
 
-**Core, data standard 1.4 to 1.5 (asking before this is built):**
+**Agent-owned, in `mia/agents/sales_supervisor/models.py`:**
 
 | Table | Row | Notes |
 | --- | --- | --- |
-| `sales_counts` | one item count by one person at one branch: `item_id`, `quantity`, `amount` (minor units, currency), `reported_at`, `reported_by`, `business_date`, `supersedes` (id or null), `superseded_by` (id or null), `source_message_id` | append-only in spirit: a correction inserts and links; `superseded_by` is the one updated field |
-| `sales_targets` | `branch_id`, `period` (`day` or `month`), `starts_on`, `amount` or `quantity` with `item_id` optional, `set_by` | the day's share of a month target is computed, never stored |
-| `sales_notes` | `branch_id`, `business_date`, `person_id`, `text`, `themes` (list), `asked_message_id` | the "why" answers; part 3 reads them |
+| `sales_supervisor_counts` | one item count by one person at one branch: `item_id`, `quantity`, `amount` (minor units, currency), `reported_at`, `reported_by`, `business_date`, `supersedes` (id or null), `superseded_by` (id or null), `source_message_id` | append-only in spirit: a correction inserts and links; `superseded_by` is the one updated field |
+| `sales_supervisor_targets` | `branch_id`, `period` (`day` or `month`), `starts_on`, `amount` or `quantity` with `item_id` optional, `set_by` | the day's share of a month target is computed, never stored |
+| `sales_supervisor_notes` | `branch_id`, `business_date`, `person_id`, `text`, `themes` (list), `asked_message_id` | the "why" answers; part 3 reads them after promotion |
 
 **Template `mia/templates/retail` (industry, like `cleaning`):**
 
@@ -56,7 +56,7 @@ Rule 9: a table more than one agent reads or writes is shared (core); industry f
 
 Price history is the event log (`retail.item_priced`), not a table. Items and hours are owned by the branch_manager later; in v1 they come from the seed and the importer (`mia import` gains an `items:` section).
 
-Alternative considered: `sales_supervisor_counts` as an agent-owned table, promoted later. Rejected because the promotion is a second migration and a second ADR within weeks, and the readers are already known.
+Alternative considered: core tables from the start (data standard 1.5 now). Deferred because changing the data standard needs the owner's explicit yes (CLAUDE.md) and the promotion costs no extra migration before the first candidate release.
 
 Money is integer minor units plus currency (PHP, EUR), times ISO 8601 with offset, ids ULIDs (rule 10). `business_date` is the branch's local date at `reported_at`, so a count sent at 00:30 after a late close belongs to the day the clerk means: the agent asks when `reported_at` is within two hours after closing and the previous day has counts ("for today or yesterday?").
 
@@ -109,13 +109,14 @@ New keys under `sales.*` (reports, reminders, the why question, the morning mess
 
 ## 10. Open questions (docs/questions.md)
 
-- Q38: do counts need the selling price at the time, or is quantity enough and the amount derived at read time from the price history? Assumed: store both at write time; a price change never rewrites history.
-- Q39: who may set a branch target: the supervisor of that branch, or only the owner? Assumed: both; the owner's target wins when both exist for a day.
-- Q40: the why question goes to everyone who reported that day; should the owner get it too? Assumed: no, owners read the notes.
+- Q39 (in docs/questions.md): the tables are agent-owned until a second agent reads them, then core as data standard 1.5.
+- Q41: do counts need the selling price at the time, or is quantity enough and the amount derived at read time from the price history? Assumed: store both at write time; a price change never rewrites history.
+- Q42: who may set a branch target: the supervisor of that branch, or only the owner? Assumed: both; the owner's target wins when both exist for a day.
+- Q43: the why question goes to everyone who reported that day; should the owner get it too? Assumed: no, owners read the notes.
 
 ## 11. Order of work (for the plan)
 
-1. Data: core tables and the retail template, migration edit, models, store functions, seed. (Waits for the decision in section 4.)
+1. Data: the agent-owned tables and the retail template, migration edit, models, store functions, seed.
 2. `pre_parse` and the shared decider extraction.
 3. Tools and rbac.
 4. Turn, actions, chat tests.

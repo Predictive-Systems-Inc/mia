@@ -329,3 +329,15 @@ Format for each entry:
 - Question: Should the owner be told when Mia learns a key?
 - Assumed answer: no; `mia learned` is enough until the owner page exists.
 - Blocking: no.
+
+## Q39: Sales tables are agent-owned until a second agent reads them
+- Where: docs/superpowers/specs/2026-10-19-sales-supervisor-design.md (section 4); mia/agents/sales_supervisor/models.py
+- Question: Should sales counts, targets and notes be core tables now (data standard 1.5), since the branch_manager, inventory_manager and bookkeeper will read them, or agent-owned until one of them exists?
+- Assumed answer: agent-owned (`sales_supervisor_*`) now, because rule 9 makes a table shared only once a second agent reads it and changing the data standard needs the owner's explicit yes; promoted to core with an ADR when the branch_manager is built, by an in-place edit of `0000_initial` before the first candidate release (rule 14). Column names are chosen so the move is a table rename.
+- Blocking: no now; yes before part 3 starts.
+
+## Q40: Router gate decisions after the 19 Oct run
+- Where: docs/superpowers/specs/2026-10-18-router-follow-up-design.md (carried-over section); docs/research/router-2026-10-19.md
+- Question: Who owns "add a person to a branch" (branch manager or HR)? When Jev's top pick differs from the active agent below the threshold, keep the active agent or ask with buttons? Is 90% right per language the bar, given asks are safe?
+- Assumed answer: the branch manager owns adding people, HR owns pay, leave, contributions and hiring campaigns; ask instead of keep on a low-confidence switch (no silent misroute, every tap teaches the memory); the gate is wrong at most 2% (hard), right at least 80% per language, ask at most 15%, measured on a fresh gate half.
+- Blocking: no; the gate stays a merge condition.
