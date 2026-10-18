@@ -1,14 +1,14 @@
 """The inventory manager's tools: typed inputs and outputs, permission checked data access, writes
 only through mia.core.store. The bake plan, low stock and order totals are pure code in calc.py;
-the business date is the sales supervisor's calc.business_date with the branch's hours.
+the business date and the hours are the retail template's (mia.templates.retail.hours).
 
 Branch scoping: every tool works on the person's own branch. Naming another branch needs the
 read_all or write_all action on the data resource in RBAC (admin, and the owner through the
 hierarchy); anyone else gets PermissionDenied.
 
 A supplier order is money: the manifest gives draft_order risk money, so the guard in
-agents/base.py creates the approval (evidence: the tool call id and the validated input) and stops before this body
-runs. Nothing is stored before the decision. On approve, apply_order_approval (registered with
+agents/base.py creates the approval (evidence: the tool call id and the validated input) and
+stops before this body runs. Nothing is stored before the decision. On approve, apply_order_approval (registered with
 mia.core.approvals) re-runs draft_order as the requester with the approval in deps.approved,
 with the input the approver saw (the approval's evidence); the order is written as
 approved (event inventory.order_approved) and the requester is notified. On reject,
@@ -26,7 +26,6 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.inventory_manager import MANIFEST, calc
 from mia.agents.inventory_manager.models import StockEvent, SupplierOrder
-from mia.agents.sales_supervisor.calc import business_date
 from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
 from mia.core import approvals, events, store
@@ -34,10 +33,9 @@ from mia.core.db import utcnow
 from mia.core.models import Actor, Approval, Branch, Person
 from mia.core.rbac import Resource, get_rbac
 from mia.i18n import t
+from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailBranchHours, RetailIngredient, RetailItem
 
-DEFAULT_OPENS = dt.time(9, 0)
-DEFAULT_CLOSES = dt.time(21, 0)
 PLAN_DAYS = 91  # ponytail: the plan reads 13 weeks back; a weekday unrecorded longer is `same`
 DRAFT_ORDER = f"{MANIFEST.id}.draft_order"
 STOCK = Resource(kind="data", name=StockEvent.__tablename__)
@@ -81,29 +79,15 @@ def _branch(
     return branch
 
 
-def _hours(
-    deps: AgentDeps, branch: Branch, weekday: int, tool_call_id: str
-) -> tuple[dt.time, dt.time]:
-    """The branch's opening and closing time on the weekday (09:00 to 21:00 when unset), after
-    the retail_branch_hours read check."""
+def _hours(deps: AgentDeps, branch: Branch, tool_call_id: str) -> list[RetailBranchHours]:
+    """The branch's hours rows, after the retail_branch_hours read check."""
     _check(deps, HOURS, "read", tool_call_id)
-    stmt = (
-        select(RetailBranchHours)
-        .where(RetailBranchHours.branch_id == branch.id)
-        .where(RetailBranchHours.weekday == weekday)
-    )
-    row = deps.session.exec(stmt).first()
-    if row is None:
-        return DEFAULT_OPENS, DEFAULT_CLOSES
-    return dt.time.fromisoformat(row.opens), dt.time.fromisoformat(row.closes)
+    return retail_hours.load(deps.session, branch.id)
 
 
 def _business_day(deps: AgentDeps, branch: Branch, at: dt.datetime, tool_call_id: str) -> dt.date:
     """The branch's business date at `at`: the day before only just after a late closing."""
-    weekday = at.astimezone(ZoneInfo(branch.timezone)).weekday()
-    opens, _ = _hours(deps, branch, weekday, tool_call_id)
-    _, closed = _hours(deps, branch, (weekday - 1) % 7, tool_call_id)
-    return business_date(at, branch.timezone, opens, closed)
+    return retail_hours.business_date_at(branch, _hours(deps, branch, tool_call_id), at)
 
 
 def _when(branch: Branch, hhmm: str | None, now: dt.datetime) -> dt.datetime:
@@ -292,15 +276,13 @@ def _on_hand(rows: Sequence[StockEvent]) -> dict[str, int]:
     return out
 
 
-def low_stock(deps: AgentDeps, args: LowStockInput, tool_call_id: str) -> LowStockOutput:
-    """The branch's active ingredients at or under their reorder point by the latest count (plus
-    deliveries since), or reported low on today's business date (calc.low), by name."""
-    branch = _branch(deps, args.branch_id, STOCK, "read", tool_call_id)
-    _check(deps, _as_reporter(STOCK, deps), "read", tool_call_id)
-    _check(deps, INGREDIENTS, "read", tool_call_id)
-    ingredients = _ingredients(deps.session, branch.id)
-    rows = _stock_rows(deps.session, branch.id, ["count", "received", "low"])
-    today = _business_day(deps, branch, utcnow(), tool_call_id)
+def low_ids(session: Session, branch_id: str, today: dt.date) -> tuple[list[str], dict[str, int]]:
+    """The branch's active ingredients at or under their reorder point by the latest count
+    (plus deliveries since), or reported low on the business date `today` (calc.low), by name;
+    with the on-hand count per counted ingredient. Unchecked: the caller checks the stock and
+    ingredient reads (low_stock), or is the system tick (due.py)."""
+    ingredients = _ingredients(session, branch_id)
+    rows = _stock_rows(session, branch_id, ["count", "received", "low"])
     on_hand = _on_hand([r for r in rows if r.kind != "low"])
     low_today = {
         r.ingredient_id
@@ -308,6 +290,17 @@ def low_stock(deps: AgentDeps, args: LowStockInput, tool_call_id: str) -> LowSto
         if r.kind == "low" and r.business_date == today and r.ingredient_id
     }
     reorder = {k: v.reorder_point for k, v in ingredients.items()}
+    return calc.low(on_hand, reorder, low_today), on_hand
+
+
+def low_stock(deps: AgentDeps, args: LowStockInput, tool_call_id: str) -> LowStockOutput:
+    """The branch's low ingredients (low_ids) on today's business date, by name."""
+    branch = _branch(deps, args.branch_id, STOCK, "read", tool_call_id)
+    _check(deps, _as_reporter(STOCK, deps), "read", tool_call_id)
+    _check(deps, INGREDIENTS, "read", tool_call_id)
+    today = _business_day(deps, branch, utcnow(), tool_call_id)
+    low, on_hand = low_ids(deps.session, branch.id, today)
+    ingredients = _ingredients(deps.session, branch.id)
     return LowStockOutput(
         ingredients=[
             LowOut(
@@ -318,7 +311,7 @@ def low_stock(deps: AgentDeps, args: LowStockInput, tool_call_id: str) -> LowSto
                 reorder_point=ingredients[i].reorder_point,
                 supplier=ingredients[i].supplier,
             )
-            for i in calc.low(on_hand, reorder, low_today)
+            for i in low
         ]
     )
 
@@ -343,29 +336,40 @@ class PlanOutput(BaseModel):
     note_heuristic: bool = True  # the reply says the plan is a suggestion (Q54)
 
 
-def plan_tomorrow(deps: AgentDeps, args: PlanTomorrowInput, tool_call_id: str) -> PlanOutput:
-    """More, same or fewer per active item for the day after the branch's business date
-    (calc.plan over this agent's stock events, tomorrow's closing time), in menu order."""
-    branch = _branch(deps, args.branch_id, STOCK, "read", tool_call_id)
-    _check(deps, _as_reporter(STOCK, deps), "read", tool_call_id)
-    _check(deps, ITEMS, "read", tool_call_id)
-    today = _business_day(deps, branch, utcnow(), tool_call_id)
-    tomorrow = today + dt.timedelta(days=1)
-    _, closes = _hours(deps, branch, tomorrow.weekday(), tool_call_id)
+def plan_lines(session: Session, branch_id: str, today: dt.date, closes: dt.time) -> list[PlanLine]:
+    """The plan for the day after the business date `today` per active item, in menu order
+    (calc.plan over this agent's stock events of the last PLAN_DAYS, with that day's closing
+    time `closes`). Unchecked: the caller checks the stock and item reads (plan_tomorrow), or
+    is the system tick (due.py)."""
+    branch = session.get(Branch, branch_id)
+    if branch is None:
+        raise LookupError("branch")
     stmt = (
         select(StockEvent)
-        .where(StockEvent.branch_id == branch.id)
+        .where(StockEvent.branch_id == branch_id)
         .where(col(StockEvent.item_id).is_not(None))
         .where(col(StockEvent.business_date) >= today - dt.timedelta(days=PLAN_DAYS))
     )
     zone = ZoneInfo(branch.timezone)
     records = [
         calc.Record(r.kind, r.item_id, r.at.astimezone(zone), r.business_date)
-        for r in deps.session.exec(stmt)
+        for r in session.exec(stmt)
     ]
-    items = _items(deps.session, branch.id)
+    items = _items(session, branch_id)
     plans = calc.plan(records, list(items), today, closes)
-    return PlanOutput(lines=[PlanLine(item_id=i, item=items[i].name, plan=plans[i]) for i in items])
+    return [PlanLine(item_id=i, item=items[i].name, plan=plans[i]) for i in items]
+
+
+def plan_tomorrow(deps: AgentDeps, args: PlanTomorrowInput, tool_call_id: str) -> PlanOutput:
+    """More, same or fewer per active item for the day after the branch's business date
+    (plan_lines, tomorrow's closing time), in menu order."""
+    branch = _branch(deps, args.branch_id, STOCK, "read", tool_call_id)
+    _check(deps, _as_reporter(STOCK, deps), "read", tool_call_id)
+    _check(deps, ITEMS, "read", tool_call_id)
+    today = _business_day(deps, branch, utcnow(), tool_call_id)
+    tomorrow = today + dt.timedelta(days=1)
+    closes = retail_hours.closes(_hours(deps, branch, tool_call_id), tomorrow.weekday())
+    return PlanOutput(lines=plan_lines(deps.session, branch.id, today, closes))
 
 
 # ---- draft_order --------------------------------------------------------------------------

@@ -71,6 +71,14 @@ def supervisors(session: Session, branch_id: str) -> list[Person]:
     return out
 
 
+def leads(session: Session, organisation_id: str) -> list[Person]:
+    """Active owners and admins across the organisation's branches, each once, by id."""
+    branch_ids = select(Branch.id).where(Branch.organisation_id == organisation_id)
+    stmt = select(Person).where(col(Person.branch_id).in_(branch_ids))
+    rows = session.exec(stmt.where(Person.status == "active").order_by(col(Person.id)))
+    return [p for p in rows if {"owner", "admin"} & set(p.roles)]
+
+
 def _send(session: Session, person: Person, blocks: list[Block], *, urgent: bool) -> None:
     notify(session, person, blocks, _actor(person.branch_id), MANIFEST.id, urgent=urgent)
 

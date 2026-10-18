@@ -1,4 +1,5 @@
-"""Sales calculations as pure functions (rule 7): business date, target share, totals.
+"""Sales calculations as pure functions (rule 7): target share, totals. The business date is
+the retail template's (mia.templates.retail.hours.business_date).
 
 No Session here: the tools load rows and pass plain values in.
 """
@@ -6,9 +7,6 @@ No Session here: the tools load rows and pass plain values in.
 import datetime as dt
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from zoneinfo import ZoneInfo
-
-AFTER_CLOSING = dt.timedelta(hours=2)
 
 
 @dataclass(frozen=True)
@@ -28,21 +26,6 @@ class Count:
     quantity: int
     amount: int
     superseded_by: str | None = None
-
-
-def business_date(
-    reported_at: dt.datetime, tz: str, opens: dt.time, closed_yesterday: dt.time
-) -> dt.date:
-    """The business date a count reported at `reported_at` belongs to: the day before the local
-    date in `tz` when it is before today's opening `opens` and within two hours after the day
-    before's closing `closed_yesterday` (a late closing, counted after midnight); else the
-    local date. Never asks."""
-    local = reported_at.astimezone(ZoneInfo(tz))
-    day = local.date()
-    yesterday = day - dt.timedelta(days=1)
-    closed_at = dt.datetime.combine(yesterday, closed_yesterday, local.tzinfo)
-    opened_at = dt.datetime.combine(day, opens, local.tzinfo)
-    return yesterday if local < opened_at and local < closed_at + AFTER_CLOSING else day
 
 
 def _month_days(start: dt.date) -> list[dt.date]:

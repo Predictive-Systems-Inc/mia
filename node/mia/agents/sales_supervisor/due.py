@@ -2,7 +2,8 @@
 list to head staff, the owner's end-of-day report, the morning message and the why question.
 
 What is due is pure code (rule 7): the five window functions take the branch, its hours rows
-and `now`, and return the business date the work is due for, or None. After-close work belongs
+and `now`, and return the business date the work is due for, or None (on the retail template's
+hours helpers). After-close work belongs
 to the closing's date, also after midnight, until the next opening. The senders load rows and
 send through notify. The reminder and the morning message wait for quiet hours in deliver; the
 end-of-shift messages (the missing list, the owner's report, the why question) are urgent and
@@ -13,11 +14,11 @@ the others (alerts._each_branch).
 """
 
 import datetime as dt
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
 from mia.agents.sales_supervisor import MANIFEST, actions, calc, replies, tools
 from mia.agents.shift_supervisor import alerts
@@ -27,69 +28,38 @@ from mia.core import orgconfig
 from mia.core.models import Actor, Branch, Message, Person, Visit
 from mia.core.money import format_int, format_money
 from mia.i18n import t
-from mia.templates.retail.models import RetailBranchHours
+from mia.templates.retail import hours as retail_hours
 
 HALF_HOUR = dt.timedelta(minutes=30)
 HOUR = dt.timedelta(hours=1)
-NO_HOURS_WINDOW = dt.timedelta(hours=6)
 GOOD_DAY_PERCENT = 20  # without a target, a day this much above the 4-week average is good
 REMINDER = "sales.reminder_sent"
 MISSING = "sales.missing_sent"
 REPORT = "sales.report_sent"
 MORNING = "sales.morning_sent"
 WHY = tools.WHY_ASKED
-Hours = Sequence[RetailBranchHours]
+Hours = retail_hours.Hours
 Sender = Callable[[Session, Branch, Hours, dt.date], list[Message]]
 
 # ---- what is due (pure) ---------------------------------------------------------------------
 
 
-def _at(branch: Branch, hours: Hours, day: dt.date, closing: bool) -> dt.datetime:
-    """The opening (or closing) of `day` as an aware local time; 09:00 and 21:00 without a row."""
-    when = (tools._closes if closing else tools._opens)(hours, day.weekday())
-    return dt.datetime.combine(day, when, ZoneInfo(branch.timezone))
-
-
-def _window_end(branch: Branch, hours: Hours, day: dt.date) -> dt.datetime:
-    """When the after-close work of `day` stops: the next open day's opening, or six hours
-    after closing for a branch without hours."""
-    if not hours:
-        return _at(branch, hours, day, closing=True) + NO_HOURS_WINDOW
-    is_open = tools._open_days(hours)
-    nxt = next(d for k in range(1, 8) if is_open(d := day + dt.timedelta(days=k)))
-    return _at(branch, hours, nxt, closing=False)
-
-
-def _after_close(
-    branch: Branch, hours: Hours, now: dt.datetime, delay: dt.timedelta
-) -> dt.date | None:
-    """The business date (today or yesterday, local) whose closing plus delay has passed and
-    whose window has not ended; None when there is none. Crosses midnight."""
-    local = now.astimezone(ZoneInfo(branch.timezone))
-    is_open = tools._open_days(hours)
-    for day in (local.date(), local.date() - dt.timedelta(days=1)):
-        start = _at(branch, hours, day, closing=True) + delay
-        if is_open(day) and start <= local < _window_end(branch, hours, day):
-            return day
-    return None
-
-
 def closing_reminder(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
     """Today's date in the half hour before an open day's closing, else None."""
     local = now.astimezone(ZoneInfo(branch.timezone))
-    closes = _at(branch, hours, local.date(), closing=True)
-    on = tools._open_days(hours)(local.date()) and closes - HALF_HOUR <= local < closes
+    closes = retail_hours.at(branch, hours, local.date(), closing=True)
+    on = retail_hours.open_days(hours)(local.date()) and closes - HALF_HOUR <= local < closes
     return local.date() if on else None
 
 
 def missing_list(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
     """The business date from half an hour after its closing to its window's end."""
-    return _after_close(branch, hours, now, HALF_HOUR)
+    return retail_hours.after_close(branch, hours, now, HALF_HOUR)
 
 
 def owner_report(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
     """The business date from an hour after its closing to its window's end."""
-    return _after_close(branch, hours, now, HOUR)
+    return retail_hours.after_close(branch, hours, now, HOUR)
 
 
 def why_question(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
@@ -101,8 +71,8 @@ def morning_message(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date |
     """Today's date in the first hour after an open day's opening (a node started later skips
     the day's message), else None."""
     local = now.astimezone(ZoneInfo(branch.timezone))
-    opens = _at(branch, hours, local.date(), closing=False)
-    on = tools._open_days(hours)(local.date()) and opens <= local < opens + HOUR
+    opens = retail_hours.at(branch, hours, local.date(), closing=False)
+    on = retail_hours.open_days(hours)(local.date()) and opens <= local < opens + HOUR
     return local.date() if on else None
 
 
@@ -134,14 +104,6 @@ def _clerks(session: Session, branch_id: str, day: dt.date) -> list[Person]:
         return clerks
     on_shift = {pid for v in visits for pid in v.assigned_person_ids}
     return [p for p in clerks if p.id in on_shift]
-
-
-def _leads(session: Session, organisation_id: str) -> list[Person]:
-    """Active owners and admins across the organisation's branches, each once."""
-    branch_ids = select(Branch.id).where(Branch.organisation_id == organisation_id)
-    stmt = select(Person).where(col(Person.branch_id).in_(branch_ids))
-    rows = session.exec(stmt.where(Person.status == "active").order_by(col(Person.id)))
-    return [p for p in rows if tools.LEADS & set(p.roles)]
 
 
 def _total(session: Session, branch_id: str, day: dt.date) -> int:
@@ -258,7 +220,7 @@ def _report(session: Session, branch: Branch, hours: Hours, day: dt.date) -> lis
     )
     return [
         _send(session, branch, p, _report_blocks(report, p.language), urgent=True)
-        for p in _leads(session, branch.organisation_id)
+        for p in alerts.leads(session, branch.organisation_id)
     ]
 
 
@@ -273,7 +235,7 @@ def _morning_text(lang: str, yesterday: str | None, target: str | None) -> str |
 
 def _morning(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Message]:
     yesterday = day - dt.timedelta(days=1)
-    counted = tools._open_days(hours)(yesterday) and _reporters(session, branch.id, yesterday)
+    counted = retail_hours.open_days(hours)(yesterday) and _reporters(session, branch.id, yesterday)
     total = _total(session, branch.id, yesterday)
     currency = tools._currency(session, branch.id)
     past = tools._share(session, branch.id, hours, yesterday)
@@ -322,8 +284,7 @@ DUE: list[tuple[Callable[[Branch, Hours, dt.datetime], dt.date | None], str, Sen
 
 
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
-    stmt = select(RetailBranchHours).where(RetailBranchHours.branch_id == branch.id)
-    hours = list(session.exec(stmt))
+    hours = retail_hours.load(session, branch.id)
     count = 0
     for is_due, marker, send in DUE:
         day = is_due(branch, hours, now)

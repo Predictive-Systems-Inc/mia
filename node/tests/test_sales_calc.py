@@ -2,6 +2,7 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 
 from mia.agents.sales_supervisor import calc
+from mia.templates.retail import hours as retail_hours
 
 MNL = ZoneInfo("Asia/Manila")
 
@@ -11,7 +12,7 @@ NINE, NINE_PM, ELEVEN_PM = dt.time(9, 0), dt.time(21, 0), dt.time(23, 0)
 
 def _day(hour: int, minute: int, closed_yesterday: dt.time) -> dt.date:
     at = dt.datetime(2026, 10, 20, hour, minute, tzinfo=MNL)
-    return calc.business_date(at, "Asia/Manila", NINE, closed_yesterday)
+    return retail_hours.business_date(at, "Asia/Manila", NINE, closed_yesterday)
 
 
 def test_the_evening_after_closing_is_today() -> None:
@@ -32,12 +33,14 @@ def test_two_hours_after_yesterdays_closing_it_is_today() -> None:
 
 def test_from_the_opening_it_is_today() -> None:
     at = dt.datetime(2026, 10, 20, 0, 30, tzinfo=MNL)
-    assert calc.business_date(at, "Asia/Manila", dt.time(0, 15), ELEVEN_PM) == dt.date(2026, 10, 20)
+    assert retail_hours.business_date(at, "Asia/Manila", dt.time(0, 15), ELEVEN_PM) == dt.date(
+        2026, 10, 20
+    )
 
 
 def test_business_date_uses_the_branch_time_zone() -> None:
     at = dt.datetime(2026, 10, 19, 16, 30, tzinfo=dt.UTC)  # 00:30 on the 20th in Manila
-    assert calc.business_date(at, "Asia/Manila", NINE, ELEVEN_PM) == dt.date(2026, 10, 19)
+    assert retail_hours.business_date(at, "Asia/Manila", NINE, ELEVEN_PM) == dt.date(2026, 10, 19)
 
 
 def test_month_target_share_uses_open_days() -> None:

@@ -1,17 +1,17 @@
 """Sales supervisor tools: typed inputs and outputs, permission checked data access, writes only
-through mia.core.store. Business date, target share and totals are pure code in calc.py.
+through mia.core.store. Target share and totals are pure code in calc.py.
 
 Branch scoping: every tool works on the person's own branch. Naming another branch of the
 organisation (or "all") needs the read_all or write_all action on the data resource in RBAC
 (admin, and the owner through the hierarchy); anyone else gets PermissionDenied. An owner or
 admin who names no branch in `today` sees every branch.
 
-The business date of a count (calc.business_date) is the day before only just after a late
-closing, before the next opening; it is never asked.
+The business date of a count (the retail template's hours.business_date) is the day before
+only just after a late closing, before the next opening; it is never asked.
 """
 
 import datetime as dt
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -25,10 +25,9 @@ from mia.core import store
 from mia.core.db import utcnow
 from mia.core.models import Branch, Event, Message, Person
 from mia.core.rbac import Resource, get_rbac
+from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailBranchHours, RetailItem
 
-DEFAULT_OPENS = dt.time(9, 0)
-DEFAULT_CLOSES = dt.time(21, 0)
 LEADS = {"owner", "admin"}  # whose target wins and who sees every branch by default (not access)
 COUNTS = Resource(kind="data", name=SalesCount.__tablename__)
 TARGETS = Resource(kind="data", name=SalesTarget.__tablename__)
@@ -110,26 +109,7 @@ def _currency(session: Session, branch_id: str) -> str:
 def _hours(deps: AgentDeps, branch_id: str, tool_call_id: str) -> list[RetailBranchHours]:
     """The branch's opening hours rows, after the retail_branch_hours read check."""
     _check(deps, HOURS, "read", tool_call_id)
-    stmt = select(RetailBranchHours).where(RetailBranchHours.branch_id == branch_id)
-    return list(deps.session.exec(stmt))
-
-
-def _closes(hours: Sequence[RetailBranchHours], weekday: int) -> dt.time:
-    """The closing time on the weekday, 21:00 when no hours are set for it."""
-    row = next((h for h in hours if h.weekday == weekday), None)
-    return dt.time.fromisoformat(row.closes) if row else DEFAULT_CLOSES
-
-
-def _opens(hours: Sequence[RetailBranchHours], weekday: int) -> dt.time:
-    """The opening time on the weekday, 09:00 when no hours are set for it."""
-    row = next((h for h in hours if h.weekday == weekday), None)
-    return dt.time.fromisoformat(row.opens) if row else DEFAULT_OPENS
-
-
-def _open_days(hours: Sequence[RetailBranchHours]) -> Callable[[dt.date], bool]:
-    """A weekday is open when the branch has hours for it; a branch without hours is always open."""
-    weekdays = {h.weekday for h in hours} or set(range(7))
-    return lambda day: day.weekday() in weekdays
+    return retail_hours.load(deps.session, branch_id)
 
 
 def target_share(deps: AgentDeps, branch_id: str, day: dt.date, tool_call_id: str) -> int | None:
@@ -154,7 +134,7 @@ def _share(
     rows = session.exec(stmt).all()
     setter_ids = {r.set_by for r in rows}
     setters = {p.id: p for p in session.exec(select(Person).where(col(Person.id).in_(setter_ids)))}
-    open_day = _open_days(hours)
+    open_day = retail_hours.open_days(hours)
     ranked = []
     for row in rows:
         assert row.amount is not None
@@ -269,13 +249,10 @@ def _reported_at(deps: AgentDeps, source_message_id: str | None) -> dt.datetime:
 def _business_day(
     deps: AgentDeps, branch: Branch, tool_call_id: str, at: dt.datetime | None = None
 ) -> dt.date:
-    """The branch's business date at `at` (default now): calc.business_date with the branch's
+    """The branch's business date at `at` (default now): hours.business_date with the branch's
     hours, after the branch-hours read check."""
-    at = at or utcnow()
-    hours = _hours(deps, branch.id, tool_call_id)
-    weekday = at.astimezone(ZoneInfo(branch.timezone)).weekday()
-    opens, closed = _opens(hours, weekday), _closes(hours, (weekday - 1) % 7)
-    return calc.business_date(at, branch.timezone, opens, closed)
+    rows = _hours(deps, branch.id, tool_call_id)
+    return retail_hours.business_date_at(branch, rows, at or utcnow())
 
 
 def _count_day(
@@ -440,7 +417,7 @@ def _branch_today(deps: AgentDeps, branch: Branch, tool_call_id: str) -> BranchT
 
 
 def today(deps: AgentDeps, args: TodayInput, tool_call_id: str) -> TodayOutput:
-    """The live totals per item for each branch's business date (calc.business_date), with the
+    """The live totals per item for each branch's business date (hours.business_date), with the
     day's target share and the percent difference from it (None without a target). One entry
     for the branch named, every branch for "all", and for an owner or admin who names none."""
     branch_id = args.branch_id

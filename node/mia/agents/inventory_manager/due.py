@@ -1,39 +1,38 @@
 """Inventory manager work on the tick: the closing stock summary to head staff and owners, and
 the bake plan to the branch's clerks and supervisors before opening.
 
-What is due is pure code (rule 7), on the sales supervisor's window helpers: the summary belongs
+What is due is pure code (rule 7), on the retail template's hours helpers: the summary belongs
 to the closing's business date from closes plus 45 minutes to the next opening (also after
 midnight); the plan is due in the hour before an open day's opening. The summary is urgent (the
 end of the shift, it goes out in quiet hours); the plan waits for quiet hours in deliver. Each
 send leaves a marker event on the branch with the business date and the message ids, checked
-first, so each fires at most once per branch and date. Each branch commits alone
-(alerts._each_branch).
+first, so each fires at most once per branch and date; a quiet night (nothing to say) sends
+no summary and leaves no marker. Each branch commits alone (alerts._each_branch). Events
+reported after the summary went out but on its business date reach no summary (carried over
+in the spec).
 """
 
 import datetime as dt
 from collections.abc import Callable
 from zoneinfo import ZoneInfo
 
-from sqlmodel import Session, col, select
+from sqlmodel import Session
 
-from mia.agents.inventory_manager import MANIFEST, calc, replies, tools
-from mia.agents.inventory_manager.models import StockEvent
-from mia.agents.sales_supervisor import due as sales_due
-from mia.agents.sales_supervisor import tools as sales_tools
+from mia.agents.inventory_manager import MANIFEST, replies, tools
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import Block, TextBlock
 from mia.chat.channels import notify
 from mia.core import orgconfig
 from mia.core.models import Actor, Branch, Message, Person
 from mia.i18n import t
-from mia.templates.retail.models import RetailBranchHours
+from mia.templates.retail import hours as retail_hours
 
 SUMMARY_DELAY = dt.timedelta(minutes=45)
 PLAN_LEAD = dt.timedelta(hours=1)
 SUMMARY = "inventory.summary_sent"
 PLAN = "inventory.plan_sent"
 SUMMED = ("sold_out", "leftover", "waste")  # the day's events the summary words
-Hours = sales_due.Hours
+Hours = retail_hours.Hours
 Sender = Callable[[Session, Branch, Hours, dt.date], list[Message]]
 
 # ---- what is due (pure) ---------------------------------------------------------------------
@@ -41,15 +40,15 @@ Sender = Callable[[Session, Branch, Hours, dt.date], list[Message]]
 
 def closing_summary(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
     """The business date from 45 minutes after its closing to the next opening, else None."""
-    return sales_due._after_close(branch, hours, now, SUMMARY_DELAY)
+    return retail_hours.after_close(branch, hours, now, SUMMARY_DELAY)
 
 
 def plan_message(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
     """Today's date in the hour before an open day's opening (a node started later skips the
     day's message), else None."""
     local = now.astimezone(ZoneInfo(branch.timezone))
-    opens = sales_due._at(branch, hours, local.date(), closing=False)
-    on = sales_tools._open_days(hours)(local.date()) and opens - PLAN_LEAD <= local < opens
+    opens = retail_hours.at(branch, hours, local.date(), closing=False)
+    on = retail_hours.open_days(hours)(local.date()) and opens - PLAN_LEAD <= local < opens
     return local.date() if on else None
 
 
@@ -57,35 +56,9 @@ def plan_message(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | No
 
 
 def _low(session: Session, branch_id: str, day: dt.date) -> list[str]:
-    """The names of the branch's ingredients low on `day` (as tools.low_stock, unchecked).
-    ponytail: duplicates low_stock's assembly; factor an unchecked helper into tools.py."""
+    """The names of the branch's ingredients low on `day` (tools.low_ids)."""
     ingredients = tools._ingredients(session, branch_id)
-    rows = tools._stock_rows(session, branch_id, ["count", "received", "low"])
-    on_hand = tools._on_hand([r for r in rows if r.kind != "low"])
-    today = {r.ingredient_id for r in rows if r.kind == "low" and r.business_date == day}
-    reorder = {k: v.reorder_point for k, v in ingredients.items()}
-    return [ingredients[i].name for i in calc.low(on_hand, reorder, {i for i in today if i})]
-
-
-def _plan(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[tools.PlanLine]:
-    """The plan for `day` per active item (as tools.plan_tomorrow on the day before, unchecked).
-    ponytail: duplicates plan_tomorrow's loading; factor an unchecked helper into tools.py."""
-    yesterday = day - dt.timedelta(days=1)
-    stmt = (
-        select(StockEvent)
-        .where(StockEvent.branch_id == branch.id)
-        .where(col(StockEvent.item_id).is_not(None))
-        .where(col(StockEvent.business_date) >= yesterday - dt.timedelta(days=tools.PLAN_DAYS))
-    )
-    zone = ZoneInfo(branch.timezone)
-    records = [
-        calc.Record(r.kind, r.item_id, r.at.astimezone(zone), r.business_date)
-        for r in session.exec(stmt)
-    ]
-    items = tools._items(session, branch.id)
-    closes = sales_tools._closes(hours, day.weekday())
-    plans = calc.plan(records, list(items), yesterday, closes)
-    return [tools.PlanLine(item_id=i, item=items[i].name, plan=plans[i]) for i in items]
+    return [ingredients[i].name for i in tools.low_ids(session, branch_id, day)[0]]
 
 
 def _day_events(session: Session, branch_id: str, day: dt.date) -> list[tools.EventOut]:
@@ -99,9 +72,7 @@ def _day_events(session: Session, branch_id: str, day: dt.date) -> list[tools.Ev
 
 def _leads(session: Session, branch: Branch) -> list[Person]:
     """The branch's supervisors, then the organisation's owners and admins, each once."""
-    people = alerts.supervisors(session, branch.id) + sales_due._leads(
-        session, branch.organisation_id
-    )
+    people = alerts.supervisors(session, branch.id) + alerts.leads(session, branch.organisation_id)
     return list({p.id: p for p in people}.values())
 
 
@@ -137,7 +108,8 @@ def _summary(session: Session, branch: Branch, hours: Hours, day: dt.date) -> li
 
 
 def _plan_sends(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Message]:
-    lines = _plan(session, branch, hours, day)
+    closes = retail_hours.closes(hours, day.weekday())
+    lines = tools.plan_lines(session, branch.id, day - dt.timedelta(days=1), closes)
     if all(line.plan == "same" for line in lines):
         return []  # nothing to change: no message
     out = tools.PlanOutput(lines=lines).model_dump(mode="json")
@@ -162,8 +134,7 @@ DUE: list[tuple[Callable[[Branch, Hours, dt.datetime], dt.date | None], str, Sen
 
 
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
-    stmt = select(RetailBranchHours).where(RetailBranchHours.branch_id == branch.id)
-    hours = list(session.exec(stmt))
+    hours = retail_hours.load(session, branch.id)
     count = 0
     for is_due, marker, send in DUE:
         day = is_due(branch, hours, now)
