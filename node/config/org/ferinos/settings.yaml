@@ -1,0 +1,5 @@
+# Organisation settings for Ferino's Bibingka (kiosks in the Philippines). Times are local "HH:MM".
+template: retail
+agents: [sales_supervisor, shift_supervisor]
+languages: [fil, ceb, en]
+quiet_hours: {start: "21:00", end: "06:00"}

@@ -1,0 +1,12 @@
+id: sales_supervisor
+name: Sales Supervisor
+version: 0.1.0
+standard_version: "1.4"
+job_description: job.md
+instructions: {base: prompts/base.md}
+roles:
+  agent_role: agent.sales_supervisor
+  grants: []
+  denies: [tool:*:approve]
+tools: []
+tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

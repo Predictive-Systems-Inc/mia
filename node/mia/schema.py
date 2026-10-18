@@ -3,9 +3,11 @@
 from sqlalchemy import Engine
 from sqlmodel import SQLModel
 
+import mia.agents.sales_supervisor.models
 import mia.core.events
 import mia.core.models
-import mia.templates.cleaning.models  # noqa: F401
+import mia.templates.cleaning.models
+import mia.templates.retail.models  # noqa: F401
 
 metadata = SQLModel.metadata
 

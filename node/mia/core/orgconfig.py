@@ -3,6 +3,7 @@ Phase 1; Mia Cloud distributes them later). Missing files or keys fall back to t
 
 import datetime as dt
 from functools import lru_cache
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -47,6 +48,8 @@ class AlertSettings(BaseModel):
 
 
 class OrgSettings(BaseModel):
+    # Which demo seed and industry tables the organisation uses.
+    template: Literal["cleaning", "retail"] = "cleaning"
     quiet_hours: QuietHours = Field(default_factory=QuietHours)
     alerts: AlertSettings = Field(default_factory=AlertSettings)
     cover_confirmation: CoverConfirmation = Field(default_factory=CoverConfirmation)

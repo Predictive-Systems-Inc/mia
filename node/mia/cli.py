@@ -32,15 +32,18 @@ def migrate(_args: argparse.Namespace) -> int:
 
 
 def seed(_args: argparse.Namespace) -> int:
+    from importlib import import_module
+
+    from mia.core import orgconfig
     from mia.core.db import session_scope
-    from mia.templates.cleaning.seed import is_seeded
-    from mia.templates.cleaning.seed import seed as run_seed
+
+    template_seed = import_module(f"mia.templates.{orgconfig.load().template}.seed")
 
     with session_scope() as session:
-        if is_seeded(session):
+        if template_seed.is_seeded(session):
             print("already seeded; delete the database file to start over")
             return 0
-        branch = run_seed(session)
+        branch = template_seed.seed(session)
     print(f"seeded demo branch {branch.name} ({branch.id})")
     return 0
 

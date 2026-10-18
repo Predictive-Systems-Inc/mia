@@ -26,6 +26,7 @@ mia/
                             visit generation, assignment rules, check-in, inbox), billing
                             (the monthly summary export), jev.py (one TypeSafe Jev request)
       templates/cleaning/   models (sites, checklists, checklist ticks), seed, importer (master data from YAML)
+      templates/retail/     models (items with short codes and prices, branch hours), seed (Ferino's demo)
       learning/             role skill data: generate, translate (the eval set by language), train, bakeoff
       agents/               base.py (manifest, guard, model factory, AgentSpec), registry.py
                             (every agent by id), stubs.py (roster agents not built yet)
@@ -36,6 +37,7 @@ mia/
                             rules.py, tools.py (incl. incidents),
                             agent.py, turn.py (its chat turn and AgentSpec),
                             tests/scenarios.yaml (and scenarios_en.yaml)
+        sales_supervisor/   manifest.yaml, job.md, prompts/, models.py (counts, targets, notes)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
       skills/               classifier runtime and per-turn routing (ADR 013)
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls),
@@ -57,7 +59,7 @@ mia/
                             language: fil, ceb, ilo, hil, war, bcl, pam, pag)
       static/index.html     dev chat page
     migrations/             alembic.ini, env.py, versions/
-    config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ (instructions, settings.yaml),
+    config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ and org/ferinos/ (instructions, settings.yaml),
                             ollama/ (Modelfiles for local models, ADR 004)
     tests/                  unit tests; auth/ (login flows); evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
                             and intents.py for intent classification; router_cases.py and
