@@ -24,20 +24,25 @@ mia/
                             keys (master key, HKDF, scrypt, TOTP), auth (sessions, codes,
                             credentials, devices, clients; ADR 011), scheduling (recurrence,
                             visit generation, assignment rules, check-in, inbox), billing
-                            (the monthly summary export)
+                            (the monthly summary export), jev.py (one TypeSafe Jev request)
       templates/cleaning/   models (sites, checklists, checklist ticks), seed, importer (master data from YAML)
       learning/             role skill data: generate, translate (the eval set by language), train, bakeoff
-      agents/               base.py (manifest, guard, model factory)
+      agents/               base.py (manifest, guard, model factory, AgentSpec), registry.py
+                            (every agent by id), stubs.py (roster agents not built yet)
         shift_supervisor/   manifest.yaml, job.md, prompts/, classifier.py,
                             scoring.py, cover.py (confirmation flow), alerts.py (missed
                             check-in and check-out, overtime, unstaffed visits, daily plan),
                             timesheets.py (drafts, corrections, approval, payroll rows),
                             rules.py, tools.py (incl. incidents),
-                            agent.py, tests/scenarios.yaml (and scenarios_en.yaml)
+                            agent.py, turn.py (its chat turn and AgentSpec),
+                            tests/scenarios.yaml (and scenarios_en.yaml)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
       skills/               classifier runtime and per-turn routing (ADR 013)
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls),
-                            runs.py (live AG-UI runs: reconnect, catch-up, stop)
+                            runs.py (live AG-UI runs: reconnect, catch-up, stop), replies.py
+                            (stored replies), access.py (a person's agents), agent_router.py
+                            (the Jev router, ADR 015), language.py (the reply language, ADR 016),
+                            deferred.py (turns waiting while Jev is unreachable)
       channels/             messaging channels (ADR 007): base.py (adapter protocol), registry.py,
                             render.py (fallback rendering), service.py (deliver), inbound.py,
                             outbox.py, linking.py (codes, invites), setup.py, transport.py (the only HTTP
@@ -47,13 +52,15 @@ mia/
                             schedule.py (week view, assignment, check-in, inbox), supervisor.py
                             (the summary, resolving site problems), timesheets.py (list, correct,
                             approve)
-      i18n/                 Finnish and English strings
+      i18n/                 strings.py (Finnish and English), <code>.py (one module per further
+                            language: fil, ceb, ilo, hil, war, bcl, pam, pag)
       static/index.html     dev chat page
     migrations/             alembic.ini, env.py, versions/
     config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ (instructions, settings.yaml),
                             ollama/ (Modelfiles for local models, ADR 004)
     tests/                  unit tests; auth/ (login flows); evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
-                            and intents.py for intent classification)
+                            and intents.py for intent classification; router_cases.py and
+                            test_router_eval.py for the real-Jev router eval)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,
                             research/ (research notes and dated evaluation reports, ADR 012)
 ```
