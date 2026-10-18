@@ -20,9 +20,10 @@ def ferinos(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def test_org_template_selects_the_retail_seed(ferinos: None, session: Session) -> None:
+    from mia.agents.inventory_manager.models import StockEvent, SupplierOrder
     from mia.agents.sales_supervisor.models import SalesCount, SalesTarget
     from mia.templates.retail import seed
-    from mia.templates.retail.models import RetailBranchHours, RetailItem
+    from mia.templates.retail.models import RetailBranchHours, RetailIngredient, RetailItem
 
     assert orgconfig.load().template == "retail"
     branch = seed.seed(session)
@@ -32,6 +33,12 @@ def test_org_template_selects_the_retail_seed(ferinos: None, session: Session) -
     assert len(session.exec(select(RetailBranchHours)).all()) == 14
     assert len(session.exec(select(SalesTarget)).all()) == 2
     assert len(session.exec(select(SalesCount)).all()) > 100
+    assert len(session.exec(select(RetailIngredient)).all()) == 8
+    for b in session.exec(select(Branch)).all():
+        stock = select(StockEvent).where(StockEvent.branch_id == b.id)
+        assert len(session.exec(stock).all()) >= 8
+    orders = session.exec(select(SupplierOrder)).all()
+    assert len(orders) == 1 and orders[0].status == "approved"
     roles = {p.name: p.roles for p in session.exec(select(Person)).all()}
     assert "clerk" in roles["Ana"] and "owner" in roles["Rosa"]
 

@@ -32,3 +32,19 @@ class RetailBranchHours(BranchScoped, table=True):
     weekday: int
     opens: str
     closes: str
+
+
+class RetailIngredient(Stamped, table=True):
+    """A stocked ingredient. A null branch_id means every branch stocks it."""
+
+    __tablename__: ClassVar[str] = "retail_ingredients"
+
+    branch_id: str | None = Field(default=None, foreign_key="branch.id", index=True)
+    name: str
+    short_codes: list[str] = Field(default_factory=list, sa_type=JSON)
+    unit: str  # tray, kg, pack, tank or pcs
+    reorder_point: int
+    supplier: str | None = None
+    pack_price: int | None = None  # integer minor units
+    currency: str = Field(max_length=3)
+    active: bool = True

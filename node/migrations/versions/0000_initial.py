@@ -922,6 +922,101 @@ def upgrade() -> None:
         )
 
     op.create_table(
+        "retail_ingredients",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=True),
+        sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("short_codes", sa.JSON(), nullable=False),
+        sa.Column("unit", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("reorder_point", sa.Integer(), nullable=False),
+        sa.Column("supplier", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("pack_price", sa.Integer(), nullable=True),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("active", sa.Boolean(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("retail_ingredients", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_retail_ingredients_branch_id"), ["branch_id"], unique=False
+        )
+
+    op.create_table(
+        "inventory_manager_stock_events",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("kind", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("item_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("ingredient_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("quantity", sa.Integer(), nullable=True),
+        sa.Column("unit", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("reason", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("reported_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("business_date", sa.Date(), nullable=False),
+        sa.Column("source_message_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("order_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["item_id"],
+            ["retail_items.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["ingredient_id"],
+            ["retail_ingredients.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["reported_by"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("inventory_manager_stock_events", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_inventory_manager_stock_events_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_inventory_manager_stock_events_business_date"),
+            ["business_date"],
+            unique=False,
+        )
+
+    op.create_table(
+        "inventory_manager_orders",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("supplier", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("lines", sa.JSON(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("total", sa.Integer(), nullable=True),
+        sa.Column("status", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("approval_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("requested_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("business_date", sa.Date(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("inventory_manager_orders", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_inventory_manager_orders_branch_id"), ["branch_id"], unique=False
+        )
+
+    op.create_table(
         "cover_requests",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -1067,6 +1162,19 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_cover_requests_branch_id"))
 
     op.drop_table("cover_requests")
+    with op.batch_alter_table("inventory_manager_orders", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_inventory_manager_orders_branch_id"))
+
+    op.drop_table("inventory_manager_orders")
+    with op.batch_alter_table("inventory_manager_stock_events", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_inventory_manager_stock_events_business_date"))
+        batch_op.drop_index(batch_op.f("ix_inventory_manager_stock_events_branch_id"))
+
+    op.drop_table("inventory_manager_stock_events")
+    with op.batch_alter_table("retail_ingredients", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_retail_ingredients_branch_id"))
+
+    op.drop_table("retail_ingredients")
     with op.batch_alter_table("sales_supervisor_notes", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_sales_supervisor_notes_business_date"))
         batch_op.drop_index(batch_op.f("ix_sales_supervisor_notes_branch_id"))
