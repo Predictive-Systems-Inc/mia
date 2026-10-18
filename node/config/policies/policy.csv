@@ -94,3 +94,4 @@ p, supervisor, *, agent:inventory_manager, use, allow
 p, owner, *, agent:bookkeeper, use, allow
 p, owner, *, agent:hr_officer, use, allow
 p, owner, *, agent:branch_manager, use, allow
+p, owner, *, agent:inventory_manager, use, allow

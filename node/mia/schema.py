@@ -3,6 +3,7 @@
 from sqlalchemy import Engine
 from sqlmodel import SQLModel
 
+import mia.agents.inventory_manager.models
 import mia.agents.sales_supervisor.models
 import mia.core.events
 import mia.core.models

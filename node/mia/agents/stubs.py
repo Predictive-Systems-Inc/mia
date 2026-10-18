@@ -11,12 +11,6 @@ from mia.core.models import STANDARD_VERSION
 from mia.i18n import t
 
 DESCRIPTIONS = {
-    "inventory_manager": (
-        "Stock: items sold out or running low, how many are left, leftovers (trays left over)"
-        " and waste (items thrown away) at closing, what to prepare or bake tomorrow,"
-        " ingredients and packaging to buy before a day, placing supplier orders (not who"
-        " approves them); not how many were sold. A sell-out message is stock."
-    ),
     "bookkeeper": (
         "Money: the cash count against sales, a cash drawer short or over, expenses and"
         " receipts, bank deposits, GCash and Maya sales and settlements, Grab payouts, VAT and"
