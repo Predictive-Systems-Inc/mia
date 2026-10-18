@@ -5,10 +5,12 @@ from pathlib import Path
 import pytest
 from sqlmodel import Session, select
 
+from mia.agents.base import AgentDeps
 from mia.agents.shift_supervisor.agent import MANIFEST, create_agent
+from mia.chat import route_memory
 from mia.chat.service import run_turn
 from mia.core import events, store
-from mia.core.models import Actor, Event, Message, Person
+from mia.core.models import Actor, Branch, Event, Message, Person, Thread
 from mia.learning.harvest import harvest
 from mia.learning.schema import Review, load_records
 from mia.settings import get_settings
@@ -298,3 +300,91 @@ def test_clarification_of_a_missing_message_is_skipped(
     session.commit()
     assert harvest(session, "shift_supervisor", juha.branch_id) == []
     assert not path().exists()
+
+
+ROUTER = "shift_supervisor"
+
+
+def tap_route(session: Session, juha: Person, text: str = TEXT) -> tuple[Event, Thread]:
+    """A user message in a new thread, then a route tap for ROUTER through route_memory.remember."""
+    reply = ask(session, juha, text)
+    thread = session.get(Thread, reply.thread_id)
+    branch = session.get(Branch, juha.branch_id)
+    assert thread is not None and branch is not None
+    deps = AgentDeps(
+        session=session,
+        actor=agent_for(juha),
+        person=juha,
+        branch=branch,
+        organisation_id=branch.organisation_id,
+        today=dt.datetime.now(dt.UTC).date(),
+        lang="fi",
+        manifest=MANIFEST,
+    )
+    first = session.exec(
+        select(Message).where(Message.thread_id == thread.id).where(Message.role == "user")
+    ).first()
+    assert first is not None
+    route_memory.remember(session, deps, thread, first.id, ROUTER, ROUTER, 0.4, [ROUTER, "x"])
+    session.commit()
+    chosen = session.exec(select(Event).where(Event.action == route_memory.CHOSEN)).one()
+    return chosen, thread
+
+
+def test_route_choice_becomes_a_pending_pseudonymised_router_candidate(
+    session: Session, people: dict[str, Person]
+) -> None:
+    juha = people["Juha"]
+    chosen, _ = tap_route(session, juha)
+    (rec,) = harvest(session, "router", juha.branch_id)
+    assert rec.id == f"router/real/{(chosen.after or {})['original_message_id']}"
+    assert rec.role == "router" and rec.intent == ROUTER and rec.source == "real-route-choice"
+    assert rec.review.status == "pending"
+    assert rec.text == "Person_3 ei pääse huomenna"
+    assert harvest(session, "router", juha.branch_id) == []  # idempotent
+    assert not path().exists()  # the intent role's file is untouched
+
+
+@pytest.mark.parametrize(
+    ("minutes", "frm", "kept"), [(10, ROUTER, False), (61, ROUTER, True), (10, "other", True)]
+)
+def test_route_switch_away_within_the_hour_drops_the_record(
+    session: Session,
+    people: dict[str, Person],
+    monkeypatch: pytest.MonkeyPatch,
+    minutes: int,
+    frm: str,
+    kept: bool,
+) -> None:
+    juha = people["Juha"]
+    chosen, thread = tap_route(session, juha)
+    when = chosen.timestamp + dt.timedelta(minutes=minutes)
+    with monkeypatch.context() as m:
+        m.setattr(Event.model_fields["timestamp"], "default_factory", lambda: when)
+        events.emit(
+            session,
+            "chat.agent_switched",
+            ("thread", thread.id),
+            None,
+            {"from": frm},
+            agent_for(juha),
+        )
+    session.commit()
+    assert (len(harvest(session, "router", juha.branch_id)) == 1) is kept
+
+
+def test_route_forgotten_after_the_tap_drops_the_record(
+    session: Session, people: dict[str, Person]
+) -> None:
+    juha = people["Juha"]
+    chosen, _ = tap_route(session, juha)
+    events.emit(
+        session,
+        route_memory.FORGOTTEN,
+        ("branch", juha.branch_id),
+        None,
+        {"key": (chosen.after or {})["key"], "agent_id": ROUTER},
+        Actor.system(juha.branch_id),
+    )
+    session.commit()
+    assert harvest(session, "router", juha.branch_id) == []
