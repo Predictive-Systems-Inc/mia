@@ -21,5 +21,8 @@ STRINGS: dict[str, str | list[str]] = {
         "Pasensya, wala so napaay ed sakey. Pakiulit lamet ed saya.",
     ],
     "reply.not_built": "Ag ni natulongan nen Mia iya.",
+    "cli.learned.none": "Anggapo ni naaralan a ruta nen Mia dia.",
+    "cli.learned.row": "{agent}\t{route}\t{count}",
+    "cli.forgotten": "Nalingwan ni: {route}",
     "language.set": "Sige, {language} so usaren ko.",
 }

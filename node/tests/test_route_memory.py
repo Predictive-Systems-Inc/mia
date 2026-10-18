@@ -55,3 +55,10 @@ def test_forget_discards_taps_before_it_only() -> None:
     assert learned(old, [], forgotten, NOW) == {}
     new = [*old, _tap("k", A, 2), _tap("k", A, 1)]
     assert learned(new, [], forgotten, NOW) == {"k": A}
+
+
+def test_two_new_taps_after_forget_learn_again() -> None:
+    forgotten = {"k": NOW - dt.timedelta(days=3)}
+    taps = [_tap("k", A, 5), _tap("k", A, 4), _tap("k", A, 2), _tap("k", A, 1)]
+    assert learned(taps, [], forgotten, NOW) == {"k": A}
+    assert learned(taps[:3], [], forgotten, NOW) == {}

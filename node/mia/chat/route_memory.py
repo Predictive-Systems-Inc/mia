@@ -13,7 +13,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps
 from mia.core import events
-from mia.core.models import Event, Message, Thread
+from mia.core.models import Actor, Event, Message, Thread
 
 CHOSEN = "chat.route_chosen"
 FORGOTTEN = "chat.route_forgotten"
@@ -146,18 +146,51 @@ def _switches(session: Session, branch_id: str) -> list[Switch]:
     return out
 
 
+def _taps(session: Session, branch_id: str) -> list[Tap]:
+    return [
+        Tap(str(a["key"]), str(a["agent_id"]), ev.timestamp, ev.entity_id, ev.id)
+        for ev in _branch_events(session, branch_id, CHOSEN)
+        if (a := ev.after or {}).get("key") and a.get("agent_id")
+    ]
+
+
+def _forgotten(session: Session, branch_id: str) -> dict[str, dt.datetime]:
+    forgotten: dict[str, dt.datetime] = {}
+    for ev in _branch_events(session, branch_id, FORGOTTEN):
+        key = str((ev.after or {}).get("key"))
+        forgotten[key] = max(forgotten.get(key, ev.timestamp), ev.timestamp)
+    return forgotten
+
+
 def recall(session: Session, branch_id: str, now: dt.datetime) -> dict[str, str]:
     """The branch's learned keys (key to agent id) by the rules of `learned`. Reads only;
     sync, so call it through asyncio.to_thread (rule 12)."""
     # ponytail: a scan of the branch's route events per message; cache or index when a branch
     # passes thousands of taps.
-    taps = [
-        Tap(str(a["key"]), str(a["agent_id"]), ev.timestamp, ev.entity_id, ev.id)
-        for ev in _branch_events(session, branch_id, CHOSEN)
-        if (a := ev.after or {}).get("key") and a.get("agent_id")
-    ]
-    forgotten: dict[str, dt.datetime] = {}
-    for ev in _branch_events(session, branch_id, FORGOTTEN):
-        key = str((ev.after or {}).get("key"))
-        forgotten[key] = max(forgotten.get(key, ev.timestamp), ev.timestamp)
-    return learned(taps, _switches(session, branch_id), forgotten, now)
+    return learned(
+        _taps(session, branch_id),
+        _switches(session, branch_id),
+        _forgotten(session, branch_id),
+        now,
+    )
+
+
+def counts(session: Session, branch_id: str, now: dt.datetime) -> dict[tuple[str, str], int]:
+    """(key, agent id) to the taps that count toward learning, with the same filtering as
+    `learned` (inside WINDOW, not forgotten, not undone). Reads only."""
+    switches, forgotten = _switches(session, branch_id), _forgotten(session, branch_id)
+    live = Counter(
+        (t.key, t.agent_id)
+        for t in _taps(session, branch_id)
+        if _counts(t, now, forgotten) and not _undone(t, switches)
+    )
+    return dict(live)
+
+
+def forget(session: Session, branch_id: str, key: str, actor: Actor, now: dt.datetime) -> None:
+    """Emits chat.route_forgotten so the key is not learned until MIN_TAPS new taps. Commits."""
+    agent_id = recall(session, branch_id, now).get(key)
+    events.emit(
+        session, FORGOTTEN, ("branch", branch_id), None, {"key": key, "agent_id": agent_id}, actor
+    )
+    session.commit()

@@ -128,3 +128,33 @@ def test_keys_init(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert "master key written" in capsys.readouterr().out and len(path.read_bytes()) == 32
     with pytest.raises(SystemExit, match="exists"):
         main(["keys", "init", str(path)])
+
+
+def test_learned_and_forget(capsys: pytest.CaptureFixture[str]) -> None:
+    """Two taps are seeded as chat.route_chosen events (events.emit, same after fields as
+    route_memory.remember)."""
+    from sqlmodel import select
+
+    from mia.chat import route_memory
+    from mia.core import events
+    from mia.core.db import session_scope
+    from mia.core.models import Actor, Branch, Event
+
+    assert main(["migrate"]) == 0 and main(["seed"]) == 0
+    with session_scope() as session:
+        branch_id = session.exec(select(Branch)).one().id
+        for _ in range(2):
+            after = {"agent_id": "some_agent", "key": "# sp # cl"}
+            events.emit(
+                session, route_memory.CHOSEN, ("thread", "t1"), None, after, Actor.system(branch_id)
+            )
+    capsys.readouterr()
+    assert main(["learned"]) == 0
+    assert capsys.readouterr().out.strip() == "some_agent\t# sp # cl\t2"
+    assert main(["forget", "# sp # cl"]) == 0
+    assert "Forgotten: # sp # cl" in capsys.readouterr().out
+    with session_scope() as session:
+        forgotten = session.exec(select(Event).where(Event.action == route_memory.FORGOTTEN)).one()
+        assert (forgotten.after or {})["agent_id"] == "some_agent"
+    assert main(["learned"]) == 0
+    assert "no routes" in capsys.readouterr().out

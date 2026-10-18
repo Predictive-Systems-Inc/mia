@@ -247,6 +247,36 @@ def person_add(args: argparse.Namespace) -> int:
     return 0
 
 
+def learned(args: argparse.Namespace) -> int:
+    from mia.chat import route_memory
+    from mia.core.db import session_scope, utcnow
+    from mia.i18n import t
+
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        now = utcnow()
+        keys = route_memory.recall(session, branch_id, now)
+        counted = route_memory.counts(session, branch_id, now)
+        for key, agent in sorted(keys.items()):
+            print(t("cli.learned.row", "en", agent=agent, route=key, count=counted[(key, agent)]))
+        if not keys:
+            print(t("cli.learned.none", "en"))
+    return 0
+
+
+def forget(args: argparse.Namespace) -> int:
+    from mia.chat import route_memory
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor
+    from mia.i18n import t
+
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        route_memory.forget(session, branch_id, args.key, Actor.system(branch_id), utcnow())
+    print(t("cli.forgotten", "en", route=args.key))
+    return 0
+
+
 def _match_one(session: Session, who: str) -> Person:
     """Exact id or full name, else a unique name prefix. Exits listing matches when ambiguous."""
     people = session.exec(select(Person).order_by(col(Person.name))).all()
@@ -682,6 +712,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lang", default="fi", choices=["fi", "en"])
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=person_add)
+    p = sub.add_parser("learned", help="routes Mia learned from 'Is this about' taps")
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=learned)
+    p = sub.add_parser("forget", help="forget one learned route (two new taps relearn it)")
+    p.add_argument("key")
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=forget)
     bill = sub.add_parser("billing", help="billing exports").add_subparsers(
         dest="billing_command", required=True
     )

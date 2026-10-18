@@ -16,7 +16,7 @@ mia/
     mia/
       settings.py           MIA_DB_PATH, MIA_MODEL, MIA_GATEWAY_URL, MIA_GATEWAY_KEY, MIA_EGRESS_LEVEL, MIA_ORG
       schema.py             imports every table module (Alembic, tests)
-      cli.py                mia migrate | seed | serve | chat | decide | inbox | tick | geocode |
+      cli.py                mia migrate | seed | serve | chat | decide | inbox | tick | geocode | learned | forget |
                             backup | verify-db | ...
       core/                 models, db, ids, events, store, rbac, approvals, egress, usage, people,
                             absences, cover requests, timesheets, incidents (data standard 1.4),

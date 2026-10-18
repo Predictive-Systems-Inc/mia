@@ -67,6 +67,8 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run mia auth client add NAME --role ROLE` / `revoke ID` | Client credentials for outside agents and services |
 | `uv run mia inbox --as NAME` | Show messages Mia sent to a person |
 | `uv run mia tick` | Run each agent's due work, retry deferred turns and send the channel outbox once (`mia serve` does this every 30 s; a turn is claimed under the write lock, so running both is safe) |
+| `uv run mia learned [--branch ID]` | List the routes Mia learned from "Is this about" taps (agent, key, taps counted) |
+| `uv run mia forget KEY [--branch ID]` | Forget one learned route (two new taps learn it again) |
 | `uv run mia person add NAME --role staff [--lang fi]` | Add a person |
 | `uv run mia invite NAME [--as SUPERVISOR]` | One-time WhatsApp invite link for a person (needs `MIA_NODE_SECRET`) |
 | `uv run mia channels sim "..." --from NUMBER` | Message Mia as a phone on the simulated channel (try `LINK <code>` first) |
