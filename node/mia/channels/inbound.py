@@ -314,15 +314,18 @@ def _finish(
 
 
 def _after_turn(session: Session, inbound_id: str, person: Person, reply: ChatReply) -> None:
-    deliver(
-        session,
-        person,
-        list(reply.blocks),
-        Actor.person(person),
-        urgent=True,
-        source_id=reply.message_id,
-        sensitive=reply.sensitive,
-    )
+    """Queue the reply on the person's channels (none for a turn deferred behind another) and
+    finish the row."""
+    if reply.blocks:
+        deliver(
+            session,
+            person,
+            list(reply.blocks),
+            Actor.person(person),
+            urgent=True,
+            source_id=reply.message_id,
+            sensitive=reply.sensitive,
+        )
     row = session.get(ChannelInbound, inbound_id)
     if row is not None:
         _finish(session, row, "done")

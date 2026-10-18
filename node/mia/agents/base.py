@@ -154,6 +154,7 @@ class AgentDeps:
     tool_log: list[ToolLogEntry] = field(default_factory=list)
     approved: set[str] = field(default_factory=set)  # approval ids approved for this run
     notice: list[Any] = field(default_factory=list)  # blocks put before the reply (switch notice)
+    resumed: bool = False  # a deferred turn answered later: the reply is a notification
 
 
 @dataclass

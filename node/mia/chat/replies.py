@@ -7,6 +7,7 @@ card; assistant messages are stored through core services with events.
 """
 
 import html
+from typing import Any
 
 from pydantic_ai import AgentRunResult
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
@@ -15,6 +16,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps
 from mia.agents.shift_supervisor import MANIFEST
+from mia.channels.service import deliver
 from mia.chat.blocks import (
     AgentReply,
     ApprovalCardBlock,
@@ -23,7 +25,7 @@ from mia.chat.blocks import (
     ChatReply,
     TextBlock,
 )
-from mia.chat.channels import notify
+from mia.chat.channels import NOTIFICATION, notify
 from mia.core import events, store
 from mia.core.models import Approval, Message, Person, Thread
 from mia.i18n import t
@@ -39,11 +41,13 @@ def wrap_user_text(text: str, person: Person) -> str:
     return f'<user_message source="app" sender_roles="{roles}">\n{clean}\n</user_message>'
 
 
-def history(session: Session, thread: Thread) -> list[ModelMessage]:
-    """The thread's Pydantic AI messages in order, for the next run's message history."""
-    rows = session.exec(
-        select(Message).where(Message.thread_id == thread.id).order_by(col(Message.id))
-    ).all()
+def history(session: Session, thread: Thread, before: str | None = None) -> list[ModelMessage]:
+    """The thread's Pydantic AI messages in order, for the next run's message history; with
+    `before`, only from messages older than that message id."""
+    stmt = select(Message).where(Message.thread_id == thread.id).order_by(col(Message.id))
+    if before is not None:
+        stmt = stmt.where(col(Message.id) < before)
+    rows = session.exec(stmt).all()
     messages: list[ModelMessage] = []
     for row in rows:
         if row.model_messages:
@@ -86,29 +90,54 @@ def finish(
 ) -> ChatReply:
     """Check the reply's blocks and store the assistant message (the caller commits). A switch
     notice in deps.notice comes first."""
-    blocks = [*deps.notice, *check_blocks(session, deps, result.output.blocks)]
-    reply_text = "\n".join(b.text for b in blocks if b.type == "text")
+    blocks = check_blocks(session, deps, result.output.blocks)
     new_messages = ModelMessagesTypeAdapter.dump_python(result.new_messages(), mode="json")
+    return _store(session, deps, thread, blocks, new_messages)
+
+
+def _store(
+    session: Session,
+    deps: AgentDeps,
+    thread: Thread,
+    blocks: list[Block],
+    model_messages: list[dict[str, Any]],
+) -> ChatReply:
+    """Store Mia's message after deps.notice. A resumed turn's reply is a notification (event
+    notification.sent) and goes out on the person's linked channels too."""
+    blocks = [*deps.notice, *blocks]
+    role, action = (NOTIFICATION, "notification.sent") if deps.resumed else ("assistant", None)
     message = store.insert(
         session,
         Message(
             branch_id=deps.branch.id,
             thread_id=thread.id,
-            role="assistant",
+            role=role,
             sender_id=deps.manifest.roles.agent_role,
             agent_id=deps.manifest.id,
-            text=reply_text,
+            text="\n".join(b.text for b in blocks if b.type == "text"),
             blocks=[b.model_dump(mode="json") for b in blocks],
-            model_messages=new_messages,
+            model_messages=model_messages,
         ),
         deps.actor,
+        action=action,
     )
+    sensitive = _sensitive(session, deps, thread, blocks)
+    if deps.resumed:
+        deliver(
+            session,
+            deps.person,
+            blocks,
+            deps.actor,
+            urgent=True,
+            source_id=message.id,
+            sensitive=sensitive,
+        )
     return ChatReply(
         thread_id=thread.id,
         message_id=message.id,
         agent_id=deps.manifest.id,
         blocks=blocks,
-        sensitive=_sensitive(session, deps, thread, blocks),
+        sensitive=sensitive,
     )
 
 
@@ -155,29 +184,7 @@ def store_reply(
     session: Session, deps: AgentDeps, thread: Thread, blocks: list[Block]
 ) -> ChatReply:
     """Store a reply the agent did not write (template, question, safety script)."""
-    blocks = [*deps.notice, *blocks]
-    text = "\n".join(b.text for b in blocks if b.type == "text")
-    message = store.insert(
-        session,
-        Message(
-            branch_id=deps.branch.id,
-            thread_id=thread.id,
-            role="assistant",
-            sender_id=deps.manifest.roles.agent_role,
-            agent_id=deps.manifest.id,
-            text=text,
-            blocks=[b.model_dump(mode="json") for b in blocks],
-            model_messages=[],
-        ),
-        deps.actor,
-    )
-    return ChatReply(
-        thread_id=thread.id,
-        message_id=message.id,
-        agent_id=deps.manifest.id,
-        blocks=blocks,
-        sensitive=_sensitive(session, deps, thread, blocks),
-    )
+    return _store(session, deps, thread, blocks, [])
 
 
 MAX_MODEL_CALLS = 8  # D22: a turn stops after this many model requests

@@ -226,18 +226,16 @@ def test_egress_none_keeps_or_asks_without_jev(
     assert any(isinstance(b, QuickRepliesBlock) for b in reply.blocks)  # no active agent: ask
 
 
-def test_an_unreachable_router_propagates(
+def test_an_unreachable_router_defers_the_turn(
     session: Session,
     people: dict[str, Person],
     two_agents: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from mia.core.jev import JevUnreachable
-
     monkeypatch.setattr(jev, "BACKOFF", 0)
     monkeypatch.setattr(jev, "_inner", lambda: fake_jev(lambda body: {}, two_agents, 503))
-    with pytest.raises(JevUnreachable):  # Task 7 defers it; it is never a route failure
-        _turn(session, people["Sanna"], "how much did we sell?")
+    _turn(session, people["Sanna"], "how much did we sell?")
+    assert session.exec(select(Event).where(Event.action == "turn.deferred")).first()
     assert not session.exec(select(Event).where(Event.action == "chat.route_failed")).first()
 
 

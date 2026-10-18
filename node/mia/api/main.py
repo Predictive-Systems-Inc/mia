@@ -24,6 +24,7 @@ from mia.channels import inbound as channel_service
 from mia.channels import outbox, registry
 from mia.channels.router import router as channels_router
 from mia.channels.setup import register_configured
+from mia.chat import deferred
 from mia.chat.channels import NOTIFICATION
 from mia.chat.router import router as chat_router
 from mia.core import approvals, scheduling
@@ -54,8 +55,8 @@ def _generate_visits() -> int:
 
 
 async def run_due_work() -> tuple[int, int]:
-    """One round of due work: visit generation (once a day), cover escalation, then the
-    channel outbox. Returns the cover and outbox counts."""
+    """One round of due work: visit generation (once a day), cover escalation, the channel
+    outbox, then turns deferred while Jev was unreachable. Returns the cover and outbox counts."""
     generated = await asyncio.to_thread(_generate_visits)
     if generated:
         log.info("generated %d visit(s)", generated)
@@ -64,6 +65,9 @@ async def run_due_work() -> tuple[int, int]:
     for inbound_id in await asyncio.to_thread(channel_service.pending_inbound, stale):
         await channel_service.handle_inbound(inbound_id)  # lost to a restart before handling
     sent = await outbox.send_due(utcnow())  # on-demand channels (the simulator) are left alone
+    resumed = await deferred.retry_due(utcnow())  # turns that waited for Jev
+    if resumed:
+        log.info("closed %d deferred turn(s)", resumed)
     return advanced, sent
 
 

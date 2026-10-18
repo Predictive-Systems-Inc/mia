@@ -55,6 +55,7 @@ from mia.chat.service import _prepare
 from mia.core.db import get_engine
 from mia.core.egress import egress_context
 from mia.core.ids import new_id
+from mia.core.jev import JevUnreachable
 from mia.core.models import Approval, Message, Person, Thread
 from mia.i18n import t
 
@@ -245,12 +246,18 @@ async def _drive(run: LiveRun, run_input: RunAgentInput, text: str) -> None:
                         resolve_turn, session, deps, thread, text
                     )
                 else:  # an agent that does not stream answers in one piece
-                    reply = await spec.handle_turn(Turn(session, deps, thread, text, past, ctx))
+                    try:
+                        reply = await spec.handle_turn(Turn(session, deps, thread, text, past, ctx))
+                    except JevUnreachable:
+                        reply = await asyncio.to_thread(
+                            service.defer_turn, session, deps, thread, "agent", spec.id
+                        )
         if reply is not None:  # a reply already stored: nothing streams
             await asyncio.to_thread(session.commit)
             await run.push(RunStartedEvent(thread_id=run.thread_id, run_id=run.run_id))
             last = EventType.RUN_STARTED
-            for event in _plain_reply_events(reply):
+            # a turn deferred behind another has no reply: the run only starts and finishes
+            for event in _plain_reply_events(reply) if reply.blocks else []:
                 await run.push(event)
             await run.push(RunFinishedEvent(thread_id=run.thread_id, run_id=run.run_id))
             return

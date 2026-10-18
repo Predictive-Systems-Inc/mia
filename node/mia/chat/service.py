@@ -20,7 +20,7 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps, AgentSpec, Turn
 from mia.agents.registry import AGENTS, DEFAULT
 from mia.agents.shift_supervisor.classifier import classify
-from mia.chat import agent_router, language
+from mia.chat import agent_router, deferred, language
 from mia.chat.access import agents_for
 from mia.chat.blocks import ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.channels import NOTIFICATION
@@ -40,17 +40,15 @@ class ChatError(Exception):
     """Bad chat input (unknown actor or thread)."""
 
 
-def _prepare(
+def _store(
     session: Session, person: Person, text: str, thread_id: str | None, *, create: bool = False
-) -> tuple[Thread, list[ModelMessage], AgentDeps, EgressContext]:
-    """Store the user message and commit it; build the run's deps and egress context.
+) -> tuple[Thread, Message]:
+    """Store the user message (and a new thread when needed) and commit it.
 
     With create=True an unknown thread_id starts a new thread with that id (AG-UI clients name
     their threads); a thread of another person is never continued.
     """
-    spec = AGENTS[DEFAULT]
-    branch = session.get(Branch, person.branch_id)
-    if branch is None:
+    if session.get(Branch, person.branch_id) is None:
         raise ChatError("person has no branch")
     human = Actor.person(person)
     thread = session.get(Thread, thread_id) if thread_id else None
@@ -60,23 +58,38 @@ def _prepare(
         if thread_id and not create:
             raise ChatError("thread not found")
         new = Thread(
-            branch_id=branch.id, person_id=person.id, agent_id=spec.manifest.id, title=text[:60]
+            branch_id=person.branch_id, person_id=person.id, agent_id=DEFAULT, title=text[:60]
         )
         if thread_id:
             new.id = thread_id
         thread = store.insert(session, new, human)
-    past = history(session, thread)
-    store.insert(
+    message = store.insert(
         session,
         Message(
-            branch_id=branch.id, thread_id=thread.id, role="user", sender_id=person.id, text=text
+            branch_id=person.branch_id,
+            thread_id=thread.id,
+            role="user",
+            sender_id=person.id,
+            text=text,
         ),
         human,
     )
     session.commit()
+    return thread, message
+
+
+def _context(
+    session: Session, person: Person, thread: Thread, before: str | None = None
+) -> tuple[list[ModelMessage], AgentDeps, EgressContext]:
+    """The run's history (only messages older than `before` when given), deps and egress
+    context, for a message already stored."""
+    spec = AGENTS[DEFAULT]
+    branch = session.get(Branch, person.branch_id)
+    if branch is None:
+        raise ChatError("person has no branch")
     deps = AgentDeps(
         session=session,
-        actor=human.as_agent(spec.manifest.roles.agent_role),
+        actor=Actor.person(person).as_agent(spec.manifest.roles.agent_role),
         person=person,
         branch=branch,
         organisation_id=branch.organisation_id,
@@ -92,7 +105,15 @@ def _prepare(
         purpose="chat",
         level=get_settings().MIA_EGRESS_LEVEL,
     )
-    return thread, past, deps, ctx
+    return history(session, thread, before), deps, ctx
+
+
+def _prepare(
+    session: Session, person: Person, text: str, thread_id: str | None, *, create: bool = False
+) -> tuple[Thread, list[ModelMessage], AgentDeps, EgressContext]:
+    """Store the user message and commit it; build the run's deps and egress context."""
+    thread, _ = _store(session, person, text, thread_id, create=create)
+    return thread, *_context(session, person, thread)
 
 
 def safety_reply(session: Session, deps: AgentDeps, thread: Thread, text: str) -> ChatReply | None:
@@ -210,9 +231,14 @@ def _route_tapped(session: Session, thread: Thread, text: str) -> tuple[str, str
 
 
 def _ask_route(
-    session: Session, deps: AgentDeps, thread: Thread, agents: list[AgentSpec]
+    session: Session,
+    deps: AgentDeps,
+    thread: Thread,
+    agents: list[AgentSpec],
+    original_id: str | None = None,
 ) -> ChatReply:
-    """ "Is this about" with one button per agent of the person; the tap answers the message."""
+    """ "Is this about" with one button per agent of the person; the tap answers the message
+    (`original_id`, by default the thread's latest user message)."""
     options = {t(a.label_key, deps.lang): a.id for a in agents}
     reply = store_reply(
         session,
@@ -220,7 +246,9 @@ def _ask_route(
         thread,
         [TextBlock(text=t("route.question", deps.lang)), QuickRepliesBlock(options=list(options))],
     )
-    user = latest_message(session, thread, "user")
+    if original_id is None:
+        user = latest_message(session, thread, "user")
+        original_id = user.id if user else None
     events.emit(
         session,
         ROUTE_ASKED,
@@ -229,7 +257,7 @@ def _ask_route(
         {
             "options": options,
             "message_id": reply.message_id,
-            "original_message_id": user.id if user else None,
+            "original_message_id": original_id,
         },
         deps.actor,
     )
@@ -314,11 +342,15 @@ async def route_turn(
 ) -> ChatReply | tuple[AgentSpec, AgentDeps, EgressContext, str]:
     """Pick the agent for a message (spec 2026-10-18, A turn, steps 4 to 7). Returns a stored
     reply (the caller commits), or the agent, its deps and egress context, and the text it
-    answers. The Jev request runs with no write lock held; JevUnreachable propagates."""
+    answers. The Jev request runs with no write lock held. A live turn is deferred while the
+    thread waits or when Jev is unreachable; for a resumed turn JevUnreachable propagates."""
     chosen = await asyncio.to_thread(_choose, session, deps, thread, text)
     if isinstance(chosen, ChatReply):
         return chosen
     spec, agents, active, text = chosen
+    if not deps.resumed and await asyncio.to_thread(deferred.waiting, session, thread):
+        lead_id = spec.id if spec is not None else active or agents[0].id
+        return await asyncio.to_thread(defer_turn, session, deps, thread, "route", lead_id)
     if spec is not None:
         agent_deps = _deps_for(deps, spec)
     else:
@@ -341,7 +373,9 @@ async def route_turn(
                 with egress_context(router_ctx):
                     picked = await agent_router.route(text, agents, active_spec, previous, pseudo)
             except JevUnreachable:
-                raise  # Task 7 defers the turn
+                if deps.resumed:
+                    raise  # deferred.retry_due tries again next tick
+                return await asyncio.to_thread(defer_turn, session, deps, thread, "route", lead.id)
             except JevError as exc:
                 picked, error = agent_router.fallback(agents, active), str(exc)
         settled = await asyncio.to_thread(_settle, session, deps, thread, picked, agents, error)
@@ -351,6 +385,73 @@ async def route_turn(
         spec = AGENTS[agent_deps.manifest.id]
     agent_ctx = replace(ctx, actor=agent_deps.actor, agent_id=spec.id)
     return spec, agent_deps, agent_ctx, text
+
+
+def defer_turn(
+    session: Session, deps: AgentDeps, thread: Thread, stage: deferred.Stage, agent_id: str
+) -> ChatReply:
+    """Defer the thread's latest user message (the live turn); a busy reply is the agent's."""
+    user = latest_message(session, thread, "user")
+    assert user is not None  # the live turn's message is stored before anything runs
+    lead = _deps_for(deps, AGENTS[agent_id])
+    return deferred.defer(session, lead, thread, user.id, stage, agent_id)
+
+
+def _expire(
+    session: Session,
+    deps: AgentDeps,
+    thread: Thread,
+    message: Message,
+    stage: str | None,
+    agent_id: str | None,
+) -> ChatReply:
+    """A turn deferred too long: the agent's ask to rephrase (agent stage) or "Is this about"
+    for the message (router stage)."""
+    if stage == "agent" and agent_id in AGENTS:
+        lead = _deps_for(deps, AGENTS[agent_id])
+        return reply_text(session, lead, thread, t("clarify.rephrase", deps.lang))
+    return _ask_route(session, deps, thread, agents_for(session, deps.person), message.id)
+
+
+async def respond(
+    session: Session,
+    person: Person,
+    thread: Thread,
+    message: Message,
+    *,
+    agent: Agent[AgentDeps, Any] | None = None,
+    resumed: bool = False,
+    expire: bool = False,
+    stage: str | None = None,
+    agent_id: str | None = None,
+) -> ChatReply:
+    """The turn for a stored user message; the caller commits the reply. A live turn runs the
+    shared steps first and is deferred when Jev is unreachable. A resumed turn (a deferral
+    retried, its shared steps already done) answers as a notification and raises
+    JevUnreachable instead; with expire it asks instead of answering (`stage` and `agent_id`
+    come from the deferral). `agent` is a Pydantic AI agent for the default agent (tests)."""
+    before = message.id if resumed else None
+    past, deps, ctx = await asyncio.to_thread(_context, session, person, thread, before)
+    deps.resumed = resumed
+    if expire:
+        return await asyncio.to_thread(_expire, session, deps, thread, message, stage, agent_id)
+    text = message.text
+    if not resumed:
+        shared = await asyncio.to_thread(_before_agent, session, deps, thread, text)
+        if isinstance(shared, ChatReply):
+            return shared
+        text = shared
+    routed = await route_turn(session, deps, thread, text, ctx)
+    if isinstance(routed, ChatReply):
+        return routed
+    spec, agent_deps, agent_ctx, text = routed
+    own = agent if spec.id == DEFAULT else None  # the caller's agent is the default agent's
+    try:
+        return await spec.handle_turn(Turn(session, agent_deps, thread, text, past, agent_ctx, own))
+    except JevUnreachable:
+        if resumed:
+            raise
+        return await asyncio.to_thread(defer_turn, session, agent_deps, thread, "agent", spec.id)
 
 
 async def run_turn(
@@ -363,13 +464,5 @@ async def run_turn(
     """One user message in, one structured reply out. The message is committed before any
     model runs; the chosen agent's handle_turn answers; the caller commits the reply.
     `agent` is a Pydantic AI agent to use instead of the default one (tests)."""
-    thread, past, deps, ctx = await asyncio.to_thread(_prepare, session, person, text, thread_id)
-    before = await asyncio.to_thread(_before_agent, session, deps, thread, text)
-    if isinstance(before, ChatReply):
-        return before
-    routed = await route_turn(session, deps, thread, before, ctx)
-    if isinstance(routed, ChatReply):
-        return routed
-    spec, agent_deps, agent_ctx, text = routed
-    own = agent if spec.id == DEFAULT else None  # the caller's agent is the default agent's
-    return await spec.handle_turn(Turn(session, agent_deps, thread, text, past, agent_ctx, own))
+    thread, message = await asyncio.to_thread(_store, session, person, text, thread_id)
+    return await respond(session, person, thread, message, agent=agent)

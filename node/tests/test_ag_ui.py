@@ -621,3 +621,28 @@ def test_a_routed_run_is_answered_by_the_chosen_agent(
     assert_well_formed(events)
     blocks = [e for e in events if e["type"] == "CUSTOM" and e["name"] == runs.BLOCKS_EVENT]
     assert blocks[-1]["value"]["agent_id"] == "sales_supervisor"
+
+
+def test_jev_down_defers_the_run_instead_of_failing_it(
+    client: TestClient, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mia.core import jev, orgconfig
+    from mia.settings import get_settings
+    from tests.jev_fake import fake_jev
+
+    two = orgconfig.OrgSettings(agents=["shift_supervisor", "sales_supervisor"])
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: two)
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setattr(jev, "BACKOFF", 0)
+    get_settings.cache_clear()
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(lambda body: {}, status=503))
+    thread = new_id()
+    first = parse(
+        post(client, "/ag-ui", people["Sanna"], body("how much did we sell?", thread)).text
+    )
+    second = parse(post(client, "/ag-ui", people["Sanna"], body("and yesterday?", thread)).text)
+    assert_well_formed(first)
+    assert_well_formed(second)
+    text = "".join(e.get("delta", "") for e in first if e["type"] == "TEXT_MESSAGE_CONTENT")
+    assert text.startswith("Mia")  # the busy reply in Sanna's language
+    assert [e["type"] for e in second] == ["RUN_STARTED", "RUN_FINISHED"]

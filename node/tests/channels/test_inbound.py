@@ -594,3 +594,32 @@ def test_a_denied_share_changes_nothing(
     session.refresh(visit)
     assert visit.status == "planned"
     assert session.exec(select(ChannelInbound)).one().status == "failed"
+
+
+def test_a_turn_deferred_behind_another_queues_nothing(
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    people: dict[str, Person],
+    link: LinkFn,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mia.core import jev, orgconfig
+    from mia.settings import get_settings
+    from tests.jev_fake import fake_jev
+
+    org = orgconfig.load().model_copy(update={"agents": ["shift_supervisor", "sales_supervisor"]})
+    monkeypatch.setattr(orgconfig, "load", lambda org_name=None: org)  # sim stays enabled
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setattr(jev, "BACKOFF", 0)
+    get_settings.cache_clear()
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(lambda body: {}, status=503))
+    link(people["Sanna"], ADDR)
+    assert post(client, sim, msg("how much did we sell today?", "m1")) == 200
+    queued = len(session.exec(select(ChannelOutbox)).all())
+    assert queued  # the busy reply
+    assert post(client, sim, msg("and yesterday?", "m2")) == 200
+    session.expire_all()
+    assert [r.status for r in session.exec(select(ChannelInbound))] == ["done", "done"]
+    assert len(session.exec(select(ChannelOutbox)).all()) == queued
+    assert len(session.exec(select(Event).where(Event.action == "turn.deferred")).all()) == 2
