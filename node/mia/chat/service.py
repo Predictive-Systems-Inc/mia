@@ -159,15 +159,16 @@ def _before_agent(session: Session, deps: AgentDeps, thread: Thread, text: str) 
 ROUTE_ASKED = "chat.route_asked"
 
 
-def _last_mia(session: Session, thread: Thread) -> Message | None:
-    """Mia's latest message on the thread (assistant or notification), skipping the route and
-    language questions: they are stored under the default agent but belong to no agent."""
+def _last_mia(session: Session, thread: Thread, *, questions: bool = False) -> Message | None:
+    """Mia's latest message on the thread (assistant or notification). Unless questions=True,
+    the route and language questions are skipped: they are stored under the default agent but
+    belong to no agent."""
     asked = session.exec(
         select(Event)
         .where(Event.entity_id == thread.id)
         .where(col(Event.action).in_([ROUTE_ASKED, language.ASKED]))
     ).all()
-    skip = [str((e.after or {}).get("message_id")) for e in asked]
+    skip = [] if questions else [str((e.after or {}).get("message_id")) for e in asked]
     return session.exec(
         select(Message)
         .where(Message.thread_id == thread.id)
@@ -200,7 +201,7 @@ def _route_tapped(session: Session, thread: Thread, text: str) -> tuple[str, str
         .where(Event.entity_id == thread.id)
         .order_by(col(Event.id).desc())
     ).first()
-    last = latest_message(session, thread, "assistant")
+    last = _last_mia(session, thread, questions=True)  # a notification after it makes it stale
     after = (asked.after or {}) if asked is not None else {}
     if last is None or after.get("message_id") != last.id:
         return None
@@ -370,4 +371,5 @@ async def run_turn(
     if isinstance(routed, ChatReply):
         return routed
     spec, agent_deps, agent_ctx, text = routed
-    return await spec.handle_turn(Turn(session, agent_deps, thread, text, past, agent_ctx, agent))
+    own = agent if spec.id == DEFAULT else None  # the caller's agent is the default agent's
+    return await spec.handle_turn(Turn(session, agent_deps, thread, text, past, agent_ctx, own))

@@ -10,7 +10,7 @@ from mia.chat.blocks import ChatReply, QuickRepliesBlock
 from mia.chat.service import run_turn
 from mia.core import jev, orgconfig
 from mia.core.jev import JevError
-from mia.core.models import Event, Person
+from mia.core.models import Actor, Event, Message, Person
 from mia.settings import get_settings
 from tests.jev_fake import choice, fake_jev
 
@@ -102,6 +102,8 @@ def test_a_confident_other_agent_switches_with_a_notice(
     assert second.blocks[0].text == "(Myyntipäällikkö)"  # type: ignore[union-attr]  # Sanna is fi
     switched = session.exec(select(Event).where(Event.action == "chat.agent_switched")).one()
     assert switched.after == {"from": "shift_supervisor", "to": "sales_supervisor"}
+    stored = session.get(Message, second.message_id)
+    assert stored is not None and stored.sender_id == "agent.sales_supervisor"
 
 
 def test_an_unsure_answer_keeps_the_active_agent(
@@ -115,6 +117,7 @@ def test_an_unsure_answer_keeps_the_active_agent(
     _router_answers(monkeypatch, two_agents, "sales_supervisor", 0.4)
     second = _turn(session, people["Sanna"], "ok", first.thread_id)
     assert second.agent_id == "shift_supervisor"
+    assert len(two_agents) == 2  # routed: no pending question skipped the router
 
 
 def test_with_no_active_agent_an_unsure_answer_asks_and_a_tap_answers(
@@ -250,3 +253,79 @@ def test_a_tap_on_an_agent_no_longer_offered_is_routed(
     monkeypatch.setattr(orgconfig, "load", lambda org=None: other)
     _turn(session, people["Sanna"], "Myyntipäällikkö", asked.thread_id)
     assert len(two_agents) == 2  # plain text: the router was asked
+
+
+def test_names_are_pseudonymised_before_the_router(
+    session: Session,
+    people: dict[str, Person],
+    two_agents: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mia.chat.blocks import TextBlock
+    from mia.chat.channels import notify
+
+    sanna = people["Sanna"]
+    note = notify(
+        session,
+        sanna,
+        [TextBlock(text="Mikael Nieminen is sick today")],
+        Actor.system(sanna.branch_id),
+        "shift_supervisor",
+    )
+    session.commit()
+    _router_answers(monkeypatch, two_agents, "shift_supervisor")
+    _turn(session, sanna, "can Maria cover tomorrow?", note.thread_id)
+    state = two_agents[0]["state"]
+    assert "Maria" not in state["message"] and "Person_" in state["message"]
+    assert "Mikael" not in state["previous_mia_message"]
+    assert "Nieminen" not in state["previous_mia_message"]
+
+
+def test_the_callers_agent_runs_only_for_its_own_spec(
+    session: Session,
+    people: dict[str, Person],
+    two_agents: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import dataclasses
+
+    from mia.agents.base import Turn
+
+    got: list[Any] = []
+    stub = AGENTS["sales_supervisor"]
+
+    async def capture(turn: Turn) -> ChatReply:
+        got.append(turn.agent)
+        return await stub.handle_turn(turn)
+
+    monkeypatch.setitem(AGENTS, stub.id, dataclasses.replace(stub, handle_turn=capture))
+    _router_answers(monkeypatch, two_agents, "sales_supervisor")
+    sentinel: Any = object()  # stands for the shift supervisor's Pydantic AI agent
+    reply = asyncio.run(run_turn(session, sentinel, people["Sanna"], "how much did we sell?"))
+    session.commit()
+    assert reply.agent_id == "sales_supervisor" and got == [None]
+
+
+def test_a_notification_after_the_route_question_makes_its_buttons_stale(
+    session: Session,
+    people: dict[str, Person],
+    two_agents: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mia.chat.blocks import TextBlock
+    from mia.chat.channels import notify
+
+    _router_answers(monkeypatch, two_agents, "unclear", 0.9)
+    sanna = people["Sanna"]
+    asked = _turn(session, sanna, "hmm")
+    note = notify(
+        session,
+        sanna,
+        [TextBlock(text="Shift starts at 9")],
+        Actor.system(sanna.branch_id),
+        "shift_supervisor",
+    )
+    session.commit()
+    assert note.thread_id == asked.thread_id  # the person's latest thread with the agent
+    _turn(session, sanna, "Myyntipäällikkö", asked.thread_id)
+    assert len(two_agents) == 2  # routed as text, not taken as a tap
