@@ -19,6 +19,7 @@ def tree(tmp_path: Path) -> Path:
         "node/mia",
         "node/config",
         "node/tests/test_access.py",
+        "node/tests/evals/router_cases.py",
         "docs/layout.md",
         "pyproject.toml",
     ):
@@ -55,6 +56,8 @@ def test_scaffold_writes_the_package_and_edits_the_shared_files(tree: Path) -> N
     assert "agent:quality_officer, use" in (tree / "node/config/policies/policy.csv").read_text()
     assert "mia.agents.quality_officer.models" in (tree / "node/mia/schema.py").read_text()
     assert "quality_officer/" in (tree / "docs/layout.md").read_text()
+    router_cases = (tree / "node/tests/evals/router_cases.py").read_text()
+    assert 'PENDING: set[str] = {"quality_officer"}' in router_cases
     assert (tree / "node/tests/test_quality_officer_chat.py") in written
     assert all(p.exists() for p in written)
 
@@ -117,6 +120,14 @@ def test_unknown_role_and_bad_id_are_refused(tree: Path) -> None:
         run("quality_officer", ["janitor"])
     with pytest.raises(ValueError):
         run("decider", ["owner"])  # a module of mia/agents, not a package
+
+
+def test_a_description_without_a_contrast_line_is_refused(tree: Path) -> None:
+    with pytest.raises(ValueError, match="; not "):
+        scaffold.run(
+            tree, "quality_officer", label_en="x", label_fi="x", roles=["owner"], description="d"
+        )
+    assert not (tree / "node/mia/agents/quality_officer").exists()
 
 
 def test_a_stub_is_built_with_its_router_description(tree: Path) -> None:
@@ -212,6 +223,15 @@ def test_edit_schema_keeps_the_imports_sorted() -> None:
     assert scaffold.edit_schema(out, "a_one") == out
 
 
+def test_edit_router_pending_adds_the_id_sorted() -> None:
+    text = "X = 1\nPENDING: set[str] = set()\nY = 2\n"
+    out = scaffold.edit_router_pending(text, "b_two")
+    assert out == 'X = 1\nPENDING: set[str] = {"b_two"}\nY = 2\n'
+    out = scaffold.edit_router_pending(out, "a_one")
+    assert 'PENDING: set[str] = {"a_one", "b_two"}\n' in out
+    assert scaffold.edit_router_pending(out, "a_one") == out
+
+
 def test_edit_layout_adds_a_line_before_the_role_skill_line() -> None:
     text = "        sales_supervisor/   manifest.yaml\n        <role>/skill/       role.yaml\n"
     out = scaffold.edit_layout(text, "q_o", "Quality")
@@ -227,7 +247,7 @@ def test_scaffold_then_checks_in_a_temp_copy(tmp_path: Path) -> None:
     copy = tmp_path / "repo"
     skip = (".git", ".venv", "data", "node_modules", ".superpowers", "__pycache__", "*_cache")
     shutil.copytree(REPO, copy, ignore=shutil.ignore_patterns(*skip))
-    _run(copy)
+    _run(copy, "demo_officer")
     env = {**os.environ, "PYTHONPATH": str(copy / "node")}
 
     def check(*args: str) -> None:
@@ -246,7 +266,9 @@ def test_scaffold_then_checks_in_a_temp_copy(tmp_path: Path) -> None:
     check("mypy", "node/mia")
     check(
         "pytest",
-        "node/tests/test_quality_officer_chat.py",
+        "node/tests/test_demo_officer_chat.py",
+        "node/tests/evals/test_router_cases.py",
+        "node/tests/test_agent_router.py::test_router_descriptions_carry_a_contrast_line",
         "node/tests/test_architecture.py",
         "node/tests/test_access.py",
         "--no-cov",

@@ -106,6 +106,7 @@ addopts = "-m 'not evals and not learning' --cov=mia.core --cov-report=term-miss
 markers = [
     "evals: agent evaluation scenarios (run with -m evals)",
     "learning: trains a tiny model (needs uv sync --group learning)",
+    "slow: scaffolds a temp copy of the repo and runs its checks (about 30 s)",
 ]
 filterwarnings = ["ignore::DeprecationWarning:casbin.*"]
 

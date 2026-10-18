@@ -5,7 +5,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from mia.agents.registry import AGENTS
-from tests.evals.router_cases import CASES, GATED_LANGS, REPORTED_LANGS, Case
+from tests.evals.router_cases import CASES, GATED_LANGS, PENDING, REPORTED_LANGS, Case
 
 
 def _grouped(cases: list[Case]) -> dict[tuple[str, str], list[Case]]:
@@ -19,7 +19,7 @@ def test_every_gated_language_covers_every_agent_and_group() -> None:
     for lang in GATED_LANGS:
         single = [c for c in CASES if c.lang == lang and c.group == "single"]
         by_agent = Counter(c.expected for c in single)
-        assert all(by_agent[a] >= 10 for a in AGENTS), (lang, by_agent)
+        assert all(by_agent[a] >= 10 for a in AGENTS if a not in PENDING), (lang, by_agent)
         assert sum(1 for c in CASES if c.lang == lang and c.group == "follow_up") >= 10
         assert sum(1 for c in CASES if c.lang == lang and c.group == "switch") >= 10
 

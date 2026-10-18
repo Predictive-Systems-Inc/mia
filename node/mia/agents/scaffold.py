@@ -138,6 +138,17 @@ def edit_schema(text: str, agent_id: str) -> str:
     return "".join(lines[: block[0]] + sorted_block + lines[block[-1] + 1 :])
 
 
+def edit_router_pending(text: str, agent_id: str) -> str:
+    """router_cases.py with the id in PENDING (agents without router cases yet), sorted."""
+    lines = text.splitlines(keepends=True)
+    at = next(i for i, x in enumerate(lines) if x.startswith("PENDING: set[str] = "))
+    rhs = lines[at].split("=", 1)[1].strip()
+    ids = set() if rhs == "set()" else set(ast.literal_eval(rhs))
+    ids.add(agent_id)
+    lines[at] = "PENDING: set[str] = {" + ", ".join(json.dumps(i) for i in sorted(ids)) + "}\n"
+    return "".join(lines)
+
+
 def edit_layout(text: str, agent_id: str, label_en: str) -> str:
     """docs/layout.md with one line for the package, before the `<role>/skill/` line."""
     name = f"        {agent_id}/"
@@ -160,9 +171,10 @@ def run(
     force: bool = False,
 ) -> list[Path]:
     """Render the package and its tests under `root` (the repository root) and apply the shared
-    edits; returns every file written. Raises ValueError for a bad id, role, label or a missing
-    description (a stub's own is used when empty), FileExistsError when a rendered file exists
-    and not force. Nothing is written unless every check passed."""
+    edits; returns every file written. Raises ValueError for a bad id, role or label, or a
+    description without the "; not " contrast line (a stub's own is used when empty), and
+    FileExistsError when a rendered file exists and not force. Nothing is written unless every
+    check passed."""
     agents = root / "node/mia/agents"
     if not ID.match(agent_id) or (agents / f"{agent_id}.py").exists():
         raise ValueError(f"agent id must match {ID.pattern} and not be a module: {agent_id!r}")
@@ -172,8 +184,8 @@ def run(
         raise ValueError("--label-en and --label-fi are required")
     stubs_py = agents / "stubs.py"
     description = description.strip() or stub_description(stubs_py.read_text(), agent_id) or ""
-    if not description:
-        raise ValueError("--description is required for an agent that is not a stub")
+    if "; not " not in description:  # test_router_descriptions_carry_a_contrast_line
+        raise ValueError('the router description needs a contrast line ("; not ...")')
     values = {
         "agent_id": agent_id,
         "AGENT_CONST": agent_id.upper(),
@@ -201,6 +213,7 @@ def run(
         root / "node/config/policies/policy.csv": lambda s: edit_policy(s, agent_id, roles),
         root / "node/mia/schema.py": lambda s: edit_schema(s, agent_id),
         root / "docs/layout.md": lambda s: edit_layout(s, agent_id, label_en),
+        root / "node/tests/evals/router_cases.py": lambda s: edit_router_pending(s, agent_id),
     }
     for path, edit in edits.items():
         before = path.read_text(encoding="utf-8")
