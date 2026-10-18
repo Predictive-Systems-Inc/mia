@@ -1,5 +1,5 @@
 """The `mia` command: migrate, seed, serve, chat, decide, inbox, tick, geocode, person,
-invite, channels, backup, verify-db, keys, auth, skills."""
+invite, channels, backup, verify-db, keys, auth, skills, agent."""
 
 import argparse
 import asyncio
@@ -249,6 +249,26 @@ def person_add(args: argparse.Namespace) -> int:
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
         print(f"added {person.name} ({person.id})")
+    return 0
+
+
+def agent_scaffold(args: argparse.Namespace) -> int:
+    from mia.agents import scaffold
+
+    try:
+        written = scaffold.run(
+            NODE_DIR.parent,
+            args.agent_id,
+            label_en=args.label_en,
+            label_fi=args.label_fi,
+            roles=args.roles,
+            description=args.description,
+            force=args.force,
+        )
+    except (ValueError, FileExistsError) as exc:
+        raise SystemExit(str(exc)) from exc
+    for path in written:
+        print(path.relative_to(NODE_DIR.parent))
     return 0
 
 
@@ -722,6 +742,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=person_add)
+    agent = sub.add_parser("agent", help="agent packages").add_subparsers(
+        dest="agent_command", required=True
+    )
+    p = agent.add_parser("scaffold", help="render a new agent package and wire it in")
+    p.add_argument("agent_id", help="snake_case job title, e.g. inventory_manager")
+    p.add_argument("--label-en", required=True)
+    p.add_argument("--label-fi", required=True)
+    p.add_argument("--role", dest="roles", action="append", required=True)
+    p.add_argument("--description", default="", help="router description (a stub's by default)")
+    p.add_argument("--force", action="store_true", help="overwrite the rendered files")
+    p.set_defaults(func=agent_scaffold)
     p = sub.add_parser("learned", help="routes Mia learned from 'Is this about' taps")
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=learned)

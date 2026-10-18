@@ -1,0 +1,51 @@
+"""The $label_lower in chat, through run_turn with the fake Jev. Scaffolded with one test (a
+greeting); the plan's scenarios add the rest here."""
+
+import asyncio
+import functools
+from typing import Any
+
+import pytest
+from sqlmodel import Session
+
+from mia.agents.$agent_id import MANIFEST
+from mia.chat.access import agents_for
+from mia.chat.blocks import TextBlock
+from mia.chat.service import run_turn
+from mia.core import jev, orgconfig
+from mia.core.models import Branch, Person
+from mia.i18n import t
+from mia.settings import get_settings
+from tests.jev_fake import answers_for, fake_jev
+
+Ferinos = tuple[Branch, dict[str, Person]]
+
+
+@pytest.fixture
+def sender(monkeypatch: pytest.MonkeyPatch, session: Session, ferinos: Ferinos) -> Person:
+    """Jev mode with this agent as the org's only agent; a seeded person who may use it."""
+    only = orgconfig.OrgSettings(agents=[MANIFEST.id])
+    monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: only))
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")
+    get_settings.cache_clear()
+    _, people = ferinos
+    return next(p for p in people.values() if agents_for(session, p))
+
+
+def _answers(monkeypatch: pytest.MonkeyPatch, action: str, **slots: Any) -> None:
+    def answer(body: dict[str, Any]) -> dict[str, Any]:
+        return answers_for(body, action, **slots)
+
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(answer))
+
+
+def test_a_greeting_is_answered_with_what_it_cannot_do_yet(
+    session: Session, sender: Person, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _answers(monkeypatch, "reply_only", conversation="greeting")
+    reply = asyncio.run(run_turn(session, None, sender, "hello po", None))
+    session.commit()
+    texts = [b.text for b in reply.blocks if isinstance(b, TextBlock)]
+    lang = sender.language
+    assert texts == [t("conversation.greeting", lang), t("reply.not_built", lang)]

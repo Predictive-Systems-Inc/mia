@@ -29,7 +29,9 @@ mia/
       templates/retail/     models (items with short codes and prices, branch hours), seed (Ferino's demo)
       learning/             role skill data: generate, translate (the eval set by language), train, bakeoff
       agents/               base.py (manifest, guard, model factory, AgentSpec), registry.py
-                            (every agent by id), stubs.py (roster agents not built yet)
+                            (every agent by id), stubs.py (roster agents not built yet),
+                            decider.py (the shared Jev decider), scaffold.py and _template/
+                            (`mia agent scaffold`: a new agent package, wired in)
         shift_supervisor/   manifest.yaml, job.md, prompts/, classifier.py,
                             scoring.py, cover.py (confirmation flow), alerts.py (missed
                             check-in and check-out, overtime, unstaffed visits, daily plan),
@@ -68,7 +70,8 @@ mia/
                             test_router_eval.py for the real-Jev router eval; sales_cases.py,
                             test_sales_cases.py (offline shape check) and
                             test_sales_supervisor_evals.py for the real-Jev sales decider eval;
-                            test_sales_supervisor_scenarios.py runs the sales scenarios.yaml)
+                            test_sales_supervisor_scenarios.py runs the sales scenarios.yaml;
+                            <id>_cases.py and test_<id>_evals.py from the scaffold)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,
                             research/ (research notes and dated evaluation reports, ADR 012)
 ```

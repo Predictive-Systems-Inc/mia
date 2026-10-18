@@ -71,6 +71,7 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run mia learned [--branch ID]` | List the routes Mia learned from "Is this about" taps (agent, key, taps counted) |
 | `uv run mia forget KEY [--branch ID]` | Forget one learned route (two new taps learn it again) |
 | `uv run mia person add NAME --role staff [--lang fi] [--ask-language]` | Add a person (`--ask-language`: Mia asks their language in the first chat) |
+| `uv run mia agent scaffold ID --label-en "..." --label-fi "..." --role ROLE [--description "..."] [--force]` | Render a new agent package (a Jev turn that greets) and wire it into the registry, labels, policy, schema and docs/layout.md; refuses to overwrite without `--force`; a stub keeps its router description |
 | `uv run mia invite NAME [--as SUPERVISOR]` | One-time WhatsApp invite link for a person (needs `MIA_NODE_SECRET`) |
 | `uv run mia channels sim "..." --from NUMBER` | Message Mia as a phone on the simulated channel (try `LINK <code>` first) |
 | `uv run mia geocode` | Geocode home bases and sites without coordinates (needs `MIA_GEOCODER_KEY`) |
