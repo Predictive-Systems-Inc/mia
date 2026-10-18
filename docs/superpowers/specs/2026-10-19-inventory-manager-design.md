@@ -195,6 +195,10 @@ and replies for scenarios 1 to 4. 5. Scenarios 5 to 8. 6. Due work (9, 10). 7. T
   after one tuning edit. Wrong 3.3% (bar 2%; nine of ten are an ingredient count read as an
   order); right en 90%, fil 56%, ceb 56%, hil 66%, war 64%, bcl 64% (bar 80%); ask 8% to 36%.
   Router gate not rerun (PENDING already empty, router description unchanged).
+- Decider gate rerun (19 Oct, docs/research/inventory-manager-2026-10-19-rerun.md): fresh gate
+  half after the fix wave, one tuning edit on the tune half, still fails. Wrong 0.3% (bar 2%:
+  pass); right en 89%, fil 77%, ceb 61%, hil 74%, war 69%, bcl 71% (bar 80%); ask 11% to 38%
+  (bar 15%). Most asks are the right action under 0.6; do not tune on that gate half again.
 - Follow-ups from the final review (19 Oct), not fixed in v1:
   - M1: a count is stored in the ingredient's unit ("12 eggs" is 12 trays) and the reply does
     not say the unit; a unit question later.

@@ -13,12 +13,12 @@ NAMES = {name for name, _ in ROWS}
 COUNTED = ("report_stock", "place_order", "receive")
 
 
-def test_ten_cases_per_language_and_scenario_split_in_halves() -> None:
-    counts = Counter((c.lang, c.scenario) for c in CASES)
-    assert set(counts) == {(lang, s) for lang in GATED_LANGS for s in SCENARIOS}
+def test_ten_cases_per_language_scenario_and_half() -> None:
+    counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
+    assert set(counts) == {
+        (lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in ("tune", "gate")
+    }
     assert set(counts.values()) == {10}
-    halves = Counter((c.lang, c.scenario, c.half) for c in CASES)
-    assert set(halves.values()) == {5}  # balanced: five tune, five gate
 
 
 def test_no_text_appears_in_both_halves() -> None:

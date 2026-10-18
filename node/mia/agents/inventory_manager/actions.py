@@ -29,27 +29,33 @@ NONE = "none"
 NOW = "now"
 KINDS = {
     "sold_out": (
-        "An item is sold out, finished, or gone, none left now (sold out, ubos na, naubos,"
-        " wala na, wala nay, nahurot, hurot, waray na, mayo na)"
+        "An item is sold out, finished, or gone, none left now (sold out, finished, out of,"
+        " ubos na, naubos, wala na, wala nang, wala nay, nahurot, hurot, waray na, mayo na,"
+        " mayo nang). Almost none (halos wala na, haros mayo na, hapit waray na) is low"
     ),
     "count": (
-        "How many are still in the shop now (5 ube; only 3 trays of eggs; 6 co pa; na lang,"
-        " na la, na sana; nabilin, bilin, natitira, yara, aada, yaon, natada, naa pay, may-ada"
-        " pa, igwa pa). A bare count is this"
+        "How many are still in the shop now (5 ube; only 3 trays of eggs; 12 kg of flour left;"
+        " 1 tangke lpg na lang; 6 co pa; na lang, na la, na sana; nabilin, bilin, natitira,"
+        " yara, aada, yaon, natada, naa pay, may, may-ada pa, igwa pa). A bare count, or a"
+        " count with a unit (kg, trays, tangke) and no buy word, is this"
     ),
     "leftover": (
         "Trays or pieces left over unsold at closing or at the end of the day (leftover,"
-        " unsold, tira, natira, sobra, salin, wala nabaligya, waray napalit, dai nabakal,"
-        " pagsara, pagsira)"
+        " unsold, tira, natira, sobra, salin, nabilin pagsira, di nabenta, wala mahalin, wala"
+        " gin-bakal, wala nabaligya, waray napalit, dai nabakal, dai napabakal, pagsara,"
+        " pagsira, ngayong gabi, karong gabii)"
     ),
     "waste": (
-        "Thrown away or lost: too dry, burnt, expired, dropped (threw away, tinapon,"
-        " gilabay, ginhaboy, ginlabog, itinapon, nasayang, nausik, nahulog)"
+        "Thrown away or lost: too dry, burnt, expired, dropped (threw away, trash, tinapon,"
+        " itapon, basura, gilabay, ilabay, ginhaboy, ginpanhaboy, ihaboy, ginlabog, ilabog,"
+        " itinapon, basurahan, nasayang, nausik, nahulog)"
     ),
     "low": (
         "Running low or almost out, with no count; not yet sold out (paubos, halos ubos,"
         " malapit nang maubos, hapit na mahurot, hapit maubos, haros ubos, harani nang"
-        " maubos, konti na lang, gamay na, diutay na, gutiay na, dikit na, need more)"
+        " maubos, konti na lang, kaunti na, gamay na, diutay na, gutiay na, dikit na,"
+        " nagdidikit, mababa na, halos wala na, haros mayo na, hapit waray na, need more,"
+        " kailangan pa, kinahanglan pa, kaipuhan pa)"
     ),
     NOT_STATED: "The message does not say, or none of these fits.",
 }
@@ -81,24 +87,27 @@ ACTIONS: dict[str, Action] = {
         "The sender tells what is in the shop now or what happened to stock: sold out (ubos,"
         " wala na), a count left (5 ube, 2 trays of eggs), leftovers at closing, things thrown"
         " away with maybe a reason, or running low (needing more of something, with no"
-        " number, is running low). It is what is in the shop now, not buying: report_stock is"
-        " what is in the shop now, place_order is buying, receive is a delivery that came in."
-        " Not a question about how many were sold.",
+        " number, is running low: kailangan pa ng, kinahanglan pa og). A number of an"
+        " ingredient with a unit and na lang, pa, bilin or left (4 kg asukal na lang, 1 tangke"
+        " lpg na lang) is a count, report_stock. It is what is in the shop now, not buying:"
+        " report_stock is what is in the shop now, place_order is buying, receive is a delivery"
+        " that came in. Not a question about how many were sold.",
         "record_events",
         ("kind", "reason", "time"),
         _label("report_stock"),
     ),
     "bake_plan": Action(
         "The sender asks what to bake or prepare tomorrow, how many to make, whether to make"
-        " more or fewer of an item tomorrow, or for the plan (bukas, ugma, buwas and sa aga"
-        " mean tomorrow).",
+        " more or fewer of an item tomorrow (dagdagan, dugangan), or for the plan (bukas, ugma,"
+        " buwas and sa aga mean tomorrow; ihahanda, andamon, aandamon, ihanda mean prepare).",
         "plan_tomorrow",
         (),
         _label("bake_plan"),
     ),
     "whats_low": Action(
         "The sender asks what is low or running out, or what needs buying or ordering,"
-        " without naming an ingredient and a number (ano ang dapat i-order).",
+        " without naming an ingredient and a number (ano ang dapat i-order; may kulang ba sa"
+        " stock; low stock ba; kailangan ba mag-restock; ano ang kinahanglan baklon).",
         "low_stock",
         (),
         _label("whats_low"),
@@ -106,7 +115,8 @@ ACTIONS: dict[str, Action] = {
     "place_order": Action(
         "The sender wants to buy ingredients or packaging from a supplier: order 10 trays of"
         " eggs, buy flour, get 30 coconuts (order, buy, get, bili, bumili, kumuha, palit, kuha,"
-        " bakal, kua). It is buying, place_order, not telling what is in the shop now. A"
+        " bakal, kua). It is buying, place_order, only when the message has such a buy word;"
+        " a number with na lang, pa, bilin or left is telling what is in the shop now. A"
         " delivery that already came (delivered, nag-deliver) is receive, not an order.",
         "draft_order",
         ("supplier",),
@@ -115,7 +125,8 @@ ACTIONS: dict[str, Action] = {
     "receive": Action(
         "The sender says a delivery came in and which ingredients and how many arrived (received"
         " 10 trays of eggs, dumating na ang harina; arrived, delivered, nag-deliver, dumating,"
-        " natanggap, niabot, nadawat, nag-abot, nabaton, inabot, nakarawat, nakua).",
+        " natanggap, niabot, nadawat, nag-abot, nabaton, inabot, nakarawat, nakua; may"
+        " delivery, kararating lang).",
         "receive_delivery",
         (),
         _label("receive"),
@@ -257,7 +268,9 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
     if not q.groups:
         questions["item"] = _choice(
             "Which one item or ingredient is the message about, when it gives no number? The"
-            " words for sold out or running out (ubos, naubos, paubos, maubos) are not Ube.",
+            " words for sold out or running out (ubos, naubos, paubos, maubos) are not Ube."
+            " A short code names the row that lists it (se is Salted egg, co is Cheese"
+            " overload); a sold out item is a menu item.",
             {**q.items, **unsaid},
         )
     if q.offer_asked:
@@ -268,8 +281,9 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
     for i in range(len(q.groups)):
         questions[f"item_{i}"] = _choice(
             f"Which item or ingredient is counted by the number in the group at index {i} of"
-            " `groups` in the state? The group's words usually name it: a short code, a name, a"
-            " nickname or the name in the sender's language. None of these when the number is"
+            " `groups` in the state? The group's words usually name it: a short code (sp, cl,"
+            " co, se, pb, b4 are the codes listed in brackets), a name, a nickname or the name"
+            " in the sender's language. None of these when the number is"
             " money, a time or not a count of one of these.",
             {**q.items, NONE: "None of these"},
         )
