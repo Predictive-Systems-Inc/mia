@@ -52,12 +52,17 @@ def _minor(value: int) -> int:
     return value * 100
 
 
-def _target_amount(q: Query) -> int | None:
-    """The stated total, else the one number of at least 100 in the message; never a small
-    count (a quantity is not a target)."""
+def _target_amount(r: Reader) -> int | None:
+    """The stated total, else the one number of at least 100 in the message that is not the
+    count of a menu item (a group whose item pick is confident and real); never a small count."""
+    q: Query = r.q
     if q.total is not None:
         return q.total
-    big = [g.quantity for g in q.groups if g.quantity is not None and g.quantity >= 100]
+    big = []
+    for i, g in enumerate(q.groups):
+        counted = r.pick(f"item_{i}", {*q.items, NONE}, fallback=True) not in (None, NONE)
+        if g.quantity is not None and g.quantity >= 100 and not counted:
+            big.append(g.quantity)
     return big[0] if len(big) == 1 else None
 
 
@@ -107,7 +112,7 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     if action == "set_target":
         period = r.pick("target_period", {"day", "month"}, count_unstated=True) or "month"
         starts = q.today if period == "day" else q.today.replace(day=1)
-        amount = _target_amount(q)
+        amount = _target_amount(r)
         args = {
             "period": period,
             "starts_on": starts.isoformat(),

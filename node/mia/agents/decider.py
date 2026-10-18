@@ -141,9 +141,9 @@ def parse(
 
 def pseudonymised(body: dict[str, Any], pseudo: Pseudonymiser) -> dict[str, Any]:
     """The request with names replaced in the values that can carry them (the state, lists of
-    strings item by item, and the option descriptions) and nowhere else: question keys, option ids and instructions leave as
-    they are. The shared pseudonymiser also takes words that start with a name (a "Per" takes
-    "person"), so it never sees the whole body."""
+    strings item by item, and the option descriptions) and nowhere else: question keys, option
+    ids and instructions leave as they are. The shared pseudonymiser also takes words that start
+    with a name (a "Per" takes "person"), so it never sees the whole body."""
 
     def clean(v: Any) -> Any:
         if isinstance(v, str):

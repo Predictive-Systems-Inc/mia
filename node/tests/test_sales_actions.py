@@ -111,12 +111,22 @@ def test_period_report_defaults_to_this_month_and_weekdays() -> None:
 
 def test_target_amount_is_never_a_small_group_quantity() -> None:
     month = {"target_period": "month", "branch": "all"}
-    out, _ = args("set_target", "target 480,000 for the mall", month)
+    out, _ = args("set_target", "target 480,000 for the mall", {**month, "item_0": "none"})
     assert out["amount"] == 48000000
-    out, _ = args("set_target", "target for 3 days 5000", month)
+    picks = {**month, "item_0": "none", "item_1": "none"}
+    out, _ = args("set_target", "target for 3 days 5000", picks)
     assert out["amount"] == 500000
-    assert args("set_target", "target 50", month)[1] == "amount"
-    assert args("set_target", "target 500 and 700", month)[1] == "amount"
+    assert args("set_target", "target 50", {**month, "item_0": "none"})[1] == "amount"
+    assert args("set_target", "target 500 and 700", picks)[1] == "amount"
+
+
+def test_a_number_of_a_menu_item_group_is_a_count_not_the_target() -> None:
+    month = {"target_period": "month", "branch": "all"}
+    assert args("set_target", "target 120 classic", {**month, "item_0": "i2"})[1] == "amount"
+    out, missing = args(
+        "set_target", "target 5000 for 120 classic", {**month, "item_0": "none", "item_1": "i2"}
+    )
+    assert missing is None and out["amount"] == 500000
 
 
 def test_item_instructions_carry_no_message_text() -> None:
