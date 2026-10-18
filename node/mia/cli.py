@@ -11,6 +11,7 @@ from alembic.config import Config
 from sqlmodel import Session, col, select
 
 from mia.core.models import Person
+from mia.i18n import SUPPORTED
 from mia.settings import NODE_DIR, get_settings
 
 
@@ -243,6 +244,7 @@ def person_add(args: argparse.Namespace) -> int:
                 name=args.name,
                 roles=args.roles,
                 language=args.lang,
+                language_known=not args.ask_language,
             )
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
@@ -712,7 +714,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = person.add_parser("add", help="add a person")
     p.add_argument("name")
     p.add_argument("--role", dest="roles", action="append", required=True)
-    p.add_argument("--lang", default="fi", choices=["fi", "en"])
+    p.add_argument("--lang", default="fi", choices=SUPPORTED)
+    p.add_argument(
+        "--ask-language",
+        action="store_true",
+        help="leave the language unchosen: Mia asks it in the first chat (channel sign-up)",
+    )
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=person_add)
     p = sub.add_parser("learned", help="routes Mia learned from 'Is this about' taps")
@@ -752,7 +759,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = auth_p.add_parser("bootstrap", help="create the first owner and print an enrolment link")
     p.add_argument("--email", required=True)
     p.add_argument("--name")
-    p.add_argument("--lang", default="fi", choices=["fi", "en"])
+    p.add_argument("--lang", default="fi", choices=SUPPORTED)
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=auth_bootstrap)
     p = auth_p.add_parser("reset", help="end a person's sessions and print an enrolment link")

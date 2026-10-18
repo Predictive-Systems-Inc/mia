@@ -37,7 +37,9 @@ mia/
                             rules.py, tools.py (incl. incidents),
                             agent.py, turn.py (its chat turn and AgentSpec),
                             tests/scenarios.yaml (and scenarios_en.yaml)
-        sales_supervisor/   manifest.yaml, job.md, prompts/, models.py (counts, targets, notes)
+        sales_supervisor/   manifest.yaml, job.md, prompts/, models.py (counts, targets, notes),
+                            actions.py and decider.py (Jev), tools.py, calc.py, due.py,
+                            replies.py, turn.py, tests/scenarios.yaml (chat scenarios)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
       skills/               classifier runtime and per-turn routing (ADR 013)
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls),
@@ -63,7 +65,10 @@ mia/
                             ollama/ (Modelfiles for local models, ADR 004)
     tests/                  unit tests; auth/ (login flows); evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
                             and intents.py for intent classification; router_cases.py and
-                            test_router_eval.py for the real-Jev router eval)
+                            test_router_eval.py for the real-Jev router eval; sales_cases.py,
+                            test_sales_cases.py (offline shape check) and
+                            test_sales_supervisor_evals.py for the real-Jev sales decider eval;
+                            test_sales_supervisor_scenarios.py runs the sales scenarios.yaml)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,
                             research/ (research notes and dated evaluation reports, ADR 012)
 ```

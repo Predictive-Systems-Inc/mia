@@ -15,6 +15,7 @@ uv sync
 cp .env.example .env        # MIA_MODEL=test needs no API key
 uv run mia migrate          # creates data/mia.db
 uv run mia seed             # demo cleaning company in Helsinki
+                            # (or MIA_ORG=ferinos uv run mia seed: the retail bibingka demo)
 uv run mia serve            # chat page at http://localhost:8000/
 uv run pytest               # unit tests, no network, 80% coverage floor on mia/core
 ```
@@ -69,7 +70,7 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run mia tick` | Run each agent's due work, retry deferred turns and send the channel outbox once (`mia serve` does this every 30 s; a turn is claimed under the write lock, so running both is safe) |
 | `uv run mia learned [--branch ID]` | List the routes Mia learned from "Is this about" taps (agent, key, taps counted) |
 | `uv run mia forget KEY [--branch ID]` | Forget one learned route (two new taps learn it again) |
-| `uv run mia person add NAME --role staff [--lang fi]` | Add a person |
+| `uv run mia person add NAME --role staff [--lang fi] [--ask-language]` | Add a person (`--ask-language`: Mia asks their language in the first chat) |
 | `uv run mia invite NAME [--as SUPERVISOR]` | One-time WhatsApp invite link for a person (needs `MIA_NODE_SECRET`) |
 | `uv run mia channels sim "..." --from NUMBER` | Message Mia as a phone on the simulated channel (try `LINK <code>` first) |
 | `uv run mia geocode` | Geocode home bases and sites without coordinates (needs `MIA_GEOCODER_KEY`) |
@@ -83,6 +84,8 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `MIA_DECIDER=jev MIA_EVAL_RUNS=1 uv run pytest node/tests/evals/test_shift_supervisor_evals.py -m evals -s` | The shift supervisor suite through Jev (spec docs/superpowers/specs/2026-10-17-jev-decider-design.md; needs `MIA_TYPESAFE_KEY`, demo data only) |
 | `uv run pytest node/tests/evals/test_jev_action_eval.py -m evals -s` | Jev's action choice on the intent set (`MIA_EVAL_INTENT_SPLIT`, `MIA_EVAL_INTENT_LANG`, `MIA_EVAL_REPORT`; skips without `MIA_TYPESAFE_KEY`) |
 | `MIA_TYPESAFE_KEY=... uv run pytest node/tests/evals/test_router_eval.py -m evals -s` | The agent router through real Jev over six agents and nine languages, plus a deferral check (synthetic data; prints the table, writes `docs/research/router-<date>.raw.json`; skips without `MIA_TYPESAFE_KEY`) |
+| `MIA_DECIDER=jev uv run pytest node/tests/evals/test_sales_supervisor_evals.py -m evals -s` | The sales supervisor's Jev decider over 540 synthetic messages in six languages (gate: right at least 90% per language, wrong at most 2%; writes `docs/research/sales-supervisor-<date>-<HHMM>.raw.json`; needs `MIA_TYPESAFE_KEY`) |
+| `MIA_DECIDER=jev uv run pytest node/tests/evals/test_sales_supervisor_scenarios.py -m evals -s` | The sales supervisor's chat scenarios (agents/sales_supervisor/tests/scenarios.yaml) through real Jev on the Ferino's demo |
 | `uv run ruff check . && uv run ruff format --check . && uv run mypy node/mia` | Lint and types |
 | `uv run pre-commit install` | Run ruff, mypy and detect-secrets on every commit |
 
@@ -210,7 +213,9 @@ Two kinds of model, chosen with `MIA_MODEL` in `.env`; no code changes:
 
 Jev (TypeSafe, `MIA_TYPESAFE_KEY`): `MIA_DECIDER=jev` turns on both the shift supervisor's Jev
 decider and the agent router; otherwise a person with several agents stays on the active one or
-is asked.
+is asked. The sales supervisor answers only with `MIA_DECIDER=jev` (it has no LLM agent; without
+Jev it replies that it is unavailable). `mia person add --ask-language` adds a person whose
+language Mia asks in their first chat (channel sign-up); `--lang` takes any supported language.
 
 To evaluate a model: `MIA_EVAL_MODEL=gateway/<route>` or `local/<model>`, then
 `uv run pytest node/tests/evals -m evals`.

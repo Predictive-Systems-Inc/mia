@@ -70,6 +70,25 @@ def test_person_add(capsys: pytest.CaptureFixture[str]) -> None:
         main(["person", "add", "Bea", "--role", "janitor"])
 
 
+def test_person_add_ask_language(capsys: pytest.CaptureFixture[str]) -> None:
+    """--ask-language leaves the language unchosen (the channel asks first); --lang takes any
+    supported language."""
+    from sqlmodel import select
+
+    from mia.core.db import session_scope
+    from mia.core.models import Event, Person
+
+    assert main(["migrate"]) == 0 and main(["seed"]) == 0
+    assert main(["person", "add", "Bea Cruz", "--role", "clerk", "--ask-language"]) == 0
+    assert main(["person", "add", "Lito Reyes", "--role", "clerk", "--lang", "fil"]) == 0
+    with session_scope() as session:
+        rows = {p.name: p for p in session.exec(select(Person)).all()}
+        chosen = session.exec(select(Event).where(Event.action == "person.language_chosen"))
+        ids = {e.entity_id for e in chosen}
+        assert rows["Bea Cruz"].id not in ids
+        assert rows["Lito Reyes"].id in ids and rows["Lito Reyes"].language == "fil"
+
+
 def test_channels_sim_links_and_chats(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["migrate"]) == 0 and main(["seed"]) == 0
     assert main(["invite", "Juha"]) == 0

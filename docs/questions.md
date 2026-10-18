@@ -349,3 +349,21 @@ Format for each entry:
 - Question: Who owns "add a person to a branch" (branch manager or HR)? When Jev's top pick differs from the active agent below the threshold, keep the active agent or ask with buttons? Is 90% right per language the bar, given asks are safe?
 - Assumed answer: the branch manager owns adding people, HR owns pay, leave, contributions and hiring campaigns; ask instead of keep on a low-confidence switch (no silent misroute, every tap teaches the memory); the gate is wrong at most 2% (hard), right at least 80% per language, ask at most 15%, measured on a fresh gate half.
 - Blocking: no; the gate stays a merge condition.
+
+## Q41: A count stores the selling price at the time
+- Where: docs/superpowers/specs/2026-10-19-sales-supervisor-design.md (section 10); mia/agents/sales_supervisor/models.py
+- Question: Do counts need the selling price at the time, or is quantity enough and the amount derived at read time from the price history?
+- Assumed answer: store both at write time; a price change never rewrites history.
+- Blocking: no.
+
+## Q42: Who may set a branch target
+- Where: docs/superpowers/specs/2026-10-19-sales-supervisor-design.md (section 10); mia/agents/sales_supervisor/tools.py (set_target)
+- Question: Who may set a branch target: the supervisor of that branch, or only the owner?
+- Assumed answer: both; the owner's target wins when both exist for a day.
+- Blocking: no.
+
+## Q43: The owner does not get the why question
+- Where: docs/superpowers/specs/2026-10-19-sales-supervisor-design.md (section 10); mia/agents/sales_supervisor/due.py
+- Question: The why question goes to everyone who reported that day; should the owner get it too?
+- Assumed answer: no, owners read the notes.
+- Blocking: no.
