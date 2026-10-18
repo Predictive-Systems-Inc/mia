@@ -1,9 +1,10 @@
 """initial schema: data standard 1.4 (core, cleaning template, shared agent tables)
 
 Migrations 0001 to 0008 were squashed into this one on 18 Oct 2026, before any production
-release (ADR 014). Later schema changes get their own migrations (rule 14).
+release (ADR 014). A new id (0100, not 0001) makes a database stamped with any squashed
+revision fail loudly instead of passing as current. Later changes get 0101 and on (rule 14).
 
-Revision ID: 0001
+Revision ID: 0100
 Revises:
 Create Date: 2026-10-18 11:17:32.237470
 """
@@ -17,7 +18,7 @@ from alembic import op
 import mia.core.db
 from mia.core.events import TRIGGER_SQL
 
-revision: str = "0001"
+revision: str = "0100"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

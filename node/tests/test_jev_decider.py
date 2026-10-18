@@ -150,6 +150,16 @@ def test_a_shared_first_name_with_the_surname_acts() -> None:
     assert d.action == "record_absence" and d.args["person_name"] == "Maria Virtanen"
 
 
+def test_a_blank_staff_name_does_not_break_the_name_check() -> None:
+    """A person row with an empty name (a half-filled import) is never a namesake."""
+    people = {"p1": "Maria Mäkinen", "p2": "  "}
+    q = _query(message="Maria is sick today", role="supervisor", people=people)
+    a = answers_for(_body(q), "record_absence", reason="sick", date=TODAY.isoformat(), person="p1")
+    assert decider.parse(a, q).action == "record_absence"
+    a = answers_for(_body(q), "record_absence", reason="sick", date=TODAY.isoformat(), person="p2")
+    assert decider.parse(a, q).action == "record_absence"
+
+
 def test_assign_without_a_cover_search_clarifies() -> None:
     q = _query(message="Assign Mikael", role="supervisor")
     d = decider.parse(answers_for(_body(q), "assign_cover", person="p1"), q)

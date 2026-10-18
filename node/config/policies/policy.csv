@@ -32,13 +32,9 @@ p, staff, *, data:core.auth_devices, write_own, allow
 # supervisor: schedules and approvals for daily operations
 p, supervisor, *, data:core.*, read, allow
 p, supervisor, *, data:core.absence, write, allow
-p, supervisor, *, data:core.absence, read, allow
 p, supervisor, *, data:core.cover_request, write, allow
-p, supervisor, *, data:core.cover_request, read, allow
 p, supervisor, *, data:core.timesheet, write, allow
-p, supervisor, *, data:core.timesheet, read, allow
 p, supervisor, *, data:core.incident, write, allow
-p, supervisor, *, data:core.incident, read, allow
 p, supervisor, *, data:cleaning_checklist_ticks, write, allow
 p, supervisor, *, data:cleaning_checklist_ticks, read, allow
 p, supervisor, *, tool:shift_supervisor.find_replacements, execute, allow

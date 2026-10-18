@@ -111,10 +111,11 @@ def _ambiguous(person: str | None, q: Query) -> bool:
     """True when the picked person shares a first name with someone else in the branch and the
     message names neither their surname nor their full name: the pseudonymiser gives a shared
     first name one token, so Jev cannot see the ambiguity and code must."""
-    if person is None:
+    parts = q.people[person].split() if person is not None else []
+    if not parts:  # no pick, or a blank name (a half-filled import row): nothing to compare
         return False
-    first, *rest = q.people[person].split()
-    namesakes = [n for n in q.people.values() if n.split()[0].lower() == first.lower()]
+    first, *rest = parts
+    namesakes = [n for n in q.people.values() if n.lower().split()[:1] == [first.lower()]]
     message = q.message.lower()
     return len(namesakes) > 1 and not any(part.lower() in message for part in rest)
 

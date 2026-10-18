@@ -1,8 +1,10 @@
 """Alembic migrations create exactly the tables in the models, plus the event triggers."""
 
+import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
+from alembic.util import CommandError
 from sqlalchemy import inspect, text
 
 from mia.cli import _alembic_config
@@ -31,3 +33,13 @@ def test_downgrade_removes_everything() -> None:
     command.downgrade(cfg, "base")
     with get_engine().connect() as conn:
         assert set(inspect(conn).get_table_names()) == {"alembic_version"}
+
+
+def test_a_database_from_before_the_squash_fails_loudly() -> None:
+    """Revisions 0001 to 0008 were squashed (ADR 014); a database still stamped with one of them
+    must be rebuilt, not silently taken as current."""
+    with get_engine().begin() as conn:
+        conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        conn.execute(text("INSERT INTO alembic_version VALUES ('0001')"))
+    with pytest.raises(CommandError):
+        command.upgrade(_alembic_config(), "head")
