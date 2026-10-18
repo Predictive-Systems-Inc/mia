@@ -3,7 +3,8 @@ test_sales_supervisor_evals.py)."""
 
 from collections import Counter
 
-from mia.agents.sales_supervisor.actions import ACTIONS, pre_parse
+from mia.agents.sales_supervisor.actions import ACTIONS, menu_tokens, pre_parse
+from mia.templates.retail.seed import ITEMS as MENU
 from tests.evals.sales_cases import CASES, GATED_LANGS, SCENARIOS
 
 
@@ -19,16 +20,26 @@ def test_expected_actions_are_actions_and_counts_name_items() -> None:
         assert bool(c.expected_items) == (c.expected_action in ("report_sales", "correct_sales"))
 
 
-def test_counts_parse_to_the_expected_quantities() -> None:
-    """Code splits the numbers (rule 7): each count case's groups carry the expected quantities
-    in order, and a correction's first group carries the new quantity."""
+# Words in the cases that name an item but are no name word or short code: Jev maps them.
+SYNONYMS = {"Box of 4": {"boxes", "kahon"}}
+
+
+def test_counts_parse_to_the_expected_groups() -> None:
+    """Code splits the numbers (rule 7): each count case gives one group per expected item, in
+    order, with the expected quantity and a word of that item (a name word or a short code); a
+    correction gives exactly one group, the new quantity."""
+    tokens = menu_tokens((name, codes) for name, codes, _ in MENU)
+    of_item = {
+        name: menu_tokens([(name, codes)]) | SYNONYMS.get(name, set()) for name, codes, _ in MENU
+    }
     for c in CASES:
-        groups, _ = pre_parse(c.text)
-        quantities = [g.quantity for g in groups]
-        if c.expected_action == "report_sales":
-            assert quantities == [q for _, q in c.expected_items], c
-        elif c.expected_action == "correct_sales":
-            assert quantities[:1] == [c.expected_items[0][1]], c
+        if c.expected_action not in ("report_sales", "correct_sales"):
+            continue
+        groups, _ = pre_parse(c.text, tokens)
+        assert len(groups) == len(c.expected_items), c
+        for group, (item, quantity) in zip(groups, c.expected_items, strict=True):
+            assert group.quantity == quantity, c
+            assert of_item[item] & set(group.words.split()), (c, group)
 
 
 def test_why_answers_follow_the_why_question() -> None:

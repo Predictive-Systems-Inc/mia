@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
 AFTER_CLOSING = dt.timedelta(hours=2)
-CLOSE_ENOUGH = 20  # a stated total within 1/20 (5%) of the computed sum is taken as given
 
 
 @dataclass(frozen=True)
@@ -32,19 +31,18 @@ class Count:
 
 
 def business_date(
-    reported_at: dt.datetime, tz: str, closes: dt.time, closed_yesterday: dt.time | None = None
-) -> tuple[dt.date, bool]:
-    """The local date of `reported_at` in `tz`, and True when it falls within two hours after
-    that day's closing time `closes`, or after the day before's (`closed_yesterday`, default
-    `closes`) for a closing near midnight."""
+    reported_at: dt.datetime, tz: str, opens: dt.time, closed_yesterday: dt.time
+) -> dt.date:
+    """The business date a count reported at `reported_at` belongs to: the day before the local
+    date in `tz` when it is before today's opening `opens` and within two hours after the day
+    before's closing `closed_yesterday` (a late closing, counted after midnight); else the
+    local date. Never asks."""
     local = reported_at.astimezone(ZoneInfo(tz))
     day = local.date()
     yesterday = day - dt.timedelta(days=1)
-    for close_day, close_time in ((day, closes), (yesterday, closed_yesterday or closes)):
-        closed_at = dt.datetime.combine(close_day, close_time, local.tzinfo)
-        if closed_at <= local < closed_at + AFTER_CLOSING:
-            return day, True
-    return day, False
+    closed_at = dt.datetime.combine(yesterday, closed_yesterday, local.tzinfo)
+    opened_at = dt.datetime.combine(day, opens, local.tzinfo)
+    return yesterday if local < opened_at and local < closed_at + AFTER_CLOSING else day
 
 
 def _month_days(start: dt.date) -> list[dt.date]:
@@ -86,10 +84,3 @@ def compare(today_total: int, reference: int | None) -> int | None:
     if not reference:
         return None
     return round((today_total - reference) * 100 / reference)
-
-
-def reconcile_total(computed: int, stated: int | None) -> int:
-    """The stated total when it is within 5% of the computed sum, else the computed sum."""
-    if stated is None or abs(stated - computed) * CLOSE_ENOUGH > computed:
-        return computed
-    return stated

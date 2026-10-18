@@ -442,3 +442,49 @@ def test_morning_after_a_day_without_counts_names_only_the_target(
     assert share is not None
     lang = people["Ana"].language
     assert note.text == t("sales.morning.first", lang, target=format_money(share, "PHP", lang))
+
+
+# ---- final fix wave ---------------------------------------------------------------------------
+
+
+def _link(session: Session, person: Person, address: str) -> None:
+    identity = ChannelIdentity(
+        branch_id=person.branch_id, person_id=person.id, channel="sim", address=address
+    )
+    store.insert(session, identity, Actor.person(person), action="channel.linked")
+    session.commit()
+
+
+def test_end_of_shift_messages_are_not_held_by_quiet_hours(
+    session: Session, ferinos: Ferinos, manila_at: At, quiet_sim: None
+) -> None:
+    _, people = ferinos
+    rosa, marites = people["Rosa"], people["Marites"]
+    _link(session, rosa, "639170000001")
+    _link(session, marites, "639170000002")
+    _report(session, people["Ana"])
+    assert due.run_due(session, manila_at(22, 0)) > 0  # quiet since 18:00
+    for person in (rosa, marites):  # the owner's report, the missing list
+        stmt = select(ChannelOutbox).where(ChannelOutbox.person_id == person.id)
+        rows = list(session.exec(stmt))
+        assert rows and all(r.send_after is None for r in rows)
+
+
+def test_owners_are_not_asked_why(session: Session, ferinos: Ferinos, manila_at: At) -> None:
+    _, people = ferinos
+    today = manila_at(15, 0).date()
+    rosa = deps_for(session, people["Rosa"])
+    tools.set_target(rosa, SetTargetInput(period="day", starts_on=today, amount=10000), "t1")
+    session.commit()
+    _report(session, people["Rosa"], quantity=3)
+    _report(session, people["Ana"], quantity=3)
+    due.run_due(session, manila_at(22, 0))
+    why = t("sales.why", people["Ana"].language)
+    assert [n.text for n in _notes(session, people["Ana"])] == [why]
+    assert why not in [n.text for n in _notes(session, people["Rosa"])]
+
+
+def test_morning_with_neither_yesterday_nor_a_target_says_nothing() -> None:
+    assert due._morning_text("fil", None, None) is None
+    first = t("sales.morning.first", "en", target="₱1.00")
+    assert due._morning_text("en", None, "₱1.00") == first

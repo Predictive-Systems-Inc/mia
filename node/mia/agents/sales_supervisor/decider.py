@@ -17,6 +17,8 @@ from mia.agents.sales_supervisor.actions import (
     Query,
     _month,
     _period,
+    _target_start,
+    _target_starts,
     build_request,
 )
 
@@ -42,7 +44,8 @@ def _target_amount(r: Reader) -> int | None:
 
 
 def _branch(r: Reader) -> str | None:
-    return r.pick("branch", {*r.q.branches, "all"})
+    """The branch named, "all", or None (the tool's default) when unstated or uncertain."""
+    return r.pick("branch", {*r.q.branches, "all"}, fallback=True)
 
 
 def _item(r: Reader, i: int, fallback: bool = False) -> str | None:
@@ -80,21 +83,21 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
             "items": items,
             "total": None if q.total is None else _minor(q.total),
             "business_date": None,
-            "source_message_id": None,
+            "source_message_id": q.message_id,
         }
         return args, unknown or (None if items or q.total is not None else "items")
     if action == "correct_sales":
         quantity = q.groups[0].quantity if q.groups else None
         if quantity is None:
             return {}, "item_0"
-        count = _count(r, 0, quantity)
+        count = {**_count(r, 0, quantity), "source_message_id": q.message_id}
         return count, None if count["item_id"] else "item_0"
     if action == "sales_today":
         return {"branch_id": _branch(r)}, None
     if action == "sales_period":
         picked = r.pick("period", set(WEEKDAYS) | set(q.periods))
         start, end = _period(picked, q.today, q.lang) or _month(q.today.replace(day=1))
-        item = r.pick("item", set(q.items), fallback=True)
+        item = _item(r, 0, fallback=True) if q.groups else r.pick("item", set(q.items), True)
         return {
             "start": start.isoformat(),
             "end": end.isoformat(),
@@ -102,8 +105,10 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
             "item_id": item,
         }, None
     if action == "set_target":
-        period = r.pick("target_period", {"day", "month"}, count_unstated=True) or "month"
-        starts = q.today if period == "day" else q.today.replace(day=1)
+        when = r.pick("target_start", set(_target_starts()))
+        stated = r.pick("target_period", {"day", "month"}, count_unstated=True)
+        period = stated or ("day" if when in ("today", "tomorrow") else "month")
+        starts = _target_start(when, q.today, period)
         amount = _target_amount(r)
         args = {
             "period": period,
@@ -116,7 +121,7 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         theme = r.pick("theme", set(THEMES), fallback=True) if q.why_asked else None
         args = {
             "text": q.message[:500],
-            "asked_message_id": None,
+            "asked_message_id": q.previous_id,
             "themes": [theme or "other"],
         }
         return args, None if q.why_asked else "why"

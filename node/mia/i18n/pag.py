@@ -44,6 +44,7 @@ STRINGS: dict[str, str | list[str]] = {
     "sales.which_day.yesterday": "Kabiin",
     "sales.which_item": 'Anto ya item so labay yon ibaga ed "{words}"?',
     "sales.not_allowed": "Say supervisor tan may-ari labat so makapagtakda na target.",
+    "sales.not_allowed.branch": "Para labat ed {branch} so nayarim ya i-report.",
     "sales.reminder": "Magsara tayo ed saman. Ipaabot yo ni so bilang na benta natan.",
     "sales.missing": "Anggapo ni so bilang na benta natan manlapud: {names}.",
     "sales.report": "Katapusan na agew ed {branch}: {lines}. Kabuuan {total}{target}.",

@@ -6,24 +6,38 @@ from mia.agents.sales_supervisor import calc
 MNL = ZoneInfo("Asia/Manila")
 
 
-def test_business_date_is_the_local_date() -> None:
-    at = dt.datetime(2026, 10, 19, 14, 0, tzinfo=dt.UTC)  # 22:00 Manila
-    assert calc.business_date(at, "Asia/Manila", dt.time(21, 0)) == (dt.date(2026, 10, 19), True)
+NINE, NINE_PM, ELEVEN_PM = dt.time(9, 0), dt.time(21, 0), dt.time(23, 0)
 
 
-def test_after_two_hours_past_closing_it_is_no_longer_ambiguous() -> None:
-    at = dt.datetime(2026, 10, 19, 23, 30, tzinfo=MNL)
-    assert calc.business_date(at, "Asia/Manila", dt.time(21, 0)) == (dt.date(2026, 10, 19), False)
+def _day(hour: int, minute: int, closed_yesterday: dt.time) -> dt.date:
+    at = dt.datetime(2026, 10, 20, hour, minute, tzinfo=MNL)
+    return calc.business_date(at, "Asia/Manila", NINE, closed_yesterday)
 
 
-def test_before_closing_is_not_ambiguous() -> None:
-    at = dt.datetime(2026, 10, 19, 15, 0, tzinfo=MNL)
-    assert calc.business_date(at, "Asia/Manila", dt.time(21, 0)) == (dt.date(2026, 10, 19), False)
+def test_the_evening_after_closing_is_today() -> None:
+    assert _day(21, 30, NINE_PM) == dt.date(2026, 10, 20)
+    assert _day(15, 0, NINE_PM) == dt.date(2026, 10, 20)
 
 
-def test_just_after_midnight_counts_as_after_a_late_closing() -> None:
+def test_just_after_midnight_after_a_late_closing_is_yesterday() -> None:
+    assert _day(0, 30, ELEVEN_PM) == dt.date(2026, 10, 19)
+    assert _day(0, 59, ELEVEN_PM) == dt.date(2026, 10, 19)
+
+
+def test_two_hours_after_yesterdays_closing_it_is_today() -> None:
+    assert _day(1, 0, ELEVEN_PM) == dt.date(2026, 10, 20)
+    assert _day(8, 0, ELEVEN_PM) == dt.date(2026, 10, 20)
+    assert _day(0, 30, NINE_PM) == dt.date(2026, 10, 20)
+
+
+def test_from_the_opening_it_is_today() -> None:
     at = dt.datetime(2026, 10, 20, 0, 30, tzinfo=MNL)
-    assert calc.business_date(at, "Asia/Manila", dt.time(23, 0)) == (dt.date(2026, 10, 20), True)
+    assert calc.business_date(at, "Asia/Manila", dt.time(0, 15), ELEVEN_PM) == dt.date(2026, 10, 20)
+
+
+def test_business_date_uses_the_branch_time_zone() -> None:
+    at = dt.datetime(2026, 10, 19, 16, 30, tzinfo=dt.UTC)  # 00:30 on the 20th in Manila
+    assert calc.business_date(at, "Asia/Manila", NINE, ELEVEN_PM) == dt.date(2026, 10, 19)
 
 
 def test_month_target_share_uses_open_days() -> None:
@@ -53,24 +67,6 @@ def test_compare_percent() -> None:
     assert calc.compare(800, 1000) == -20
     assert calc.compare(800, None) is None
     assert calc.compare(800, 0) is None
-
-
-def test_a_stated_total_counts_only_when_close_to_the_sum() -> None:
-    assert calc.reconcile_total(10000, None) == 10000
-    assert calc.reconcile_total(10000, 10500) == 10500
-    assert calc.reconcile_total(10000, 9500) == 9500
-    assert calc.reconcile_total(10000, 10501) == 10000
-    assert calc.reconcile_total(10000, 5000) == 10000
-
-
-def test_after_midnight_uses_yesterdays_closing_time() -> None:
-    monday_early = dt.datetime(2026, 10, 19, 0, 30, tzinfo=MNL)  # Sunday closed at 23:30
-    late_sunday = calc.business_date(monday_early, "Asia/Manila", dt.time(21, 0), dt.time(23, 30))
-    assert late_sunday == (dt.date(2026, 10, 19), True)
-    assert calc.business_date(monday_early, "Asia/Manila", dt.time(21, 0), dt.time(21, 0)) == (
-        dt.date(2026, 10, 19),
-        False,
-    )
 
 
 def test_month_share_rounds_half_up() -> None:

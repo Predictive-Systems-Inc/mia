@@ -4,26 +4,37 @@ corrections, how are we doing, conversation, injection and the no-Jev reply."""
 import asyncio
 import datetime as dt
 import functools
+from collections.abc import Callable
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlmodel import Session, col, select
 
 from mia.agents.decider import Decision
-from mia.agents.sales_supervisor import MANIFEST
+from mia.agents.sales_supervisor import MANIFEST, actions, due, tools
+from mia.agents.sales_supervisor.actions import _month
 from mia.agents.sales_supervisor.models import SalesCount, SalesNote, SalesTarget
 from mia.chat import channels
 from mia.chat.blocks import ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.service import run_turn
 from mia.core import events, jev, orgconfig
-from mia.core.models import Actor, Branch, Event, Person
+from mia.core.models import Actor, Branch, Event, Message, Person, Thread
+from mia.core.money import format_money
 from mia.i18n import t
 from mia.settings import get_settings
 from mia.templates.retail.models import RetailItem
 from tests.jev_fake import answers_for, choice, fake_jev
+from tests.test_sales_tools import deps_for
 
 Ferinos = tuple[Branch, dict[str, Person]]
-NOT_STATED = {"period": "not_stated", "branch": "not_stated", "target_period": "not_stated"}
+MNL = ZoneInfo("Asia/Manila")
+NOT_STATED = {
+    "period": "not_stated",
+    "branch": "not_stated",
+    "target_period": "not_stated",
+    "target_start": "not_stated",
+}
 
 
 def _only_sales(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -72,6 +83,10 @@ def _turn(session: Session, person: Person, text: str, thread: str | None = None
     return reply
 
 
+def _threads(session: Session, person: Person) -> set[str]:
+    return {t.id for t in session.exec(select(Thread).where(Thread.person_id == person.id))}
+
+
 def _buttons(reply: ChatReply) -> list[str]:
     return next(b.options for b in reply.blocks if isinstance(b, QuickRepliesBlock))
 
@@ -90,6 +105,23 @@ def test_a_count_is_recorded_and_echoed(
     text = reply.text()
     assert "3 Special" in text and "5 Classic" in text and "₱335.00" in text  # 3x45 + 5x40
     assert len(_counted(session)) == 2
+    said = session.exec(select(Message).where(Message.text == "3 sp 5 cl")).one()
+    rows = session.exec(select(SalesCount).where(SalesCount.reported_by == people["Ana"].id))
+    assert {
+        r.source_message_id for r in rows if r.business_date == dt.datetime.now(MNL).date()
+    } >= {said.id}
+
+
+def test_today_so_far_is_the_running_total(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    _answers(monkeypatch, "report_sales", item_0=_item(session, "Special"))
+    first = _turn(session, people["Ana"], "3 sp")
+    assert "₱135.00" in first.text()
+    _answers(monkeypatch, "report_sales", item_0=_item(session, "Classic"))
+    second = _turn(session, people["Ana"], "5 cl", first.thread_id)
+    assert "₱335.00" in second.text()  # 135.00 + 200.00
 
 
 def test_an_unsure_item_asks_which_item(
@@ -155,24 +187,21 @@ def test_how_are_we_doing_shows_total_against_target(
     assert "Mall kiosk" in reply.text() and "%" in reply.text() and "₱135.00" in reply.text()
 
 
-def test_a_count_within_two_hours_after_closing_asks_which_day(
+def test_a_count_after_closing_is_recorded_on_today_without_asking(
     session: Session,
     ferinos: Ferinos,
     jev_on: Any,
     monkeypatch: pytest.MonkeyPatch,
     manila_evening: dt.datetime,
 ) -> None:
-    _, people = ferinos  # Ana reported yesterday (seed); the kiosk closes at 21:00
+    _, people = ferinos  # Ana reported yesterday (seed); the kiosk closed at 21:00
     _answers(monkeypatch, "report_sales", item_0=_item(session, "Special"))
-    asked = _turn(session, people["Ana"], "3 sp")
-    assert t("sales.which_day", "fil") in asked.text()
-    today, yesterday = t("sales.which_day.today", "fil"), t("sales.which_day.yesterday", "fil")
-    assert _buttons(asked) == [today, yesterday]
-    assert not _counted(session)
-    _turn(session, people["Ana"], yesterday, asked.thread_id)
+    reply = _turn(session, people["Ana"], "3 sp")
+    assert "3 Special" in reply.text() and not any(
+        isinstance(b, QuickRepliesBlock) for b in reply.blocks
+    )
     newest = session.exec(select(SalesCount).order_by(col(SalesCount.reported_at).desc())).first()
-    assert newest is not None and newest.quantity == 3
-    assert newest.business_date == manila_evening.date() - dt.timedelta(days=1)
+    assert newest is not None and newest.business_date == manila_evening.date()
 
 
 def test_a_clerk_cannot_set_a_target(
@@ -191,8 +220,8 @@ def test_greeting_is_answered_in_filipino(
     _, people = ferinos
     _answers(monkeypatch, "reply_only", conversation="greeting")
     reply = _turn(session, people["Ana"], "hello po")
-    # the pinned first variant; fil has no conversation.greeting yet, so it is the English one
-    assert reply.text() == t("conversation.greeting", "fil")
+    texts = [b.text for b in reply.blocks if isinstance(b, TextBlock)]
+    assert texts == [t("conversation.greeting", "fil"), t("sales.capabilities", "fil")]
 
 
 def test_injection_is_data(
@@ -224,7 +253,7 @@ def test_without_jev_the_agent_says_it_is_unavailable(
 def test_today_reply_shows_the_share_of_the_target_reached() -> None:
     from mia.agents.sales_supervisor.replies import tool_reply
 
-    out = {
+    day = {
         "branch": "Mall kiosk",
         "items": [{"item_id": "i1", "item": "Special", "quantity": 1200, "amount": 5400000}],
         "total": 5400000,
@@ -232,6 +261,7 @@ def test_today_reply_shows_the_share_of_the_target_reached() -> None:
         "target_share": 3600000,
         "percent": 50,
     }
+    out = {"branches": [day]}
     text = tool_reply("today", out, {}, "en")[0].text  # type: ignore[union-attr]
     assert text == "Mall kiosk today: 1,200 Special. Total ₱54,000.00 of ₱36,000.00 (150%)."
     fi = tool_reply("today", out, {}, "fi")[0].text  # type: ignore[union-attr]
@@ -260,8 +290,21 @@ def test_best_day_this_month(
     _, people = ferinos
     _answers(monkeypatch, "sales_period", period="this_month", branch="all")
     reply = _turn(session, people["Rosa"], "best day this month?")
-    text = reply.text()  # Rosa writes Filipino
-    assert "pinakamagandang araw" in text or "walang nabilang" in text
+    rosa = people["Rosa"]
+    first, last = _month(dt.datetime.now(MNL).date().replace(day=1))
+    deps = deps_for(session, rosa)
+    args = tools.PeriodReportInput(start=first, end=last, branch_id="all")
+    out = tools.period_report(deps, args, "c1")
+    assert out.best_day is not None
+    expected = t(
+        "sales.period",
+        rosa.language,
+        start=first.isoformat(),
+        end=last.isoformat(),
+        total=format_money(out.total, out.currency, rosa.language),
+        best_day=out.best_day.isoformat(),
+    )
+    assert reply.text() == expected
 
 
 def test_which_branch_sells_most_ube(
@@ -338,3 +381,66 @@ def test_a_tapped_decision_of_another_agent_asks_to_rephrase(
     session.commit()
     reply = _turn(session, ana, "Go", first.thread_id)
     assert reply.text() == t("clarify.rephrase", ana.language)
+
+
+# ---- final fix wave: branches, targets, the why answer --------------------------------------
+
+
+def test_the_owner_asking_how_we_are_doing_sees_both_branches(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    _answers(monkeypatch, "sales_today")
+    reply = _turn(session, people["Rosa"], "kumusta tayo ngayon?")
+    assert "Mall kiosk" in reply.text() and "Street stall" in reply.text()
+
+
+def test_a_supervisor_asking_how_we_are_doing_sees_their_branch(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    _answers(monkeypatch, "sales_today")
+    reply = _turn(session, people["Marites"], "kumusta tayo ngayon?")
+    assert "Mall kiosk" in reply.text() and "Street stall" not in reply.text()
+
+
+def test_a_supervisor_cannot_set_the_other_branchs_target(
+    session: Session,
+    ferinos: Ferinos,
+    jev_on: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kiosk, people = ferinos
+    stall = session.exec(select(Branch).where(Branch.name == "Street stall")).one()
+    _answers(
+        monkeypatch, "set_target", jev_on, target_period="month", branch=stall.id, item_0="none"
+    )
+    reply = _turn(session, people["Marites"], "monthly target for the street stall: 50,000")
+    assert stall.id in jev_on[0]["questions"]["branch"]["criteria"]  # every branch is offered
+    assert reply.text() == t("sales.not_allowed.branch", "fil", branch=kiosk.name)
+    assert not session.exec(select(Event).where(Event.action == "sales.target_set")).all()
+
+
+def test_a_why_answer_the_next_morning_is_stored_on_the_good_day(
+    session: Session,
+    ferinos: Ferinos,
+    jev_on: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    manila_at: Callable[[int, int], dt.datetime],
+) -> None:
+    _, people = ferinos
+    ana = people["Ana"]
+    yesterday = manila_at(15, 0).date() - dt.timedelta(days=1)
+    target = tools.SetTargetInput(period="day", starts_on=yesterday, amount=100)
+    tools.set_target(deps_for(session, people["Rosa"]), target, "t1")  # a 1.00 target
+    session.commit()
+    due.run_due(session, manila_at(22, 0) - dt.timedelta(days=1))  # yesterday's after-close
+    session.commit()
+    texts = actions.why_texts(ana.language)
+    notes = session.exec(select(Message).where(Message.role == "notification")).all()
+    (why,) = [m for m in notes if m.text in texts and m.thread_id in _threads(session, ana)]
+    manila_at(8, 0)  # before the opening and the morning message
+    _answers(monkeypatch, "why_answer", theme="event")
+    _turn(session, ana, "may concert sa mall kahapon", why.thread_id)
+    note = session.exec(select(SalesNote)).one()
+    assert note.asked_message_id == why.id and note.business_date == yesterday

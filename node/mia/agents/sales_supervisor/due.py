@@ -3,10 +3,12 @@ list to head staff, the owner's end-of-day report, the morning message and the w
 
 What is due is pure code (rule 7): the five window functions take the branch, its hours rows
 and `now`, and return the business date the work is due for, or None. After-close work belongs
-to the closing's date, also after midnight, until the next opening. The senders load rows and send through notify, so quiet hours
-apply in deliver. Each send leaves a marker event on the branch with the business date (and
-the message ids), checked first, so each fires at most once per branch and date. Each branch
-commits alone and a failing branch never silences the others (alerts._each_branch).
+to the closing's date, also after midnight, until the next opening. The senders load rows and
+send through notify. The reminder and the morning message wait for quiet hours in deliver; the
+end-of-shift messages (the missing list, the owner's report, the why question) are urgent and
+go out at once, since a branch may close as quiet hours start. Each send leaves a marker event
+on the branch with the business date (and the message ids), checked first, so each fires at
+most once per branch and date. Each branch commits alone and a failing branch never silences the others (alerts._each_branch).
 """
 
 import datetime as dt
@@ -26,7 +28,6 @@ from mia.core.money import format_int, format_money
 from mia.i18n import t
 from mia.templates.retail.models import RetailBranchHours
 
-DEFAULT_OPENS = dt.time(9, 0)
 HALF_HOUR = dt.timedelta(minutes=30)
 HOUR = dt.timedelta(hours=1)
 NO_HOURS_WINDOW = dt.timedelta(hours=6)
@@ -35,7 +36,7 @@ REMINDER = "sales.reminder_sent"
 MISSING = "sales.missing_sent"
 REPORT = "sales.report_sent"
 MORNING = "sales.morning_sent"
-WHY = "sales.why_asked"
+WHY = tools.WHY_ASKED
 Hours = Sequence[RetailBranchHours]
 Sender = Callable[[Session, Branch, Hours, dt.date], list[Message]]
 
@@ -44,11 +45,7 @@ Sender = Callable[[Session, Branch, Hours, dt.date], list[Message]]
 
 def _at(branch: Branch, hours: Hours, day: dt.date, closing: bool) -> dt.datetime:
     """The opening (or closing) of `day` as an aware local time; 09:00 and 21:00 without a row."""
-    if closing:
-        when = tools._closes(hours, day.weekday())
-    else:
-        row = next((h for h in hours if h.weekday == day.weekday()), None)
-        when = dt.time.fromisoformat(row.opens) if row else DEFAULT_OPENS
+    when = (tools._closes if closing else tools._opens)(hours, day.weekday())
     return dt.datetime.combine(day, when, ZoneInfo(branch.timezone))
 
 
@@ -166,13 +163,17 @@ def _history(session: Session, branch_id: str, day: dt.date) -> tuple[int | None
 # ---- senders ------------------------------------------------------------------------------
 
 
-def _send(session: Session, branch: Branch, person: Person, blocks: list[Block]) -> Message:
+def _send(
+    session: Session, branch: Branch, person: Person, blocks: list[Block], urgent: bool = False
+) -> Message:
     actor = Actor.system(branch.id)
-    return notify(session, person, blocks, actor, MANIFEST.id, urgent=False)
+    return notify(session, person, blocks, actor, MANIFEST.id, urgent=urgent)
 
 
-def _text(session: Session, branch: Branch, person: Person, text: str) -> Message:
-    return _send(session, branch, person, [TextBlock(text=text)])
+def _text(
+    session: Session, branch: Branch, person: Person, text: str, urgent: bool = False
+) -> Message:
+    return _send(session, branch, person, [TextBlock(text=text)], urgent)
 
 
 def _remind(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Message]:
@@ -190,7 +191,7 @@ def _missing(session: Session, branch: Branch, hours: Hours, day: dt.date) -> li
     if not names:
         return []
     return [
-        _text(session, branch, sup, t("sales.missing", sup.language, names=", ".join(names)))
+        _text(session, branch, sup, t("sales.missing", sup.language, names=", ".join(names)), True)
         for sup in alerts.supervisors(session, branch.id)
     ]
 
@@ -255,7 +256,7 @@ def _report(session: Session, branch: Branch, hours: Hours, day: dt.date) -> lis
         average=average,
     )
     return [
-        _send(session, branch, p, _report_blocks(report, p.language))
+        _send(session, branch, p, _report_blocks(report, p.language), urgent=True)
         for p in _leads(session, branch.organisation_id)
     ]
 
@@ -297,9 +298,9 @@ def _why(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[M
         return []
     reporters = [session.get(Person, pid) for pid in sorted(_reporters(session, branch.id, day))]
     return [
-        _text(session, branch, p, _why_text(p.language, day, share))
+        _text(session, branch, p, _why_text(p.language, day, share), urgent=True)
         for p in reporters
-        if p and p.status == "active"
+        if p and p.status == "active" and not tools.LEADS & set(p.roles)  # owners read notes
     ]
 
 

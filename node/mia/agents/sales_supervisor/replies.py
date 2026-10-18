@@ -1,14 +1,14 @@
 """Reply blocks for the sales supervisor: each tool result worded from i18n keys (money through
-format_money, counts through format_int), the conversation replies, and the two questions this
-agent asks (which day, which item). Code words the numbers; no model writes a reply."""
+format_money, counts through format_int), the conversation replies, and the question this agent
+asks (which item). Code words the numbers; no model writes a reply."""
 
 import copy
-import datetime as dt
 from typing import Any
 
 from mia.agents.decider import Decision
 from mia.agents.sales_supervisor import calc
 from mia.agents.sales_supervisor.tools import (
+    BranchToday,
     CorrectCountOutput,
     PeriodReportOutput,
     RecordCountsOutput,
@@ -33,8 +33,14 @@ Options = dict[str, dict[str, Any]]
 
 
 def conversation_reply(kind: str, lang: str) -> list[Block]:
-    """The reply to a message that needs no action (unknown kinds get the capabilities)."""
-    return [TextBlock(text=t(CONVERSATION_KEYS.get(kind, "sales.capabilities"), lang))]
+    """The reply to a message that needs no action (unknown kinds get the capabilities); a
+    greeting is followed by what the agent does."""
+    blocks: list[Block] = [
+        TextBlock(text=t(CONVERSATION_KEYS.get(kind, "sales.capabilities"), lang))
+    ]
+    if kind == "greeting":
+        blocks.append(TextBlock(text=t("sales.capabilities", lang)))
+    return blocks
 
 
 def _target(total: int, share: int | None, currency: str, lang: str) -> str:
@@ -50,6 +56,17 @@ def _lines(rows: list[tuple[int, str]], lang: str) -> str:
     return ", ".join(
         t("sales.recorded.line", lang, quantity=format_int(q, lang), item=item) for q, item in rows
     )
+
+
+def _branch_today(day: BranchToday, lang: str) -> Block:
+    """One branch's line of the today reply; it names the branch."""
+    if not day.items:
+        return TextBlock(text=t("sales.today.empty", lang, branch=day.branch))
+    lines = _lines([(i.quantity, i.item) for i in day.items], lang)
+    total = format_money(day.total, day.currency, lang)
+    target = _target(day.total, day.target_share, day.currency, lang)
+    text = t("sales.today", lang, branch=day.branch, lines=lines, total=total, target=target)
+    return TextBlock(text=text)
 
 
 def _text(key: str, lang: str, **values: Any) -> list[Block]:
@@ -74,15 +91,7 @@ def tool_reply(tool: str, out: dict[str, Any], args: dict[str, Any], lang: str) 
             "sales.corrected", lang, quantity=quantity, item=cor.corrected.item, previous=previous
         )
     if tool == "today":
-        day = TodayOutput.model_validate(out)
-        if not day.items:
-            return _text("sales.today.empty", lang, branch=day.branch)
-        lines = _lines([(i.quantity, i.item) for i in day.items], lang)
-        total = format_money(day.total, day.currency, lang)
-        target = _target(day.total, day.target_share, day.currency, lang)
-        return _text(
-            "sales.today", lang, branch=day.branch, lines=lines, total=total, target=target
-        )
+        return [_branch_today(day, lang) for day in TodayOutput.model_validate(out).branches]
     if tool == "period_report":
         rep = PeriodReportOutput.model_validate(out)
         start, end = str(args["start"]), str(args["end"])
@@ -109,20 +118,6 @@ def _asked(decision: Decision, args: dict[str, Any]) -> dict[str, Any]:
     return Decision(action=action, args=args, confidence=1.0, raw_action=action).model_dump(
         mode="json"
     )
-
-
-def ask_day(decision: Decision, today: dt.date, lang: str) -> tuple[list[Block], Options]:
-    """Which day a count is for: Today and Yesterday, each the same decision with its
-    business_date filled."""
-    options: Options = {}
-    for key, day in (("today", today), ("yesterday", today - dt.timedelta(days=1))):
-        args = {**decision.args, "business_date": day.isoformat()}
-        options[t(f"sales.which_day.{key}", lang)] = _asked(decision, args)
-    blocks: list[Block] = [
-        TextBlock(text=t("sales.which_day", lang)),
-        QuickRepliesBlock(options=list(options)),
-    ]
-    return blocks, options
 
 
 def unknown_item(args: dict[str, Any]) -> int | None:

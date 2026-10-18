@@ -41,7 +41,7 @@ def _last_question(session: Session, thread: Thread) -> Message | None:
 
 
 def _tapped(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Decision | None:
-    """The stored decision behind a tapped button (Did you mean, which day, which item), if
+    """The stored decision behind a tapped button (Did you mean, which item), if
     text is one. A button only counts while its question is the thread's last Mia message and
     was asked today in the branch's time zone."""
     asked = session.exec(
@@ -69,7 +69,15 @@ def _query(
     if classify(html.unescape(text), deps.today, deps.lang).injection:
         return Decision(action="reply_only", args={"kind": "injection"}, confidence=1), None
     last = _last_question(session, thread)  # a notification (the why question) counts
-    return None, actions.build_query(deps, text, last.text if last else "")
+    said = session.exec(
+        select(Message.id)
+        .where(Message.thread_id == thread.id)
+        .where(Message.role == "user")
+        .order_by(col(Message.id).desc())
+    ).first()
+    previous, previous_id = (last.text, last.id) if last else ("", None)
+    query = actions.build_query(deps, text, previous, message_id=said, previous_id=previous_id)
+    return None, query
 
 
 def _ask(
@@ -130,15 +138,19 @@ def _ask_item(
 def _refusal(
     session: Session, deps: AgentDeps, thread: Thread, decision: Decision, tool: str, out: Any
 ) -> ChatReply:
-    """The reply to a refused tool call: which day, no count to correct, not allowed."""
+    """The reply to a refused tool call: no count to correct, another branch or a target not
+    allowed, else denied or rephrase (a stated day other than today or yesterday too)."""
     status, message = out.get("status"), out.get("message")
-    if status == "invalid" and message == "business_date":
-        blocks, options = replies.ask_day(decision, deps.today, deps.lang)
-        return _ask(session, deps, thread, blocks, options)
     if status == "invalid" and message == "count":
         item = session.get(RetailItem, str(decision.args.get("item_id")))
         name = item.name if item is not None else ""
         return reply_text(session, deps, thread, t("sales.no_count_today", deps.lang, item=name))
+    named = decision.args.get("branch_id")
+    if status == "denied" and named is not None and named != deps.branch.id:
+        branch = deps.branch.name
+        return reply_text(
+            session, deps, thread, t("sales.not_allowed.branch", deps.lang, branch=branch)
+        )
     if status == "denied" and tool == "set_target":
         return reply_text(session, deps, thread, t("sales.not_allowed", deps.lang))
     if status == "denied":
