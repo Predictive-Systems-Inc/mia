@@ -14,7 +14,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
 from mia.agents.decider import THRESHOLD, Decision
-from mia.agents.sales_supervisor import MANIFEST, actions, decider, replies
+from mia.agents.sales_supervisor import MANIFEST, actions, decider, due, replies
 from mia.agents.sales_supervisor.tools import BINDINGS
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
@@ -238,6 +238,6 @@ SPEC = AgentSpec(
         " stock is left and not what to bake."
     ),
     handle_turn=handle_turn,
-    run_due=None,  # Task 6
+    run_due=due.run_due,
     stream_agent=None,
 )
