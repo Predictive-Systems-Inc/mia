@@ -1,6 +1,7 @@
 import datetime as dt
 
 from mia.agents.parsing import (
+    find_dates,
     find_times,
     has_buy_word,
     menu_tokens,
@@ -118,3 +119,44 @@ def test_buy_words() -> None:
         assert has_buy_word(text), text
     assert not has_buy_word("4 kg asukal na lang")
     assert not has_buy_word("received 10 trays of eggs")
+
+
+MONDAY = dt.date(2026, 10, 19)
+
+
+def test_find_dates_next_week_weekday_in_english_filipino_and_finnish() -> None:
+    assert find_dates("next week Monday", MONDAY, "en") == [("d0", dt.date(2026, 10, 26))]
+    assert find_dates("sa susunod na linggo Lunes", MONDAY, "fil") == [
+        ("d0", dt.date(2026, 10, 26))
+    ]
+    assert find_dates("ensi viikon keskiviikkona", MONDAY, "fi") == [("d0", dt.date(2026, 10, 28))]
+
+
+def test_find_dates_a_range_after_next_week_stays_in_that_week() -> None:
+    dates = find_dates("leave next week Monday to Wednesday", MONDAY, "en")
+    assert dates == [("d0", dt.date(2026, 10, 26)), ("d1", dt.date(2026, 10, 28))]
+
+
+def test_find_dates_weekday_is_the_next_one_today_excluded() -> None:
+    assert find_dates("monday", MONDAY, "en") == [("d0", dt.date(2026, 10, 26))]
+    assert find_dates("Biyernes po", MONDAY, "fil") == [("d0", dt.date(2026, 10, 23))]
+    assert find_dates("today", MONDAY, "en") == [("d0", MONDAY)]
+
+
+def test_find_dates_month_names_iso_and_day_words() -> None:
+    christmas = dt.date(2026, 12, 25)
+    assert find_dates("Dec 25", MONDAY, "en") == [("d0", christmas)]
+    assert find_dates("25 Disyembre", MONDAY, "fil") == [("d0", christmas)]
+    assert find_dates("2026-12-25", MONDAY, "en") == [("d0", christmas)]
+    assert find_dates("bukas", MONDAY, "fil") == [("d0", dt.date(2026, 10, 20))]
+    assert find_dates("huomenna", MONDAY, "fi") == [("d0", dt.date(2026, 10, 20))]
+    assert find_dates("ugma ug karon", MONDAY, "ceb") == [
+        ("d0", dt.date(2026, 10, 20)),
+        ("d1", MONDAY),
+    ]
+
+
+def test_find_dates_never_a_bare_number() -> None:
+    assert find_dates("3 special 5 classic", MONDAY, "en") == []
+    assert find_dates("may 3 special po", MONDAY, "fil") == []
+    assert find_dates("Feb 30 or 2026-13-01", MONDAY, "en") == []

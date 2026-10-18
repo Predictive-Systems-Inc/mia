@@ -15,28 +15,22 @@ from sqlmodel import col, or_, select
 
 from mia.agents.base import AgentDeps
 from mia.agents.decider import NOT_STATED, Action
-from mia.agents.parsing import Group, menu_tokens, pre_parse, was_corrected
+from mia.agents.parsing import (
+    DAY_NAMES,
+    EN_WEEKDAYS,
+    FI_WEEKDAYS_ESSIVE,
+    Group,
+    menu_tokens,
+    pre_parse,
+    was_corrected,
+)
 from mia.agents.sales_supervisor import MANIFEST
-from mia.agents.shift_supervisor.classifier import EN_WEEKDAYS, FI_WEEKDAYS
 from mia.core.models import Branch
 from mia.i18n import t
 from mia.templates.retail.models import RetailItem
 
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 NONE = "none"
-FIL_WEEKDAYS = ["lunes", "martes", "miyerkules", "huwebes", "biyernes", "sabado", "linggo"]
-CEB_WEEKDAYS = ["lunes", "martes", "miyerkules", "huwebes", "biyernes", "sabado", "dominggo"]
-DAY_NAMES = {"en": EN_WEEKDAYS, "fi": FI_WEEKDAYS, "fil": FIL_WEEKDAYS, "ceb": CEB_WEEKDAYS}
-# Finnish "on a Monday" (essive), as the due messages use it: "kuin viime maanantaina".
-FI_WEEKDAYS_ESSIVE = [
-    "maanantaina",
-    "tiistaina",
-    "keskiviikkona",
-    "torstaina",
-    "perjantaina",
-    "lauantaina",
-    "sunnuntaina",
-]
 
 
 def day_when(weekday: int, lang: str) -> str:

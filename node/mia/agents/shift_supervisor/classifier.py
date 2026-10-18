@@ -11,6 +11,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from mia.agents.parsing import EN_WEEKDAYS, FI_WEEKDAYS
+
 IntentName = Literal[
     "report_absence",
     "absence_scope",
@@ -27,16 +29,6 @@ IntentName = Literal[
     "other",
 ]
 
-FI_WEEKDAYS = [
-    "maanantai",
-    "tiistai",
-    "keskiviikko",
-    "torstai",
-    "perjantai",
-    "lauantai",
-    "sunnuntai",
-]
-EN_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 INJECTION = re.compile(
     r"ignore (all |your |the |previous |any )*(rules|instructions|policies)|"

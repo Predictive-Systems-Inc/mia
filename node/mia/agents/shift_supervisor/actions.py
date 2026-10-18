@@ -15,8 +15,8 @@ from sqlmodel import col, select
 
 from mia.agents.base import AgentDeps
 from mia.agents.decider import NOT_STATED, THRESHOLD, Action  # noqa: F401 (THRESHOLD re-exported)
+from mia.agents.parsing import EN_WEEKDAYS, FI_WEEKDAYS
 from mia.agents.shift_supervisor import MANIFEST, cover, tools
-from mia.agents.shift_supervisor.classifier import EN_WEEKDAYS, FI_WEEKDAYS
 from mia.core.models import Event, Location, Person, Visit
 
 ANOTHER_DAY = "another_day"  # a day outside the listed dates: asked, never assumed

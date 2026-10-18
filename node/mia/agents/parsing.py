@@ -1,4 +1,4 @@
-"""Number and time parsing shared by the agents that read counts from a message.
+"""Number, time and date parsing shared by the agents that read counts or days from a message.
 
 Code splits the numbers (and clock times) out of the message (rule 7); the model only maps each
 group to an item. Pure functions, no database access.
@@ -198,3 +198,100 @@ def has_buy_word(text: str) -> bool:
     """True when a token of the text is a buy word of any language, or contains "order" (so
     mag-order, pag-order, i-order and reorder count). Pure."""
     return any(tok.strip(".!?;:") in _BUY or "order" in tok for tok in _tokens(text))
+
+
+# Weekday names per language (0 is Monday), shared by the agents that read or say a weekday.
+EN_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+FI_WEEKDAYS = [
+    "maanantai", "tiistai", "keskiviikko", "torstai", "perjantai", "lauantai", "sunnuntai",
+]  # fmt: skip
+FIL_WEEKDAYS = ["lunes", "martes", "miyerkules", "huwebes", "biyernes", "sabado", "linggo"]
+CEB_WEEKDAYS = ["lunes", "martes", "miyerkules", "huwebes", "biyernes", "sabado", "dominggo"]
+DAY_NAMES = {"en": EN_WEEKDAYS, "fi": FI_WEEKDAYS, "fil": FIL_WEEKDAYS, "ceb": CEB_WEEKDAYS}
+# Finnish "on a Monday" (essive), as the due messages use it: "kuin viime maanantaina".
+FI_WEEKDAYS_ESSIVE = [
+    "maanantaina", "tiistaina", "keskiviikkona", "torstaina", "perjantaina", "lauantaina",
+    "sunnuntaina",
+]  # fmt: skip
+
+DAY_WORDS = {
+    "today": 0, "tänään": 0, "ngayon": 0, "karon": 0,
+    "tomorrow": 1, "huomenna": 1, "bukas": 1, "ugma": 1,
+}  # fmt: skip
+NEXT_WEEK = ("next week", "sa susunod na linggo", "susunod na linggo", "ensi viikon")
+_MONTH_NAMES = (
+    ("january", "jan", "enero"), ("february", "feb", "pebrero"), ("march", "mar", "marso"),
+    ("april", "apr", "abril"), ("may", "mayo"), ("june", "jun", "hunyo"),
+    ("july", "jul", "hulyo"), ("august", "aug", "agosto"),
+    ("september", "sept", "sep", "setyembre"), ("october", "oct", "oktubre"),
+    ("november", "nov", "nobyembre"), ("december", "dec", "disyembre"),
+)  # fmt: skip
+MONTHS = {name: i for i, names in enumerate(_MONTH_NAMES, 1) for name in names}
+
+
+def _alt(words: Iterable[str]) -> str:
+    return "|".join(sorted({re.escape(w) for w in words}, key=len, reverse=True))
+
+
+_WEEKDAY_INDEX = {n: i for names in DAY_NAMES.values() for i, n in enumerate(names)}
+_WD = _alt(_WEEKDAY_INDEX)
+_MON = _alt(MONTHS)
+_DATE = re.compile(
+    r"\b(?P<iso>\d{4}-\d{2}-\d{2})\b"
+    rf"|\b(?:{_alt(NEXT_WEEK)})\s+(?:on\s+)?(?P<nw>{_WD})\w*"
+    rf"|\b(?P<d1>\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?(?P<m1>{_MON})\b\.?"
+    rf"|\b(?P<m2>{_MON})\.?\s+(?P<d2>\d{{1,2}})(?:st|nd|rd|th)?\b(?!:)"
+    rf"|\b(?P<rel>{_alt(DAY_WORDS)})\b"
+    rf"|\b(?P<wd>{_WD})\w*",
+    re.IGNORECASE,
+)
+
+
+def _month_day(month: int, day: int, today: dt.date) -> dt.date | None:
+    """The valid date of that month and day nearest to today (last, this or next year)."""
+    found = []
+    for year in (today.year - 1, today.year, today.year + 1):
+        try:
+            found.append(dt.date(year, month, day))
+        except ValueError:
+            continue
+    return min(found, key=lambda d: abs(d - today), default=None)
+
+
+def _after(weekday: int, anchor: dt.date) -> dt.date:
+    """The first such weekday strictly after the anchor."""
+    return anchor + dt.timedelta(days=(weekday - anchor.weekday() - 1) % 7 + 1)
+
+
+def find_dates(text: str, today: dt.date, lang: str) -> list[tuple[str, dt.date]]:
+    """Dates in the message in text order as (id "d0", "d1", ..., date). Pure. Finds the
+    today and tomorrow words, weekday names (en, fi, fil, ceb: the next such day after today,
+    or after the date before it in the message, so "next week Monday to Wednesday" is one
+    week), "next week <weekday>" (that weekday of the following week), "<d> <month>" and
+    "<month> <d>" with English or Filipino month names (the year nearest to today), and ISO
+    dates. A bare number is never a date; an invalid date is skipped."""
+    found: list[dt.date] = []
+    for m in _DATE.finditer(text):
+        day: dt.date | None
+        if m["iso"]:
+            try:
+                day = dt.date.fromisoformat(m["iso"])
+            except ValueError:
+                continue
+        elif m["nw"]:
+            monday = today + dt.timedelta(days=7 - today.weekday())
+            day = monday + dt.timedelta(days=_WEEKDAY_INDEX[m["nw"].lower()])
+        elif m["m1"] or m["m2"]:
+            month = (m["m1"] or m["m2"]).lower()
+            # ponytail: "may" is "there is" in Filipino and Cebuano; only English reads it.
+            if month == "may" and lang != "en":
+                continue
+            day = _month_day(MONTHS[month], int(m["d1"] or m["d2"]), today)
+        elif m["rel"]:
+            day = today + dt.timedelta(days=DAY_WORDS[m["rel"].lower()])
+        else:
+            anchor = max([today, *found[-1:]])
+            day = _after(_WEEKDAY_INDEX[m["wd"].lower()], anchor)
+        if day is not None:
+            found.append(day)
+    return [(f"d{i}", d) for i, d in enumerate(found)]
