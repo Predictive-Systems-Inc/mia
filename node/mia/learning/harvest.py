@@ -98,7 +98,10 @@ def _route_forgotten(session: Session, ev: Event) -> bool:
 
 def _sensitive(session: Session, original_id: str, ev: Event) -> bool:
     """True when the tapped message is an injection or classifies as a privacy or health intent
-    (never harvested). A missing message is not sensitive; harvest skips it later."""
+    (never harvested). A missing message is not sensitive; harvest skips it later.
+    ponytail: with no active role model (NullClassifier, intent "other") only the injection
+    check applies; privacy and health taps then stay pending for human review before any
+    training (D27)."""
     message = session.get(Message, original_id)
     if message is None:
         return False
