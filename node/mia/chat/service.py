@@ -413,6 +413,15 @@ def _expire(
     return _ask_route(session, deps, thread, agents_for(session, deps.person), message.id)
 
 
+def resumed_reply(session: Session, person: Person, thread: Thread, agent_id: str) -> ChatReply:
+    """The unavailable reply for a deferred turn that failed when resumed, as a notification
+    from its agent (the caller commits)."""
+    _, deps, _ = _context(session, person, thread)
+    deps.resumed = True
+    lead = _deps_for(deps, AGENTS[agent_id]) if agent_id in AGENTS else deps
+    return reply_text(session, lead, thread, t("reply.unavailable", deps.lang))
+
+
 async def respond(
     session: Session,
     person: Person,

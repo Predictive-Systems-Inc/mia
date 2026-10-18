@@ -12,7 +12,7 @@ from typing import Any
 from pydantic_ai import AgentRunResult
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 from pydantic_ai.usage import UsageLimits
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, or_, select
 
 from mia.agents.base import AgentDeps
 from mia.agents.shift_supervisor import MANIFEST
@@ -42,11 +42,12 @@ def wrap_user_text(text: str, person: Person) -> str:
 
 
 def history(session: Session, thread: Thread, before: str | None = None) -> list[ModelMessage]:
-    """The thread's Pydantic AI messages in order, for the next run's message history; with
-    `before`, only from messages older than that message id."""
+    """The thread's Pydantic AI messages in order, for the next run's message history. With
+    `before` (a resumed turn's message), that message and later user messages are left out;
+    Mia's later replies stay."""
     stmt = select(Message).where(Message.thread_id == thread.id).order_by(col(Message.id))
     if before is not None:
-        stmt = stmt.where(col(Message.id) < before)
+        stmt = stmt.where(or_(col(Message.id) < before, col(Message.role) != "user"))
     rows = session.exec(stmt).all()
     messages: list[ModelMessage] = []
     for row in rows:

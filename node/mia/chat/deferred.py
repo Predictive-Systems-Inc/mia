@@ -7,6 +7,7 @@ when an outage starts and ends, never what anyone wrote.
 ponytail: open turns are found by scanning events; an index table if the queue ever grows.
 """
 
+import asyncio
 import datetime as dt
 import logging
 from typing import Literal
@@ -102,6 +103,16 @@ def defer(
     return ChatReply(thread_id=thread.id, message_id=message_id, agent_id=agent_id, blocks=[])
 
 
+def _answered_since(session: Session, started: Event) -> bool:
+    """A turn resumed with an answer since the outage started (Jev is back, not just expired)."""
+    return any(
+        e.id > started.id
+        and not (e.after or {}).get("expired")
+        and not (e.after or {}).get("failed")
+        for e in session.exec(select(Event).where(Event.action == RESUMED))
+    )
+
+
 def _end_outage(session: Session, started: Event) -> None:
     """Close the outage: the event and one notice with the count and the longest wait."""
     closed = [
@@ -124,8 +135,10 @@ def _end_outage(session: Session, started: Event) -> None:
 
 async def retry_due(now: dt.datetime) -> int:
     """Resume or expire open turns oldest first; stop at the first that still cannot reach
-    Jev. Each closed turn commits with its reply, so a resumed turn never runs again. Closes
-    the outage when none are left. Returns how many turns were closed.
+    Jev. Each closed turn commits with its reply, so a resumed turn never runs again; a turn
+    that fails otherwise is closed as failed with the unavailable reply. Closes the outage when
+    none are left and at least one was answered since it started. Returns how many turns were
+    closed.
     ponytail: one tick worker per node, so no lock is held across the Jev call (rule 11); two
     workers would need a claim event first."""
     from mia.chat import service  # service imports this module
@@ -140,6 +153,8 @@ async def retry_due(now: dt.datetime) -> int:
             person = session.get(Person, after["person_id"])
             gone = message is None or thread is None or person is None or person.status != "active"
             expired = gone or now - ev.timestamp > MAX_WAIT
+            closing = {"message_id": after["message_id"], "deferred_event_id": ev.id}
+            closing["expired"] = expired
             try:
                 if message is not None and thread is not None and person is not None and not gone:
                     await service.respond(
@@ -155,18 +170,26 @@ async def retry_due(now: dt.datetime) -> int:
             except JevUnreachable:
                 session.rollback()
                 break
+            except Exception as exc:  # noqa: BLE001 - one broken turn must not hold the queue
+                session.rollback()
+                log.error("resuming deferred turn %s failed: %s", ev.id, type(exc).__name__)
+                closing |= {"failed": True, "error": type(exc).__name__}
+                assert person is not None and thread is not None  # respond ran, so they exist
+                await asyncio.to_thread(
+                    service.resumed_reply, session, person, thread, after["agent_id"]
+                )
             events.emit(
                 session,
                 RESUMED,
                 ("thread", ev.entity_id),
                 None,
-                {"message_id": after["message_id"], "deferred_event_id": ev.id, "expired": expired},
+                closing,
                 Actor.system(ev.branch_id),
             )
             session.commit()
             done += 1
         started = _outage_open(session)
-        if started is not None and not open_turns(session):
+        if started is not None and not open_turns(session) and _answered_since(session, started):
             _end_outage(session, started)
             session.commit()
     return done

@@ -1,19 +1,25 @@
 """Deferring turns while Jev is unreachable (spec 2026-10-18, Jev unreachable)."""
 
 import asyncio
+import dataclasses
 import datetime as dt
 from typing import Any
 
 import pytest
+from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelResponse, TextPart
 from sqlmodel import Session, select
 
+from mia.agents.base import Turn
+from mia.agents.registry import AGENTS, DEFAULT
 from mia.chat import deferred
-from mia.chat.blocks import ChatReply
+from mia.chat.blocks import ChatReply, TextBlock
+from mia.chat.replies import _store
 from mia.chat.service import run_turn
 from mia.core import jev, orgconfig
 from mia.core import people as people_service
 from mia.core.db import utcnow
 from mia.core.models import Actor, Event, Message, Person
+from mia.i18n import t
 from mia.settings import get_settings
 from tests.jev_fake import choice, fake_jev
 
@@ -105,6 +111,7 @@ def test_two_hours_expires_to_the_buttons(
     (resumed,) = _events(session, "turn.resumed")
     assert resumed.after and resumed.after["expired"] is True
     assert _events(session, "chat.route_asked")
+    assert _events(session, "jev.outage_ended") == []  # drained by expiry alone: still open
 
 
 def test_egress_none_does_not_defer(
@@ -139,8 +146,7 @@ def test_a_deactivated_person_is_closed_silently(
     assert _retry() == 1
     (resumed,) = _events(session, "turn.resumed")
     assert resumed.after and resumed.after["expired"] is True
-    new = session.exec(select(Message)).all()[before:]
-    assert all(m.text.startswith("Jev vastaa taas") for m in new)  # only the developer's notice
+    assert len(session.exec(select(Message)).all()) == before
 
 
 def test_the_shift_supervisors_jev_decision_defers_too(
@@ -157,3 +163,70 @@ def test_the_shift_supervisors_jev_decision_defers_too(
     )  # one agent: no router, the decider fails
     (ev,) = _events(session, "turn.deferred")
     assert ev.after and ev.after["stage"] == "agent" and reply.blocks
+
+
+def _spy(monkeypatch: pytest.MonkeyPatch, handle: Any) -> None:
+    """Make the shift supervisor (the router's pick) answer with `handle`."""
+    monkeypatch.setitem(AGENTS, DEFAULT, dataclasses.replace(AGENTS[DEFAULT], handle_turn=handle))
+
+
+def test_a_failing_resume_is_closed_and_the_next_still_resumes(
+    session: Session,
+    people: dict[str, Person],
+    jev_down: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = _turn(session, people["Sanna"], "how much did we sell today?")
+    _turn(session, people["Sanna"], "show my visits today")  # a new thread
+    original = AGENTS[DEFAULT].handle_turn
+    calls: list[str] = []
+
+    async def handle(turn: Turn) -> ChatReply:
+        calls.append(turn.text)
+        if len(calls) == 1:
+            raise RuntimeError("secret text")
+        return await original(turn)
+
+    _spy(monkeypatch, handle)
+    jev_down["up"] = True
+    assert _retry() == 2 and len(calls) == 2
+    failed, ok = _events(session, "turn.resumed")
+    assert failed.after == {
+        "message_id": failed.after["message_id"],  # type: ignore[index]
+        "deferred_event_id": failed.after["deferred_event_id"],  # type: ignore[index]
+        "expired": False,
+        "failed": True,
+        "error": "RuntimeError",
+    }
+    assert ok.after and "failed" not in ok.after
+    sorry = t("reply.unavailable", people["Sanna"].language)
+    notes = session.exec(
+        select(Message)
+        .where(Message.thread_id == first.thread_id)
+        .where(Message.role == "notification")
+    ).all()
+    assert [m.text for m in notes] == [sorry]
+    assert len(_events(session, "jev.outage_ended")) == 1
+
+
+def test_a_queued_turn_sees_the_reply_resumed_before_it(
+    session: Session,
+    people: dict[str, Person],
+    jev_down: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = _turn(session, people["Sanna"], "how much did we sell today?")
+    _turn(session, people["Sanna"], "and yesterday?", first.thread_id)
+    pasts: list[int] = []
+    answer = ModelMessagesTypeAdapter.dump_python(
+        [ModelResponse(parts=[TextPart("ok")])], mode="json"
+    )
+
+    async def handle(turn: Turn) -> ChatReply:
+        pasts.append(len(turn.past))
+        return _store(turn.session, turn.deps, turn.thread, [TextBlock(text="ok")], answer)
+
+    _spy(monkeypatch, handle)
+    jev_down["up"] = True
+    assert _retry() == 2
+    assert pasts == [0, 1]  # the second turn sees the first one's resumed reply
