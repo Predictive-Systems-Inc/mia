@@ -2,8 +2,9 @@
 here, so no chat code imports a specific agent."""
 
 from mia.agents.base import AgentSpec
+from mia.agents.sales_supervisor.turn import SPEC as SALES_SUPERVISOR
 from mia.agents.shift_supervisor.turn import SPEC as SHIFT_SUPERVISOR
 from mia.agents.stubs import STUBS
 
-AGENTS: dict[str, AgentSpec] = {s.id: s for s in [SHIFT_SUPERVISOR, *STUBS]}
+AGENTS: dict[str, AgentSpec] = {s.id: s for s in [SHIFT_SUPERVISOR, SALES_SUPERVISOR, *STUBS]}
 DEFAULT = SHIFT_SUPERVISOR.id  # ponytail: the agent of a new thread until routing (Task 6)

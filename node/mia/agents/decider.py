@@ -45,7 +45,8 @@ class Alternative(BaseModel):
 
 class Decision(BaseModel):
     action: str  # what code does: an action id, clarify after a low confidence
-    args: dict[str, Any] = Field(default_factory=dict)  # the tool input; reply_only: {"kind"}
+    # the tool input (clarify: the top pick's, maybe partial); reply_only: {"kind"}
+    args: dict[str, Any] = Field(default_factory=dict)
     confidence: float
     raw_action: str = ""  # Jev's own pick, before the threshold
     alternatives: list[Alternative] = Field(default_factory=list)
@@ -128,6 +129,7 @@ def parse(
     if raw == "clarify" or missing is not None or confidence < threshold:
         return Decision(
             action="clarify",
+            args=picked_args,  # partial when an input is missing: a question can complete it
             confidence=confidence,
             raw_action=raw,
             alternatives=alternatives[:3],

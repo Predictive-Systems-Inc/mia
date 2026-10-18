@@ -11,11 +11,6 @@ from mia.core.models import STANDARD_VERSION
 from mia.i18n import t
 
 DESCRIPTIONS = {
-    "sales_supervisor": (
-        "Sales: clerks reporting how many of each item they sold and for how much, daily and"
-        " mid-day totals, sales targets, how today compares, why sales went well; not how much"
-        " stock is left and not what to bake."
-    ),
     "inventory_manager": (
         "Stock: items sold out or running low, how many are left, leftovers and waste at"
         " closing, what to prepare or bake tomorrow, ingredients and packaging to buy before a"

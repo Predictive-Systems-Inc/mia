@@ -70,10 +70,25 @@ def _branch(r: Reader) -> str | None:
     return r.pick("branch", {*r.q.branches, "all"})
 
 
-def _item(r: Reader, i: int) -> str | None:
-    """The item picked for group i, or None for none (the caller reports it missing)."""
-    pick = r.pick(f"item_{i}", {*r.q.items, NONE})
+def _item(r: Reader, i: int, fallback: bool = False) -> str | None:
+    """The item picked for group i, or None for none (the caller reports it missing); with
+    fallback=True an uncertain pick is None too (the turn asks which item)."""
+    pick = r.pick(f"item_{i}", {*r.q.items, NONE}, fallback=fallback)
     return None if pick == NONE else pick
+
+
+def _count(r: Reader, i: int, quantity: int) -> dict[str, Any]:
+    """Group i's count; with no confident item, item_id is None, words are the group's words
+    and candidates the three most probable menu items (Jev's probabilities, else the first
+    three of the menu), for the turn's which-item question."""
+    item = _item(r, i, fallback=True)
+    if item is not None:
+        return {"item_id": item, "quantity": quantity}
+    probabilities = r.answers[f"item_{i}"].get("probabilities") or {}
+    ranked = sorted((k for k in probabilities if k in r.q.items), key=lambda k: -probabilities[k])
+    candidates = (ranked or list(r.q.items))[:3]
+    words = r.q.groups[i].words
+    return {"item_id": None, "quantity": quantity, "candidates": candidates, "words": words}
 
 
 def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
@@ -82,22 +97,23 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     if action == "report_sales":
         items: list[dict[str, Any]] = []
         for i, g in enumerate(q.groups):
-            item = _item(r, i)
-            if item is None or g.quantity is None:
+            if g.quantity is None:
                 return {}, f"item_{i}"
-            items.append({"item_id": item, "quantity": g.quantity})
+            items.append(_count(r, i, g.quantity))
+        unknown = next((f"item_{i}" for i, c in enumerate(items) if c["item_id"] is None), None)
         args: dict[str, Any] = {
             "items": items,
             "total": None if q.total is None else _minor(q.total),
             "business_date": None,
             "source_message_id": None,
         }
-        return args, None if items or q.total is not None else "items"
+        return args, unknown or (None if items or q.total is not None else "items")
     if action == "correct_sales":
-        item = _item(r, 0) if q.groups else None
-        if item is None or q.groups[0].quantity is None:
+        quantity = q.groups[0].quantity if q.groups else None
+        if quantity is None:
             return {}, "item_0"
-        return {"item_id": item, "quantity": q.groups[0].quantity}, None
+        count = _count(r, 0, quantity)
+        return count, None if count["item_id"] else "item_0"
     if action == "sales_today":
         return {"branch_id": _branch(r)}, None
     if action == "sales_period":

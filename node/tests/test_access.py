@@ -74,7 +74,7 @@ def test_a_stub_answers_that_it_is_not_available(
 ) -> None:
     from mia.agents.stubs import STUBS
 
-    assert {s.id for s in STUBS} == set(ROSTER) - {"shift_supervisor"}
+    assert {s.id for s in STUBS} == set(ROSTER) - {"shift_supervisor", "sales_supervisor"}
     assert all(s.router_description and s.run_due is None for s in STUBS)
 
     person = people["Juha"]
