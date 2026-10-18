@@ -7,6 +7,7 @@ steps; the agent's handle_turn answers the rest; the caller commits the reply.
 
 import asyncio
 import datetime as dt
+import time
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -19,7 +20,7 @@ from mia.agents.registry import AGENTS, DEFAULT
 from mia.chat import language
 from mia.chat.blocks import ChatReply
 from mia.chat.replies import history, latest_message, reply_text, tell_supervisors
-from mia.core import people, store
+from mia.core import events, people, store
 from mia.core.egress import EgressContext
 from mia.core.models import Actor, Branch, Message, Organisation, Person, Thread
 from mia.i18n import t
@@ -94,10 +95,26 @@ def safety_reply(session: Session, deps: AgentDeps, thread: Thread, text: str) -
     ponytail: the shift supervisor's skill model is the node's only safety model (ADR 013);
     a node-wide one replaces it when it exists."""
     last = latest_message(session, thread, "assistant")
+    start = time.perf_counter()
     c = runtime.get_classifier(DEFAULT).classify(text, last.text if last else "")
+    latency_ms = round((time.perf_counter() - start) * 1000)
     role = load_role_plan(DEFAULT)
     if c.safety < (role.targets.safety_floor if role else 0.2):
         return None
+    events.emit(  # the audit trail keeps emergencies (the agent's classify step never runs)
+        session,
+        "intent.classified",
+        ("thread", thread.id),
+        None,
+        {
+            "role": DEFAULT,
+            "version": c.version,
+            "intent": c.intent,
+            "band": c.band,
+            "latency_ms": latency_ms,
+        },
+        deps.actor,
+    )
     org = session.get(Organisation, deps.organisation_id)
     guess = "PH" if deps.branch.timezone.startswith("Asia/Manila") else "FI"
     country = org.country.upper() if org is not None else guess
@@ -125,7 +142,7 @@ def _before_agent(session: Session, deps: AgentDeps, thread: Thread, text: str) 
             return reply_text(session, deps, thread, t("language.set", code, language=name))
         session.commit()
         return original
-    if language.is_change_command(text):
+    if language.is_change_command(text) and language.offers_choice():
         return language.ask(session, deps, thread, None)
     if language.needs_asking(session, deps.person):
         user = latest_message(session, thread, "user")

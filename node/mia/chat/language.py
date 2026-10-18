@@ -24,9 +24,15 @@ def _offered() -> list[str]:
     return list(orgconfig.load().languages)
 
 
+def offers_choice() -> bool:
+    """The organisation offers two or more languages (otherwise nobody is asked and the change
+    words are ordinary text)."""
+    return len(_offered()) >= 2
+
+
 def needs_asking(session: Session, person: Person) -> bool:
-    """The organisation offers two or more languages and the person never chose one."""
-    if len(_offered()) < 2:
+    """The organisation offers a choice and the person never chose one."""
+    if not offers_choice():
         return False
     chosen = session.exec(
         select(Event)

@@ -1,6 +1,7 @@
 """The reply language: asked once on first contact, kept, changed with the change words."""
 
 import asyncio
+from typing import Any
 
 import pytest
 from sqlmodel import Session, select
@@ -10,6 +11,7 @@ from mia.chat.service import run_turn
 from mia.core import orgconfig
 from mia.core import people as people_service
 from mia.core.models import Actor, Event, Person
+from mia.i18n import t
 
 
 def _turn(session: Session, person: Person, text: str, thread: str | None = None) -> ChatReply:
@@ -26,6 +28,22 @@ def _buttons(reply: ChatReply) -> list[str]:
 def ph_org(monkeypatch: pytest.MonkeyPatch) -> None:
     langs = ["fil", "en", "ceb"]
     monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings(languages=langs))
+
+
+@pytest.fixture
+def agent_texts(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """The texts the shift supervisor's turn was asked to answer."""
+    from mia.agents.shift_supervisor import turn
+
+    seen: list[str] = []
+    real = turn.resolve_turn
+
+    def spy(*args: Any) -> Any:
+        seen.append(args[3])
+        return real(*args)
+
+    monkeypatch.setattr(turn, "resolve_turn", spy)
+    return seen
 
 
 @pytest.fixture
@@ -52,7 +70,7 @@ def test_seeded_people_have_chosen_their_language(
 
 
 def test_first_contact_asks_then_answers_the_original_message(
-    session: Session, newcomer: Person, ph_org: None
+    session: Session, newcomer: Person, ph_org: None, agent_texts: list[str]
 ) -> None:
     asked = _turn(session, newcomer, "anong oras ako bukas?")
     assert _buttons(asked) == ["Filipino", "English", "Cebuano"]
@@ -64,7 +82,9 @@ def test_first_contact_asks_then_answers_the_original_message(
         .where(Event.action == "person.language_chosen")
         .where(Event.entity_id == newcomer.id)
     ).one()
-    assert answered.blocks  # the original question was answered, not the word "Filipino"
+    assert agent_texts == ["anong oras ako bukas?"]  # the agent answered the original message
+    confirmation = t("language.set", "fil", language="Filipino")
+    assert answered.blocks and answered.text() != confirmation
 
 
 def test_one_language_organisations_never_ask(session: Session, newcomer: Person) -> None:
@@ -121,3 +141,41 @@ def test_an_emergency_gets_the_script_before_the_language_question(
     sentinel = ChatReply(thread_id="t", message_id="m", agent_id="", blocks=[])
     monkeypatch.setattr(service, "safety_reply", lambda *a: sentinel)
     assert _turn(session, newcomer, "help, fire!") is sentinel
+
+
+def test_change_words_are_plain_text_without_a_choice(
+    session: Session, people: dict[str, Person], agent_texts: list[str]
+) -> None:
+    _turn(session, people["Juha"], "wika")
+    assert agent_texts == [
+        "wika"
+    ]  # the demo organisation offers no choice: the agent gets the word
+    assert not session.exec(select(Event).where(Event.action == "language.asked")).all()
+
+
+def test_an_emergency_is_logged_as_classified(
+    session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mia.skills import runtime
+    from mia.skills.runtime import Classification
+
+    c = Classification(
+        intent="conversation.emergency",
+        confidence=0.9,
+        band="high",
+        alternatives=[],
+        lang="en",
+        slots={},
+        safety=0.9,
+        version="v1",
+    )
+    fixed = type("Fixed", (), {"classify": lambda self, text, context="": c})()
+    monkeypatch.setattr(runtime, "get_classifier", lambda role: fixed)
+    _turn(session, people["Juha"], "someone collapsed")
+    logged = session.exec(select(Event).where(Event.action == "intent.classified")).one()
+    assert logged.after is not None
+    assert (logged.after["intent"], logged.after["version"], logged.after["band"]) == (
+        "conversation.emergency",
+        "v1",
+        "high",
+    )
