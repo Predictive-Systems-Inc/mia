@@ -101,6 +101,17 @@ def shift_supervisor_role() -> None:
     create_agent("test")
 
 
+@pytest.fixture(autouse=True)
+def sales_supervisor_role() -> None:
+    """The sales supervisor's manifest grants are in RBAC for every test (it has no LLM agent
+    whose build would load them)."""
+    from mia.agents.sales_supervisor import MANIFEST
+    from mia.core.rbac import get_rbac
+
+    roles = MANIFEST.roles
+    get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
+
+
 @pytest.fixture
 def engine() -> Engine:
     eng = db.get_engine()
@@ -180,6 +191,7 @@ CLOCK_USERS = (
     "mia.core.db",
     "mia.core.approvals",
     "mia.agents.shift_supervisor.tools",
+    "mia.agents.sales_supervisor.tools",
     "mia.api.main",
     "mia.channels.outbox",
     "mia.channels.service",
@@ -205,3 +217,52 @@ def daytime(monkeypatch: pytest.MonkeyPatch) -> Callable[[], datetime]:
     for name in CLOCK_USERS:
         monkeypatch.setattr(importlib.import_module(name), "utcnow", now)
     return now
+
+
+@pytest.fixture
+def ferinos(
+    monkeypatch: pytest.MonkeyPatch, session: Session
+) -> Iterator[tuple[Branch, dict[str, Person]]]:
+    """The retail demo org (MIA_ORG=ferinos) seeded: the Mall kiosk and people by first name
+    (Rosa owner, Marites and Jun supervisors, Ana, Liza and Pao clerks)."""
+    from mia.core import orgconfig
+    from mia.templates.retail import seed as retail_seed
+
+    with monkeypatch.context() as m:
+        m.setenv("MIA_ORG", "ferinos")
+        get_settings.cache_clear()
+        orgconfig.load.cache_clear()
+        kiosk = retail_seed.seed(session)
+        session.commit()
+        staff = {p.name.split()[0]: p for p in session.exec(select(Person)).all()}
+        yield kiosk, staff
+    get_settings.cache_clear()
+    orgconfig.load.cache_clear()
+
+
+MANILA = ZoneInfo("Asia/Manila")
+
+
+@pytest.fixture
+def manila_at(monkeypatch: pytest.MonkeyPatch) -> Callable[[int, int], datetime]:
+    """Pin the clock on CLOCK_USERS to hour:minute today in Manila (the clock keeps running from
+    there). Returns the pinned local time."""
+    start = datetime.now(UTC)
+
+    def pin(hour: int, minute: int = 0) -> datetime:
+        at = datetime.now(MANILA).replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+        def now() -> datetime:
+            return at.astimezone(UTC) + (datetime.now(UTC) - start)
+
+        for name in CLOCK_USERS:
+            monkeypatch.setattr(importlib.import_module(name), "utcnow", now)
+        return at
+
+    return pin
+
+
+@pytest.fixture
+def manila_evening(manila_at: Callable[[int, int], datetime]) -> datetime:
+    """The clock at 21:30 in Manila today: within two hours after the Mall kiosk closes."""
+    return manila_at(21, 30)

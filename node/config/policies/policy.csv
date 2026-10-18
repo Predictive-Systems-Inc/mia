@@ -51,6 +51,34 @@ p, admin, *, data:core.*, write, allow
 # viewer: read reports
 p, viewer, *, data:reports, read, allow
 
+# clerk: report the day's counts, read them back, say why
+p, clerk, *, tool:sales_supervisor.record_counts, execute, allow
+p, clerk, *, tool:sales_supervisor.correct_count, execute, allow
+p, clerk, *, tool:sales_supervisor.today, execute, allow
+p, clerk, *, tool:sales_supervisor.record_note, execute, allow
+p, clerk, *, data:sales_supervisor_counts, write_own, allow
+p, clerk, *, data:sales_supervisor_counts, read_own, allow
+p, clerk, *, data:sales_supervisor_notes, write_own, allow
+p, clerk, *, data:retail_items, read, allow
+
+# supervisor: sales reports and targets for their branch (owner and admin inherit)
+p, supervisor, *, tool:sales_supervisor.record_counts, execute, allow
+p, supervisor, *, tool:sales_supervisor.correct_count, execute, allow
+p, supervisor, *, tool:sales_supervisor.today, execute, allow
+p, supervisor, *, tool:sales_supervisor.period_report, execute, allow
+p, supervisor, *, tool:sales_supervisor.set_target, execute, allow
+p, supervisor, *, tool:sales_supervisor.record_note, execute, allow
+p, supervisor, *, data:sales_supervisor_counts, read, allow
+p, supervisor, *, data:sales_supervisor_counts, write, allow
+p, supervisor, *, data:sales_supervisor_targets, write, allow
+p, supervisor, *, data:sales_supervisor_notes, read, allow
+p, supervisor, *, data:sales_supervisor_notes, write, allow
+p, supervisor, *, data:retail_items, read, allow
+
+# admin: every sales table (owner inherits)
+p, admin, *, data:sales_supervisor_*, read, allow
+p, admin, *, data:sales_supervisor_*, write, allow
+
 # agents a role may talk to (chat/access.py); owner inherits admin > supervisor > staff
 p, staff, *, agent:shift_supervisor, use, allow
 p, clerk, *, agent:sales_supervisor, use, allow
