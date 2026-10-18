@@ -4,9 +4,9 @@ from sqlmodel import Session
 
 from mia.core import store
 from mia.core.models import Actor, Branch, Person
+from mia.i18n import SUPPORTED as LANGUAGES
 
-HUMAN_ROLES = ("owner", "admin", "supervisor", "staff", "accountant", "viewer")
-LANGUAGES = ("fi", "en")
+HUMAN_ROLES = ("owner", "admin", "supervisor", "staff", "clerk", "accountant", "viewer")
 
 
 def add_person(

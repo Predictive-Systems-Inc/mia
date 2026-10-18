@@ -70,7 +70,7 @@ The package lives in node/mia; paths below are relative to node/ (mia/core means
 ## Style
 - Python 3.12, Ruff (line length 100, rules I, B, UP), mypy strict on mia/core, mia/chat and
   mia/agents. Docstrings state what a function guarantees.
-- Finnish and English user-facing strings go through mia/i18n (keys, not literals).
+- User-facing strings go through mia/i18n (keys, not literals) in every language of i18n.SUPPORTED; a missing key falls back to English.
 - No em-dashes in docs or comments; use commas, periods or parentheses.
 
 ## Definition of done for any task

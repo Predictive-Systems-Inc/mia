@@ -23,9 +23,19 @@ from mia.core.models import (
     Person,
     WorkLimit,
 )
+from mia.i18n import SUPPORTED
 from mia.templates.cleaning.models import CleaningChecklist, CleaningSite
 
 ROLES = ("owner", "admin", "supervisor", "staff", "accountant", "viewer")
+
+
+def _supported_language(value: str) -> str:
+    """Guarantee the language is one of mia.i18n.SUPPORTED."""
+    if value not in SUPPORTED:
+        raise ValueError(f"language must be one of {', '.join(SUPPORTED)}")
+    return value
+
+
 HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"
 
 
@@ -56,13 +66,14 @@ class PersonIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     roles: list[Literal[ROLES]] = Field(min_length=1)  # type: ignore[valid-type]
     skills: list[str] = []
-    language: Literal["fi", "en"] = "fi"
+    language: str = "fi"
     home_address: str = Field(default="", max_length=300)
     availability: AvailabilityIn | None = None
     max_weekly_minutes: int = Field(default=2400, ge=0, le=7 * 24 * 60)
     max_daily_minutes: int = Field(default=600, ge=0, le=24 * 60)
 
     _names = field_validator("name")(_clean_name)
+    _language = field_validator("language")(_supported_language)
 
 
 class LocationIn(BaseModel):
@@ -117,7 +128,9 @@ class JobIn(BaseModel):
 class OrganisationIn(BaseModel):
     name: str = Field(min_length=1)
     country: str = "FI"
-    default_language: Literal["fi", "en"] = "fi"
+    default_language: str = "fi"
+
+    _language = field_validator("default_language")(_supported_language)
 
 
 class BranchIn(BaseModel):

@@ -263,3 +263,51 @@ Format for each entry:
 - Assumed answer: no, until the terms are read and an ADR amends D18; real traffic stays on
   MIA_DECIDER=agent.
 - Blocking: yes for real data; no for the measurement.
+
+## Q28: Review of the Filipino strings
+- Where: node/mia/i18n/fil.py; spec 2026-10-18-multi-agent-routing-design.md
+- Question: Who reviews the Filipino strings in mia/i18n/fil.py?
+- Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
+- Blocking: no for the package; yes before a client uses Filipino.
+
+## Q29: Review of the Cebuano strings
+- Where: node/mia/i18n/ceb.py; spec 2026-10-18-multi-agent-routing-design.md
+- Question: Who reviews the Cebuano strings in mia/i18n/ceb.py?
+- Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
+- Blocking: no for the package; yes before a client uses Cebuano.
+
+## Q30: Review of the Ilocano strings
+- Where: node/mia/i18n/ilo.py; spec 2026-10-18-multi-agent-routing-design.md
+- Question: Who reviews the Ilocano strings in mia/i18n/ilo.py?
+- Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
+- Blocking: no for the package; yes before a client uses Ilocano.
+
+## Q31: Review of the Hiligaynon strings
+- Where: node/mia/i18n/hil.py; spec 2026-10-18-multi-agent-routing-design.md
+- Question: Who reviews the Hiligaynon strings in mia/i18n/hil.py?
+- Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
+- Blocking: no for the package; yes before a client uses Hiligaynon.
+
+## Q32: Review of the Waray strings
+- Where: node/mia/i18n/war.py; spec 2026-10-18-multi-agent-routing-design.md
+- Question: Who reviews the Waray strings in mia/i18n/war.py?
+- Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
+- Blocking: no for the package; yes before a client uses Waray.
+
+## Q33: Review of the Bikol strings
+- Where: node/mia/i18n/bcl.py; spec 2026-10-18-multi-agent-routing-design.md
+- Question: Who reviews the Bikol strings in mia/i18n/bcl.py?
+- Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
+- Blocking: no for the package; yes before a client uses Bikol.
+
+## Q34: Review of the Kapampangan strings
+- Where: node/mia/i18n/pam.py; spec 2026-10-18-multi-agent-routing-design.md
+- Question: Who reviews the Kapampangan strings in mia/i18n/pam.py?
+- Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
+- Blocking: no for the package; yes before a client uses Kapampangan.
+
+## Q35: Review of the Pangasinan strings
+- Where: node/mia/i18n/pag.py; spec 2026-10-18-multi-agent-routing-design.md
+- Question: Who reviews the Pangasinan strings in mia/i18n/pag.py?
+- Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
+- Blocking: no for the package; yes before a client uses Pangasinan.

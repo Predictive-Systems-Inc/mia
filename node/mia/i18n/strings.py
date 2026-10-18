@@ -280,6 +280,35 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
             "Sorry, I cannot answer right now. Please try again in a minute.",
             "Sorry, something went wrong on my side. Please try again shortly.",
         ],
+        "agent.shift_supervisor.label": "Shift Supervisor",
+        "agent.sales_supervisor.label": "Sales Supervisor",
+        "agent.inventory_manager.label": "Inventory Manager",
+        "agent.bookkeeper.label": "Bookkeeper",
+        "agent.hr_officer.label": "HR Officer",
+        "agent.branch_manager.label": "Branch Manager",
+        "chat.switched": "({agent})",
+        "route.question": "Is this about:",
+        "reply.busy": [
+            "Mia is busy right now and will answer you soon.",
+            "Mia is busy at the moment. You will get an answer soon.",
+        ],
+        "reply.no_agent": "I cannot help you here yet. Ask your supervisor to set up Mia for you.",
+        "language.set": "Okay, I will use {language}.",
+        "language.ask": "Which language should I use?\nAnong wika ang gusto mong gamitin ko?",
+        "language.name.fi": "Suomi",
+        "language.name.en": "English",
+        "language.name.fil": "Filipino",
+        "language.name.ceb": "Cebuano",
+        "language.name.ilo": "Ilocano",
+        "language.name.hil": "Hiligaynon",
+        "language.name.war": "Waray",
+        "language.name.bcl": "Bikol",
+        "language.name.pam": "Kapampangan",
+        "language.name.pag": "Pangasinan",
+        "dev.jev_down": "Jev is unreachable since {time}. Chat turns are queued.",
+        "dev.jev_back": (
+            "Jev is back. {count} queued turn(s) answered; the longest waited {minutes} min."
+        ),
     },
     "fi": {
         "absence.recorded": [
@@ -560,5 +589,25 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
             "Anteeksi, en pysty vastaamaan juuri nyt. Yritä hetken päästä uudelleen.",
             "Anteeksi, jokin meni vikaan päässäni. Yritä pian uudelleen.",
         ],
+        "agent.shift_supervisor.label": "Vuoropäällikkö",
+        "agent.sales_supervisor.label": "Myyntipäällikkö",
+        "agent.inventory_manager.label": "Varastopäällikkö",
+        "agent.bookkeeper.label": "Kirjanpitäjä",
+        "agent.hr_officer.label": "Henkilöstöasiantuntija",
+        "agent.branch_manager.label": "Myymäläpäällikkö",
+        "chat.switched": "({agent})",
+        "route.question": "Koskeeko tämä:",
+        "reply.busy": [
+            "Mia on juuri nyt kiireinen ja vastaa sinulle pian.",
+            "Mialla on nyt kiire. Saat vastauksen pian.",
+        ],
+        "reply.no_agent": (
+            "En voi vielä auttaa sinua täällä. Pyydä esihenkilöäsi ottamaan Mia käyttöön sinulle."
+        ),
+        "language.set": "Selvä, käytän kieltä: {language}.",
+        "dev.jev_down": "Jev ei vastaa {time} alkaen. Viestit odottavat jonossa.",
+        "dev.jev_back": (
+            "Jev vastaa taas. {count} jonossa ollutta viestiä vastattu; pisin odotus {minutes} min."
+        ),
     },
 }
