@@ -188,6 +188,7 @@ Format for each entry:
   the table moves with a migration and the service stays. The enterer of a check-out row is
   the cleaner; a correction makes the corrector the enterer.
 - Blocking: no (the placement is open, the behaviour is built)
+- Answered 18 Oct 2026 (ADR 014): timesheets are a core table (data standard 1.4).
 
 ## Q21: A job's default assignee
 - Where: spec.md data standard (job has no assignee field); the seed assigns by name

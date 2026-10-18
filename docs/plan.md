@@ -57,7 +57,7 @@ Remaining work in this order, because each step unblocks the next:
    distilled intent classifier where Gemma is weak (the role skill models, built; the weak
    intents come from the same measurement). The dispatcher's data package is at Gate 1
    (2026-10-12): 13 intents, two local teachers for train and a provisional local test set,
-   every record reviewed (node/mia/agents/dispatcher/skill/review.md); training waits for the
+   every record reviewed (node/mia/agents/shift_supervisor/skill/review.md); training waits for the
    developer's Gate 1, promotion for Gate 2 (Q26).
    A second decider, Jev (TypeSafe, `MIA_DECIDER=jev`, synthetic data only, Q27), picks the
    action and code words the reply: 38/48 on the agentic suite (Gemma 37 and 38), 87.8%
@@ -105,7 +105,7 @@ mia/
     mia/
       core/          data standard models, auth, rbac, approvals, events, egress, usage
       templates/cleaning/   sites, jobs, visits, checklists
-      agents/dispatcher/    manifest.yaml, job.md, prompts/, tools/, tests/
+      agents/shift_supervisor/ manifest.yaml, job.md, prompts/, tools/, tests/
       chat/          AG-UI endpoint, message model, blocks
       api/           FastAPI routers (OpenAPI is the contract for the apps)
       workers/       Huey tasks: visit generation, alerts, exports, backups
@@ -242,13 +242,13 @@ Candidates must be available, within daily and weekly hour limits, and not alrea
 
 ### Permissions
 
-- Role `agent.dispatcher`; grants listed one by one as above; `denies: tool:*:approve`.
+- Role `agent.shift_supervisor`; grants listed one by one as above; `denies: tool:*:approve`.
 - Approvers: supervisor, admin, owner. Client notifications: supervisor.
 - Separation of duties: the person who reported the absence cannot approve their own replacement.
 
 ### Instructions and models
 
-- Base instructions in `prompts/base.md`; organisation instructions for Hype in `config/org/hype/dispatcher.md` (for example who to call for keys, quiet hours).
+- Base instructions in `prompts/base.md`; organisation instructions for Hype in `config/org/hype/shift_supervisor.md` (for example who to call for keys, quiet hours).
 - Models: Gemma 4 12B on Ollama on the node only (D18); nothing goes to a cloud model with real data. Turns stop after 8 model calls with a polite translated fallback (D22). Where Gemma is weak (mostly format errors and extra tool calls), skills distilled from a cloud teacher (Sonnet 5.5, 100% on the suite) into small local classifiers run when their confidence is high, with a clarifying question (quick replies) when it is not.
 - Languages: Finnish and English in and out; Filipino is measured in the evaluation suite for later Philippine clients.
 

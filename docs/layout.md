@@ -27,11 +27,11 @@ mia/
       templates/cleaning/   models (sites, checklists), seed, importer (master data from YAML)
       learning/             role skill data: generate, translate (the eval set by language), train, bakeoff
       agents/               base.py (manifest, guard, model factory)
-        dispatcher/         manifest.yaml, job.md, prompts/, models.py, classifier.py,
+        shift_supervisor/   manifest.yaml, job.md, prompts/, models.py, classifier.py,
                             scoring.py, cover.py (confirmation flow), alerts.py (missed
                             check-in and check-out, overtime, unstaffed visits, daily plan),
                             timesheets.py (drafts, corrections, approval, payroll rows),
-                            rules.py, tools.py (incl. site problems),
+                            rules.py, tools.py (incl. incidents),
                             agent.py, tests/scenarios.yaml (and scenarios_en.yaml)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
       skills/               classifier runtime and per-turn routing (ADR 013)
