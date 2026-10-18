@@ -66,7 +66,7 @@ def test_demo_1_cleaner_reports_sick_in_finnish(
 
 
 def test_demo_2_3_supervisor_assigns_and_cleaner_confirms(
-    client: TestClient, people: dict[str, Person], session: Session
+    client: TestClient, people: dict[str, Person], session: Session, daytime: object
 ) -> None:
     say(client, people["Juha"], "Olen kipeä huomenna.")
     sanna, mikael = people["Sanna"], people["Mikael"]
@@ -84,10 +84,9 @@ def test_demo_2_3_supervisor_assigns_and_cleaner_confirms(
     assert visit.assigned_person_ids == [people["Juha"].id]  # waits for Mikael
 
     inbox = client.get("/notifications", headers={"X-Mia-Actor": mikael.id}).json()
-    if "quiet hours end" not in text:
-        ask = inbox[-1]["blocks"]
-        assert ask[0]["type"] == "text" and "Kalasatama" in ask[0]["text"]
-        assert ask[1]["options"] == ["Hyväksyn", "En pysty"]
+    ask = inbox[-1]["blocks"]
+    assert ask[0]["type"] == "text" and "Kalasatama" in ask[0]["text"]
+    assert ask[1]["options"] == ["Hyväksyn", "En pysty"]
     accepted = say(client, mikael, "Hyväksyn")
     assert "on nyt sinun" in blocks_of(accepted, "text")[0]["text"]
     session.refresh(visit)
