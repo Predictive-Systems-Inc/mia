@@ -421,3 +421,21 @@ Format for each entry:
 - Question: does `/mia-build-agent` run the real-Jev gates itself, or hand the command to the developer?
 - Assumed answer: it runs them when `MIA_TYPESAFE_KEY` is set and reports; the developer decides on tuning.
 - Blocking: no.
+
+## Q53: Inventory tables move to core with the sales tables
+- Where: docs/superpowers/specs/2026-10-19-inventory-manager-design.md (section 2); mia/agents/inventory_manager/models.py
+- Question: `inventory_manager_stock_events` and `inventory_manager_orders` are agent-owned today; the bookkeeper (expenses from orders) and the branch manager (stock in the weekly summary) will read them. Promote them with the sales tables as data standard 1.5?
+- Assumed answer: yes, in the same promotion (Q39), by an in-place edit of `0000_initial` before the first candidate and one ADR.
+- Blocking: no now; yes before the bookkeeper or the branch manager is built.
+
+## Q54: The bake plan without the sales counts
+- Where: docs/superpowers/specs/2026-10-19-inventory-manager-design.md (section 7); mia/agents/inventory_manager/calc.py
+- Question: until the sales counts are readable (1.5), the bake plan is a heuristic on this agent's sell-outs and leftovers over the last four same weekdays. Acceptable for v1?
+- Assumed answer: yes; the message says it is a suggestion.
+- Blocking: no.
+
+## Q55: An order without prices
+- Where: docs/superpowers/specs/2026-10-19-inventory-manager-design.md (section 6); the approval card
+- Question: pack prices are optional seed data; without one the approval card shows the lines and no total.
+- Assumed answer: acceptable; the owner approves the lines.
+- Blocking: no.
