@@ -52,6 +52,8 @@ async def _one(i: int, case: Case, engine: Engine, branch: Branch, sem: asyncio.
     its egress purpose carries the case index so its tokens can be found afterwards."""
     agents = [AGENTS[a] for a in ROSTER]
     active = AGENTS[case.active] if case.active else None
+    # Unpseudonymised: build_request and jev.ask directly (not agent_router.route), so names in
+    # the intent rows reach Jev as written, which production does not do.
     body = build_request(case.text, agents, active, case.previous, get_settings().MIA_JEV_MODEL)
     result: dict[str, Any] = {"i": i, **case.__dict__, "kind": "error", "agent": None}
     async with sem:
@@ -69,11 +71,12 @@ async def _one(i: int, case: Case, engine: Engine, branch: Branch, sem: asyncio.
                 start = time.perf_counter()
                 try:
                     with egress_context(ctx):
-                        answers = await jev.ask(body)
+                        answers = await asyncio.wait_for(jev.ask(body), timeout=30)
                     route = decide(answers, agents, case.active)
-                except jev.JevUnreachable as exc:
-                    result["error"] = str(exc)
-                    await asyncio.sleep(5 * (attempt + 1))
+                except (jev.JevUnreachable, TimeoutError) as exc:
+                    result["error"] = str(exc) or type(exc).__name__
+                    if attempt < 3:
+                        await asyncio.sleep(5 * (attempt + 1))
                     continue
                 except jev.JevError as exc:
                     result["error"] = str(exc)
