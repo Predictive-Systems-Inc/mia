@@ -260,7 +260,8 @@ def test_best_day_this_month(
     _, people = ferinos
     _answers(monkeypatch, "sales_period", period="this_month", branch="all")
     reply = _turn(session, people["Rosa"], "best day this month?")
-    assert "best day" in reply.text() or "no sales counted" in reply.text()
+    text = reply.text()  # Rosa writes Filipino
+    assert "pinakamagandang araw" in text or "walang nabilang" in text
 
 
 def test_which_branch_sells_most_ube(

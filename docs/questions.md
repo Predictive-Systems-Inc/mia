@@ -269,48 +269,56 @@ Format for each entry:
 - Question: Who reviews the Filipino strings in mia/i18n/fil.py?
 - Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
 - Blocking: no for the package; yes before a client uses Filipino.
+- The sales supervisor's Filipino keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 
 ## Q29: Review of the Cebuano strings
 - Where: node/mia/i18n/ceb.py; spec 2026-10-18-multi-agent-routing-design.md
 - Question: Who reviews the Cebuano strings in mia/i18n/ceb.py?
 - Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
 - Blocking: no for the package; yes before a client uses Cebuano.
+- The sales supervisor's Cebuano keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 
 ## Q30: Review of the Ilocano strings
 - Where: node/mia/i18n/ilo.py; spec 2026-10-18-multi-agent-routing-design.md
 - Question: Who reviews the Ilocano strings in mia/i18n/ilo.py?
 - Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
 - Blocking: no for the package; yes before a client uses Ilocano.
+- The sales supervisor's Ilocano keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 
 ## Q31: Review of the Hiligaynon strings
 - Where: node/mia/i18n/hil.py; spec 2026-10-18-multi-agent-routing-design.md
 - Question: Who reviews the Hiligaynon strings in mia/i18n/hil.py?
 - Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
 - Blocking: no for the package; yes before a client uses Hiligaynon.
+- The sales supervisor's Hiligaynon keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 
 ## Q32: Review of the Waray strings
 - Where: node/mia/i18n/war.py; spec 2026-10-18-multi-agent-routing-design.md
 - Question: Who reviews the Waray strings in mia/i18n/war.py?
 - Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
 - Blocking: no for the package; yes before a client uses Waray.
+- The sales supervisor's Waray keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 
 ## Q33: Review of the Bikol strings
 - Where: node/mia/i18n/bcl.py; spec 2026-10-18-multi-agent-routing-design.md
 - Question: Who reviews the Bikol strings in mia/i18n/bcl.py?
 - Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
 - Blocking: no for the package; yes before a client uses Bikol.
+- The sales supervisor's Bikol keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 
 ## Q34: Review of the Kapampangan strings
 - Where: node/mia/i18n/pam.py; spec 2026-10-18-multi-agent-routing-design.md
 - Question: Who reviews the Kapampangan strings in mia/i18n/pam.py?
 - Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
 - Blocking: no for the package; yes before a client uses Kapampangan.
+- The sales supervisor's Kapampangan keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 
 ## Q35: Review of the Pangasinan strings
 - Where: node/mia/i18n/pag.py; spec 2026-10-18-multi-agent-routing-design.md
 - Question: Who reviews the Pangasinan strings in mia/i18n/pag.py?
 - Assumed answer: they ship as machine drafts and a native speaker reviews them before a client uses that language.
 - Blocking: no for the package; yes before a client uses Pangasinan.
+- The sales supervisor's Pangasinan keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 
 ## Q36: Accountants and viewers have no agent
 - Where: node/config/policies/policy.csv (no `agent:*` line for `accountant` or `viewer`); node/mia/chat/access.py

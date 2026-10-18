@@ -22,7 +22,7 @@ def test_every_new_key_exists_in_every_language() -> None:
 
 
 def test_a_missing_key_falls_back_to_english() -> None:
-    assert i18n.t("clarify.question", "pag") == i18n.t("clarify.question", "en")
+    assert i18n.t("conversation.apology", "pag") == i18n.t("conversation.apology", "en")
 
 
 def test_the_shift_supervisor_is_vuoropaallikko_in_finnish() -> None:
