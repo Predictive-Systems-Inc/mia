@@ -14,6 +14,8 @@ one Mia should not ask the same thing again. Measured: the part 1 gate (right ag
 90% per gated language, wrong agent at most 2% overall) on a retail case set, and the ask rate
 on repeated messages going to zero after two confirmations.
 
+Result (19 Oct 2026, docs/research/router-2026-10-19.md): gate FAILED. Gate half, six gated languages: right 64.3% to 78.6% per language, wrong 6.7% (all gated).
+
 ## What the evaluation showed
 
 - 74.5% of greetings, thanks and conversation intents ask. Jev says `unclear` at 0.8 to 0.95:
@@ -151,9 +153,9 @@ all ten languages, machine drafts noted as before.
 
 ## Open questions (docs/questions.md)
 
-- Q36: should a learned key be per person or per branch? Assumed per branch: clerks share
+- Q37 (Q36 was taken): should a learned key be per person or per branch? Assumed per branch: clerks share
   the shop's words and one clerk's confirmation helps the next.
-- Q37: should the owner be told when Mia learns a key? Assumed no; `mia learned` is enough
+- Q38: should the owner be told when Mia learns a key? Assumed no; `mia learned` is enough
   until the owner page exists.
 
 ## Order of work

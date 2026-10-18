@@ -317,3 +317,15 @@ Format for each entry:
 - Question: Should accountants and viewers reach an agent? Before multi-agent routing they could talk to the shift supervisor; now they get `reply.no_agent`.
 - Assumed answer: intended until their agents exist (bookkeeper for accountants, branch_manager for viewers); their `agent:*` lines are added with those agents.
 - Blocking: no.
+
+## Q37: Learned keys are per branch or per person
+- Where: docs/superpowers/specs/2026-10-18-router-follow-up-design.md (decision 4); mia/chat/route_memory.py
+- Question: Should a learned key be per person or per branch?
+- Assumed answer: per branch: clerks share the shop's words and one clerk's confirmation helps the next.
+- Blocking: no.
+
+## Q38: Tell the owner when Mia learns a key
+- Where: docs/superpowers/specs/2026-10-18-router-follow-up-design.md (decision 5); `mia learned`
+- Question: Should the owner be told when Mia learns a key?
+- Assumed answer: no; `mia learned` is enough until the owner page exists.
+- Blocking: no.
