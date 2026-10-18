@@ -5,8 +5,8 @@ from typing import Any
 import pytest
 from sqlmodel import Session, select
 
-from mia.agents.dispatcher import actions, decider
-from mia.agents.dispatcher.agent import MANIFEST
+from mia.agents.shift_supervisor import actions, decider
+from mia.agents.shift_supervisor.agent import MANIFEST
 from mia.core.egress import EgressContext, egress_context
 from mia.core.models import Actor, Branch, EgressLog, Person, UsageCloudRequest
 from mia.settings import get_settings
@@ -233,7 +233,7 @@ def _ctx(
         actor=Actor.person(people["Juha"]).as_agent(MANIFEST.roles.agent_role),
         organisation_id=branch.organisation_id,
         agent_id=MANIFEST.id,
-        purpose="dispatcher.decide",
+        purpose="shift_supervisor.decide",
         level=level,
         provider="typesafe",
     )

@@ -4,7 +4,7 @@ import datetime as dt
 
 import pytest
 
-from mia.agents.dispatcher.classifier import classify, detect_language, parse_date, parse_time
+from mia.agents.shift_supervisor.classifier import classify, detect_language, parse_date, parse_time
 
 TODAY = dt.date(2026, 9, 30)  # a Wednesday
 

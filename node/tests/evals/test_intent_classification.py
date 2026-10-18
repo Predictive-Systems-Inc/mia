@@ -4,7 +4,7 @@ A small agent reads one message and the sender's role and returns one intent id 
 intents_catalogue.yaml (message-triggered rows), a shared conversation intent (D30) or `other`,
 with a confidence. Run with:
   MIA_EVAL_MODEL=local/gemma4-mia uv run pytest node/tests/evals/test_intent_classification.py -m evals -s
-MIA_EVAL_MODEL=test runs the dispatcher's rules classifier as a baseline (it knows six intents).
+MIA_EVAL_MODEL=test runs the shift supervisor's rules classifier as a baseline (it knows six intents).
 MIA_EVAL_INTENT_SPLIT=all uses every message (default: the held-out `test` split);
 MIA_EVAL_INTENT_LANG picks the language of intents.jsonl (default en);
 MIA_EVAL_REPORT=<path> also writes the report and every prediction as JSON.
@@ -28,7 +28,7 @@ from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from mia.agents.base import build_model
-from mia.agents.dispatcher.classifier import classify
+from mia.agents.shift_supervisor.classifier import classify
 from tests.evals.intents import (
     CONVERSATION,
     OTHER,
@@ -86,13 +86,13 @@ def prompt(example: Example) -> str:
 
 
 def rules_baseline(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-    """MIA_EVAL_MODEL=test: the dispatcher's deterministic classifier, mapped to catalogue ids."""
+    """MIA_EVAL_MODEL=test: the shift supervisor's deterministic classifier, mapped to catalogue ids."""
     last = str(messages[-1].parts[-1].content)  # type: ignore[union-attr]
     m = re.search(r"<user_message>\n(.*)\n</user_message>", last, re.DOTALL)
     intent = classify(
         html.unescape(m[1] if m else last), dt.datetime.now(ZoneInfo("Europe/Helsinki")).date()
     )
-    label = OTHER if intent.name == "other" else f"dispatcher.{intent.name}"
+    label = OTHER if intent.name == "other" else f"shift_supervisor.{intent.name}"
     args = {"intent": label, "confidence": 1.0}
     return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, args)])
 

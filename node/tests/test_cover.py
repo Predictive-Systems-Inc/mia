@@ -10,8 +10,8 @@ import pytest
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps
-from mia.agents.dispatcher import cover, tools
-from mia.agents.dispatcher.agent import MANIFEST, create_agent
+from mia.agents.shift_supervisor import cover, tools
+from mia.agents.shift_supervisor.agent import MANIFEST, create_agent
 from mia.chat.channels import NOTIFICATION, CallResult, StubCallAdapter, set_call_adapter
 from mia.core import scheduling, store
 from mia.core.models import Actor, Branch, CoverRequest, Event, Job, Message, Person, Thread, Visit
@@ -22,7 +22,7 @@ ORG = OrgSettings()
 
 
 @pytest.fixture(autouse=True)
-def dispatcher_role() -> None:
+def shift_supervisor_role() -> None:
     create_agent("test")
 
 
@@ -33,7 +33,7 @@ def local(day: dt.date, hour: int, minute: int = 0) -> dt.datetime:
 def deps_for(session: Session, branch: Branch, person: Person) -> AgentDeps:
     return AgentDeps(
         session=session,
-        actor=Actor.person(person).as_agent("agent.dispatcher"),
+        actor=Actor.person(person).as_agent("agent.shift_supervisor"),
         person=person,
         branch=branch,
         organisation_id=branch.organisation_id,
@@ -270,7 +270,7 @@ def test_instructor_replacing_themselves_needs_approval(
 ) -> None:
     visit = kamppi_visit(session, 2)
     juha = people["Juha"]
-    actor = Actor.person(juha).as_agent("agent.dispatcher")
+    actor = Actor.person(juha).as_agent("agent.shift_supervisor")
     deps = deps_for(session, branch, juha)
     pool = {c.person_id: c for c in tools.candidate_data(session, deps, visit)}
     request = cover.instruct(

@@ -1,4 +1,4 @@
-"""Rules classifier for the dispatcher (manifest `models.classifier: rules`).
+"""Rules classifier for the shift supervisor (manifest `models.classifier: rules`).
 
 Turns one user message into an Intent with extracted slots. It never decides anything: tools
 and code do. Messages that try to instruct the agent ("ignore your rules ...") are classified

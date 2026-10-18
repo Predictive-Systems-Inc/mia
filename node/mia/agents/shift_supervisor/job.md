@@ -1,9 +1,9 @@
-# Dispatcher: job description
+# Shift supervisor: job description
 
 Keeps every visit staffed. Handles absence reports and shift questions from cleaners, suggests
 replacements, keeps supervisors informed, and never changes pay or client commitments on its own.
 
-In this build the dispatcher can:
+In this build the shift supervisor can:
 
 - show a person their own visits (supervisors can ask about anyone);
 - record an absence (sick, late, leaving early) and list the visits it affects;

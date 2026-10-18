@@ -173,7 +173,7 @@ def test_role_intent_matching_kb_suffix_is_an_error() -> None:
 
 
 def test_role_intent_without_a_matching_suffix_is_not_an_error() -> None:
-    assert not [e for e in _shadow("dispatcher.report_absence") if "duplicates" in e]
+    assert not [e for e in _shadow("shift_supervisor.report_absence") if "duplicates" in e]
 
 
 def test_record_equal_to_a_conversation_example_is_a_warning() -> None:

@@ -139,10 +139,10 @@ def test_train_surfaces_real_import_errors(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr(commands, "import_module", broken(ImportError("bug")))
     with pytest.raises(ImportError, match="bug"):
-        main(["skills", "train", "dispatcher"])
+        main(["skills", "train", "shift_supervisor"])
     monkeypatch.setattr(commands, "import_module", broken(ModuleNotFoundError("x", name="mia.x")))
     with pytest.raises(ModuleNotFoundError):
-        main(["skills", "train", "dispatcher"])
+        main(["skills", "train", "shift_supervisor"])
 
 
 def test_train_missing_learning_package_gives_the_hint(
@@ -152,7 +152,7 @@ def test_train_missing_learning_package_gives_the_hint(
         raise ModuleNotFoundError("No module named 'torch'", name="torch")
 
     monkeypatch.setattr(commands, "import_module", raiser)
-    assert main(["skills", "train", "dispatcher"]) == 2
+    assert main(["skills", "train", "shift_supervisor"]) == 2
     assert capsys.readouterr().out == "install the learning group: uv sync --group learning\n"
 
 
@@ -227,14 +227,14 @@ def test_promote_and_harvest_need_exactly_one_branch(
 def test_harvest_prints_the_count(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["migrate"]) == 0 and main(["seed"]) == 0
     capsys.readouterr()
-    assert main(["skills", "harvest", "dispatcher"]) == 0
+    assert main(["skills", "harvest", "shift_supervisor"]) == 0
     assert capsys.readouterr().out == "0 new candidates\n"
 
 
 def test_health_includes_skills(branch: object, monkeypatch: pytest.MonkeyPatch) -> None:
     from mia.skills import runtime
 
-    status = {"dispatcher": {"status": "active", "version": "v7"}}
+    status = {"shift_supervisor": {"status": "active", "version": "v7"}}
     monkeypatch.setattr(runtime, "_status", status)
     assert TestClient(app).get("/health").json()["skills"] == status
 
@@ -352,8 +352,8 @@ def test_bakeoff_missing_learning_package_gives_the_hint(
         raise ModuleNotFoundError("No module named 'torch'", name="torch")
 
     monkeypatch.setattr(commands, "import_module", raiser)
-    assert main(["skills", "bakeoff", "dispatcher"]) == 2
-    assert main(["skills", "train", "dispatcher", "--kind", "knn"]) == 2
+    assert main(["skills", "bakeoff", "shift_supervisor"]) == 2
+    assert main(["skills", "train", "shift_supervisor", "--kind", "knn"]) == 2
     assert capsys.readouterr().out == ("install the learning group: uv sync --group learning\n" * 2)
 
 

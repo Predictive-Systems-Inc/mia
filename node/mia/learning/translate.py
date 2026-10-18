@@ -22,7 +22,7 @@ from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from mia.agents.base import build_model
-from mia.agents.dispatcher.rules import rules_model
+from mia.agents.shift_supervisor.rules import rules_model
 
 log = logging.getLogger(__name__)
 LANGUAGES = {"fi": "Finnish", "fil": "Filipino", "en": "English"}

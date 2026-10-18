@@ -28,14 +28,14 @@ def _request(session: Session, requester: Actor, **kw: object) -> Approval:
 
 
 def test_request_is_pending_and_logged(session: Session, people: dict[str, Person]) -> None:
-    row = _request(session, Actor.person(people["Sanna"]).as_agent("agent.dispatcher"))
+    row = _request(session, Actor.person(people["Sanna"]).as_agent("agent.shift_supervisor"))
     assert row.status == "pending" and row.expires_at is not None
     assert session.exec(select(Event).where(Event.action == "approval.requested")).first()
 
 
 def test_requester_cannot_approve_own_request(session: Session, people: dict[str, Person]) -> None:
     sanna = Actor.person(people["Sanna"])
-    row = _request(session, sanna.as_agent("agent.dispatcher"))
+    row = _request(session, sanna.as_agent("agent.shift_supervisor"))
     with pytest.raises(ApprovalError, match="made or triggered"):
         approvals.decide(session, row.id, sanna, "approved")
 
@@ -57,7 +57,7 @@ def test_decider_needs_an_approver_role(session: Session, people: dict[str, Pers
 
 def test_agents_never_decide(session: Session, people: dict[str, Person]) -> None:
     row = _request(session, Actor.person(people["Sanna"]))
-    agent = Actor.person(people["Helena"]).as_agent("agent.dispatcher")
+    agent = Actor.person(people["Helena"]).as_agent("agent.shift_supervisor")
     with pytest.raises(ApprovalError, match="only people"):
         approvals.decide(session, row.id, agent, "approved")
 

@@ -1,6 +1,6 @@
-# Training plan for the dispatcher role: the intents the agent handles today (the seed plan of
+# Training plan for the shift supervisor role: the intents the agent handles today (the seed plan of
 # 6 Oct grew on 12 Oct with the field-work intents built since, D20). Ids stay stable.
-id: dispatcher
+id: shift_supervisor
 job_summary: "Keeps every visit staffed and running: absences, cover, check-in and check-out, site problems."
 responsibilities:
   - record absences reported by cleaners and ask which visits they cover
@@ -15,7 +15,7 @@ languages: [en, fi]
 countries: [FI]
 styles: {informal: 0.3, terse: 0.15, typo: 0.15, indirect: 0.15, formal: 0.1, mixed: 0.1, context: 0.05}
 intents:
-  - id: dispatcher.report_absence
+  - id: shift_supervisor.report_absence
     description: Tells Mia they cannot work a day or a visit (sick, late, leaving early) so it is recorded; a write because a visit loses its cleaner.
     counterparts: [cleaner]
     risk: write
@@ -24,10 +24,10 @@ intents:
     handler: agent
     volume: high
     look_alikes:
-      - dispatcher.cover_reply (declining a cover request is not an absence)
-      - dispatcher.absence_scope (the answer to which visits, after the absence)
+      - shift_supervisor.cover_reply (declining a cover request is not an absence)
+      - shift_supervisor.absence_scope (the answer to which visits, after the absence)
       - conversation.kb_sick_leave_rules (a question about the rules, not a report)
-  - id: dispatcher.absence_scope
+  - id: shift_supervisor.absence_scope
     description: Answers Mia's question which visits a just-reported absence covers (the whole day, only the morning, only one named visit, until Thursday); the context is Mia asking whether the absence covers the whole day or which visits, and the message is only the answer, not a new absence report; a write because it changes the recorded absence.
     counterparts: [cleaner]
     risk: write
@@ -35,35 +35,35 @@ intents:
     handler: agent
     follow_up: true
     look_alikes:
-      - dispatcher.report_absence (the first report, not the follow-up answer)
+      - shift_supervisor.report_absence (the first report, not the follow-up answer)
       - conversation.affirm (a bare yes is not a scope)
-  - id: dispatcher.my_visits
+  - id: shift_supervisor.my_visits
     description: Asks Mia to show their own visits or schedule (today, tomorrow, this week).
     counterparts: [cleaner, supervisor]
     risk: read
     label_en: Show my visits
     handler: agent
     look_alikes:
-      - dispatcher.visit_details (details of one visit, not the list)
-      - dispatcher.who_is_working (a supervisor asking who works where)
-  - id: dispatcher.find_cover
+      - shift_supervisor.visit_details (details of one visit, not the list)
+      - shift_supervisor.who_is_working (a supervisor asking who works where)
+  - id: shift_supervisor.find_cover
     description: Asks Mia who could cover a visit that lost its cleaner.
     counterparts: [supervisor]
     risk: read
     label_en: Find cover
     handler: agent
     look_alikes:
-      - dispatcher.assign (naming the person is the assignment, not the search)
-      - dispatcher.who_is_working (asking who is on today, not who could cover)
-  - id: dispatcher.assign
+      - shift_supervisor.assign (naming the person is the assignment, not the search)
+      - shift_supervisor.who_is_working (asking who is on today, not who could cover)
+  - id: shift_supervisor.assign
     description: Instructs Mia to assign a person, always named by first name, to a visit named by site, client or time, with varied names and sites; without a name it is find_cover, not this; a write because the visit changes once the person accepts.
     counterparts: [supervisor]
     risk: write
     label_en: Assign cover
     handler: agent
     look_alikes:
-      - dispatcher.find_cover (asking for candidates, no name yet)
-  - id: dispatcher.cover_reply
+      - shift_supervisor.find_cover (asking for candidates, no name yet)
+  - id: shift_supervisor.cover_reply
     description: Answers a cover request Mia sent (accepts or declines the visit); a write because the visit is reassigned on accept.
     counterparts: [cleaner]
     risk: write
@@ -71,10 +71,10 @@ intents:
     handler: agent
     follow_up: true
     look_alikes:
-      - dispatcher.report_absence (a decline is not an absence)
+      - shift_supervisor.report_absence (a decline is not an absence)
       - conversation.affirm (a yes to a cover request is this intent, not a bare affirm)
       - conversation.greeting (a short reply is not a greeting)
-  - id: dispatcher.check_in
+  - id: shift_supervisor.check_in
     description: Tells Mia they have arrived at the site and are starting the visit; a write because the visit goes in progress.
     counterparts: [cleaner]
     risk: write
@@ -83,9 +83,9 @@ intents:
     handler: agent
     volume: high
     look_alikes:
-      - dispatcher.check_out (leaving, not arriving)
-      - dispatcher.cannot_access_site (arrived but cannot get in)
-  - id: dispatcher.check_out
+      - shift_supervisor.check_out (leaving, not arriving)
+      - shift_supervisor.cannot_access_site (arrived but cannot get in)
+  - id: shift_supervisor.check_out
     description: Tells Mia the visit is finished and they are leaving; a write because the visit completes.
     counterparts: [cleaner]
     risk: write
@@ -94,10 +94,10 @@ intents:
     handler: agent
     volume: high
     look_alikes:
-      - dispatcher.check_in (arriving, not leaving)
-      - dispatcher.checklist (ticking one item is not finishing the visit)
+      - shift_supervisor.check_in (arriving, not leaving)
+      - shift_supervisor.checklist (ticking one item is not finishing the visit)
       - conversation.goodbye (a farewell, not the end of a visit)
-  - id: dispatcher.cannot_access_site
+  - id: shift_supervisor.cannot_access_site
     description: Tells Mia they are at the site and cannot get in (locked door, no key, wrong door code, alarm) so the supervisors hear; a write because a site problem is recorded.
     counterparts: [cleaner]
     risk: write
@@ -105,19 +105,19 @@ intents:
     handler: agent
     look_alikes:
       - admin.reset_login (cannot log in to Mia, not into a building)
-      - dispatcher.visit_details (asking for the door code, not reporting it fails)
-      - dispatcher.key_location (asking where the key is)
-  - id: dispatcher.site_problem
+      - shift_supervisor.visit_details (asking for the door code, not reporting it fails)
+      - shift_supervisor.key_location (asking where the key is)
+  - id: shift_supervisor.site_problem
     description: Reports that site conditions stop or change the work (no water or power, renovation, event, client still there) so the supervisors hear; a write because a site problem is recorded.
     counterparts: [cleaner]
     risk: write
     label_en: Problem at site
     handler: agent
     look_alikes:
-      - dispatcher.cannot_access_site (cannot enter at all)
+      - shift_supervisor.cannot_access_site (cannot enter at all)
       - purchaser.broken_equipment (the company's own machine is broken)
       - conversation.hazard_report (a danger to people, not a work stoppage)
-  - id: dispatcher.visit_details
+  - id: shift_supervisor.visit_details
     description: Asks Mia for the practical details of a visit (address, door code, instructions, where things are).
     counterparts: [cleaner]
     risk: read
@@ -125,10 +125,10 @@ intents:
     slots: [location_name]
     handler: agent
     look_alikes:
-      - dispatcher.my_visits (the list of visits, not one visit's details)
-      - dispatcher.key_location (where the physical key is)
+      - shift_supervisor.my_visits (the list of visits, not one visit's details)
+      - shift_supervisor.key_location (where the physical key is)
       - conversation.kb_cleaning_howto (how to clean, not where and how to get in)
-  - id: dispatcher.checklist
+  - id: shift_supervisor.checklist
     description: Asks Mia for the visit's checklist or tells it which item is done; a write because ticks are recorded on the visit.
     counterparts: [cleaner]
     risk: write
@@ -136,14 +136,14 @@ intents:
     slots: [item]
     handler: agent
     look_alikes:
-      - dispatcher.check_out (the whole visit done, not one item)
-      - dispatcher.site_problem (an item that cannot be done because of the site)
-  - id: dispatcher.send_photos
+      - shift_supervisor.check_out (the whole visit done, not one item)
+      - shift_supervisor.site_problem (an item that cannot be done because of the site)
+  - id: shift_supervisor.send_photos
     description: Tells Mia photos of the work are coming or attached, as proof of work; a write because the photo is referenced on the visit.
     counterparts: [cleaner]
     risk: write
     label_en: Send photos
     handler: agent
     look_alikes:
-      - dispatcher.check_out (finishing, without a photo)
+      - shift_supervisor.check_out (finishing, without a photo)
       - conversation.media_without_text (a bare attachment, no words)

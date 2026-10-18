@@ -4,7 +4,7 @@ Local-first AI ERP for businesses that run on shifts. One Mia Node per client br
 built with Pydantic AI, data in SQLite on the client's own server.
 
 This repository holds the first milestone (docs/brief.md): the node skeleton, the coding
-harness, and a basic dispatcher agent you can chat with.
+harness, and a basic shift supervisor agent you can chat with.
 
 ## Quick start
 
@@ -76,9 +76,9 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run mia skills generate ROLE --model ROUTE --split train\|test` | Teacher-model generation per coverage cell (role skill models) |
 | `uv run mia skills translate --lang fi\|fil --model ROUTE [--limit N]` | The intent eval set in another language, translated from the English records (a `local/` model sends nothing off the node) |
 | `uv run pytest` | Unit tests |
-| `uv run pytest node/tests/evals -m evals` | Dispatcher evaluation suite (41 scenarios, 5 runs each; `MIA_EVAL_SUITE=tests/scenarios_en.yaml` for English only) |
+| `uv run pytest node/tests/evals -m evals` | Shift supervisor evaluation suite (41 scenarios, 5 runs each; `MIA_EVAL_SUITE=tests/scenarios_en.yaml` for English only) |
 | `MIA_EVAL_MODEL=local/<model> uv run pytest node/tests/evals/test_intent_classification.py -m evals -s` | English intent classification over docs/capabilities.md (held-out split; `MIA_EVAL_INTENT_SPLIT=all`, `MIA_EVAL_REPORT=file.json`) |
-| `MIA_DECIDER=jev MIA_EVAL_RUNS=1 uv run pytest node/tests/evals/test_dispatcher_evals.py -m evals -s` | The dispatcher suite through Jev (spec docs/superpowers/specs/2026-10-17-jev-decider-design.md; needs `MIA_TYPESAFE_KEY`, demo data only) |
+| `MIA_DECIDER=jev MIA_EVAL_RUNS=1 uv run pytest node/tests/evals/test_shift_supervisor_evals.py -m evals -s` | The shift supervisor suite through Jev (spec docs/superpowers/specs/2026-10-17-jev-decider-design.md; needs `MIA_TYPESAFE_KEY`, demo data only) |
 | `uv run pytest node/tests/evals/test_jev_action_eval.py -m evals -s` | Jev's action choice on the intent set (`MIA_EVAL_INTENT_SPLIT`, `MIA_EVAL_INTENT_LANG`, `MIA_EVAL_REPORT`; skips without `MIA_TYPESAFE_KEY`) |
 | `uv run ruff check . && uv run ruff format --check . && uv run mypy node/mia` | Lint and types |
 | `uv run pre-commit install` | Run ruff, mypy and detect-secrets on every commit |
@@ -146,7 +146,7 @@ to start in dev mode with a public URL. A server runs `required`.
 Visits come from each job's recurrence rule (`FREQ=DAILY` or `FREQ=WEEKLY;BYDAY=..`, optional
 `INTERVAL` and `UNTIL`), generated 28 days ahead once a day and by `mia schedule generate`.
 A new visit copies the last assignment on the same weekday when that person is still eligible,
-otherwise it is `unfilled`. Eligibility is code, the same rules the dispatcher uses for cover:
+otherwise it is `unfilled`. Eligibility is code, the same rules the shift supervisor uses for cover:
 availability, absences, double booking, daily and weekly hour limits, skills.
 
 - `GET /schedule?start=&person_id=&location_id=`: seven days of visits (staff see their own);

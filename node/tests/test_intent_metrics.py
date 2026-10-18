@@ -5,8 +5,8 @@ from typing import get_args
 
 import pytest
 
-from mia.agents.dispatcher.agent import AGENT_DIR
-from mia.agents.dispatcher.classifier import IntentName
+from mia.agents.shift_supervisor.agent import AGENT_DIR
+from mia.agents.shift_supervisor.classifier import IntentName
 from tests.evals.intents import (
     CATALOGUE_PATH,
     CONVERSATION,
@@ -44,35 +44,38 @@ def test_macro_f1() -> None:
 
 def test_report() -> None:
     results = [
-        _result("dispatcher.report_absence", "dispatcher.report_absence", 0.95),
-        _result("dispatcher.report_absence", "dispatcher.absence_scope", 0.9),
+        _result("shift_supervisor.report_absence", "shift_supervisor.report_absence", 0.95),
+        _result("shift_supervisor.report_absence", "shift_supervisor.absence_scope", 0.9),
         _result("hr.payslip", "hr.payslip", 0.5, role="office"),
         _result("hr.payslip", "made.up", 0.85, role="office"),
     ]
     rep = report(results, CATALOGUE)
     assert rep["n"] == 4 and rep["accuracy"] == 0.5
-    assert rep["area_accuracy"] == 0.75  # absence_scope is still the dispatcher
+    assert rep["area_accuracy"] == 0.75  # absence_scope is still the shift supervisor
     assert rep["invalid"] == 1
     assert report([_result("hr.payslip", "conversation.greeting")], CATALOGUE)["invalid"] == 0
-    assert rep["by_area"]["dispatcher"] == {"n": 2, "correct": 1, "accuracy": 0.5}
+    assert rep["by_area"]["shift_supervisor"] == {"n": 2, "correct": 1, "accuracy": 0.5}
     assert rep["by_role"]["office"]["correct"] == 1
     assert rep["confusions"][0][2] == 1 and len(rep["confusions"]) == 2
     assert rep["calibration"]["confident_share"] == 0.75
     assert rep["calibration"]["confident_accuracy"] == pytest.approx(1 / 3, abs=1e-4)
     assert rep["latency_s"]["mean"] == 1.0
-    assert [w[0] for w in rep["weakest_intents"]] == ["dispatcher.report_absence", "hr.payslip"]
+    assert [w[0] for w in rep["weakest_intents"]] == [
+        "hr.payslip",
+        "shift_supervisor.report_absence",
+    ]
 
 
-def test_catalogue_has_the_built_dispatcher_intents_exactly() -> None:
+def test_catalogue_has_the_built_shift_supervisor_intents_exactly() -> None:
     # Message-triggered intents map one to one onto the rules classifier; the alerts (event
     # and schedule triggers) are built too, but they are not chat intents.
-    media = {"dispatcher.send_photos"}  # a photo is media, not text: no classifier intent
+    media = {"shift_supervisor.send_photos"}  # a photo is media, not text: no classifier intent
     built = {
         i.id
         for i in CATALOGUE.values()
-        if i.agent == "dispatcher" and i.built == "yes" and i.by_message and i.id not in media
+        if i.agent == "shift_supervisor" and i.built == "yes" and i.by_message and i.id not in media
     }
-    assert built == {f"dispatcher.{n}" for n in get_args(IntentName) if n != OTHER}
+    assert built == {f"shift_supervisor.{n}" for n in get_args(IntentName) if n != OTHER}
     assert 150 <= len(CATALOGUE) <= 250
     for i in CATALOGUE.values():
         assert (i.label_en is not None) == i.by_message, i.id

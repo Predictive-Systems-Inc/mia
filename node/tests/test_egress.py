@@ -11,7 +11,7 @@ import pytest
 from pydantic_ai import models
 from sqlmodel import Session, select
 
-from mia.agents.dispatcher.agent import create_agent
+from mia.agents.shift_supervisor.agent import create_agent
 from mia.chat.service import run_turn
 from mia.core import egress
 from mia.core.egress import EgressBlocked, EgressContext, EgressTransport, Pseudonymiser
@@ -48,7 +48,7 @@ class Recorder:
                 "id": "chatcmpl-1",
                 "object": "chat.completion",
                 "created": 0,
-                "model": "dispatcher-default",
+                "model": "shift_supervisor-default",
                 "choices": [
                     {
                         "index": 0,
@@ -77,7 +77,9 @@ def test_level_none_raises_before_any_http_call(
 ) -> None:
     recorder = Recorder()
     transport = EgressTransport(httpx.MockTransport(recorder))
-    ctx = EgressContext(session, Actor.person(people["Juha"]), "ORG", "dispatcher", "chat", "none")
+    ctx = EgressContext(
+        session, Actor.person(people["Juha"]), "ORG", "shift_supervisor", "chat", "none"
+    )
 
     async def go() -> None:
         async with httpx.AsyncClient(transport=transport) as client:
@@ -112,7 +114,7 @@ def test_pseudonymised_payload_contains_no_seed_names(
         text,
         "pseudonymised",
         actor=Actor.person(people["Juha"]),
-        agent_id="dispatcher",
+        agent_id="shift_supervisor",
     )
     lowered = out.lower()
     for part in _all_name_parts(people):
@@ -138,7 +140,9 @@ def test_pseudonymiser_is_stable_and_reversible(
 def test_gateway_model_goes_through_egress(session: Session, people: dict[str, Person]) -> None:
     """Switching MIA_MODEL to a gateway route needs no code change and is logged pseudonymised."""
     recorder = Recorder(reply_text="Hei Person_3, kiitos.")
-    agent = create_agent("gateway/dispatcher-default", transport=httpx.MockTransport(recorder))
+    agent = create_agent(
+        "gateway/shift_supervisor-default", transport=httpx.MockTransport(recorder)
+    )
     juha = people["Juha"]
     reply = asyncio.run(run_turn(session, agent, juha, "Moi, olen Juha Laine. Mikael on kipeä."))
 
@@ -146,12 +150,16 @@ def test_gateway_model_goes_through_egress(session: Session, people: dict[str, P
     sent = recorder.bodies[0].lower()
     for part in _all_name_parts(people):
         assert part.lower() not in sent, f"{part} left the node"
-    assert json.loads(recorder.bodies[0])["model"] == "dispatcher-default"
+    assert json.loads(recorder.bodies[0])["model"] == "shift_supervisor-default"
 
     log = session.exec(select(EgressLog)).one()
-    assert (log.level, log.agent_id, log.purpose) == ("pseudonymised", "dispatcher", "chat")
+    assert (log.level, log.agent_id, log.purpose) == ("pseudonymised", "shift_supervisor", "chat")
     usage = session.exec(select(UsageCloudRequest)).one()
-    assert (usage.input_tokens, usage.output_tokens, usage.model) == (120, 30, "dispatcher-default")
+    assert (usage.input_tokens, usage.output_tokens, usage.model) == (
+        120,
+        30,
+        "shift_supervisor-default",
+    )
     # Tokens in the reply are restored on the node.
     ordered = sorted(people.values(), key=lambda p: p.id)
     assert reply.blocks[0].type == "text"
@@ -214,7 +222,7 @@ def test_a_classified_intent_replaces_the_regex_hint(
     """A confident role-model intent goes in instead of the regex hint (the text says absence,
     the model says my_visits)."""
     c = Classification(
-        intent="dispatcher.my_visits",
+        intent="shift_supervisor.my_visits",
         confidence=0.9,
         band="high",
         alternatives=[],
@@ -228,7 +236,7 @@ def test_a_classified_intent_replaces_the_regex_hint(
     recorder = Recorder()
     agent = create_agent("local/qwen3.5:9b", transport=httpx.MockTransport(recorder))
     asyncio.run(run_turn(session, agent, people["Juha"], "I'm sick today"))
-    assert "Classifier: the message is dispatcher.my_visits" in recorder.bodies[0]
+    assert "Classifier: the message is shift_supervisor.my_visits" in recorder.bodies[0]
     assert "call record_absence before replying" not in recorder.bodies[0]
 
 
@@ -253,7 +261,9 @@ def test_no_write_lock_is_held_during_the_model_call(
                 other.close()
             return super().__call__(request)
 
-    agent = create_agent("gateway/dispatcher-default", transport=httpx.MockTransport(LockProbe()))
+    agent = create_agent(
+        "gateway/shift_supervisor-default", transport=httpx.MockTransport(LockProbe())
+    )
     asyncio.run(run_turn(session, agent, people["Juha"], "Moi"))
     assert lock_free == [True]
     # What left the node stays logged even though the turn's transaction committed in parts.
@@ -282,6 +292,8 @@ def test_egress_db_work_is_off_the_event_loop(
 
     monkeypatch.setattr(egress, "send", spy_send)
     monkeypatch.setattr(usage, "record", spy_record)
-    agent = create_agent("gateway/dispatcher-default", transport=httpx.MockTransport(Recorder()))
+    agent = create_agent(
+        "gateway/shift_supervisor-default", transport=httpx.MockTransport(Recorder())
+    )
     asyncio.run(run_turn(session, agent, people["Juha"], "Moi"))
     assert len(on_loop) == 2 and not any(on_loop)

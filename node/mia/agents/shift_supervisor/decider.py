@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, Field
 
-from mia.agents.dispatcher.actions import (
+from mia.agents.shift_supervisor.actions import (
     ACTIONS,
     ANOTHER_DAY,
     NOT_STATED,

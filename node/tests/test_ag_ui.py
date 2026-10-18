@@ -329,7 +329,7 @@ def test_snapshot_shows_the_current_approval_status(
         "demo_change",
         ("visit", "V1"),
         "demo",
-        juha.as_agent("agent.dispatcher"),
+        juha.as_agent("agent.shift_supervisor"),
         ["supervisor"],
     )
     thread = store.insert(
@@ -342,7 +342,7 @@ def test_snapshot_shows_the_current_approval_status(
             branch_id=thread.branch_id,
             thread_id=thread.id,
             role="assistant",
-            sender_id="agent.dispatcher",
+            sender_id="agent.shift_supervisor",
             blocks=[card],
         ),
         juha,
@@ -456,7 +456,7 @@ def test_a_plain_text_answer_reaches_the_client_once(
     from pydantic_ai import TextOutput
     from pydantic_ai.messages import TextPart
 
-    from mia.agents.dispatcher.agent import text_reply
+    from mia.agents.shift_supervisor.agent import text_reply
 
     def answer(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         return ModelResponse(parts=[TextPart("Kirjasin poissaolon.")])
@@ -538,10 +538,10 @@ def test_clarify_streamed_run_lists_the_options_as_text(
     from mia.skills.runtime import Alternative, Classification
 
     c = Classification(
-        intent="dispatcher.report_absence",
+        intent="shift_supervisor.report_absence",
         confidence=0.5,
         band="medium",
-        alternatives=[Alternative(intent="dispatcher.my_visits", confidence=0.4)],
+        alternatives=[Alternative(intent="shift_supervisor.my_visits", confidence=0.4)],
         lang="en",
         slots={},
         safety=0.0,

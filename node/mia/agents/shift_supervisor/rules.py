@@ -1,4 +1,4 @@
-"""The dispatcher's rules model: a Pydantic AI FunctionModel driven by the rules classifier.
+"""The shift supervisor's rules model: a Pydantic AI FunctionModel driven by the rules classifier.
 
 Used when MIA_MODEL=test and by the evaluation suite, so every flow runs with no API key and
 tool selection is deterministic. It reads only the conversation (user text inside
@@ -23,7 +23,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
-from mia.agents.dispatcher.classifier import Intent, classify, detect_language
+from mia.agents.shift_supervisor.classifier import Intent, classify, detect_language
 from mia.chat.blocks import (
     AgentReply,
     ApprovalCardBlock,
@@ -102,7 +102,7 @@ def _call(tool: str, args: dict[str, Any]) -> ModelResponse:
 def _final(info: AgentInfo, blocks: list[Block]) -> ModelResponse:
     reply = AgentReply(blocks=blocks).model_dump(mode="json")
     if not info.output_tools:
-        raise RuntimeError("the dispatcher agent must use a structured output type")
+        raise RuntimeError("the shift supervisor agent must use a structured output type")
     return _call(info.output_tools[0].name, reply)
 
 
@@ -353,5 +353,7 @@ async def respond_stream(
 
 
 def rules_model() -> FunctionModel:
-    """The deterministic dispatcher model (MIA_MODEL=test): no network, same tools and guards."""
-    return FunctionModel(respond, stream_function=respond_stream, model_name="dispatcher-rules")
+    """The deterministic shift supervisor model (MIA_MODEL=test): no network, same tools and guards."""
+    return FunctionModel(
+        respond, stream_function=respond_stream, model_name="shift_supervisor-rules"
+    )

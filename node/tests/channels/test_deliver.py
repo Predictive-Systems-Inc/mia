@@ -169,7 +169,7 @@ def test_notify_keeps_the_app_copy_and_delivers(
         juha,
         [TextBlock(text="Hei")],
         Actor.system(juha.branch_id),
-        "dispatcher",
+        "shift_supervisor",
         urgent=True,
     )
     assert session.exec(select(Message).where(Message.text == "Hei")).one()

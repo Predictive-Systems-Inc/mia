@@ -46,7 +46,7 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from sqlmodel import Session, col, select
 
-from mia.agents.dispatcher.agent import get_agent
+from mia.agents.shift_supervisor.agent import get_agent
 from mia.chat.blocks import AgentReply, ApprovalCardBlock, ChatReply
 from mia.chat.service import (
     USAGE_LIMITS,

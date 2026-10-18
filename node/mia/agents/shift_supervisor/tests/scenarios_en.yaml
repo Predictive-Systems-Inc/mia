@@ -1,4 +1,4 @@
-# English-only dispatcher suite (D26: the core is measured in English first). Same scenarios and
+# English-only shift supervisor suite (D26: the core is measured in English first). Same scenarios and
 # checks as scenarios.yaml; every Finnish and Filipino message is replaced by an English one,
 # setups included. The comment on a translated scenario names the original.
 # Run: MIA_EVAL_SUITE=tests/scenarios_en.yaml uv run pytest node/tests/evals -m evals

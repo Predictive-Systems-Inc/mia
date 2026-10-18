@@ -4,8 +4,8 @@ from typing import Any
 import pytest
 from sqlmodel import Session, select
 
-from mia.agents.dispatcher import decider
-from mia.agents.dispatcher.agent import get_agent
+from mia.agents.shift_supervisor import decider
+from mia.agents.shift_supervisor.agent import get_agent
 from mia.chat.blocks import ChatReply, QuickRepliesBlock
 from mia.chat.service import run_turn
 from mia.core.models import Event, Person
@@ -49,7 +49,7 @@ def test_jev_records_an_absence_and_asks_the_scope(
 ) -> None:
     _answer(monkeypatch, jev, action="record_absence", reason="sick")
     reply = _turn(session, people["Juha"], "I'm sick today")
-    assert _tools(session) == ["dispatcher.record_absence"]
+    assert _tools(session) == ["shift_supervisor.record_absence"]
     assert len(jev) == 1
     made = session.exec(select(Event).where(Event.action == "decision.made")).one()
     assert made.after and made.after["action"] == "record_absence"
@@ -139,7 +139,7 @@ def test_low_confidence_asks_and_a_tap_runs_the_choice(
     first = _turn(session, people["Juha"], "tomorrow")
     assert _tools(session) == []
     _turn(session, people["Juha"], _quick(first).options[0], first.thread_id)  # Report I'm sick
-    assert _tools(session) == ["dispatcher.record_absence"]
+    assert _tools(session) == ["shift_supervisor.record_absence"]
     assert len(jev) == 1  # the tap ran the stored decision, no second request
 
 

@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, col, select
 
-from mia.agents.dispatcher import scoring
+from mia.agents.shift_supervisor import scoring
 from mia.core import approvals, events, store
 from mia.core.models import (
     Actor,
@@ -192,7 +192,7 @@ def candidate_data(
 
 
 def ineligibility(session: Session, branch: Branch, visit: Visit, person: Person) -> list[str]:
-    """Why the person may not take the visit (empty when they may): the dispatcher's reasons
+    """Why the person may not take the visit (empty when they may): the shift supervisor's reasons
     plus missing skills. An inactive or non-staff person gets one reason."""
     if person.status != "active":
         return ["person is not active"]

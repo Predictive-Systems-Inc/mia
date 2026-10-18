@@ -4,7 +4,7 @@ import datetime as dt
 
 import pytest
 
-from mia.agents.dispatcher.scoring import (
+from mia.agents.shift_supervisor.scoring import (
     CandidateData,
     Slot,
     added_travel_km,

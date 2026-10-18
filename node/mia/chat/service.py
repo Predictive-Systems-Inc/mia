@@ -22,10 +22,10 @@ from pydantic_ai.usage import UsageLimits
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, call_tool
-from mia.agents.dispatcher import actions, decider, replies
-from mia.agents.dispatcher.agent import MANIFEST
-from mia.agents.dispatcher.classifier import classify, detect_language
-from mia.agents.dispatcher.tools import BINDINGS
+from mia.agents.shift_supervisor import actions, decider, replies
+from mia.agents.shift_supervisor.agent import MANIFEST
+from mia.agents.shift_supervisor.classifier import classify, detect_language
+from mia.agents.shift_supervisor.tools import BINDINGS
 from mia.chat.blocks import (
     AgentReply,
     ApprovalCardBlock,
@@ -49,7 +49,7 @@ from mia.skills.roles import load_role_plan
 from mia.skills.routing import Route, route
 
 # ponytail: one agent per chat today; read the role from the thread when there are more
-ROLE = "dispatcher"
+ROLE = "shift_supervisor"
 
 
 class ChatError(Exception):
@@ -192,7 +192,7 @@ def _finish(
     )
 
 
-EXPOSING_TOOLS = ("dispatcher.visit_details", "visit_details")
+EXPOSING_TOOLS = ("shift_supervisor.visit_details", "visit_details")
 
 
 def _sensitive(session: Session, deps: AgentDeps, thread: Thread, blocks: list[Block]) -> bool:
@@ -557,7 +557,9 @@ async def _jev_turn(
     decision, query = await asyncio.to_thread(_jev_query, session, deps, thread, text)
     if decision is None and query is not None:
         try:
-            with egress_context(replace(ctx, provider="typesafe", purpose="dispatcher.decide")):
+            with egress_context(
+                replace(ctx, provider="typesafe", purpose="shift_supervisor.decide")
+            ):
                 decision = await decider.decide(query)
         except decider.DecideError as exc:
             return await asyncio.to_thread(_jev_failed, session, deps, thread, str(exc))

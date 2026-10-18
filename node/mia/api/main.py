@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, col, select
 
 import mia
-from mia.agents.dispatcher import cover
+from mia.agents.shift_supervisor import cover
 from mia.api.auth import router as auth_router
 from mia.api.deps import DbSession, PersonAuth, check_mode
 from mia.api.schedule import router as schedule_router
@@ -45,7 +45,7 @@ def tick() -> int:
 
 def _alerts() -> int:
     """The ticker's alerts: missed check-ins, unstaffed visits tomorrow, the daily plan."""
-    from mia.agents.dispatcher import alerts
+    from mia.agents.shift_supervisor import alerts
 
     with session_scope() as session:
         return alerts.run_due(session, utcnow())

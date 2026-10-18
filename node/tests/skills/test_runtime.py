@@ -56,9 +56,9 @@ def card(**over: object) -> ModelCard:
 
 
 def test_no_package_means_null_classifier() -> None:
-    c = get_classifier("dispatcher").classify("im sick")
+    c = get_classifier("shift_supervisor").classify("im sick")
     assert (c.intent, c.band, c.version) == ("other", "low", None)
-    assert isinstance(get_classifier("dispatcher"), NullClassifier)
+    assert isinstance(get_classifier("shift_supervisor"), NullClassifier)
 
 
 def test_corrupt_package_falls_back_and_health_says_so() -> None:
@@ -102,8 +102,8 @@ def test_health_error_does_not_leak_the_models_path() -> None:
 
 
 def test_status_none_and_reset() -> None:
-    get_classifier("dispatcher")
-    assert health() == {"dispatcher": {"status": "none", "version": None}}
+    get_classifier("shift_supervisor")
+    assert health() == {"shift_supervisor": {"status": "none", "version": None}}
     reset_classifiers()
     assert health() == {}
 

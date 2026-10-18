@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     # Photos and files people send as proof of work (visit.proof_refs point into it).
     MIA_MEDIA_DIR: Path = Field(default=Path("data/media"))
     MIA_EGRESS_LEVEL: EgressLevel = "pseudonymised"
-    # Who picks the dispatcher's tool: the Pydantic AI agent, or Jev (spec 2026-10-17-jev-decider;
+    # Who picks the shift supervisor's tool: the Pydantic AI agent, or Jev (spec 2026-10-17-jev-decider;
     # synthetic and demo data only under D18).
     MIA_DECIDER: Literal["agent", "jev"] = "agent"
     MIA_TYPESAFE_URL: str = "https://api.typesafe.ai/v1/systemone"

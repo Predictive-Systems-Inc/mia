@@ -1,4 +1,4 @@
-# Public data for the dispatcher's classifier (step 3 of the training skill, 2026-10-12).
+# Public data for the shift supervisor's classifier (step 3 of the training skill, 2026-10-12).
 # Rules: docs/superpowers/specs/2026-10-06-skill-models-design.md and the skill's guidelines.md.
 # Nothing here is used until its licence line is confirmed against the source and the developer
 # approves it at Gate 1 (approved_by stays empty until then). Public data never enters test.
@@ -10,7 +10,7 @@ datasets:
     use: intermediate
     mapping: {}
     notes: >-
-      60 intents in 51 languages including Finnish; none of them is a dispatcher intent, so the
+      60 intents in 51 languages including Finnish; none of them is a shift supervisor intent, so the
       use is intermediate training for general intent sense in Finnish and English, not labels.
       Confirm the licence of the 1.1 release before use.
   - name: CLINC150 (out-of-scope queries)
@@ -24,7 +24,7 @@ datasets:
       the repository; the paper's data card names CC BY 3.0.
 rejected:
   - name: BANKING77
-    reason: fine-grained banking intents, none near the dispatcher's; its value is as a benchmark, not as data.
+    reason: fine-grained banking intents, none near the shift supervisor's; its value is as a benchmark, not as data.
   - name: Finnish chat corpora found on hubs without a licence line
     reason: licence cannot be confirmed (guidelines.md, never).
   - name: Any dataset of real WhatsApp or SMS messages

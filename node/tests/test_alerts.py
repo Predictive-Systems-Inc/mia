@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
-from mia.agents.dispatcher import alerts
+from mia.agents.shift_supervisor import alerts
 from mia.chat.channels import NOTIFICATION
 from mia.core import scheduling, store
 from mia.core.models import Actor, Branch, Job, Message, Person, Thread, Visit

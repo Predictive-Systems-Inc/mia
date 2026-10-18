@@ -70,9 +70,13 @@ def test_event_records_actor_and_on_behalf_of(session: Session) -> None:
     from mia.core.models import Principal
 
     person = Principal(type="person", id="P1", roles=["staff"])
-    actor = Actor(principal=person, branch_id="B1").as_agent("agent.dispatcher")
+    actor = Actor(principal=person, branch_id="B1").as_agent("agent.shift_supervisor")
     ev = events.emit(session, "x", ("thing", "1"), None, None, actor, tool_call_id="call-1")
-    assert (ev.actor_type, ev.actor_id, ev.on_behalf_of) == ("agent", "agent.dispatcher", "P1")
+    assert (ev.actor_type, ev.actor_id, ev.on_behalf_of) == (
+        "agent",
+        "agent.shift_supervisor",
+        "P1",
+    )
     assert ev.tool_call_id == "call-1"
 
 

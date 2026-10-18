@@ -41,7 +41,9 @@ def test_full_run_leaves_no_secret_in_events_or_logs(
     client.post("/auth/pin", json={"pin": "273916"})
     client.post("/auth/stepup", json={"pin": "273916"})
     tokens = client.post("/auth/login", json={"email": "helena@example.fi", "password": pw}).json()
-    _row, secret = auth.create_client(session, Actor.person(helena), "x", ["dispatcher"], utcnow())
+    _row, secret = auth.create_client(
+        session, Actor.person(helena), "x", ["shift_supervisor"], utcnow()
+    )
     session.commit()
     session.expire_all()
     events = " ".join(f"{e.before} {e.after}" for e in session.exec(select(Event)))

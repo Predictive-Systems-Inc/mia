@@ -1,4 +1,4 @@
-"""Dispatcher tools, called directly with deps built on a seeded temp database."""
+"""Shift supervisor tools, called directly with deps built on a seeded temp database."""
 
 import datetime as dt
 from zoneinfo import ZoneInfo
@@ -7,8 +7,8 @@ import pytest
 from sqlmodel import Session, select
 
 from mia.agents.base import AgentDeps, call_tool
-from mia.agents.dispatcher import tools
-from mia.agents.dispatcher.agent import MANIFEST
+from mia.agents.shift_supervisor import tools
+from mia.agents.shift_supervisor.agent import MANIFEST
 from mia.core import approvals
 from mia.core.db import utcnow
 from mia.core.models import Absence, Actor, Approval, Branch, Event, Person, Visit
@@ -18,7 +18,7 @@ from mia.core.rbac import PermissionDenied
 def deps_for(session: Session, branch: Branch, person: Person) -> AgentDeps:
     return AgentDeps(
         session=session,
-        actor=Actor.person(person).as_agent("agent.dispatcher"),
+        actor=Actor.person(person).as_agent("agent.shift_supervisor"),
         person=person,
         branch=branch,
         organisation_id=branch.organisation_id,
@@ -217,7 +217,7 @@ def test_assign_refuses_absent_or_unknown(
 
 def test_cleaner_cannot_assign(session: Session, branch: Branch, people: dict[str, Person]) -> None:
     deps = deps_for(session, branch, people["Juha"])
-    binding = next(b for b in tools.BINDINGS if b.tool_id == "dispatcher.assign_cover")
+    binding = next(b for b in tools.BINDINGS if b.tool_id == "shift_supervisor.assign_cover")
     out = call_tool(deps, binding, tools.AssignCoverInput(visit_id="x", candidate_id="y"), "c1")
     assert out["status"] == "denied"
 
@@ -226,7 +226,7 @@ def test_respond_without_request_is_invalid(
     session: Session, branch: Branch, people: dict[str, Person]
 ) -> None:
     deps = deps_for(session, branch, people["Aino"])
-    binding = next(b for b in tools.BINDINGS if b.tool_id == "dispatcher.respond_to_cover")
+    binding = next(b for b in tools.BINDINGS if b.tool_id == "shift_supervisor.respond_to_cover")
     out = call_tool(deps, binding, tools.RespondToCoverInput(accept=True), "c1")
     assert out["status"] == "invalid"
 

@@ -1,4 +1,4 @@
-# Dispatcher evaluation scenarios. Each scenario: who sends it (first name of a seeded person),
+# Shift supervisor evaluation scenarios. Each scenario: who sends it (first name of a seeded person),
 # optional setup messages in the same thread, the message, and the expected tool calls in order.
 # `status` is ok (the tool ran), denied, invalid or approval_required. `args` must be a subset
 # of the tool input. `tools: []` means the agent must answer without calling any tool.

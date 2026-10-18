@@ -43,7 +43,7 @@ class Resource(BaseModel):
 
 
 def split_permission(permission: str) -> tuple[str, str]:
-    """'tool:dispatcher.get_my_visits:execute' -> ('tool:dispatcher.get_my_visits', 'execute')."""
+    """'tool:shift_supervisor.get_my_visits:execute' -> ('tool:shift_supervisor.get_my_visits', 'execute')."""
     obj, _, act = permission.rpartition(":")
     if not obj or not act:
         raise ValueError(f"permission must be kind:resource:action, got {permission!r}")

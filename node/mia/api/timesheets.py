@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import AwareDatetime, BaseModel, Field
 from sqlmodel import col, select
 
-from mia.agents.dispatcher import timesheets
+from mia.agents.shift_supervisor import timesheets
 from mia.api.deps import AuthContext, DbSession, PersonAuth
 from mia.api.schedule import branch_of
 from mia.core.models import Location, Person, Timesheet, Visit

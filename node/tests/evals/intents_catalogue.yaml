@@ -4,8 +4,8 @@
 # (D30) and `other` (out of scope, injection attempts). Role codes, risk,
 # sensitivity and process are explained in the legend of docs/capabilities.md.
 intents:
-- id: dispatcher.report_absence
-  agent: dispatcher
+- id: shift_supervisor.report_absence
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Can't come / late
   description: Staff member says they cannot work (sick, other reason), will be late, or must leave early
@@ -22,8 +22,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.absence_scope
-  agent: dispatcher
+- id: shift_supervisor.absence_scope
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Which shifts I miss
   description: Answer to which visits a just-reported absence covers (whole day, morning, afternoon)
@@ -39,8 +39,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.my_visits
-  agent: dispatcher
+- id: shift_supervisor.my_visits
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Show my shifts
   description: Ask about own visits, shifts or schedule; supervisors may ask about someone else's
@@ -58,8 +58,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.find_cover
-  agent: dispatcher
+- id: shift_supervisor.find_cover
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Find cover
   description: Supervisor asks who could take over a visit or shift
@@ -76,8 +76,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.assign
-  agent: dispatcher
+- id: shift_supervisor.assign
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Assign cover
   description: Supervisor names whom to assign as cover after candidates were shown
@@ -94,8 +94,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.cover_reply
-  agent: dispatcher
+- id: shift_supervisor.cover_reply
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Answer cover request
   description: Cleaner accepts or declines a cover request sent to them
@@ -111,8 +111,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.missed_check_in
-  agent: dispatcher
+- id: shift_supervisor.missed_check_in
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: null
   description: 'No check-in some minutes after a visit starts: ask the cleaner, alert the supervisor'
@@ -127,8 +127,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.unstaffed_visits
-  agent: dispatcher
+- id: shift_supervisor.unstaffed_visits
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: null
   description: Daily check for tomorrow's visits without a cleaner
@@ -143,8 +143,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.daily_plan
-  agent: dispatcher
+- id: shift_supervisor.daily_plan
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: null
   description: Evening message to each cleaner with tomorrow's visits
@@ -159,8 +159,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.check_in
-  agent: dispatcher
+- id: shift_supervisor.check_in
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: I've arrived
   description: Cleaner says they arrived at the site (or shares location)
@@ -177,8 +177,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.check_out
-  agent: dispatcher
+- id: shift_supervisor.check_out
+  agent: shift_supervisor
   process: Service-to-Cash
   label_en: I'm done here
   description: Cleaner says the visit is finished and they are leaving
@@ -195,8 +195,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.cannot_access_site
-  agent: dispatcher
+- id: shift_supervisor.cannot_access_site
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Can't get in
   description: Cleaner is at a site and cannot get in physically (locked door, no key, wrong door code,
@@ -213,8 +213,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.site_problem
-  agent: dispatcher
+- id: shift_supervisor.site_problem
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Problem at the site
   description: Site conditions stop or change the work (no water or power, renovation, event, client still
@@ -231,8 +231,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.visit_details
-  agent: dispatcher
+- id: shift_supervisor.visit_details
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Job details
   description: 'Ask practical details of a visit: address, door code, where things are, special instructions'
@@ -248,8 +248,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.checklist
-  agent: dispatcher
+- id: shift_supervisor.checklist
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: My checklist
   description: Ask for or tick off the visit checklist
@@ -265,8 +265,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.send_photos
-  agent: dispatcher
+- id: shift_supervisor.send_photos
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Send photos
   description: Send before or after photos as proof of work
@@ -282,8 +282,8 @@ intents:
   country: both
   phase: 1
   built: 'yes'
-- id: dispatcher.extra_time
-  agent: dispatcher
+- id: shift_supervisor.extra_time
+  agent: shift_supervisor
   process: Service-to-Cash
   label_en: Need more time
   description: Ask to stay longer than planned to finish the job
@@ -299,8 +299,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: dispatcher.extra_work_on_site
-  agent: dispatcher
+- id: shift_supervisor.extra_work_on_site
+  agent: shift_supervisor
   process: Service-to-Cash
   label_en: Client wants extra
   description: Client on site asked the cleaner for extra work not in the order
@@ -316,8 +316,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: dispatcher.swap_shift
-  agent: dispatcher
+- id: shift_supervisor.swap_shift
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Swap a shift
   description: Cleaner proposes to swap a visit with a named colleague
@@ -333,8 +333,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: dispatcher.offer_shifts
-  agent: dispatcher
+- id: shift_supervisor.offer_shifts
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: I want more shifts
   description: Cleaner says they want more hours or can pick up extra visits
@@ -350,8 +350,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: dispatcher.set_availability
-  agent: dispatcher
+- id: shift_supervisor.set_availability
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Set when I can work
   description: Set recurring availability or unavailability (no Tuesdays, only mornings, holiday dates)
@@ -367,8 +367,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: dispatcher.who_is_working
-  agent: dispatcher
+- id: shift_supervisor.who_is_working
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Who's working
   description: 'Staffing status: who works where today, is site X covered'
@@ -385,8 +385,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: dispatcher.reschedule_visit
-  agent: dispatcher
+- id: shift_supervisor.reschedule_visit
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Move a visit
   description: Office moves a visit to another time or date
@@ -403,8 +403,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: dispatcher.add_visit
-  agent: dispatcher
+- id: shift_supervisor.add_visit
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Add a visit
   description: Office adds a one-off visit to the schedule
@@ -421,8 +421,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: dispatcher.plan_roster
-  agent: dispatcher
+- id: shift_supervisor.plan_roster
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Plan the roster
   description: Build next week's or month's roster from agreements (code plans, supervisor publishes)
@@ -440,8 +440,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: dispatcher.route_plan
-  agent: dispatcher
+- id: shift_supervisor.route_plan
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Plan the route
   description: Order a day's visits into an efficient route
@@ -457,8 +457,8 @@ intents:
   country: both
   phase: 3
   built: 'no'
-- id: dispatcher.key_location
-  agent: dispatcher
+- id: shift_supervisor.key_location
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Where's the key
   description: Where is the key or access card for a site, who has it
@@ -475,8 +475,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: dispatcher.key_handover
-  agent: dispatcher
+- id: shift_supervisor.key_handover
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Key handed over
   description: Record a key or card given to or returned by someone
@@ -493,8 +493,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: dispatcher.lost_key
-  agent: dispatcher
+- id: shift_supervisor.lost_key
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Lost a key
   description: A physical key, card or remote for a client site is lost. A lost phone, codes or documents
@@ -512,8 +512,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: dispatcher.book_vehicle
-  agent: dispatcher
+- id: shift_supervisor.book_vehicle
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: Book the van
   description: Ask to use a company car or van for visits
@@ -530,8 +530,8 @@ intents:
   country: both
   phase: 2
   built: 'no'
-- id: dispatcher.directions
-  agent: dispatcher
+- id: shift_supervisor.directions
+  agent: shift_supervisor
   process: Contract-to-Service
   label_en: How to get there
   description: How to get to a company site or visit, parking, public transport there. Directions anywhere
@@ -2791,7 +2791,7 @@ intents:
   process: platform
   label_en: Data leak
   description: 'Possible data breach: lost or stolen phone or papers with data, codes or personal data
-    sent to the wrong person. A lost physical key alone is dispatcher.lost_key'
+    sent to the wrong person. A lost physical key alone is shift_supervisor.lost_key'
   roles:
   - cleaner
   - supervisor
@@ -3021,7 +3021,7 @@ intents:
   process: platform
   label_en: Can't log in
   description: 'Cannot log in to Mia: locked out of the app, forgot PIN or password, new phone or SIM.
-    A locked site door is dispatcher.cannot_access_site'
+    A locked site door is shift_supervisor.cannot_access_site'
   roles:
   - cleaner
   - supervisor

@@ -13,15 +13,15 @@ p, staff, *, data:core.visit, read_own, allow
 p, staff, *, data:core.person, read_own, allow
 p, staff, *, data:core.location, read, allow
 p, staff, *, data:core.absence, write_own, allow
-p, staff, *, tool:dispatcher.get_my_visits, execute, allow
-p, staff, *, tool:dispatcher.record_absence, execute, allow
-p, staff, *, tool:dispatcher.respond_to_cover, execute, allow
-p, staff, *, tool:dispatcher.check_in, execute, allow
-p, staff, *, tool:dispatcher.check_out, execute, allow
-p, staff, *, tool:dispatcher.visit_details, execute, allow
-p, staff, *, tool:dispatcher.report_site_problem, execute, allow
+p, staff, *, tool:shift_supervisor.get_my_visits, execute, allow
+p, staff, *, tool:shift_supervisor.record_absence, execute, allow
+p, staff, *, tool:shift_supervisor.respond_to_cover, execute, allow
+p, staff, *, tool:shift_supervisor.check_in, execute, allow
+p, staff, *, tool:shift_supervisor.check_out, execute, allow
+p, staff, *, tool:shift_supervisor.visit_details, execute, allow
+p, staff, *, tool:shift_supervisor.report_site_problem, execute, allow
 p, staff, *, data:core.incident, write_own, allow
-p, staff, *, tool:dispatcher.checklist, execute, allow
+p, staff, *, tool:shift_supervisor.checklist, execute, allow
 p, staff, *, data:cleaning_checklist_ticks, write_own, allow
 p, staff, *, data:core.timesheet, read_own, allow
 p, staff, *, data:core.timesheet, write_own, allow
@@ -41,13 +41,13 @@ p, supervisor, *, data:core.incident, write, allow
 p, supervisor, *, data:core.incident, read, allow
 p, supervisor, *, data:cleaning_checklist_ticks, write, allow
 p, supervisor, *, data:cleaning_checklist_ticks, read, allow
-p, supervisor, *, tool:dispatcher.find_replacements, execute, allow
-p, supervisor, *, tool:dispatcher.assign_cover, execute, allow
+p, supervisor, *, tool:shift_supervisor.find_replacements, execute, allow
+p, supervisor, *, tool:shift_supervisor.assign_cover, execute, allow
 p, supervisor, *, data:core.visit, write, allow
 p, supervisor, *, data:core.auth_devices, write, allow
 
 # admin and owner decide cover overrides (instructions that break a scheduling rule)
-p, admin, *, tool:dispatcher.cover_override, approve, allow
+p, admin, *, tool:shift_supervisor.cover_override, approve, allow
 
 # admin: users, roles, settings (Phase 1 adds endpoints)
 p, admin, *, data:core.*, write, allow

@@ -7,7 +7,7 @@ from collections.abc import Iterable
 
 from pydantic import BaseModel, Field
 
-from mia.agents.dispatcher.classifier import detect_language
+from mia.agents.shift_supervisor.classifier import detect_language
 from mia.learning.schema import OTHER, Record, RoleSpec
 
 LEAK = 0.85  # character 3-gram Jaccard at or above this is a paraphrase

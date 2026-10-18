@@ -31,8 +31,8 @@ def test_no_provider_sdk_outside_egress_and_model_factory() -> None:
         MIA / "core" / "egress.py",
         MIA / "core" / "geocoding.py",
         MIA / "agents" / "base.py",
-        MIA / "agents" / "dispatcher" / "agent.py",
-        MIA / "agents" / "dispatcher" / "decider.py",  # builds its client on EgressTransport
+        MIA / "agents" / "shift_supervisor" / "agent.py",
+        MIA / "agents" / "shift_supervisor" / "decider.py",  # builds its client on EgressTransport
         MIA / "channels" / "transport.py",  # rule 6: the only HTTP exit for channels
         MIA / "channels" / "whatsapp" / "adapter.py",  # builds its client on ChannelTransport
     }

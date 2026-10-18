@@ -92,7 +92,7 @@ def test_client_sessions_have_no_refresh(session: Session, people: dict[str, Per
         name="n",
         client_id="mia_x",
         secret_hash="s",
-        roles=["dispatcher"],
+        roles=["shift_supervisor"],
         created_by=helena.id,
     )
     session.add(client)  # a bare row for this unit test; Task 9 adds the service
@@ -208,7 +208,7 @@ def test_app_only_approval_needs_aal2_and_a_fresh_step_up(
     helena = Actor.person(people["Helena"])
     row = approvals.request(
         session,
-        "dispatcher.cover_override",
+        "shift_supervisor.cover_override",
         ("visit", "V"),
         "x",
         Actor.person(people["Sanna"]),
@@ -259,7 +259,7 @@ def test_refused_decision_over_http_keeps_its_event(
 
     row = approvals.request(
         session,
-        "dispatcher.cover_override",
+        "shift_supervisor.cover_override",
         ("visit", "V"),
         "x",
         Actor.person(people["Sanna"]),
@@ -348,7 +348,7 @@ def test_client_token_dies_with_the_client_expiry(
     helena = Actor.person(people["Helena"])
     now = utcnow()
     row, _secret = auth.create_client(
-        session, helena, "x", ["dispatcher"], now, expires_at=now + dt.timedelta(minutes=1)
+        session, helena, "x", ["shift_supervisor"], now, expires_at=now + dt.timedelta(minutes=1)
     )
     t = auth.issue_session(session, row, method="client", aal="client", ip=IP, now=now)
     session.commit()
@@ -372,7 +372,7 @@ def test_dev_header_actor_can_decide_app_only_approvals(
 
     row = approvals.request(
         session,
-        "dispatcher.cover_override",
+        "shift_supervisor.cover_override",
         ("visit", "V"),
         "x",
         Actor.person(people["Sanna"]),

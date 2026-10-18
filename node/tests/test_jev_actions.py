@@ -5,8 +5,8 @@ import pytest
 from sqlmodel import Session
 
 from mia.agents.base import AgentDeps
-from mia.agents.dispatcher import actions
-from mia.agents.dispatcher.agent import MANIFEST
+from mia.agents.shift_supervisor import actions
+from mia.agents.shift_supervisor.agent import MANIFEST
 from mia.core.models import Actor, Branch, Person
 
 
@@ -57,7 +57,7 @@ def test_choice_slots_offer_not_stated_and_real_candidates(
 def test_open_cover_request_is_in_state(
     session: Session, branch: Branch, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from mia.agents.dispatcher import cover
+    from mia.agents.shift_supervisor import cover
 
     monkeypatch.setattr(cover, "open_request_line", lambda *a: "Open cover request: Kalasatama")
     q = actions.build_query(_deps(session, branch, people["Mikael"]), "yes I can", "")

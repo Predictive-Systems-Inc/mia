@@ -1,0 +1,45 @@
+id: shift_supervisor
+name: Shift Supervisor
+version: 0.1.0
+standard_version: "1.0"
+job_description: job.md
+instructions: {base: prompts/base.md, org_overrides: {allowed: true, locked_topics: [approvals, permissions]}}
+models: {classifier: rules, route: default}
+roles:
+  agent_role: agent.shift_supervisor
+  grants:
+    - data:core.person:read
+    - data:core.visit:read
+    - data:core.location:read
+    - data:core.absence:write
+    - data:core.cover_request:write
+    - data:core.timesheet:write
+    - data:core.incident:write
+    - data:cleaning_checklist_ticks:write
+    - tool:shift_supervisor.get_my_visits:execute
+    - tool:shift_supervisor.record_absence:execute
+    - tool:shift_supervisor.find_replacements:execute
+    - tool:shift_supervisor.assign_cover:execute
+    - tool:shift_supervisor.respond_to_cover:execute
+    - tool:shift_supervisor.check_in:execute
+    - tool:shift_supervisor.check_out:execute
+    - tool:shift_supervisor.visit_details:execute
+    - tool:shift_supervisor.report_site_problem:execute
+    - tool:shift_supervisor.checklist:execute
+    - data:core.visit:write
+  denies: [tool:*:approve]
+  # An explicit instruction is the approval (decision D1). Approvals are needed only when no
+  # rule allows the instruction (cover override) or for money, external and delete tools.
+  approvers: {shift_supervisor.cover_override: [admin, owner]}
+tools:
+  - {id: shift_supervisor.get_my_visits, kind: agent, risk: read, approval: never, reads: [visit, location, job, person]}
+  - {id: shift_supervisor.record_absence, kind: agent, risk: write_internal, approval: never, reads: [visit], writes: [absences]}
+  - {id: shift_supervisor.find_replacements, kind: agent, risk: read, approval: never, reads: [visit, person, location, availability, work_limits, absences]}
+  - {id: shift_supervisor.assign_cover, kind: agent, risk: write_internal, approval: never, reads: [visit, person, availability, work_limits, absences], writes: [cover_requests, chat_messages, approval]}
+  - {id: shift_supervisor.respond_to_cover, kind: agent, risk: write_internal, approval: never, reads: [cover_requests], writes: [visit, cover_requests, chat_messages]}
+  - {id: shift_supervisor.check_in, kind: agent, risk: write_internal, approval: never, reads: [visit, location], writes: [visit]}
+  - {id: shift_supervisor.check_out, kind: agent, risk: write_internal, approval: never, reads: [visit, location], writes: [visit]}
+  - {id: shift_supervisor.visit_details, kind: agent, risk: read, approval: never, reads: [visit, location, job, cleaning_checklists]}
+  - {id: shift_supervisor.report_site_problem, kind: agent, risk: write_internal, approval: never, reads: [visit, location, person], writes: [incidents, chat_messages]}
+  - {id: shift_supervisor.checklist, kind: agent, risk: write_internal, approval: never, reads: [visit, cleaning_checklists, cleaning_checklist_ticks], writes: [cleaning_checklist_ticks]}
+tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.95}

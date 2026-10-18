@@ -34,16 +34,16 @@ def test_supervisor_reads_everyone(people: dict[str, Person]) -> None:
 
 def test_role_hierarchy_owner_inherits_supervisor(people: dict[str, Person]) -> None:
     owner = Actor.person(people["Helena"])
-    tool = Resource(kind="tool", name="dispatcher.cover_override")
+    tool = Resource(kind="tool", name="shift_supervisor.cover_override")
     assert get_rbac().check(owner, tool, "approve")
     assert not get_rbac().check(Actor.person(people["Sanna"]), tool, "approve")
 
 
 def test_agent_on_behalf_of_cleaner_is_limited_by_the_cleaner(people: dict[str, Person]) -> None:
-    from mia.agents.dispatcher.agent import create_agent
+    from mia.agents.shift_supervisor.agent import create_agent
 
-    create_agent("test")  # registers the dispatcher role from its manifest
-    via_agent = Actor.person(people["Juha"]).as_agent("agent.dispatcher")
+    create_agent("test")  # registers the shift supervisor role from its manifest
+    via_agent = Actor.person(people["Juha"]).as_agent("agent.shift_supervisor")
     assert get_rbac().principal_allowed(via_agent.principal, "B", visit(people["Maria"].id), "read")
     assert not get_rbac().check(via_agent, visit(people["Maria"].id), "read")
 
@@ -77,6 +77,9 @@ def test_require_raises_permission_denied(people: dict[str, Person]) -> None:
 
 
 def test_split_permission() -> None:
-    assert split_permission("tool:dispatcher.x:execute") == ("tool:dispatcher.x", "execute")
+    assert split_permission("tool:shift_supervisor.x:execute") == (
+        "tool:shift_supervisor.x",
+        "execute",
+    )
     with pytest.raises(ValueError):
         split_permission("nonsense")

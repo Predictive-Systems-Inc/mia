@@ -16,7 +16,7 @@ from pydantic_ai.ui.ag_ui import AGUIAdapter
 from sqlmodel import Session
 from ulid import ULID
 
-from mia.agents.dispatcher.agent import get_agent
+from mia.agents.shift_supervisor.agent import get_agent
 from mia.api.deps import AuthContext, DbSession, PersonAuth
 from mia.chat import runs
 from mia.chat.blocks import ChatReply

@@ -114,7 +114,7 @@ def _find_person(session: Session, who: str | None) -> Person:
 
 
 def chat(args: argparse.Namespace) -> int:
-    from mia.agents.dispatcher.agent import get_agent
+    from mia.agents.shift_supervisor.agent import get_agent
     from mia.chat.service import run_turn
     from mia.core.db import session_scope
 
@@ -175,7 +175,7 @@ def inbox(args: argparse.Namespace) -> int:
                 {
                     "thread_id": row.thread_id,
                     "message_id": row.id,
-                    "agent_id": "dispatcher",
+                    "agent_id": "shift_supervisor",
                     "blocks": row.blocks,
                 }
             )
@@ -451,7 +451,7 @@ def billing_export(args: argparse.Namespace) -> int:
 def payroll_export(args: argparse.Namespace) -> int:
     import sys
 
-    from mia.agents.dispatcher import timesheets
+    from mia.agents.shift_supervisor import timesheets
     from mia.core import events
     from mia.core.db import session_scope
     from mia.core.models import Actor

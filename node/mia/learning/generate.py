@@ -13,7 +13,7 @@ from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from mia.agents.base import build_model
-from mia.agents.dispatcher.rules import rules_model
+from mia.agents.shift_supervisor.rules import rules_model
 from mia.learning.schema import OTHER, Kind, Lang, Record, RoleSpec, Split, Style
 
 log = logging.getLogger(__name__)

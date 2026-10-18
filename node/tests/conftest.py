@@ -19,7 +19,7 @@ os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 from pydantic_ai import models
 
 from mia import i18n
-from mia.agents.dispatcher import agent as dispatcher_agent
+from mia.agents.shift_supervisor import agent as shift_supervisor_agent
 from mia.channels import registry
 from mia.core import db, keys, scheduling
 from mia.core.models import Actor, Branch, Person
@@ -66,7 +66,7 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     keys.reset_cache()
     scheduling.reset_generation()
     get_settings.cache_clear()
-    dispatcher_agent.get_agent.cache_clear()
+    shift_supervisor_agent.get_agent.cache_clear()
     db.reset_engines()
     saved_adapters = dict(registry._adapters)
     yield
@@ -75,7 +75,7 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     db.reset_engines()
     keys.reset_cache()
     get_settings.cache_clear()
-    dispatcher_agent.get_agent.cache_clear()
+    shift_supervisor_agent.get_agent.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -93,10 +93,10 @@ def _loopback_test_client(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def dispatcher_role() -> None:
-    """The dispatcher's manifest grants are in RBAC for every test, so tool tests do not
+def shift_supervisor_role() -> None:
+    """The shift supervisor's manifest grants are in RBAC for every test, so tool tests do not
     depend on which test built an agent first."""
-    from mia.agents.dispatcher.agent import create_agent
+    from mia.agents.shift_supervisor.agent import create_agent
 
     create_agent("test")
 
@@ -158,12 +158,12 @@ def login(session: Session):  # type: ignore[no-untyped-def]
 
 @pytest.fixture
 def test_model_agent():  # type: ignore[no-untyped-def]
-    """The dispatcher wired to Pydantic AI's TestModel (no tool calls, schema-valid output)."""
+    """The shift supervisor wired to Pydantic AI's TestModel (no tool calls, schema-valid output)."""
     from pydantic_ai.models.test import TestModel
 
     from mia.agents.base import build_agent
-    from mia.agents.dispatcher.agent import AGENT_DIR, MANIFEST
-    from mia.agents.dispatcher.tools import BINDINGS
+    from mia.agents.shift_supervisor.agent import AGENT_DIR, MANIFEST
+    from mia.agents.shift_supervisor.tools import BINDINGS
     from mia.chat.blocks import AgentReply
 
     return build_agent(
@@ -179,7 +179,7 @@ def test_model_agent():  # type: ignore[no-untyped-def]
 CLOCK_USERS = (
     "mia.core.db",
     "mia.core.approvals",
-    "mia.agents.dispatcher.tools",
+    "mia.agents.shift_supervisor.tools",
     "mia.api.main",
     "mia.channels.outbox",
     "mia.channels.service",

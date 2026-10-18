@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy import text as sql
 from sqlmodel import Session, col, select
 
-from mia.agents.dispatcher.agent import MANIFEST, get_agent
+from mia.agents.shift_supervisor.agent import MANIFEST, get_agent
 from mia.channels import linking, outbox, registry, transport
 from mia.channels.base import InboundMessage
 from mia.channels.service import deliver
@@ -139,7 +139,7 @@ def _attend(session: Session, person: Person, msg: InboundMessage, now: dt.datet
     person pick one) is flagged the same way: the point is the person's claim, never proof.
     On a two-person visit the second arrival is told it is already checked in, as the chat
     tool does. Replies to the person."""
-    from mia.agents.dispatcher.scoring import distance_km
+    from mia.agents.shift_supervisor.scoring import distance_km
     from mia.core import scheduling  # core imports channels for linking; keep this one lazy
 
     actor = Actor.person(person)

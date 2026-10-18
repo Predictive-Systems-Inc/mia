@@ -15,7 +15,7 @@ from mia.learning.schema import (
 )
 
 ROLE_YAML = """
-id: dispatcher
+id: shift_supervisor
 job_summary: Keeps every visit staffed.
 responsibilities: [record absences, find cover]
 counterparts:
@@ -25,7 +25,7 @@ languages: [en, fi, fil]
 countries: [FI]
 styles: {informal: 0.3, terse: 0.15, typo: 0.15, indirect: 0.15, formal: 0.1, mixed: 0.1, context: 0.05}
 intents:
-  - id: dispatcher.report_absence
+  - id: shift_supervisor.report_absence
     description: Cannot work (sick, late, leaving early)
     counterparts: [cleaner]
     risk: write
@@ -33,7 +33,7 @@ intents:
     slots: [reason, partial_day]
     handler: agent
     volume: high
-  - id: dispatcher.my_visits
+  - id: shift_supervisor.my_visits
     description: Asks about own visits
     counterparts: [cleaner]
     risk: read
@@ -46,11 +46,11 @@ def test_role_loads_and_label_space(tmp_path: Path) -> None:
     path = tmp_path / "role.yaml"
     path.write_text(ROLE_YAML)
     role = load_role(path)
-    assert role.intent("dispatcher.report_absence") is not None
+    assert role.intent("shift_supervisor.report_absence") is not None
     labels = role.label_space(["conversation.greeting"])
     assert labels == [
-        "dispatcher.report_absence",
-        "dispatcher.my_visits",
+        "shift_supervisor.report_absence",
+        "shift_supervisor.my_visits",
         "conversation.greeting",
         "other",
     ]
@@ -105,9 +105,9 @@ def test_tool_handler_needs_a_tool() -> None:
 
 def test_records_round_trip_and_reject_unknown_fields(tmp_path: Path) -> None:
     rec = Record(
-        id="dispatcher.report_absence/en/001",
-        role="dispatcher",
-        intent="dispatcher.report_absence",
+        id="shift_supervisor.report_absence/en/001",
+        role="shift_supervisor",
+        intent="shift_supervisor.report_absence",
         lang="en",
         text="sick today",
         counterpart="cleaner",

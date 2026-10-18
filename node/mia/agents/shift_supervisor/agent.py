@@ -1,4 +1,4 @@
-"""The dispatcher agent, assembled from its manifest by mia.agents.base."""
+"""The shift supervisor agent, assembled from its manifest by mia.agents.base."""
 
 import html
 from functools import lru_cache
@@ -9,10 +9,10 @@ import httpx
 from pydantic_ai import Agent, RunContext, TextOutput
 
 from mia.agents.base import AgentDeps, Manifest, build_agent, build_model
-from mia.agents.dispatcher import cover
-from mia.agents.dispatcher.classifier import classify
-from mia.agents.dispatcher.rules import rules_model
-from mia.agents.dispatcher.tools import BINDINGS
+from mia.agents.shift_supervisor import cover
+from mia.agents.shift_supervisor.classifier import classify
+from mia.agents.shift_supervisor.rules import rules_model
+from mia.agents.shift_supervisor.tools import BINDINGS
 from mia.chat.blocks import AgentReply, TextBlock
 from mia.settings import get_settings
 
@@ -30,7 +30,7 @@ def create_agent(
     org: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> Agent[AgentDeps, Any]:
-    """A new dispatcher agent for the given model (default settings.MIA_MODEL)."""
+    """A new shift supervisor agent for the given model (default settings.MIA_MODEL)."""
     settings = get_settings()
     model = build_model(model_name or settings.MIA_MODEL, rules_model(), transport=transport)
     return build_agent(
@@ -85,5 +85,5 @@ def open_cover_request(ctx: RunContext[AgentDeps]) -> str:
 
 @lru_cache
 def get_agent() -> Agent[AgentDeps, Any]:
-    """The process-wide dispatcher (tests call get_agent.cache_clear())."""
+    """The process-wide shift supervisor (tests call get_agent.cache_clear())."""
     return create_agent()

@@ -1,6 +1,6 @@
-"""Dispatcher evaluation suite (run with: uv run pytest node/tests/evals -m evals).
+"""Shift supervisor evaluation suite (run with: uv run pytest node/tests/evals -m evals).
 
-Each scenario in agents/dispatcher/tests/scenarios.yaml (or the suite named by MIA_EVAL_SUITE,
+Each scenario in agents/shift_supervisor/tests/scenarios.yaml (or the suite named by MIA_EVAL_SUITE,
 such as tests/scenarios_en.yaml) runs RUNS times on a fresh copy of the seeded demo database. Tool calls (names, order, statuses, inputs) are asserted exactly; the
 suite passes when the pass rate over all runs meets the manifest's tests.min_pass_rate.
 By default the agent runs on the deterministic rules FunctionModel; set MIA_EVAL_MODEL to a
@@ -22,9 +22,9 @@ from pydantic_ai import models
 from pydantic_ai.exceptions import AgentRunError
 from sqlmodel import Session, select
 
-from mia.agents.dispatcher import tools
-from mia.agents.dispatcher.agent import AGENT_DIR, MANIFEST, create_agent
-from mia.agents.dispatcher.classifier import detect_language
+from mia.agents.shift_supervisor import tools
+from mia.agents.shift_supervisor.agent import AGENT_DIR, MANIFEST, create_agent
+from mia.agents.shift_supervisor.classifier import detect_language
 from mia.chat.service import run_turn
 from mia.core import db
 from mia.core.models import Event, Person
@@ -166,7 +166,7 @@ def test_scenarios_are_well_formed() -> None:
         assert {"id", "as", "message", "tools"} <= set(s), s["id"]
 
 
-def test_dispatcher_pass_rate(template_db: Path, tmp_path: Path) -> None:
+def test_shift_supervisor_pass_rate(template_db: Path, tmp_path: Path) -> None:
     results: dict[str, list[list[str]]] = {}
     real_model = bool(os.environ.get("MIA_EVAL_MODEL")) or os.environ.get("MIA_DECIDER") == "jev"
     # llm_only: languages the deterministic rules model does not read (Filipino).
@@ -189,7 +189,7 @@ def test_dispatcher_pass_rate(template_db: Path, tmp_path: Path) -> None:
     ]
     decider_name = os.environ.get("MIA_DECIDER", "agent")
     print(
-        f"\ndispatcher evals: {passed}/{total} runs passed ({rate:.1%}), suite={SUITE},"
+        f"\nshift_supervisor evals: {passed}/{total} runs passed ({rate:.1%}), suite={SUITE},"
         f" decider={decider_name}, model={os.environ.get('MIA_EVAL_MODEL', 'test')}"
     )
     by_lang: dict[str, list[int]] = {}

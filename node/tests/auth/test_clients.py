@@ -44,7 +44,7 @@ def test_register_and_get_a_token(
     people: dict[str, Person],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert main(["auth", "client", "add", "Partner", "--role", "dispatcher"]) == 0
+    assert main(["auth", "client", "add", "Partner", "--role", "shift_supervisor"]) == 0
     out = capsys.readouterr().out
     client_id = out.split("client_id: ")[1].split()[0]
     secret = out.split("client_secret: ")[1].split()[0]
@@ -54,7 +54,7 @@ def test_register_and_get_a_token(
     assert body["token_type"] == "Bearer" and body["expires_in"] == 3600
     bearer = {"Authorization": f"Bearer {body['access_token']}"}
     res = client.get("/a2a-probe", headers=bearer)
-    assert res.json() == {"id": f"client:{client_id}", "roles": ["dispatcher"]}
+    assert res.json() == {"id": f"client:{client_id}", "roles": ["shift_supervisor"]}
     form = {**GRANT, "client_id": client_id, "client_secret": secret}
     assert client.post("/auth/token", data=form).status_code == 200
     res = client.post(
@@ -79,10 +79,10 @@ def test_client_never_holds_approve_or_a_human_role(
     with pytest.raises(ValueError, match="human"):
         auth.create_client(session, helena, "x", ["staff"], utcnow())
     # Approve is checked for every non-human role too (none in policy.csv holds it).
-    assert auth._role_can_approve("admin") and not auth._role_can_approve("dispatcher")
+    assert auth._role_can_approve("admin") and not auth._role_can_approve("shift_supervisor")
     with pytest.raises(ValueError, match="at least one role"):
         auth.create_client(session, helena, "x", [], utcnow())
-    row, secret = auth.create_client(session, helena, "x", ["dispatcher"], utcnow())
+    row, secret = auth.create_client(session, helena, "x", ["shift_supervisor"], utcnow())
     assert row.client_id.startswith("mia_") and row.secret_hash != secret
     for e in session.exec(select(Event).where(Event.action == "auth.client_created")):
         assert e.after is not None and e.after["secret_hash"] == "<redacted>"
@@ -92,7 +92,7 @@ def test_client_token_is_refused_on_person_routes_and_cookies_on_client_routes(
     client: TestClient, session: Session, people: dict[str, Person], login
 ) -> None:  # type: ignore[no-untyped-def]
     helena = Actor.person(people["Helena"])
-    row, secret = auth.create_client(session, helena, "x", ["dispatcher"], utcnow())
+    row, secret = auth.create_client(session, helena, "x", ["shift_supervisor"], utcnow())
     session.commit()
     res = client.post("/auth/token", data=GRANT, headers=_basic(row.client_id, secret))
     token = res.json()["access_token"]
@@ -106,7 +106,7 @@ def test_client_token_is_refused_on_person_routes_and_cookies_on_client_routes(
 
 def test_client_lockout(client: TestClient, session: Session, people: dict[str, Person]) -> None:
     helena = Actor.person(people["Helena"])
-    row, secret = auth.create_client(session, helena, "x", ["dispatcher"], utcnow())
+    row, secret = auth.create_client(session, helena, "x", ["shift_supervisor"], utcnow())
     session.commit()
     for _ in range(10):
         client.post("/auth/token", data=GRANT, headers=_basic(row.client_id, "bad"))
@@ -131,7 +131,7 @@ def test_token_endpoint_hashes_off_the_event_loop(
 
     monkeypatch.setattr(auth_api.asyncio, "to_thread", spy)
     helena = Actor.person(people["Helena"])
-    row, secret = auth.create_client(session, helena, "x", ["dispatcher"], utcnow())
+    row, secret = auth.create_client(session, helena, "x", ["shift_supervisor"], utcnow())
     session.commit()
     assert (
         client.post("/auth/token", data=GRANT, headers=_basic(row.client_id, secret)).status_code

@@ -6,8 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from mia.agents.dispatcher import tools
-from mia.agents.dispatcher.classifier import classify
+from mia.agents.shift_supervisor import tools
+from mia.agents.shift_supervisor.classifier import classify
 from mia.api.main import app
 from mia.core.models import Branch, Event, Job, Person, Visit
 from mia.templates.cleaning.models import CleaningChecklistTick

@@ -1,4 +1,4 @@
-from mia.agents.dispatcher import replies
+from mia.agents.shift_supervisor import replies
 from mia.chat.blocks import TextBlock
 from mia.i18n.strings import STRINGS
 

@@ -7,8 +7,8 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlmodel import Session, select
 
 from mia.agents.base import AgentDeps, build_agent
-from mia.agents.dispatcher.agent import AGENT_DIR, MANIFEST, create_agent
-from mia.agents.dispatcher.tools import BINDINGS
+from mia.agents.shift_supervisor.agent import AGENT_DIR, MANIFEST, create_agent
+from mia.agents.shift_supervisor.tools import BINDINGS
 from mia.chat import service
 from mia.chat.blocks import AgentReply
 from mia.chat.service import run_turn, wrap_user_text
@@ -74,9 +74,9 @@ def test_medium_band_asks_with_buttons_and_records(
 ) -> None:  # type: ignore[no-untyped-def]
     use(
         cls(
-            "dispatcher.report_absence",
+            "shift_supervisor.report_absence",
             "medium",
-            alts=["dispatcher.report_absence", "dispatcher.my_visits"],
+            alts=["shift_supervisor.report_absence", "shift_supervisor.my_visits"],
         )
     )
     reply = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "huomenna ei"))
@@ -85,8 +85,8 @@ def test_medium_band_asks_with_buttons_and_records(
     [asked] = events_of(session, "intent.clarify_asked")
     assert asked.after == {  # type: ignore[comparison-overlap]
         "options": {
-            "Ilmoita poissaolo": "dispatcher.report_absence",
-            "Näytä käyntini": "dispatcher.my_visits",
+            "Ilmoita poissaolo": "shift_supervisor.report_absence",
+            "Näytä käyntini": "shift_supervisor.my_visits",
             "Jotain muuta": "other",
         },
         "message_id": reply.message_id,
@@ -99,9 +99,9 @@ def test_tapping_an_option_resolves_and_free_text_does_not(
 ) -> None:  # type: ignore[no-untyped-def]
     use(
         cls(
-            "dispatcher.report_absence",
+            "shift_supervisor.report_absence",
             "medium",
-            alts=["dispatcher.report_absence", "dispatcher.my_visits"],
+            alts=["shift_supervisor.report_absence", "shift_supervisor.my_visits"],
         )
     )
     first = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "huomenna ei"))
@@ -109,7 +109,7 @@ def test_tapping_an_option_resolves_and_free_text_does_not(
     label = next(b for b in first.blocks if b.type == "quick_replies").options[0]
     asyncio.run(run_turn(session, create_agent("test"), people["Juha"], label, first.thread_id))
     clarified = events_of(session, "intent.clarified")
-    assert len(clarified) == 1 and clarified[0].after["intent"] == "dispatcher.report_absence"  # type: ignore[index]
+    assert len(clarified) == 1 and clarified[0].after["intent"] == "shift_supervisor.report_absence"  # type: ignore[index]
     asyncio.run(
         run_turn(session, create_agent("test"), people["Juha"], "the first one", first.thread_id)
     )
@@ -117,7 +117,7 @@ def test_tapping_an_option_resolves_and_free_text_does_not(
 
 
 def test_something_else_asks_to_rephrase(session: Session, people: dict[str, Person], use) -> None:  # type: ignore[no-untyped-def]
-    use(cls("dispatcher.report_absence", "medium", alts=["dispatcher.my_visits"]))
+    use(cls("shift_supervisor.report_absence", "medium", alts=["shift_supervisor.my_visits"]))
     first = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "hmm"))
     reply = asyncio.run(
         run_turn(session, create_agent("test"), people["Juha"], "Jotain muuta", first.thread_id)
@@ -129,7 +129,7 @@ def test_something_else_asks_to_rephrase(session: Session, people: dict[str, Per
 def test_options_without_a_label_are_not_offered(
     session: Session, people: dict[str, Person], use
 ) -> None:  # type: ignore[no-untyped-def]
-    use(cls("dispatcher.report_absence", "medium", alts=["conversation.kb_payday"]))
+    use(cls("shift_supervisor.report_absence", "medium", alts=["conversation.kb_payday"]))
     reply = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "hmm"))
     assert reply.text() == STRINGS["fi"]["clarify.rephrase"]
     assert events_of(session, "intent.clarify_asked") == []
@@ -140,11 +140,11 @@ def test_repeated_labels_get_a_numeric_suffix(
 ) -> None:
     deps = AgentDeps.__new__(AgentDeps)
     deps.lang = "en"
-    monkeypatch.setitem(service.STRINGS["en"], "intent.dispatcher.assign", "Show my visits")
-    labels = service._unique_labels(["dispatcher.my_visits", "dispatcher.assign"], deps)
+    monkeypatch.setitem(service.STRINGS["en"], "intent.shift_supervisor.assign", "Show my visits")
+    labels = service._unique_labels(["shift_supervisor.my_visits", "shift_supervisor.assign"], deps)
     assert labels == {
-        "Show my visits": "dispatcher.my_visits",
-        "Show my visits 2": "dispatcher.assign",
+        "Show my visits": "shift_supervisor.my_visits",
+        "Show my visits 2": "shift_supervisor.assign",
     }
 
 
@@ -178,7 +178,7 @@ def test_every_template_conversation_intent_has_text_in_both_languages() -> None
 
 
 def test_every_seed_intent_has_a_label_in_both_languages() -> None:
-    role = load_role_plan("dispatcher")
+    role = load_role_plan("shift_supervisor")
     assert role is not None and len(role.intents) == 13
     for spec in role.intents:
         assert STRINGS["en"][f"intent.{spec.id}"] == spec.label_en
@@ -206,7 +206,7 @@ def test_injection_goes_to_the_agent_without_an_intent(
 def test_high_band_passes_the_intent_to_the_agent(
     session: Session, people: dict[str, Person], use, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # type: ignore[no-untyped-def]
-    use(cls("dispatcher.my_visits", "high"))
+    use(cls("shift_supervisor.my_visits", "high"))
     agent = create_agent("test")
     original = agent.run
     seen: list[str | None] = []
@@ -217,14 +217,14 @@ def test_high_band_passes_the_intent_to_the_agent(
 
     monkeypatch.setattr(agent, "run", run)
     asyncio.run(run_turn(session, agent, people["Juha"], "visits?"))
-    assert seen == ["dispatcher.my_visits"]
+    assert seen == ["shift_supervisor.my_visits"]
 
 
 def test_high_band_still_checks_permissions(
     session: Session, people: dict[str, Person], use
 ) -> None:  # type: ignore[no-untyped-def]
     """A confident assign intent is only a hint: the tool call still goes through rbac."""
-    use(cls("dispatcher.assign", "high"))
+    use(cls("shift_supervisor.assign", "high"))
 
     def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         if any(isinstance(p, ToolReturnPart) for m in messages for p in m.parts):
@@ -241,7 +241,7 @@ def test_high_band_still_checks_permissions(
     agent = build_agent(MANIFEST, AGENT_DIR, BINDINGS, AgentReply, FunctionModel(model), "demo")
     asyncio.run(run_turn(session, agent, people["Juha"], "Assign Mikael."))
     [called] = events_of(session, "tool.called")
-    assert called.entity_id == "dispatcher.assign_cover"
+    assert called.entity_id == "shift_supervisor.assign_cover"
     assert called.after["output"]["status"] == "denied"  # type: ignore[index]
 
 
@@ -252,7 +252,7 @@ def test_classification_event_has_no_text(session: Session, people: dict[str, Pe
     assert ev.after is not None and "secret" not in str(ev.after)
     assert set(ev.after) == {"role", "version", "intent", "band", "latency_ms"}
     assert (ev.after["role"], ev.after["version"], ev.after["intent"], ev.after["band"]) == (
-        "dispatcher",
+        "shift_supervisor",
         "v1",
         "conversation.greeting",
         "high",
@@ -276,7 +276,7 @@ def spy_agent(monkeypatch: pytest.MonkeyPatch) -> tuple[object, list[tuple[str, 
 def test_tapped_option_runs_the_agent_on_the_original_text(
     session: Session, people: dict[str, Person], use, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # type: ignore[no-untyped-def]
-    use(cls("dispatcher.report_absence", "medium", alts=["dispatcher.my_visits"]))
+    use(cls("shift_supervisor.report_absence", "medium", alts=["shift_supervisor.my_visits"]))
     agent, seen = spy_agent(monkeypatch)
     first = asyncio.run(run_turn(session, agent, people["Juha"], "huomenna ei"))  # type: ignore[arg-type]
     session.commit()
@@ -285,7 +285,7 @@ def test_tapped_option_runs_the_agent_on_the_original_text(
     asyncio.run(run_turn(session, agent, people["Juha"], "Näytä käyntini", first.thread_id))  # type: ignore[arg-type]
     [(prompt, intent)] = seen
     assert prompt == wrap_user_text("huomenna ei", people["Juha"])
-    assert intent == "dispatcher.my_visits"
+    assert intent == "shift_supervisor.my_visits"
     [clarified] = events_of(session, "intent.clarified")
     assert clarified.after["original_message_id"] == original.id  # type: ignore[index]
     [asked] = events_of(session, "intent.clarify_asked")
@@ -295,7 +295,7 @@ def test_tapped_option_runs_the_agent_on_the_original_text(
 def test_tapped_template_option_replies_with_the_template(
     session: Session, people: dict[str, Person], use, monkeypatch: pytest.MonkeyPatch
 ) -> None:  # type: ignore[no-untyped-def]
-    use(cls("dispatcher.report_absence", "medium", alts=["conversation.help"]))
+    use(cls("shift_supervisor.report_absence", "medium", alts=["conversation.help"]))
     agent, seen = spy_agent(monkeypatch)
     first = asyncio.run(run_turn(session, agent, people["Juha"], "hmm"))  # type: ignore[arg-type]
     session.commit()
@@ -305,7 +305,7 @@ def test_tapped_template_option_replies_with_the_template(
 
 
 def test_a_stale_question_is_not_resolved(session: Session, people: dict[str, Person], use) -> None:  # type: ignore[no-untyped-def]
-    use(cls("dispatcher.report_absence", "medium", alts=["dispatcher.my_visits"]))
+    use(cls("shift_supervisor.report_absence", "medium", alts=["shift_supervisor.my_visits"]))
     first = asyncio.run(run_turn(session, create_agent("test"), people["Juha"], "hmm"))
     session.commit()
     use(cls("conversation.thanks", "high"))

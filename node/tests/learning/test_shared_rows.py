@@ -32,21 +32,21 @@ def test_conversation_rows_keep_their_label_and_other_roles_become_other(tmp_pat
             [
                 _row(1, "conversation.greeting"),
                 _row(2, "sales.new_lead"),
-                _row(3, "dispatcher.report_absence"),  # the role's own rows stay out
+                _row(3, "shift_supervisor.report_absence"),  # the role's own rows stay out
                 _row(4, "conversation.thanks", split="test", lang="fi"),
             ]
         )
         + "\n",
         encoding="utf-8",
     )
-    recs = shared_records("dispatcher", path)
+    recs = shared_records("shift_supervisor", path)
     assert [(r.intent, r.kind, r.split) for r in recs] == [
         ("conversation.greeting", "normal", "train"),
         ("other", "other", "train"),
         ("conversation.thanks", "normal", "test"),
     ]
     assert recs[0].id == "conversation.greeting/en/001"
-    assert recs[0].role == "dispatcher" and recs[0].counterpart == "cleaner"
+    assert recs[0].role == "shift_supervisor" and recs[0].counterpart == "cleaner"
     assert recs[0].slots == {} and recs[0].source == "eval:tests/evals/intents.jsonl"
     assert recs[1].negative_of is None and recs[2].lang == "fi"
 
@@ -56,8 +56,8 @@ def test_a_share_of_train_rows_goes_to_dev_and_the_split_is_stable(tmp_path: Pat
     path.write_text(
         "\n".join(_row(i, "conversation.greeting") for i in range(60)) + "\n", encoding="utf-8"
     )
-    once = shared_records("dispatcher", path)
-    again = shared_records("dispatcher", path)
+    once = shared_records("shift_supervisor", path)
+    again = shared_records("shift_supervisor", path)
     dev = [r.id for r in once if r.split == "dev"]
     assert 5 <= len(dev) <= 15  # about one in six
     assert [r.split for r in once] == [r.split for r in again]
@@ -68,5 +68,5 @@ def test_unknown_style_and_missing_fields_do_not_break_a_row(tmp_path: Path) -> 
     path.write_text(
         _row(1, "conversation.greeting", style="shouting", role=None) + "\n", encoding="utf-8"
     )
-    (rec,) = shared_records("dispatcher", path)
+    (rec,) = shared_records("shift_supervisor", path)
     assert rec.style == "informal" and rec.counterpart == "unknown"

@@ -13,10 +13,10 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, col, select
 
-from mia.agents.dispatcher import timesheets
-from mia.agents.dispatcher.agent import MANIFEST
-from mia.agents.dispatcher.rules import _visit_card
-from mia.agents.dispatcher.tools import visit_info
+from mia.agents.shift_supervisor import timesheets
+from mia.agents.shift_supervisor.agent import MANIFEST
+from mia.agents.shift_supervisor.rules import _visit_card
+from mia.agents.shift_supervisor.tools import visit_info
 from mia.chat.blocks import Block, TextBlock
 from mia.chat.channels import notify
 from mia.core import events

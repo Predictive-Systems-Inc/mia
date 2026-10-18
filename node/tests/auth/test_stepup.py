@@ -19,7 +19,7 @@ def client(branch: object) -> TestClient:
 def override(session: Session, people: dict[str, Person]) -> str:
     row = approvals.request(
         session,
-        "dispatcher.cover_override",
+        "shift_supervisor.cover_override",
         ("visit", "V"),
         "x",
         Actor.person(people["Sanna"]),

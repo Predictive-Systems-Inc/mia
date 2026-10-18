@@ -1,8 +1,8 @@
-"""Jev action eval on the intent set: does Jev pick the dispatcher action a message needs?
+"""Jev action eval on the intent set: does Jev pick the shift supervisor action a message needs?
 
 Every message of the split goes through decide() on the seeded demo database, as the cleaner
 Juha or the supervisor Sanna (by the record's role). The expected action comes from the intent:
-dispatcher intents map to their tool, every other intent (other agents, conversation, other)
+shift supervisor intents map to their tool, every other intent (other agents, conversation, other)
 to reply_only. Run with:
   MIA_TYPESAFE_KEY=... uv run pytest node/tests/evals/test_jev_action_eval.py -m evals -s
 MIA_EVAL_INTENT_SPLIT=train|test|all (default test; the threshold is tuned on train),
@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 from sqlmodel import Session, select
 
-from mia.agents.dispatcher import actions, decider
+from mia.agents.shift_supervisor import actions, decider
 from mia.chat.service import _prepare
 from mia.core.egress import egress_context
 from mia.core.models import Branch, Person
@@ -30,19 +30,19 @@ from tests.evals.intents import load_dataset
 pytestmark = pytest.mark.evals
 
 INTENT_ACTION = {
-    "dispatcher.report_absence": "record_absence",
-    "dispatcher.absence_scope": "record_absence",
-    "dispatcher.my_visits": "get_my_visits",
-    "dispatcher.find_cover": "find_replacements",
-    "dispatcher.assign": "assign_cover",
-    "dispatcher.cover_reply": "respond_to_cover",
-    "dispatcher.check_in": "check_in",
-    "dispatcher.check_out": "check_out",
-    "dispatcher.visit_details": "visit_details",
-    "dispatcher.cannot_access_site": "report_site_problem",
-    "dispatcher.site_problem": "report_site_problem",
-    "dispatcher.checklist": "checklist",
-    "dispatcher.send_photos": "reply_only",
+    "shift_supervisor.report_absence": "record_absence",
+    "shift_supervisor.absence_scope": "record_absence",
+    "shift_supervisor.my_visits": "get_my_visits",
+    "shift_supervisor.find_cover": "find_replacements",
+    "shift_supervisor.assign": "assign_cover",
+    "shift_supervisor.cover_reply": "respond_to_cover",
+    "shift_supervisor.check_in": "check_in",
+    "shift_supervisor.check_out": "check_out",
+    "shift_supervisor.visit_details": "visit_details",
+    "shift_supervisor.cannot_access_site": "report_site_problem",
+    "shift_supervisor.site_problem": "report_site_problem",
+    "shift_supervisor.checklist": "checklist",
+    "shift_supervisor.send_photos": "reply_only",
 }
 SPLIT = os.environ.get("MIA_EVAL_INTENT_SPLIT", "test")
 LANG = os.environ.get("MIA_EVAL_INTENT_LANG", "en")
@@ -87,8 +87,8 @@ def test_jev_actions(session: Session, branch: Branch) -> None:
             }
         )
     tools = set(INTENT_ACTION.values()) - {"reply_only"}
-    # In scope: the dispatcher intents that are built (INTENT_ACTION). Everything else (other
-    # agents, unbuilt dispatcher intents, conversation) is judged only on whether a tool ran.
+    # In scope: the shift supervisor intents that are built (INTENT_ACTION). Everything else (other
+    # agents, unbuilt shift supervisor intents, conversation) is judged only on whether a tool ran.
     ins = [x for x in results if x["intent"] in INTENT_ACTION]
     out = [x for x in results if x["intent"] not in INTENT_ACTION]
 

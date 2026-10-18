@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic_ai.messages import ToolReturnPart
 
-from mia.agents.dispatcher.rules import compose
+from mia.agents.shift_supervisor.rules import compose
 from mia.chat.blocks import Block, TextBlock
 from mia.i18n import t
 

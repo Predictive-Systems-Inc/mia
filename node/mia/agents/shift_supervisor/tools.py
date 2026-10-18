@@ -1,4 +1,4 @@
-"""Dispatcher tools: typed inputs and outputs, permission checked data access, writes only
+"""Shift supervisor tools: typed inputs and outputs, permission checked data access, writes only
 through mia.core services. Scheduling decisions live in scoring.py, not in the model."""
 
 import datetime as dt
@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, ToolBinding
-from mia.agents.dispatcher import cover, scoring
+from mia.agents.shift_supervisor import cover, scoring
 from mia.core import scheduling, store
 from mia.core.db import utcnow
 from mia.core.models import Absence, Job, Location, Person, Visit
@@ -599,7 +599,7 @@ def report_site_problem(
 ) -> ProblemOutput:
     """Record a problem at the acting person's current (or next) visit today and tell the
     supervisors at once."""
-    from mia.agents.dispatcher.alerts import supervisors
+    from mia.agents.shift_supervisor.alerts import supervisors
     from mia.chat.blocks import TextBlock
     from mia.chat.channels import notify
     from mia.core.models import Incident
@@ -742,67 +742,67 @@ def checklist(deps: AgentDeps, args: ChecklistInput, tool_call_id: str) -> Check
 
 BINDINGS = [
     ToolBinding(
-        "dispatcher.get_my_visits",
+        "shift_supervisor.get_my_visits",
         get_my_visits,
         GetMyVisitsInput,
         "List visits for the user (default: today and the next six days). "
         "Set person_name only when the user asks about someone else.",
     ),
     ToolBinding(
-        "dispatcher.record_absence",
+        "shift_supervisor.record_absence",
         record_absence,
         RecordAbsenceInput,
         "Record that the user is absent (sick, late, leaving early) on a date and "
         "return the visits it affects. Call again to change partial_day.",
     ),
     ToolBinding(
-        "dispatcher.find_replacements",
+        "shift_supervisor.find_replacements",
         find_replacements,
         FindReplacementsInput,
         "Find the top three people who can cover a visit, with reasons. Give visit_id, "
         "or location_name with date and time.",
     ),
     ToolBinding(
-        "dispatcher.assign_cover",
+        "shift_supervisor.assign_cover",
         assign_cover,
         AssignCoverInput,
         "Assign cover when the user explicitly tells you whom to assign. The person is asked "
         "to confirm before the visit changes. Never call this on your own initiative.",
     ),
     ToolBinding(
-        "dispatcher.respond_to_cover",
+        "shift_supervisor.respond_to_cover",
         respond_to_cover,
         RespondToCoverInput,
         "Record the user's yes or no to a cover request Mia sent them.",
     ),
     ToolBinding(
-        "dispatcher.check_in",
+        "shift_supervisor.check_in",
         check_in,
         CheckInInput,
         "The user says they arrived at a site: check them in to their visit that is due now.",
     ),
     ToolBinding(
-        "dispatcher.check_out",
+        "shift_supervisor.check_out",
         check_out,
         CheckOutInput,
         "The user says they finished and are leaving: check them out of the visit in progress.",
     ),
     ToolBinding(
-        "dispatcher.visit_details",
+        "shift_supervisor.visit_details",
         visit_details,
         VisitDetailsInput,
         "Address, instructions, access notes and checklist of the user's current or next "
         "visit today (or of the site they name).",
     ),
     ToolBinding(
-        "dispatcher.report_site_problem",
+        "shift_supervisor.report_site_problem",
         report_site_problem,
         ReportProblemInput,
         "The user cannot get into the site, or the site is unusable: record it and tell the "
         "supervisors. Pass the user's own words as text.",
     ),
     ToolBinding(
-        "dispatcher.checklist",
+        "shift_supervisor.checklist",
         checklist,
         ChecklistInput,
         "The checklist of the user's current visit; give item when the user says one is done.",

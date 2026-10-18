@@ -38,45 +38,45 @@ questions) is handled by Mia itself for every role through the shared conversati
 node/mia/learning/catalogue/conversation.yaml, and is not listed here. Its ids
 (`conversation.*`) are valid labels in intents.jsonl beside the ids below.
 
-Built today: the dispatcher's six classifier intents (node/mia/agents/dispatcher/classifier.py,
+Built today: the shift supervisor's six classifier intents (node/mia/agents/shift_supervisor/classifier.py,
 `IntentName`), small talk answered without tools, and WhatsApp account linking by code
 (node/mia/channels/linking.py). Everything else is planned.
 
-## Dispatcher (Operations): scheduling, dispatch, field work, keys
+## Shift supervisor (Operations): scheduling, dispatch, field work, keys
 
 | Intent | Label | Meaning | Who | Trig | Risk | Sens | Approval / SoD | Legal | SoR | Ctry | Ph | Built | Proc |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| dispatcher.report_absence | Can't come / late | Staff member says they cannot work (sick, other reason), will be late, or must leave early | C, S | msg | write | p (sc if health details) | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.absence_scope | Which shifts I miss | Answer to which visits a just-reported absence covers (whole day, morning, afternoon) | C | msg | write | p | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.my_visits | Show my shifts | Ask about own visits, shifts or schedule; supervisors may ask about someone else's | C, S, O | msg | read | p | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.find_cover | Find cover | Supervisor asks who could take over a visit or shift | S, O | msg | read | p | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.assign | Assign cover | Supervisor names whom to assign as cover after candidates were shown | S, O | msg | write | p | instr.; rule break: admin or owner | n | Mia | both | 1 | yes | C2S |
-| dispatcher.cover_reply | Answer cover request | Cleaner accepts or declines a cover request sent to them | C | msg | write | n | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.missed_check_in | - | No check-in some minutes after a visit starts: ask the cleaner, alert the supervisor | - | event | write | p | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.unstaffed_visits | - | Daily check for tomorrow's visits without a cleaner | - | sched | read | n | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.daily_plan | - | Evening message to each cleaner with tomorrow's visits | - | sched | write | p | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.check_in | I've arrived | Cleaner says they arrived at the site (or shares location) | C | msg, event | write | p | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.check_out | I'm done here | Cleaner says the visit is finished and they are leaving | C | msg, event | write | p | - | n | Mia | both | 1 | yes | S2C |
-| dispatcher.cannot_access_site | Can't get in | Cleaner is at a site and cannot get in physically (locked door, no key, wrong door code, alarm). Logging in to Mia is admin.reset_login | C | msg | write | n | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.site_problem | Problem at the site | Site conditions stop or change the work (no water or power, renovation, event, client still there) | C | msg | write | n | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.visit_details | Job details | Ask practical details of a visit: address, door code, where things are, special instructions | C | msg | read | p | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.checklist | My checklist | Ask for or tick off the visit checklist | C | msg | write | n | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.send_photos | Send photos | Send before or after photos as proof of work | C | msg | write | p | - | n | Mia | both | 1 | yes | C2S |
-| dispatcher.extra_time | Need more time | Ask to stay longer than planned to finish the job | C | msg | write | n | supervisor | n | Mia | both | 2 | no | S2C |
-| dispatcher.extra_work_on_site | Client wants extra | Client on site asked the cleaner for extra work not in the order | C | msg | write | n | supervisor (priced by code) | n | Mia | both | 2 | no | S2C |
-| dispatcher.swap_shift | Swap a shift | Cleaner proposes to swap a visit with a named colleague | C | msg | write | p | supervisor | n | Mia | both | 2 | no | C2S |
-| dispatcher.offer_shifts | I want more shifts | Cleaner says they want more hours or can pick up extra visits | C | msg | write | n | - | n | Mia | both | 2 | no | C2S |
-| dispatcher.set_availability | Set when I can work | Set recurring availability or unavailability (no Tuesdays, only mornings, holiday dates) | C | msg | write | p | - | n | Mia | both | 2 | no | C2S |
-| dispatcher.who_is_working | Who's working | Staffing status: who works where today, is site X covered | S, O | msg | read | p | - | n | Mia | both | 2 | no | C2S |
-| dispatcher.reschedule_visit | Move a visit | Office moves a visit to another time or date | S, O | msg | write | n | client notice via client service | n | Mia | both | 2 | no | C2S |
-| dispatcher.add_visit | Add a visit | Office adds a one-off visit to the schedule | S, O | msg | write | n | - | n | Mia | both | 2 | no | C2S |
-| dispatcher.plan_roster | Plan the roster | Build next week's or month's roster from agreements (code plans, supervisor publishes) | S, O | msg, sched | write | p | supervisor publishes | n | Mia | both | 2 | no | C2S |
-| dispatcher.route_plan | Plan the route | Order a day's visits into an efficient route | S | msg | read | n | - | n | Mia | both | 3 | no | C2S |
-| dispatcher.key_location | Where's the key | Where is the key or access card for a site, who has it | C, S | msg | read | n | - | n | Mia | both | 2 | no | C2S |
-| dispatcher.key_handover | Key handed over | Record a key or card given to or returned by someone | C, S | msg | write | n | - | n | Mia | both | 2 | no | C2S |
-| dispatcher.lost_key | Lost a key | A physical key, card or remote for a client site is lost. A lost phone, codes or documents with data is site_manager.data_breach | C, S | msg | external | n | office (client notice) | y | Mia | both | 2 | no | C2S |
-| dispatcher.book_vehicle | Book the van | Ask to use a company car or van for visits | C, S | msg | write | n | supervisor | n | Mia | both | 2 | no | C2S |
-| dispatcher.directions | How to get there | How to get to a company site or visit, parking, public transport there. Directions anywhere else are conversation.oos_directions_transport | C | msg | read | n | - | n | Mia | both | 2 | no | C2S |
+| shift_supervisor.report_absence | Can't come / late | Staff member says they cannot work (sick, other reason), will be late, or must leave early | C, S | msg | write | p (sc if health details) | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.absence_scope | Which shifts I miss | Answer to which visits a just-reported absence covers (whole day, morning, afternoon) | C | msg | write | p | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.my_visits | Show my shifts | Ask about own visits, shifts or schedule; supervisors may ask about someone else's | C, S, O | msg | read | p | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.find_cover | Find cover | Supervisor asks who could take over a visit or shift | S, O | msg | read | p | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.assign | Assign cover | Supervisor names whom to assign as cover after candidates were shown | S, O | msg | write | p | instr.; rule break: admin or owner | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.cover_reply | Answer cover request | Cleaner accepts or declines a cover request sent to them | C | msg | write | n | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.missed_check_in | - | No check-in some minutes after a visit starts: ask the cleaner, alert the supervisor | - | event | write | p | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.unstaffed_visits | - | Daily check for tomorrow's visits without a cleaner | - | sched | read | n | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.daily_plan | - | Evening message to each cleaner with tomorrow's visits | - | sched | write | p | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.check_in | I've arrived | Cleaner says they arrived at the site (or shares location) | C | msg, event | write | p | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.check_out | I'm done here | Cleaner says the visit is finished and they are leaving | C | msg, event | write | p | - | n | Mia | both | 1 | yes | S2C |
+| shift_supervisor.cannot_access_site | Can't get in | Cleaner is at a site and cannot get in physically (locked door, no key, wrong door code, alarm). Logging in to Mia is admin.reset_login | C | msg | write | n | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.site_problem | Problem at the site | Site conditions stop or change the work (no water or power, renovation, event, client still there) | C | msg | write | n | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.visit_details | Job details | Ask practical details of a visit: address, door code, where things are, special instructions | C | msg | read | p | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.checklist | My checklist | Ask for or tick off the visit checklist | C | msg | write | n | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.send_photos | Send photos | Send before or after photos as proof of work | C | msg | write | p | - | n | Mia | both | 1 | yes | C2S |
+| shift_supervisor.extra_time | Need more time | Ask to stay longer than planned to finish the job | C | msg | write | n | supervisor | n | Mia | both | 2 | no | S2C |
+| shift_supervisor.extra_work_on_site | Client wants extra | Client on site asked the cleaner for extra work not in the order | C | msg | write | n | supervisor (priced by code) | n | Mia | both | 2 | no | S2C |
+| shift_supervisor.swap_shift | Swap a shift | Cleaner proposes to swap a visit with a named colleague | C | msg | write | p | supervisor | n | Mia | both | 2 | no | C2S |
+| shift_supervisor.offer_shifts | I want more shifts | Cleaner says they want more hours or can pick up extra visits | C | msg | write | n | - | n | Mia | both | 2 | no | C2S |
+| shift_supervisor.set_availability | Set when I can work | Set recurring availability or unavailability (no Tuesdays, only mornings, holiday dates) | C | msg | write | p | - | n | Mia | both | 2 | no | C2S |
+| shift_supervisor.who_is_working | Who's working | Staffing status: who works where today, is site X covered | S, O | msg | read | p | - | n | Mia | both | 2 | no | C2S |
+| shift_supervisor.reschedule_visit | Move a visit | Office moves a visit to another time or date | S, O | msg | write | n | client notice via client service | n | Mia | both | 2 | no | C2S |
+| shift_supervisor.add_visit | Add a visit | Office adds a one-off visit to the schedule | S, O | msg | write | n | - | n | Mia | both | 2 | no | C2S |
+| shift_supervisor.plan_roster | Plan the roster | Build next week's or month's roster from agreements (code plans, supervisor publishes) | S, O | msg, sched | write | p | supervisor publishes | n | Mia | both | 2 | no | C2S |
+| shift_supervisor.route_plan | Plan the route | Order a day's visits into an efficient route | S | msg | read | n | - | n | Mia | both | 3 | no | C2S |
+| shift_supervisor.key_location | Where's the key | Where is the key or access card for a site, who has it | C, S | msg | read | n | - | n | Mia | both | 2 | no | C2S |
+| shift_supervisor.key_handover | Key handed over | Record a key or card given to or returned by someone | C, S | msg | write | n | - | n | Mia | both | 2 | no | C2S |
+| shift_supervisor.lost_key | Lost a key | A physical key, card or remote for a client site is lost. A lost phone, codes or documents with data is site_manager.data_breach | C, S | msg | external | n | office (client notice) | y | Mia | both | 2 | no | C2S |
+| shift_supervisor.book_vehicle | Book the van | Ask to use a company car or van for visits | C, S | msg | write | n | supervisor | n | Mia | both | 2 | no | C2S |
+| shift_supervisor.directions | How to get there | How to get to a company site or visit, parking, public transport there. Directions anywhere else are conversation.oos_directions_transport | C | msg | read | n | - | n | Mia | both | 2 | no | C2S |
 
 ## Client service (Customer service)
 
@@ -269,7 +269,7 @@ kb_cleaning_howto, privacy_rights_request; D30, D31); the site manager owns the 
 | site_manager.complaint_follow_up | - | Corrective action after a client complaint | - | event | write | p | supervisor | n | Mia | both | 2 | no | C2S |
 | site_manager.quality_scores | Quality scores | Quality scores and complaints per site, cleaner or period | S, O | msg | read | p | - | n | Mia | both | 3 | no | C2S |
 | site_manager.company_permits_due | - | Company insurance, permits and registrations due for renewal (business permit, BIR, trade register) | - | sched | write | n | owner | y | Mia | both | 3 | no | R2R |
-| site_manager.data_breach | Data leak | Possible data breach: lost or stolen phone or papers with data, codes or personal data sent to the wrong person. A lost physical key alone is dispatcher.lost_key | C, S, O | msg | write | p | owner (72 h notice to authority) | y | Mia | both | 2 | no | Plat |
+| site_manager.data_breach | Data leak | Possible data breach: lost or stolen phone or papers with data, codes or personal data sent to the wrong person. A lost physical key alone is shift_supervisor.lost_key | C, S, O | msg | write | p | owner (72 h notice to authority) | y | Mia | both | 2 | no | Plat |
 | site_manager.audit_trail | Who changed what | Who changed what and when (event log) | O | msg | read | p | - | n | Mia | both | 2 | no | Plat |
 
 ## Admin: master data, users and access, administration, management reporting
@@ -287,7 +287,7 @@ kb_cleaning_howto, privacy_rights_request; D30, D31); the site manager owns the 
 | admin.invite_user | Invite to Mia | Give someone access to Mia | O | msg | write | p | - | n | Mia | both | 1 | no | Plat |
 | admin.change_role | Change access | Change what someone may do in Mia (role, permissions) | O | msg | write | p | owner; SoD: not own role | n | Mia | both | 1 | no | Plat |
 | admin.remove_access | Remove access | Remove someone's access to Mia, nothing else | O | msg | write | p | - | n | Mia | both | 1 | no | Plat |
-| admin.reset_login | Can't log in | Cannot log in to Mia: locked out of the app, forgot PIN or password, new phone or SIM. A locked site door is dispatcher.cannot_access_site | C, S, O | msg | write | p | admin | n | Mia | both | 1 | no | Plat |
+| admin.reset_login | Can't log in | Cannot log in to Mia: locked out of the app, forgot PIN or password, new phone or SIM. A locked site door is shift_supervisor.cannot_access_site | C, S, O | msg | write | p | admin | n | Mia | both | 1 | no | Plat |
 | admin.pending_approvals | My approvals | Show approvals waiting for me (decided in the app, never by the agent) | O | msg | read | n | - | n | Mia | both | 1 | part | Plat |
 | admin.agent_settings | Agent settings | Change an agent's organisation instructions or settings | O | msg | write | n | owner | n | Mia | both | 2 | no | Plat |
 | admin.branch_settings | Branch settings | Branch settings: opening hours, public holidays, time zone | O | msg | write | n | owner | n | Mia | both | 2 | no | Plat |
@@ -307,7 +307,7 @@ kb_cleaning_howto, privacy_rights_request; D30, D31); the site manager owns the 
 
 | Agent | Intents | Message-triggered | Built |
 | --- | --- | --- | --- |
-| dispatcher | 31 | 28 | 6 |
+| shift_supervisor | 31 | 28 | 6 |
 | client_service | 14 | 11 | 0 |
 | sales | 19 | 16 | 0 |
 | marketing | 10 | 9 | 0 |
@@ -320,7 +320,7 @@ kb_cleaning_howto, privacy_rights_request; D30, D31); the site manager owns the 
 | total | 190 | 159 | 7 (2 part) |
 
 Every intent also has a hand-off rule when the sender may not use it (for example a cleaner
-asking `dispatcher.find_cover` is answered with "permission denied" by the tool, rule 4); the
+asking `shift_supervisor.find_cover` is answered with "permission denied" by the tool, rule 4); the
 classifier names the intent, permissions decide.
 
 ## Notes
