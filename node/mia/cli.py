@@ -272,8 +272,8 @@ def forget(args: argparse.Namespace) -> int:
 
     with session_scope() as session:
         branch_id = _only_branch_id(session, args.branch)
-        route_memory.forget(session, branch_id, args.key, Actor.system(branch_id), utcnow())
-    print(t("cli.forgotten", "en", route=args.key))
+        key = route_memory.forget(session, branch_id, args.key, Actor.system(branch_id), utcnow())
+    print(t("cli.forgotten", "en", route=key) if key else t("cli.learned.none", "en"))
     return 0
 
 

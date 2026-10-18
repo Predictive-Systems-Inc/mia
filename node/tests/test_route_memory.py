@@ -38,15 +38,22 @@ def test_taps_older_than_the_window_do_not_count() -> None:
 
 def test_a_switch_away_within_an_hour_undoes_the_tap() -> None:
     tap = _tap("k", A)
-    undo = Switch("k", A, tap.at + dt.timedelta(minutes=30), "t1")
+    undo = Switch(A, tap.at + dt.timedelta(minutes=30), "t1")  # on any message
     assert learned([tap, _tap("k", A, 2)], [undo], {}, NOW) == {}
 
 
 def test_a_switch_after_an_hour_or_in_another_thread_does_not_undo() -> None:
     tap = _tap("k", A)
-    late = Switch("k", A, tap.at + dt.timedelta(hours=2), "t1")
-    elsewhere = Switch("k", A, tap.at + dt.timedelta(minutes=5), "t2")
+    late = Switch(A, tap.at + dt.timedelta(hours=2), "t1")
+    elsewhere = Switch(A, tap.at + dt.timedelta(minutes=5), "t2")
     assert learned([tap, _tap("k", A, 2)], [late, elsewhere], {}, NOW) == {"k": A}
+
+
+def test_a_switch_from_another_agent_or_before_the_tap_does_not_undo() -> None:
+    tap = _tap("k", A)
+    other = Switch(B, tap.at + dt.timedelta(minutes=5), "t1")
+    before = Switch(A, tap.at - dt.timedelta(minutes=5), "t1")
+    assert learned([tap, _tap("k", A, 2)], [other, before], {}, NOW) == {"k": A}
 
 
 def test_forget_discards_taps_before_it_only() -> None:

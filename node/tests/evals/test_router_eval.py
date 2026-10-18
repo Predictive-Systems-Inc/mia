@@ -6,6 +6,7 @@ at >= 0.6, ask-back rate, real messages answered as small talk, p50 and p95 late
 descriptions and thresholds."""
 
 import asyncio
+import datetime as dt
 import json
 import time
 from collections import defaultdict
@@ -41,7 +42,16 @@ ROSTER = [
 SCORES = ("right", "wrong", "ask", "small_talk", "other")
 PURPOSE = "chat.route.eval"
 CONCURRENCY = 4
-REPORT = Path(__file__).parents[3] / "docs" / "research" / f"router-{utcnow():%Y-%m-%d}.raw.json"
+RESEARCH = Path(__file__).parents[3] / "docs" / "research"
+
+
+def _report_path(now: dt.datetime, folder: Path = RESEARCH) -> Path:
+    """The raw file for a run at `now` (local time), router-<date>-<HHMM>.raw.json; raises
+    FileExistsError when it exists, so a run never overwrites an earlier one."""
+    path = folder / f"router-{now:%Y-%m-%d-%H%M}.raw.json"
+    if path.exists():
+        raise FileExistsError(f"refusing to overwrite {path}")
+    return path
 
 
 def _needs_key() -> None:
@@ -141,6 +151,7 @@ def _print(title: str, table: dict[str, Any]) -> None:
 
 def test_router(engine: Engine, branch: Branch) -> None:
     _needs_key()
+    report = _report_path(dt.datetime.now().astimezone())  # before the run, not after it
 
     async def run() -> list[dict[str, Any]]:
         sem = asyncio.Semaphore(CONCURRENCY)
@@ -169,7 +180,7 @@ def test_router(engine: Engine, branch: Branch) -> None:
     _print("all languages (reported)", {"all": summary["all"]})
     _print("gated languages, gate half (asserted)", summary["gated"]["by_language"])
     _print("gated languages, gate half (asserted)", {"all": summary["gated"]["all"]})
-    REPORT.write_text(
+    report.write_text(
         json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8",
     )

@@ -45,20 +45,19 @@ class Tap:
 
 @dataclass(frozen=True)
 class Switch:
-    """A person moved away from from_agent on this key in this thread."""
+    """One chat.agent_switched event: the thread moved away from from_agent."""
 
-    key: str
     from_agent: str
     at: dt.datetime
     thread_id: str
 
 
 def _undone(tap: Tap, switches: Sequence[Switch]) -> bool:
-    """True when a switch away from the tapped agent follows it within UNDO_WINDOW in the
-    same thread for the same key."""
+    """True when a switch away from the tapped agent follows the tap within UNDO_WINDOW in the
+    same thread, on any message (the clerk's correction is usually a new message). The same
+    rule as learning/harvest._route_undone."""
     return any(
-        s.key == tap.key
-        and s.thread_id == tap.thread_id
+        s.thread_id == tap.thread_id
         and s.from_agent == tap.agent_id
         and dt.timedelta(0) <= s.at - tap.at <= UNDO_WINDOW
         for s in switches
@@ -122,41 +121,38 @@ def remember(
     events.emit(session, CHOSEN, ("thread", thread.id), None, after, deps.actor)
 
 
-def _branch_events(session: Session, branch_id: str, action: str) -> Sequence[Event]:
+def _branch_events(
+    session: Session, branch_id: str, action: str, now: dt.datetime
+) -> Sequence[Event]:
+    """The branch's events of this action inside WINDOW (older ones cannot change `learned`:
+    their taps no longer count, and switches and forgets act only on later taps)."""
     return session.exec(
-        select(Event).where(Event.action == action).where(Event.branch_id == branch_id)
+        select(Event)
+        .where(Event.action == action)
+        .where(Event.branch_id == branch_id)
+        .where(col(Event.timestamp) >= now - WINDOW)
     ).all()
 
 
-def _switches(session: Session, branch_id: str) -> list[Switch]:
-    """The branch's chat.agent_switched events as Switch rows, keyed by the thread's latest
-    user message before the switch (the message that was switched on)."""
-    out: list[Switch] = []
-    for ev in _branch_events(session, branch_id, "chat.agent_switched"):
-        from_agent = (ev.after or {}).get("from")
-        message = session.exec(
-            select(Message)
-            .where(Message.thread_id == ev.entity_id)
-            .where(Message.role == "user")
-            .where(col(Message.id) < ev.id)  # ULIDs are ordered (core/ids.new_id)
-            .order_by(col(Message.id).desc())
-        ).first()
-        if message is not None and from_agent:
-            out.append(Switch(key_of(message.text), str(from_agent), ev.timestamp, ev.entity_id))
-    return out
+def _switches(session: Session, branch_id: str, now: dt.datetime) -> list[Switch]:
+    return [
+        Switch(str(a["from"]), ev.timestamp, ev.entity_id)
+        for ev in _branch_events(session, branch_id, "chat.agent_switched", now)
+        if (a := ev.after or {}).get("from")
+    ]
 
 
-def _taps(session: Session, branch_id: str) -> list[Tap]:
+def _taps(session: Session, branch_id: str, now: dt.datetime) -> list[Tap]:
     return [
         Tap(str(a["key"]), str(a["agent_id"]), ev.timestamp, ev.entity_id, ev.id)
-        for ev in _branch_events(session, branch_id, CHOSEN)
+        for ev in _branch_events(session, branch_id, CHOSEN, now)
         if (a := ev.after or {}).get("key") and a.get("agent_id")
     ]
 
 
-def _forgotten(session: Session, branch_id: str) -> dict[str, dt.datetime]:
+def _forgotten(session: Session, branch_id: str, now: dt.datetime) -> dict[str, dt.datetime]:
     forgotten: dict[str, dt.datetime] = {}
-    for ev in _branch_events(session, branch_id, FORGOTTEN):
+    for ev in _branch_events(session, branch_id, FORGOTTEN, now):
         key = str((ev.after or {}).get("key"))
         forgotten[key] = max(forgotten.get(key, ev.timestamp), ev.timestamp)
     return forgotten
@@ -168,9 +164,9 @@ def recall(session: Session, branch_id: str, now: dt.datetime) -> dict[str, str]
     # ponytail: a scan of the branch's route events per message; cache or index when a branch
     # passes thousands of taps.
     return learned(
-        _taps(session, branch_id),
-        _switches(session, branch_id),
-        _forgotten(session, branch_id),
+        _taps(session, branch_id, now),
+        _switches(session, branch_id, now),
+        _forgotten(session, branch_id, now),
         now,
     )
 
@@ -178,19 +174,27 @@ def recall(session: Session, branch_id: str, now: dt.datetime) -> dict[str, str]
 def counts(session: Session, branch_id: str, now: dt.datetime) -> dict[tuple[str, str], int]:
     """(key, agent id) to the taps that count toward learning, with the same filtering as
     `learned` (inside WINDOW, not forgotten, not undone). Reads only."""
-    switches, forgotten = _switches(session, branch_id), _forgotten(session, branch_id)
+    switches, forgotten = _switches(session, branch_id, now), _forgotten(session, branch_id, now)
     live = Counter(
         (t.key, t.agent_id)
-        for t in _taps(session, branch_id)
+        for t in _taps(session, branch_id, now)
         if _counts(t, now, forgotten) and not _undone(t, switches)
     )
     return dict(live)
 
 
-def forget(session: Session, branch_id: str, key: str, actor: Actor, now: dt.datetime) -> None:
-    """Emits chat.route_forgotten so the key is not learned until MIN_TAPS new taps. Commits."""
+def forget(
+    session: Session, branch_id: str, text: str, actor: Actor, now: dt.datetime
+) -> str | None:
+    """Emits chat.route_forgotten for the key of `text` (a message or a printed key) so it is
+    not learned until MIN_TAPS new taps, and commits. Returns the key, or None with nothing
+    emitted when no agent is learned for it."""
+    key = key_of(text)
     agent_id = recall(session, branch_id, now).get(key)
+    if agent_id is None:
+        return None
     events.emit(
         session, FORGOTTEN, ("branch", branch_id), None, {"key": key, "agent_id": agent_id}, actor
     )
     session.commit()
+    return key

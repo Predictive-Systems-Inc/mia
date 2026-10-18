@@ -3,6 +3,8 @@
 Reads the database and writes only to the local learning dir (D18); emits no event."""
 
 import datetime as dt
+import html
+import logging
 import os
 from pathlib import Path
 
@@ -19,6 +21,9 @@ from mia.skills import runtime
 UNDO = ("absence.cancelled", "cover.cancelled")
 SENSITIVE_PREFIXES = ("conversation.privacy_", "conversation.health_")
 UNDO_WINDOW = dt.timedelta(hours=1)
+NOT_SCREENED = " privacy and health not screened (no active role model)"
+
+log = logging.getLogger(__name__)
 
 
 def _corrected(session: Session, ev: Event, original_id: str) -> bool:
@@ -70,7 +75,8 @@ def _append(path: Path, records: list[Record]) -> None:
 
 
 def _route_undone(session: Session, ev: Event) -> bool:
-    """True when the thread switched away from the tapped agent within UNDO_WINDOW of the tap."""
+    """True when the tap's thread switched away from the tapped agent within UNDO_WINDOW after
+    the tap, on any message. The same rule as chat/route_memory._undone."""
     rows = session.exec(
         select(Event)
         .where(Event.action == "chat.agent_switched")
@@ -99,19 +105,16 @@ def _route_forgotten(session: Session, ev: Event) -> bool:
 def _sensitive(session: Session, original_id: str, ev: Event) -> bool:
     """True when the tapped message is an injection or classifies as a privacy or health intent
     (never harvested). A missing message is not sensitive; harvest skips it later.
-    ponytail: with no active role model (NullClassifier, intent "other") only the injection
-    check applies; privacy and health taps then stay pending for human review before any
-    training (D27)."""
+    The stored text is unescaped first, as the chat does. With no active role model
+    (NullClassifier, intent "other") only the injection check applies; `harvest` then marks
+    each router record NOT_SCREENED for the human review before any training (D27)."""
     message = session.get(Message, original_id)
     if message is None:
         return False
-    if classify(message.text, ev.timestamp.date()).injection:
+    text = html.unescape(message.text)
+    if classify(text, ev.timestamp.date()).injection:
         return True
-    return (
-        runtime.get_classifier(MANIFEST.id)
-        .classify(message.text)
-        .intent.startswith(SENSITIVE_PREFIXES)
-    )
+    return runtime.get_classifier(MANIFEST.id).classify(text).intent.startswith(SENSITIVE_PREFIXES)
 
 
 def _pick(session: Session, role: str, ev: Event) -> tuple[str, str] | None:
@@ -143,12 +146,17 @@ def harvest(session: Session, role: str, branch_id: str) -> list[Record]:
     Guarantees: ids already in the file are not duplicated; text and context are
     pseudonymised; `other`, corrected, undone and privacy or health choices are never written.
     Role `router` reads route taps (chat.route_chosen) instead of clarifications, and drops
-    taps switched away from within the hour or forgotten."""
+    taps switched away from within the hour or forgotten. With no active role model every
+    router record's note ends in NOT_SCREENED, logged once per run."""
     path = get_settings().MIA_LEARNING_DIR / role / "candidates.jsonl"
     existing = load_records(path) if path.exists() else []
     seen = {r.id for r in existing}
     pseudo = Pseudonymiser.for_branch(session, branch_id)
     found: list[Record] = []
+    unscreened = role == "router" and isinstance(
+        runtime.get_classifier(MANIFEST.id), runtime.NullClassifier
+    )
+    note = f"harvested {dt.datetime.now(dt.UTC).date()}" + (NOT_SCREENED if unscreened else "")
     action, source = (
         ("chat.route_chosen", "real-route-choice")
         if role == "router"
@@ -182,9 +190,11 @@ def harvest(session: Session, role: str, branch_id: str) -> list[Record]:
                 style="informal",
                 split="train",
                 source=source,
-                review=Review(status="pending", note=f"harvested {dt.datetime.now(dt.UTC).date()}"),
+                review=Review(status="pending", note=note),
             )
         )
     if found:
         _append(path, found)
+        if unscreened:
+            log.warning("router harvest:%s", NOT_SCREENED)
     return found

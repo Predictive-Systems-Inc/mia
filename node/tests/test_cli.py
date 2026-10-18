@@ -151,10 +151,27 @@ def test_learned_and_forget(capsys: pytest.CaptureFixture[str]) -> None:
     capsys.readouterr()
     assert main(["learned"]) == 0
     assert capsys.readouterr().out.strip() == "some_agent\t# sp # cl\t2"
-    assert main(["forget", "# sp # cl"]) == 0
+    assert main(["forget", "3 SP 2 cl"]) == 0  # typed as the clerk wrote it: normalised
     assert "Forgotten: # sp # cl" in capsys.readouterr().out
     with session_scope() as session:
         forgotten = session.exec(select(Event).where(Event.action == route_memory.FORGOTTEN)).one()
         assert (forgotten.after or {})["agent_id"] == "some_agent"
     assert main(["learned"]) == 0
     assert "no routes" in capsys.readouterr().out
+
+
+def test_forget_an_unknown_key_says_so_and_emits_nothing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from sqlmodel import select
+
+    from mia.chat import route_memory
+    from mia.core.db import session_scope
+    from mia.core.models import Event
+
+    assert main(["migrate"]) == 0 and main(["seed"]) == 0
+    capsys.readouterr()
+    assert main(["forget", "never learned"]) == 0
+    assert "no routes" in capsys.readouterr().out
+    with session_scope() as session:
+        assert not session.exec(select(Event).where(Event.action == route_memory.FORGOTTEN)).all()

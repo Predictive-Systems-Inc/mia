@@ -86,11 +86,13 @@ Events are the memory (rule 2). No new table.
   dropped, digits replaced by `#` so "3 sp 2 cl" and "5 sp 1 cl" are one key), per branch;
 - a key is learned for an agent when at least two `chat.route_chosen` events in the branch
   carry it for the same agent and none for another agent in the last 90 days;
-- a later `chat.agent_switched` away from that agent on a message with the same key within
-  one hour unlearns it (the same undo idea as `learning/harvest._undone`);
-- a learned key routes `chosen` with kind `learned`, confidence 1.0, before any Jev call, only
-  when no agent is active or the learned agent differs from the active one (then it is a
-  `switch` with the usual notice and event). With the same agent active nothing changes.
+- a tap is undone by a `chat.agent_switched` in the same thread from the tapped agent within
+  one hour after the tap, on any message (the clerk's correction is usually a new message);
+  `chat/route_memory._undone` and `learning/harvest._route_undone` apply this one rule;
+- a learned key routes `chosen` with kind `learned`, confidence 1.0, before any Jev call. A
+  learned key routes only when no agent is active; with an agent active Jev decides as before
+  (a learned switch of a live conversation on a generic key such as a bare number was judged
+  too risky, 19 Oct review).
 
 The lookup is one query over `chat.route_chosen` events of the branch, in `asyncio.to_thread`
 (rule 12). ponytail: a scan of the branch's route_chosen events per message; an index or a
@@ -164,6 +166,10 @@ all ten languages, machine drafts noted as before.
 2. Decision 2 (retail case set) and the eval run; the gate must pass on the held-out half
    before 4 ships, so that memory does not hide a routing problem.
 3. Decision 4a and 4b, then 5, then 4c.
+
+Memory landed on the branch on 19 Oct before the gate passed (docs/research/router-2026-10-19.md);
+the branch is unmerged and the router is off unless MIA_DECIDER=jev, so a passing gate is a
+merge condition, not a waiver.
 
 ## Carried over from the part 1 whole-branch review (19 Oct 2026)
 

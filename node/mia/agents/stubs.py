@@ -18,21 +18,23 @@ DESCRIPTIONS = {
     ),
     "inventory_manager": (
         "Stock: items sold out or running low, how many are left, leftovers and waste at"
-        " closing, what to prepare or bake tomorrow, ingredients and packaging to buy before a day, placing supplier orders (not who approves"
-        " them); not how many were sold. A sell-out message is stock."
+        " closing, what to prepare or bake tomorrow, ingredients and packaging to buy before a"
+        " day, placing supplier orders (not who approves them); not how many were sold. A"
+        " sell-out message is stock."
     ),
     "bookkeeper": (
         "Money: the cash count against sales, expenses and receipts, bank deposits, GCash and"
         " Maya sales and settlements, VAT and BIR records; not sales counts and not pay."
     ),
     "hr_officer": (
-        "Employment: my hours worked this cutoff, cash advances, holiday pay, payroll and payslips, 13th month pay, leave balances, SSS,"
-        " PhilHealth and Pag-IBIG contributions, hiring; not who works which shift."
+        "Employment: my hours worked this cutoff, cash advances, holiday pay, payroll and"
+        " payslips, 13th month pay, leave balances, SSS, PhilHealth and Pag-IBIG contributions,"
+        " hiring; not who works which shift."
     ),
     "branch_manager": (
-        "Running the shop: branches, the menu, prices and item short codes, who approves what, shop opening hours, people and their"
-        " roles, permits, the weekly summary, coaching and tips for staff; not a day's"
-        " counts and not a shift change."
+        "Running the shop: branches, the menu, prices and item short codes, who approves what,"
+        " shop opening hours, people and their roles, permits, the weekly summary, coaching and"
+        " tips for staff; not a day's counts and not a shift change."
     ),
 }
 

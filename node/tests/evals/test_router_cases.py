@@ -2,6 +2,7 @@
 and the tuning and gate halves are balanced. No model is called."""
 
 from collections import Counter, defaultdict
+from pathlib import Path
 
 from mia.agents.registry import AGENTS
 from tests.evals.router_cases import CASES, GATED_LANGS, REPORTED_LANGS, Case
@@ -70,3 +71,18 @@ def test_gated_summary_ignores_reported_languages_and_the_tune_half() -> None:
     gated = _gated(results)
     assert gated["all"]["n"] == 10 and gated["all"]["wrong"] == 0
     assert set(gated["by_language"]) == {"en"}
+
+
+def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:
+    import datetime as dt
+
+    import pytest
+
+    from tests.evals.test_router_eval import _report_path
+
+    now = dt.datetime(2026, 10, 19, 23, 5, tzinfo=dt.timezone(dt.timedelta(hours=8)))
+    path = _report_path(now, tmp_path)
+    assert path == tmp_path / "router-2026-10-19-2305.raw.json"  # local date, not UTC (15:05)
+    path.write_text("{}")
+    with pytest.raises(FileExistsError, match="router-2026-10-19-2305"):
+        _report_path(now, tmp_path)

@@ -369,15 +369,16 @@ def _settle(
 def _recalled(
     session: Session, deps: AgentDeps, text: str, agents: list[AgentSpec], active: str | None
 ) -> agent_router.Route | None:
-    """The learned route for the message (route_memory), or None when nothing is learned for
-    its key or the learned agent is no longer one of the person's (rule 4). The active agent
-    learned is a keep; another one is a switch, or chosen when no agent is active."""
+    """The learned route (chosen) for the message (route_memory), or None when an agent is
+    active (Jev decides: a learned switch of a live conversation on a generic key such as a
+    bare number is too risky), nothing is learned for its key, or the learned agent is no
+    longer one of the person's (rule 4)."""
+    if active is not None:
+        return None
     hit = route_memory.recall(session, deps.branch.id, utcnow()).get(route_memory.key_of(text))
     if hit is None or hit not in {a.id for a in agents}:
         return None
-    if hit == active:
-        return agent_router.Route("keep", hit)
-    return agent_router.Route("switch" if active else "chosen", hit)
+    return agent_router.Route("chosen", hit)
 
 
 async def route_turn(
@@ -392,7 +393,8 @@ async def route_turn(
     reply (the caller commits), or the agent, its deps and egress context, and the text it
     answers. The Jev request runs with no write lock held. A live turn is deferred while the
     thread waits or when Jev is unreachable; for a resumed turn JevUnreachable propagates.
-    `keep` is an agent already chosen (a turn resumed at the agent stage), if still offered."""
+    `keep` is an agent already chosen (a turn resumed at the agent stage), if still offered.
+    A learned key routes before any Jev request when no agent is active."""
     chosen = await asyncio.to_thread(_choose, session, deps, thread, text)
     if isinstance(chosen, ChatReply):
         return chosen
