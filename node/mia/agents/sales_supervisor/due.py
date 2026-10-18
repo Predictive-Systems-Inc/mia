@@ -8,7 +8,8 @@ send through notify. The reminder and the morning message wait for quiet hours i
 end-of-shift messages (the missing list, the owner's report, the why question) are urgent and
 go out at once, since a branch may close as quiet hours start. Each send leaves a marker event
 on the branch with the business date (and the message ids), checked first, so each fires at
-most once per branch and date. Each branch commits alone and a failing branch never silences the others (alerts._each_branch).
+most once per branch and date. Each branch commits alone and a failing branch never silences
+the others (alerts._each_branch).
 """
 
 import datetime as dt

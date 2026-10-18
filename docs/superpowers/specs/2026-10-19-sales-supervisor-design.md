@@ -123,3 +123,12 @@ New keys under `sales.*` (reports, reminders, the why question, the morning mess
 5. Due work and notifications.
 6. i18n in ten languages.
 7. Decider eval set, report, ADR 017 (data standard 1.5), README and layout.
+
+## Carried over from the whole-branch review's re-review (19 Oct 2026)
+
+- `tools._asked_day` scans every `sales.why_asked` marker of the branch per why answer; bound it
+  by date or count when a branch's history grows.
+- `sales.not_allowed.branch` ("You can only report for {branch}") is also the wording for a
+  denied `today` or `period_report` on another branch; a second key for reads would read better.
+- No dedicated test for a why answer typed after the morning message (the decider then asks to
+  rephrase, by reading); add one with the next change to the why flow.
