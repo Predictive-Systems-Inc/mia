@@ -31,13 +31,17 @@ class Count:
     superseded_by: str | None = None
 
 
-def business_date(reported_at: dt.datetime, tz: str, closes: dt.time) -> tuple[dt.date, bool]:
+def business_date(
+    reported_at: dt.datetime, tz: str, closes: dt.time, closed_yesterday: dt.time | None = None
+) -> tuple[dt.date, bool]:
     """The local date of `reported_at` in `tz`, and True when it falls within two hours after
-    the closing time (of that day or of the day before, for a closing near midnight)."""
+    that day's closing time `closes`, or after the day before's (`closed_yesterday`, default
+    `closes`) for a closing near midnight."""
     local = reported_at.astimezone(ZoneInfo(tz))
     day = local.date()
-    for close_day in (day, day - dt.timedelta(days=1)):
-        closed_at = dt.datetime.combine(close_day, closes, local.tzinfo)
+    yesterday = day - dt.timedelta(days=1)
+    for close_day, close_time in ((day, closes), (yesterday, closed_yesterday or closes)):
+        closed_at = dt.datetime.combine(close_day, close_time, local.tzinfo)
         if closed_at <= local < closed_at + AFTER_CLOSING:
             return day, True
     return day, False
@@ -55,7 +59,7 @@ def _month_days(start: dt.date) -> list[dt.date]:
 
 def day_share(target: Target, day: dt.date, open_days: Callable[[dt.date], bool]) -> int | None:
     """The part of `target` that falls on `day`: a day target's amount on its own date; a month
-    target's amount divided by the open days of its month (rounded to the minor unit) for a day
+    target's amount divided by the open days of its month (rounded half up to the minor unit) for a day
     in that month on or after starts_on; None when the target does not cover the day."""
     if target.period == "day":
         return target.amount if day == target.starts_on else None
@@ -63,7 +67,7 @@ def day_share(target: Target, day: dt.date, open_days: Callable[[dt.date], bool]
     if target.period != "month" or not same_month or day < target.starts_on:
         return None
     opened = sum(1 for d in _month_days(target.starts_on) if open_days(d))
-    return round(target.amount / opened) if opened else None
+    return (target.amount + opened // 2) // opened if opened else None
 
 
 def totals(counts: Sequence[Count]) -> dict[str, tuple[int, int]]:

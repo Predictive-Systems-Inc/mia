@@ -1,8 +1,9 @@
 """Sales supervisor tools: typed inputs and outputs, permission checked data access, writes only
 through mia.core.store. Business date, target share and totals are pure code in calc.py.
 
-Branch scoping: every tool works on the person's own branch; an owner or admin may name another
-branch of the organisation, anyone else gets PermissionDenied for it.
+Branch scoping: every tool works on the person's own branch. Naming another branch of the
+organisation (or "all") needs the read_all or write_all action on the data resource in RBAC
+(admin, and the owner through the hierarchy); anyone else gets PermissionDenied.
 """
 
 import datetime as dt
@@ -19,15 +20,16 @@ from mia.agents.sales_supervisor.models import SalesCount, SalesNote, SalesTarge
 from mia.core import store
 from mia.core.db import utcnow
 from mia.core.models import Branch, Person
-from mia.core.rbac import PermissionDenied, Resource, get_rbac
+from mia.core.rbac import Resource, get_rbac
 from mia.templates.retail.models import RetailBranchHours, RetailItem
 
 DEFAULT_CLOSES = dt.time(21, 0)
-LEADS = {"owner", "admin"}
+LEADS = {"owner", "admin"}  # whose target wins (precedence, not access)
 COUNTS = Resource(kind="data", name=SalesCount.__tablename__)
 TARGETS = Resource(kind="data", name=SalesTarget.__tablename__)
 NOTES = Resource(kind="data", name=SalesNote.__tablename__)
 ITEMS = Resource(kind="data", name=RetailItem.__tablename__)
+HOURS = Resource(kind="data", name=RetailBranchHours.__tablename__)
 
 
 # ---- shared helpers -----------------------------------------------------------------------
@@ -39,23 +41,32 @@ def _check(deps: AgentDeps, resource: Resource, action: str, tool_call_id: str) 
     )
 
 
-def _own(resource: Resource, deps: AgentDeps) -> Resource:
-    """The resource owned by the acting person (read_own and write_own rules)."""
+def _as_reporter(resource: Resource, deps: AgentDeps) -> Resource:
+    """The resource with the acting person as owner_id. read_own and write_own then hold for
+    every row the tool touches, so this check gates by role only (a clerk may read or write
+    sales data at all); which rows and which branch are in scope is decided by the queries and
+    by _branch."""
     return resource.model_copy(update={"owner_id": deps.person.id})
 
 
-def _leads(person: Person | None) -> bool:
+def _is_lead(person: Person | None) -> bool:
+    """True for an owner or admin (only used to rank targets, never for access)."""
     return person is not None and bool(LEADS & set(person.roles))
 
 
-def _branch(deps: AgentDeps, branch_id: str | None, resource: Resource, action: str) -> Branch:
-    """The person's branch, or another branch of the organisation for an owner or admin.
-    Raises PermissionDenied for anyone else naming a foreign branch."""
+def _branch(
+    deps: AgentDeps, branch_id: str | None, resource: Resource, action: str, tool_call_id: str
+) -> Branch:
+    """The person's branch, or another branch of the organisation when RBAC allows
+    `<action>_all` on the resource (logged as an rbac event; PermissionDenied otherwise).
+    The person's own Branch row is read without a check: it is already in deps.
+    Raises LookupError for a branch outside the organisation."""
     if branch_id is None or branch_id == deps.branch.id:
         return deps.branch
+    _check(deps, resource, f"{action}_all", tool_call_id)
     branch = deps.session.get(Branch, branch_id)
-    if branch is None or branch.organisation_id != deps.organisation_id or not _leads(deps.person):
-        raise PermissionDenied(deps.person.id, f"{resource.obj}:{action}")
+    if branch is None or branch.organisation_id != deps.organisation_id:
+        raise LookupError("branch")
     return branch
 
 
@@ -70,29 +81,39 @@ def _catalog(session: Session, branch_id: str) -> list[RetailItem]:
 
 
 def _currency(session: Session, branch_id: str) -> str:
+    # ponytail: one currency per branch in v1, taken from its first item; a mixed-currency
+    # branch needs per-currency totals.
     catalog = _catalog(session, branch_id)
     if not catalog:
         raise LookupError("the branch has no items")
     return catalog[0].currency
 
 
-def _closes(session: Session, branch_id: str, weekday: int) -> dt.time:
-    """The branch's closing time on the weekday, 21:00 when no hours are set."""
+def _hours(deps: AgentDeps, branch_id: str, tool_call_id: str) -> list[RetailBranchHours]:
+    """The branch's opening hours rows, after the retail_branch_hours read check."""
+    _check(deps, HOURS, "read", tool_call_id)
     stmt = select(RetailBranchHours).where(RetailBranchHours.branch_id == branch_id)
-    row = session.exec(stmt.where(RetailBranchHours.weekday == weekday)).first()
+    return list(deps.session.exec(stmt))
+
+
+def _closes(hours: Sequence[RetailBranchHours], weekday: int) -> dt.time:
+    """The closing time on the weekday, 21:00 when no hours are set for it."""
+    row = next((h for h in hours if h.weekday == weekday), None)
     return dt.time.fromisoformat(row.closes) if row else DEFAULT_CLOSES
 
 
-def _open_days(session: Session, branch_id: str) -> Callable[[dt.date], bool]:
+def _open_days(hours: Sequence[RetailBranchHours]) -> Callable[[dt.date], bool]:
     """A weekday is open when the branch has hours for it; a branch without hours is always open."""
-    stmt = select(RetailBranchHours.weekday).where(RetailBranchHours.branch_id == branch_id)
-    weekdays = set(session.exec(stmt)) or set(range(7))
+    weekdays = {h.weekday for h in hours} or set(range(7))
     return lambda day: day.weekday() in weekdays
 
 
-def target_share(session: Session, branch_id: str, day: dt.date) -> int | None:
-    """The branch's money target for the day. A day target wins over a month target; between
-    targets of the same period, one set by an owner or admin wins, then the newest."""
+def target_share(deps: AgentDeps, branch_id: str, day: dt.date, tool_call_id: str) -> int | None:
+    """The branch's money target for the day, after the targets read check. A day target wins
+    over a month target; between targets of the same period, one set by an owner or admin
+    wins, then the newest."""
+    _check(deps, TARGETS, "read", tool_call_id)
+    session = deps.session
     stmt = (
         select(SalesTarget)
         .where(SalesTarget.branch_id == branch_id)
@@ -102,13 +123,13 @@ def target_share(session: Session, branch_id: str, day: dt.date) -> int | None:
     rows = session.exec(stmt).all()
     setter_ids = {r.set_by for r in rows}
     setters = {p.id: p for p in session.exec(select(Person).where(col(Person.id).in_(setter_ids)))}
-    open_day = _open_days(session, branch_id)
+    open_day = _open_days(_hours(deps, branch_id, tool_call_id))
     ranked = []
     for row in rows:
         assert row.amount is not None
         share = calc.day_share(calc.Target(row.period, row.starts_on, row.amount), day, open_day)
         if share is not None:
-            lead = _leads(setters.get(row.set_by))
+            lead = _is_lead(setters.get(row.set_by))
             ranked.append((row.period == "day", lead, row.created_at, row.id, share))
     return max(ranked)[-1] if ranked else None
 
@@ -204,13 +225,16 @@ class RecordCountsOutput(BaseModel):
     target_share: int | None
 
 
-def _business_date(deps: AgentDeps) -> dt.date:
+def _business_date(deps: AgentDeps, tool_call_id: str) -> dt.date:
     """Today's local date at the branch. Raises LookupError("business_date") within two hours
-    after closing when this reporter already counted the day before (the turn then asks)."""
+    after closing (that day's, or the day before's just after midnight) when this reporter
+    already counted the day before (the turn then asks)."""
     now = utcnow()
     tz = deps.branch.timezone
     weekday = now.astimezone(ZoneInfo(tz)).weekday()
-    day, after_closing = calc.business_date(now, tz, _closes(deps.session, deps.branch.id, weekday))
+    hours = _hours(deps, deps.branch.id, tool_call_id)
+    closes, closed_yesterday = _closes(hours, weekday), _closes(hours, (weekday - 1) % 7)
+    day, after_closing = calc.business_date(now, tz, closes, closed_yesterday)
     if after_closing:
         stmt = (
             select(SalesCount.id)
@@ -230,13 +254,13 @@ def record_counts(
     """Record one count row per item for the business date (event sales.counted per row).
     Amounts are quantity times price; day_total is the stated total when within 5% of the sum,
     else the sum. Raises LookupError for an item the branch does not sell."""
-    _check(deps, _own(COUNTS, deps), "write", tool_call_id)
+    _check(deps, _as_reporter(COUNTS, deps), "write", tool_call_id)
     _check(deps, ITEMS, "read", tool_call_id)
     catalog = {i.id: i for i in _catalog(deps.session, deps.branch.id)}
     for count in args.items:
         if count.item_id not in catalog:
             raise LookupError(f"no item {count.item_id!r} at this branch")
-    day = args.business_date or _business_date(deps)
+    day = args.business_date or _business_date(deps, tool_call_id)
     rows = [
         store.insert(
             deps.session,
@@ -257,8 +281,8 @@ def record_counts(
         recorded=[_count_out(r, catalog[r.item_id]) for r in rows],
         business_date=day,
         day_total=calc.reconcile_total(sum(r.amount for r in rows), args.total),
-        currency=rows[0].currency,
-        target_share=target_share(deps.session, deps.branch.id, day),
+        currency=rows[0].currency,  # ponytail: one currency per branch in v1
+        target_share=target_share(deps, deps.branch.id, day, tool_call_id),
     )
 
 
@@ -268,6 +292,7 @@ def record_counts(
 class CorrectCountInput(BaseModel):
     item_id: str
     quantity: int = Field(ge=0)
+    business_date: dt.date | None = Field(None, description="Only when the user names the day")
 
 
 class CorrectCountOutput(BaseModel):
@@ -279,22 +304,27 @@ class CorrectCountOutput(BaseModel):
 def correct_count(
     deps: AgentDeps, args: CorrectCountInput, tool_call_id: str
 ) -> CorrectCountOutput:
-    """Replace the reporter's latest live count of the item with a new row (event
-    sales.corrected); the old row is marked superseded, other reporters' rows stay live.
-    Raises LookupError when the reporter has no live count of the item."""
-    _check(deps, _own(COUNTS, deps), "write", tool_call_id)
+    """Replace the reporter's latest live count of the item on the business date (resolved as
+    record_counts does) with a new row (event sales.corrected); the old row is marked
+    superseded, other reporters' rows and other days stay live. Raises LookupError("count")
+    when the reporter has no live count of the item that day, LookupError("business_date")
+    in the ambiguous window after closing."""
+    _check(deps, _as_reporter(COUNTS, deps), "write", tool_call_id)
+    _check(deps, ITEMS, "read", tool_call_id)
+    day = args.business_date or _business_date(deps, tool_call_id)
     stmt = (
         select(SalesCount)
         .where(SalesCount.branch_id == deps.branch.id)
         .where(SalesCount.reported_by == deps.person.id)
         .where(SalesCount.item_id == args.item_id)
+        .where(SalesCount.business_date == day)
         .where(col(SalesCount.superseded_by).is_(None))
         .order_by(col(SalesCount.reported_at).desc(), col(SalesCount.id).desc())
     )
     latest = deps.session.exec(stmt).first()
     item = deps.session.get(RetailItem, args.item_id)
     if latest is None or item is None:
-        raise LookupError(f"no count of {args.item_id!r} by this reporter")
+        raise LookupError("count")
     row = store.insert(
         deps.session,
         _new_count(deps, item, args.quantity, latest.business_date, supersedes=latest.id),
@@ -316,7 +346,7 @@ def correct_count(
 
 
 class TodayInput(BaseModel):
-    branch_id: str | None = Field(None, description="Only an owner or admin names another branch")
+    branch_id: str | None = Field(None, description="Another branch, only when the user names one")
 
 
 class ItemTotal(BaseModel):
@@ -338,8 +368,8 @@ class TodayOutput(BaseModel):
 def today(deps: AgentDeps, args: TodayInput, tool_call_id: str) -> TodayOutput:
     """Today's live totals per item for the branch, the day's target share and the percent
     difference from it (None without a target)."""
-    branch = _branch(deps, args.branch_id, COUNTS, "read")
-    _check(deps, _own(COUNTS, deps), "read", tool_call_id)
+    branch = _branch(deps, args.branch_id, COUNTS, "read", tool_call_id)
+    _check(deps, _as_reporter(COUNTS, deps), "read", tool_call_id)
     rows = _live_counts(deps.session, [branch.id], deps.today, deps.today)
     sums = calc.totals(_plain(rows))
     names = _names(deps.session)
@@ -348,7 +378,7 @@ def today(deps: AgentDeps, args: TodayInput, tool_call_id: str) -> TodayOutput:
         for i, (q, a) in sorted(sums.items(), key=lambda kv: names[kv[0]].sort_order)
     ]
     total = sum(i.amount for i in items)
-    share = target_share(deps.session, branch.id, deps.today)
+    share = target_share(deps, branch.id, deps.today, tool_call_id)
     return TodayOutput(
         branch=branch.name,
         items=items,
@@ -392,13 +422,12 @@ def period_report(
     """Live totals per (branch, item) from start to end inclusive, the day with the highest
     amount and the grand total. Raises LookupError when end is before start."""
     if args.branch_id == "all":
-        if not _leads(deps.person):
-            raise PermissionDenied(deps.person.id, f"{COUNTS.obj}:read")
+        _check(deps, COUNTS, "read_all", tool_call_id)
         stmt = select(Branch).where(Branch.organisation_id == deps.organisation_id)
         branches = list(deps.session.exec(stmt.order_by(col(Branch.name))))
     else:
-        branches = [_branch(deps, args.branch_id, COUNTS, "read")]
-    _check(deps, _own(COUNTS, deps), "read", tool_call_id)
+        branches = [_branch(deps, args.branch_id, COUNTS, "read", tool_call_id)]
+    _check(deps, _as_reporter(COUNTS, deps), "read", tool_call_id)
     if args.end < args.start:
         raise LookupError("end is before start")
     names = _names(deps.session)
@@ -436,7 +465,7 @@ class SetTargetInput(BaseModel):
     period: Literal["day", "month"]
     starts_on: dt.date = Field(description="The day, or any day of the month")
     amount: int = Field(gt=0, description="Money target in minor units")
-    branch_id: str | None = Field(None, description="Only an owner or admin names another branch")
+    branch_id: str | None = Field(None, description="Another branch, only when the user names one")
 
 
 class SetTargetOutput(BaseModel):
@@ -450,7 +479,7 @@ class SetTargetOutput(BaseModel):
 def set_target(deps: AgentDeps, args: SetTargetInput, tool_call_id: str) -> SetTargetOutput:
     """Store a day or month money target for the branch (event sales.target_set). A month
     target starts on the first of its month."""
-    branch = _branch(deps, args.branch_id, TARGETS, "write")
+    branch = _branch(deps, args.branch_id, TARGETS, "write", tool_call_id)
     _check(deps, TARGETS, "write", tool_call_id)
     starts_on = args.starts_on.replace(day=1) if args.period == "month" else args.starts_on
     row = store.insert(
@@ -491,7 +520,7 @@ class RecordNoteOutput(BaseModel):
 
 def record_note(deps: AgentDeps, args: RecordNoteInput, tool_call_id: str) -> RecordNoteOutput:
     """Store the person's words about today's sales as data (event sales.note_recorded)."""
-    _check(deps, _own(NOTES, deps), "write", tool_call_id)
+    _check(deps, _as_reporter(NOTES, deps), "write", tool_call_id)
     row = store.insert(
         deps.session,
         SalesNote(

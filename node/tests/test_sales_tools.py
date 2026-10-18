@@ -17,9 +17,10 @@ from mia.agents.sales_supervisor.tools import (
     SetTargetInput,
     TodayInput,
 )
+from mia.core import store
 from mia.core.models import Actor, Branch, Event, Person
 from mia.core.rbac import PermissionDenied
-from mia.templates.retail.models import RetailItem
+from mia.templates.retail.models import RetailBranchHours, RetailItem
 
 Ferinos = tuple[Branch, dict[str, Person]]
 MNL = ZoneInfo("Asia/Manila")
@@ -254,3 +255,62 @@ def test_record_note_stores_the_answer(session: Session, ferinos: Ferinos) -> No
 
 def test_bindings_match_the_manifest() -> None:
     assert {b.tool_id for b in tools.BINDINGS} == {t.id for t in MANIFEST.tools}
+
+
+def test_a_correction_today_does_not_touch_yesterday(session: Session, ferinos: Ferinos) -> None:
+    _, people = ferinos
+    ana = people["Ana"]
+    yesterday = today() - dt.timedelta(days=1)
+    special = item(session, "Special")
+    before = [r for r in counts(session, ana, yesterday) if r.item_id == special]
+    assert before and not counts(session, ana, today())
+    args = CorrectCountInput(item_id=special, quantity=4)
+    with pytest.raises(LookupError, match="count"):
+        tools.correct_count(deps_for(session, ana), args, "c1")
+    after = [r for r in counts(session, ana, yesterday) if r.item_id == special]
+    assert [r.superseded_by for r in after] == [None]
+
+
+def test_a_correction_for_a_named_day(session: Session, ferinos: Ferinos) -> None:
+    _, people = ferinos
+    yesterday = today() - dt.timedelta(days=1)
+    args = CorrectCountInput(item_id=item(session, "Special"), quantity=4, business_date=yesterday)
+    out = tools.correct_count(deps_for(session, people["Ana"]), args, "c1")
+    assert out.business_date == yesterday and out.corrected.quantity == 4
+
+
+def test_a_supervisor_reading_another_branch_is_an_rbac_deny(
+    session: Session, ferinos: Ferinos
+) -> None:
+    _, people = ferinos
+    with pytest.raises(PermissionDenied):
+        tools.today(
+            deps_for(session, people["Marites"]), TodayInput(branch_id=stall(session).id), "c"
+        )
+    denies = session.exec(select(Event).where(Event.action == "rbac.deny")).all()
+    assert any((e.after or {}).get("action") == "read_all" for e in denies)
+
+
+def test_call_tool_refuses_a_clerk_another_branch(session: Session, ferinos: Ferinos) -> None:
+    _, people = ferinos
+    binding = next(b for b in tools.BINDINGS if b.tool_id.endswith(".today"))
+    out = call_tool(
+        deps_for(session, people["Ana"]), binding, TodayInput(branch_id=stall(session).id), "c9"
+    )
+    assert out["status"] == "denied"
+    called = session.exec(select(Event).where(Event.action == "tool.called")).all()
+    assert [e.tool_call_id for e in called] == ["c9"]
+
+
+def test_after_midnight_yesterdays_late_closing_asks(
+    session: Session, ferinos: Ferinos, manila_at: Callable[[int, int], dt.datetime]
+) -> None:
+    kiosk, people = ferinos
+    yesterday = (today() - dt.timedelta(days=1)).weekday()
+    stmt = select(RetailBranchHours).where(RetailBranchHours.branch_id == kiosk.id)
+    hours = session.exec(stmt.where(RetailBranchHours.weekday == yesterday)).one()
+    store.update(session, hours, {"closes": "23:30"}, Actor.system(kiosk.id))
+    manila_at(0, 30)
+    args = RecordCountsInput(items=[CountIn(item_id=item(session, "Special"), quantity=3)])
+    with pytest.raises(LookupError, match="business_date"):
+        tools.record_counts(deps_for(session, people["Ana"]), args, "c1")

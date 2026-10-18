@@ -60,6 +60,8 @@ p, clerk, *, data:sales_supervisor_counts, write_own, allow
 p, clerk, *, data:sales_supervisor_counts, read_own, allow
 p, clerk, *, data:sales_supervisor_notes, write_own, allow
 p, clerk, *, data:retail_items, read, allow
+p, clerk, *, data:retail_branch_hours, read, allow
+p, clerk, *, data:sales_supervisor_targets, read, allow
 
 # supervisor: sales reports and targets for their branch (owner and admin inherit)
 p, supervisor, *, tool:sales_supervisor.record_counts, execute, allow
@@ -74,10 +76,14 @@ p, supervisor, *, data:sales_supervisor_targets, write, allow
 p, supervisor, *, data:sales_supervisor_notes, read, allow
 p, supervisor, *, data:sales_supervisor_notes, write, allow
 p, supervisor, *, data:retail_items, read, allow
+p, supervisor, *, data:retail_branch_hours, read, allow
+p, supervisor, *, data:sales_supervisor_targets, read, allow
 
-# admin: every sales table (owner inherits)
+# admin: every sales table, and other branches (read_all, write_all); owner inherits
 p, admin, *, data:sales_supervisor_*, read, allow
 p, admin, *, data:sales_supervisor_*, write, allow
+p, admin, *, data:sales_supervisor_*, read_all, allow
+p, admin, *, data:sales_supervisor_*, write_all, allow
 
 # agents a role may talk to (chat/access.py); owner inherits admin > supervisor > staff
 p, staff, *, agent:shift_supervisor, use, allow

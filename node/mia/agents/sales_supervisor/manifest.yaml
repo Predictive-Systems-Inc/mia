@@ -9,7 +9,10 @@ roles:
   grants:
     - data:sales_supervisor_counts:read
     - data:sales_supervisor_counts:write
+    - data:sales_supervisor_counts:read_all
+    - data:sales_supervisor_targets:read
     - data:sales_supervisor_targets:write
+    - data:sales_supervisor_targets:write_all
     - data:sales_supervisor_notes:write
     - data:retail_items:read
     - data:retail_branch_hours:read

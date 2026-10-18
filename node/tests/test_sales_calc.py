@@ -61,3 +61,19 @@ def test_a_stated_total_counts_only_when_close_to_the_sum() -> None:
     assert calc.reconcile_total(10000, 9500) == 9500
     assert calc.reconcile_total(10000, 10501) == 10000
     assert calc.reconcile_total(10000, 5000) == 10000
+
+
+def test_after_midnight_uses_yesterdays_closing_time() -> None:
+    monday_early = dt.datetime(2026, 10, 19, 0, 30, tzinfo=MNL)  # Sunday closed at 23:30
+    late_sunday = calc.business_date(monday_early, "Asia/Manila", dt.time(21, 0), dt.time(23, 30))
+    assert late_sunday == (dt.date(2026, 10, 19), True)
+    assert calc.business_date(monday_early, "Asia/Manila", dt.time(21, 0), dt.time(21, 0)) == (
+        dt.date(2026, 10, 19),
+        False,
+    )
+
+
+def test_month_share_rounds_half_up() -> None:
+    target = calc.Target(period="month", starts_on=dt.date(2026, 10, 1), amount=5)
+    two_days = lambda d: d.day in (1, 2)
+    assert calc.day_share(target, dt.date(2026, 10, 1), two_days) == 3
