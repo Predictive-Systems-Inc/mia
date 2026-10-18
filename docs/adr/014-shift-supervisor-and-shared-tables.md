@@ -16,19 +16,21 @@ timesheets, and a shop's broken oven is the same record as a cleaner's site prob
 - Agent id `dispatcher` becomes `shift_supervisor` in code, config, ids and data.
 - Data standard 1.4: `absences`, `cover_requests`, `timesheets` and `incidents` (was
   `dispatcher_site_problems`) are core tables; `cleaning_checklist_ticks` belongs to the
-  cleaning template. Migration 0008 renames in place.
+  cleaning template.
+- Migrations 0001 to 0008 are squashed into one `0001_initial` (data standard 1.4). Mia has no
+  production release and all data is seed and demo, so databases are rebuilt from scratch
+  (`mia migrate && mia seed`) instead of upgraded. From here on every schema change gets its
+  own migration again (rule 14).
 - Dated documents (research reports, specs and plans before 18 Oct 2026, skill reports) are
   not rewritten: "dispatcher" in them means `shift_supervisor`.
 
 ## Consequences
 
-- Event rows written before 0008 keep `dispatcher.*` names (append-only, rule 2). All data is
-  seed and demo, so no compatibility map; reseed when history matters.
-- Event rows written before 0008 also keep the old table names as entity_type and action (for
-  example `dispatcher_absences.created`), not only `dispatcher.*` tool and intent ids.
-- Migration 0008 also renames the agent id in chat threads, chat messages (agent id and
-  assistant sender) and approvals (type prefix and agent requester), because code looks those
-  up by the new id. Events stay as written.
+- A database made before the squash (alembic version 0002 to 0008) cannot be upgraded: delete
+  it and run `mia migrate && mia seed`. Its events would keep the old `dispatcher.*` and
+  `dispatcher_*` names anyway (append-only, rule 2), so rebuilding is the clean path.
+- The data-preserving upgrade tests of the old steps (1.0 to 1.1, 1.2 to 1.3, 1.3 to 1.4) are
+  gone with them; the schema test (migrations equal the models, triggers present) stays.
 - Q20 (where timesheets live) is answered: core.
 - New agents start with job ids: sales_supervisor, inventory_manager, bookkeeper, hr_officer,
   branch_manager.
