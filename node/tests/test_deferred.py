@@ -230,3 +230,86 @@ def test_a_queued_turn_sees_the_reply_resumed_before_it(
     jev_down["up"] = True
     assert _retry() == 2
     assert pasts == [0, 1]  # the second turn sees the first one's resumed reply
+
+
+def _answers_when_up(
+    monkeypatch: pytest.MonkeyPatch, state: dict[str, Any], agent_id: str
+) -> list[str]:
+    """`agent_id` cannot reach Jev while it is down; once up it records the text it answers."""
+    texts: list[str] = []
+
+    async def handle(turn: Turn) -> ChatReply:
+        if not state["up"]:
+            raise jev.JevUnreachable("status 503")
+        texts.append(turn.text)
+        return _store(turn.session, turn.deps, turn.thread, [TextBlock(text="ok")], [])
+
+    spec = dataclasses.replace(AGENTS[agent_id], handle_turn=handle)
+    monkeypatch.setitem(AGENTS, agent_id, spec)
+    return texts
+
+
+def test_first_contact_during_an_outage_resumes_with_the_original_question(
+    session: Session,
+    people: dict[str, Person],
+    jev_down: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    langs = ["fil", "en", "ceb"]
+    org = orgconfig.OrgSettings(agents=TWO, languages=langs)
+    monkeypatch.setattr(orgconfig, "load", lambda org_name=None: org)
+    helena = people["Helena"]
+    ana = people_service.add_person(
+        session,
+        Actor.person(helena),
+        branch_id=helena.branch_id,
+        name="Ana Cruz",
+        roles=["supervisor"],
+        language="en",
+        language_known=False,
+    )
+    session.commit()
+    texts = _answers_when_up(monkeypatch, jev_down, DEFAULT)
+    asked = _turn(session, ana, "anong oras ako bukas?")
+    _turn(session, ana, "Filipino", asked.thread_id)  # the tap; then the router gets a 503
+    (ev,) = _events(session, "turn.deferred")
+    original = session.exec(select(Message).where(Message.text == "anong oras ako bukas?")).one()
+    assert ev.after and ev.after["answer_id"] == original.id != ev.after["message_id"]
+    jev_down["up"] = True
+    assert _retry() == 1
+    assert texts == ["anong oras ako bukas?"]
+
+
+def test_a_route_tap_during_an_outage_resumes_with_the_original_and_its_agent(
+    session: Session,
+    people: dict[str, Person],
+    jev_down: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    down = jev._inner
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(lambda b: {"agent": choice("x", 0.3)}))
+    asked = _turn(session, people["Sanna"], "hmm, the numbers")
+    assert _events(session, "chat.route_asked")
+    monkeypatch.setattr(jev, "_inner", down)
+    texts = _answers_when_up(monkeypatch, jev_down, "sales_supervisor")
+    label = t("agent.sales_supervisor.label", people["Sanna"].language)
+    _turn(session, people["Sanna"], label, asked.thread_id)
+    (ev,) = _events(session, "turn.deferred")
+    assert ev.after and ev.after["stage"] == "agent"
+    jev_down["up"] = True  # the router would now pick the shift supervisor
+    assert _retry() == 1
+    assert texts == ["hmm, the numbers"]
+
+
+def test_an_outage_drained_by_expiry_closes_silently_and_the_next_alerts_again(
+    session: Session, people: dict[str, Person], jev_down: dict[str, Any]
+) -> None:
+    _turn(session, people["Sanna"], "how much did we sell today?")
+    assert _retry(utcnow() + dt.timedelta(hours=2, minutes=1)) == 1
+    _turn(session, people["Sanna"], "show my visits today")  # a new thread, Jev still down
+    (ended,) = _events(session, "jev.outage_ended")
+    assert ended.after == {"count": 1, "expired_only": True}
+    assert len(_events(session, "jev.outage_started")) == 2
+    texts = [m.text for m in session.exec(select(Message).where(Message.role == "notification"))]
+    assert sum(x.startswith("Jev ei vastaa") for x in texts) == 2
+    assert not any(x.startswith("Jev vastaa taas") for x in texts)

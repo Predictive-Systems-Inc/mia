@@ -10,7 +10,7 @@ ponytail: open turns are found by scanning events; an index table if the queue e
 import asyncio
 import datetime as dt
 import logging
-from typing import Literal
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, col, select
@@ -20,7 +20,7 @@ from mia.chat.blocks import ChatReply, TextBlock
 from mia.chat.channels import notify
 from mia.chat.replies import reply_text
 from mia.core import events
-from mia.core.db import session_scope, utcnow
+from mia.core.db import get_engine, utcnow
 from mia.core.models import Actor, Branch, Event, Message, Person, Thread
 from mia.i18n import t
 from mia.settings import get_settings
@@ -78,10 +78,19 @@ def defer(
     stage: Stage,
     agent_id: str,
 ) -> ChatReply:
-    """Record the deferral (the caller commits); the busy reply once per waiting stretch of the
-    thread, otherwise an empty reply (nothing stored). The first deferral after a success
-    starts an outage and tells the developer."""
-    first_in_thread = not waiting(session, thread)
+    """Record the deferral (the caller commits) with `answer_id`, the message whose text the
+    turn answers (deps.answer_id after a tap, else message_id); the busy reply once per waiting
+    stretch of the thread, otherwise an empty reply (nothing stored). The first deferral after
+    a success starts an outage and tells the developer; an outage drained by expiry alone is
+    closed silently first."""
+    waiting_now = open_turns(session)
+    first_in_thread = not any(e.entity_id == thread.id for e in waiting_now)
+    started = _outage_open(session)
+    if started is not None and not waiting_now and not _answered_since(session, started):
+        closed = _closed_since(session, started)
+        after = {"count": len(closed), "expired_only": True}
+        events.emit(session, ENDED, ("jev", "typesafe"), None, after, deps.actor)
+        started = None
     events.emit(
         session,
         DEFERRED,
@@ -89,13 +98,14 @@ def defer(
         None,
         {
             "message_id": message_id,
+            "answer_id": deps.answer_id or message_id,
             "person_id": deps.person.id,
             "stage": stage,
             "agent_id": agent_id,
         },
         deps.actor,
     )
-    if _outage_open(session) is None:
+    if started is None:
         events.emit(session, STARTED, ("jev", "typesafe"), None, {}, deps.actor)
         _tell_developer(session, "dev.jev_down", agent_id)
     if first_in_thread:
@@ -103,22 +113,32 @@ def defer(
     return ChatReply(thread_id=thread.id, message_id=message_id, agent_id=agent_id, blocks=[])
 
 
+def _closed_since(session: Session, started: Event) -> list[Event]:
+    """turn.resumed events after the outage started, oldest first."""
+    stmt = select(Event).where(Event.action == RESUMED).order_by(col(Event.id))
+    return [e for e in session.exec(stmt) if e.id > started.id]
+
+
 def _answered_since(session: Session, started: Event) -> bool:
     """A turn resumed with an answer since the outage started (Jev is back, not just expired)."""
     return any(
-        e.id > started.id
-        and not (e.after or {}).get("expired")
-        and not (e.after or {}).get("failed")
-        for e in session.exec(select(Event).where(Event.action == RESUMED))
+        not (e.after or {}).get("expired") and not (e.after or {}).get("failed")
+        for e in _closed_since(session, started)
     )
 
 
-def _end_outage(session: Session, started: Event) -> None:
-    """Close the outage: the event and one notice with the count and the longest wait."""
-    closed = [
-        e for e in session.exec(select(Event).where(Event.action == RESUMED)) if e.id > started.id
-    ]
-    longest = max((e.timestamp - started.timestamp for e in closed), default=dt.timedelta())
+def _end_outage(session: Session) -> None:
+    """When no turn waits and one was answered since the outage started: close it (the event
+    and one notice with the count and the longest single turn's wait), and commit."""
+    started = _outage_open(session)
+    if started is None or open_turns(session) or not _answered_since(session, started):
+        return
+    closed = _closed_since(session, started)
+    waits = []
+    for e in closed:
+        opened = session.get(Event, (e.after or {}).get("deferred_event_id"))
+        waits.append(e.timestamp - opened.timestamp if opened else dt.timedelta())
+    longest = max(waits, default=dt.timedelta())
     events.emit(
         session,
         ENDED,
@@ -127,10 +147,54 @@ def _end_outage(session: Session, started: Event) -> None:
         {"count": len(closed), "longest_wait_seconds": int(longest.total_seconds())},
         Actor.system(started.branch_id),
     )
-    last = session.get(Event, (closed[-1].after or {})["deferred_event_id"]) if closed else None
+    last = session.get(Event, (closed[-1].after or {})["deferred_event_id"])
     agent_id = str((last.after or {}).get("agent_id", "")) if last else ""
     minutes = int(longest.total_seconds() // 60)
     _tell_developer(session, "dev.jev_back", agent_id, count=len(closed), minutes=minutes)
+    session.commit()
+
+
+def _due(session: Session) -> list[dict[str, Any]]:
+    """The open turns as plain values (event id, thread, branch, time and its `after`), oldest
+    first; ends the read so no transaction stays open."""
+    rows = [
+        {"id": e.id, "thread_id": e.entity_id, "branch_id": e.branch_id, "at": e.timestamp}
+        | {"after": dict(e.after or {})}
+        for e in open_turns(session)
+    ]
+    session.commit()
+    return rows
+
+
+def _load(
+    session: Session, due: dict[str, Any]
+) -> tuple[Message | None, Thread | None, Person | None]:
+    """The message to answer (answer_id), its thread and the person; None for what is gone."""
+    after = due["after"]
+    message = session.get(Message, after.get("answer_id") or after["message_id"])
+    thread = session.get(Thread, due["thread_id"])
+    person = session.get(Person, after["person_id"])
+    return message, thread, person
+
+
+def _fail(session: Session, due: dict[str, Any], person: Person, thread: Thread) -> None:
+    """Roll back a resumed turn that failed; tell the person it is unavailable (as a
+    notification), never failing the close itself."""
+    from mia.chat import service  # service imports this module
+
+    session.rollback()
+    try:
+        service.resumed_reply(session, person, thread, due["after"]["agent_id"])
+    except Exception as exc:  # noqa: BLE001 - the turn closes as failed whatever happens
+        session.rollback()
+        log.error("the unavailable reply for turn %s failed: %s", due["id"], type(exc).__name__)
+
+
+def _close(session: Session, due: dict[str, Any], closing: dict[str, Any]) -> None:
+    """turn.resumed for the deferral, committed with the turn's reply."""
+    actor = Actor.system(due["branch_id"])
+    events.emit(session, RESUMED, ("thread", due["thread_id"]), None, closing, actor)
+    session.commit()
 
 
 async def retry_due(now: dt.datetime) -> int:
@@ -138,25 +202,28 @@ async def retry_due(now: dt.datetime) -> int:
     Jev. Each closed turn commits with its reply, so a resumed turn never runs again; a turn
     that fails otherwise is closed as failed with the unavailable reply. Closes the outage when
     none are left and at least one was answered since it started. Returns how many turns were
-    closed.
-    ponytail: one tick worker per node, so no lock is held across the Jev call (rule 11); two
-    workers would need a claim event first."""
+    closed. DB work runs in worker threads (rule 12); no transaction is open across a Jev call.
+    ponytail: one tick worker per node, so no lock is held across the Jev call (rule 11); `mia
+    tick` must not run while `mia serve` ticks (both would retry the same turns). Two workers
+    would need a claim event first."""
     from mia.chat import service  # service imports this module
     from mia.core.jev import JevUnreachable
 
     done = 0
-    with session_scope() as session:
-        for ev in open_turns(session):
-            after = ev.after or {}
-            message = session.get(Message, after["message_id"])
-            thread = session.get(Thread, ev.entity_id)
-            person = session.get(Person, after["person_id"])
+    session = Session(get_engine(), expire_on_commit=False)
+    try:
+        for due in await asyncio.to_thread(_due, session):
+            after = due["after"]
+            message, thread, person = await asyncio.to_thread(_load, session, due)
             gone = message is None or thread is None or person is None or person.status != "active"
-            expired = gone or now - ev.timestamp > MAX_WAIT
-            closing = {"message_id": after["message_id"], "deferred_event_id": ev.id}
-            closing["expired"] = expired
+            expired = gone or now - due["at"] > MAX_WAIT
+            closing: dict[str, Any] = {
+                "message_id": after["message_id"],
+                "deferred_event_id": due["id"],
+                "expired": expired,
+            }
             try:
-                if message is not None and thread is not None and person is not None and not gone:
+                if message and thread and person and not gone:
                     await service.respond(
                         session,
                         person,
@@ -168,28 +235,16 @@ async def retry_due(now: dt.datetime) -> int:
                         agent_id=after["agent_id"],
                     )
             except JevUnreachable:
-                session.rollback()
+                await asyncio.to_thread(session.rollback)
                 break
             except Exception as exc:  # noqa: BLE001 - one broken turn must not hold the queue
-                session.rollback()
-                log.error("resuming deferred turn %s failed: %s", ev.id, type(exc).__name__)
+                log.error("resuming deferred turn %s failed: %s", due["id"], type(exc).__name__)
                 closing |= {"failed": True, "error": type(exc).__name__}
-                assert person is not None and thread is not None  # respond ran, so they exist
-                await asyncio.to_thread(
-                    service.resumed_reply, session, person, thread, after["agent_id"]
-                )
-            events.emit(
-                session,
-                RESUMED,
-                ("thread", ev.entity_id),
-                None,
-                closing,
-                Actor.system(ev.branch_id),
-            )
-            session.commit()
+                assert thread is not None and person is not None  # respond ran, so they exist
+                await asyncio.to_thread(_fail, session, due, person, thread)
+            await asyncio.to_thread(_close, session, due, closing)
             done += 1
-        started = _outage_open(session)
-        if started is not None and not open_turns(session) and _answered_since(session, started):
-            _end_outage(session, started)
-            session.commit()
+        await asyncio.to_thread(_end_outage, session)
+    finally:
+        await asyncio.to_thread(session.close)
     return done

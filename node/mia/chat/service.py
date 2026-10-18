@@ -168,6 +168,7 @@ def _before_agent(session: Session, deps: AgentDeps, thread: Thread, text: str) 
             name = t(f"language.name.{code}", "en")
             return reply_text(session, deps, thread, t("language.set", code, language=name))
         session.commit()
+        deps.answer_id = original_id
         return original
     if language.is_change_command(text) and language.offers_choice():
         return language.ask(session, deps, thread, None)
@@ -288,7 +289,10 @@ def _choose(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Cha
     active = active if active in ids else None
     tap = _route_tapped(session, thread, text)
     if tap is not None and tap[0] in ids:
-        return ids[tap[0]], agents, active, language.original_text(session, tap[1]) or text
+        original = language.original_text(session, tap[1])
+        if original is not None:
+            deps.answer_id = tap[1]
+        return ids[tap[0]], agents, active, original or text
     pending = _pending(session, thread)
     if pending is not None and pending.agent_id in ids:
         return ids[pending.agent_id], agents, active, text
@@ -338,16 +342,24 @@ def _settle(
 
 
 async def route_turn(
-    session: Session, deps: AgentDeps, thread: Thread, text: str, ctx: EgressContext
+    session: Session,
+    deps: AgentDeps,
+    thread: Thread,
+    text: str,
+    ctx: EgressContext,
+    keep: str | None = None,
 ) -> ChatReply | tuple[AgentSpec, AgentDeps, EgressContext, str]:
     """Pick the agent for a message (spec 2026-10-18, A turn, steps 4 to 7). Returns a stored
     reply (the caller commits), or the agent, its deps and egress context, and the text it
     answers. The Jev request runs with no write lock held. A live turn is deferred while the
-    thread waits or when Jev is unreachable; for a resumed turn JevUnreachable propagates."""
+    thread waits or when Jev is unreachable; for a resumed turn JevUnreachable propagates.
+    `keep` is an agent already chosen (a turn resumed at the agent stage), if still offered."""
     chosen = await asyncio.to_thread(_choose, session, deps, thread, text)
     if isinstance(chosen, ChatReply):
         return chosen
     spec, agents, active, text = chosen
+    if keep is not None and keep in {a.id for a in agents}:
+        spec = AGENTS[keep]
     if not deps.resumed and await asyncio.to_thread(deferred.waiting, session, thread):
         lead_id = spec.id if spec is not None else active or agents[0].id
         return await asyncio.to_thread(defer_turn, session, deps, thread, "route", lead_id)
@@ -436,9 +448,10 @@ async def respond(
 ) -> ChatReply:
     """The turn for a stored user message; the caller commits the reply. A live turn runs the
     shared steps first and is deferred when Jev is unreachable. A resumed turn (a deferral
-    retried, its shared steps already done) answers as a notification and raises
-    JevUnreachable instead; with expire it asks instead of answering (`stage` and `agent_id`
-    come from the deferral). `agent` is a Pydantic AI agent for the default agent (tests)."""
+    retried, its shared steps already done; `message` is the one it answers) replies as a
+    notification and raises JevUnreachable instead; at the agent stage the same agent answers
+    again, and with expire it asks instead of answering (`stage` and `agent_id` come from the
+    deferral). `agent` is a Pydantic AI agent for the default agent (tests)."""
     before = message.id if resumed else None
     past, deps, ctx = await asyncio.to_thread(_context, session, person, thread, before)
     deps.resumed = resumed
@@ -450,7 +463,8 @@ async def respond(
         if isinstance(shared, ChatReply):
             return shared
         text = shared
-    routed = await route_turn(session, deps, thread, text, ctx)
+    keep = agent_id if resumed and stage == "agent" else None
+    routed = await route_turn(session, deps, thread, text, ctx, keep)
     if isinstance(routed, ChatReply):
         return routed
     spec, agent_deps, agent_ctx, text = routed
