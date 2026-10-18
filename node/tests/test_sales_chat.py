@@ -167,6 +167,20 @@ def test_a_correction_echoes_the_new_count(
     assert session.exec(select(Event).where(Event.action == "sales.corrected")).all()
 
 
+def test_a_negation_correction_is_a_correction_even_when_jev_says_report(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    cl = _item(session, "Classic")
+    _answers(monkeypatch, "report_sales", item_0=cl)
+    first = _turn(session, people["Ana"], "6 classic")
+    assert len(_counted(session)) == 1
+    reply = _turn(session, people["Ana"], "5 classic hindi 6", first.thread_id)
+    assert "5 Classic" in reply.text()
+    assert session.exec(select(Event).where(Event.action == "sales.corrected")).all()
+    assert len(_counted(session)) == 1
+
+
 def test_a_correction_without_a_count_today_says_send_the_count(
     session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

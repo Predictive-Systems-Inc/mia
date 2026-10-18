@@ -14,8 +14,9 @@ from mia.agents.sales_supervisor.actions import (
     build_request,
     menu_tokens,
     pre_parse,
+    was_corrected,
 )
-from mia.agents.sales_supervisor.decider import _args
+from mia.agents.sales_supervisor.decider import _args, _parse
 from mia.core.models import Branch, Person
 from mia.i18n import t
 from mia.templates.retail.seed import ITEMS as MENU
@@ -71,6 +72,7 @@ def query(message: str, why_asked: bool = False) -> Query:
         branches={"b1": "Main"},
         periods={},
         why_asked=why_asked,
+        corrected=was_corrected(message),
     )
 
 
@@ -297,3 +299,27 @@ def test_build_query_offers_every_branch_and_carries_the_message_ids(
     count = build_query(deps, "3 sp", "", message_id="m2")
     sp = {"item_0": {"choice": next(iter(count.items)), "confidence": 0.9}}
     assert _args("report_sales", Reader(sp, count))[0]["source_message_id"] == "m2"
+
+
+def _parsed(message: str, action: str) -> Any:
+    answers = {
+        "action": {"choice": action, "confidence": 0.95, "probabilities": {action: 0.95}},
+        "item_0": {"choice": "i2", "confidence": 0.9},
+        "item_1": {"choice": "i1", "confidence": 0.9},
+        "period": {"choice": "not_stated", "confidence": 0.9},
+        "branch": {"choice": "not_stated", "confidence": 0.9},
+    }
+    return _parse(answers, query(message))
+
+
+def test_a_correction_by_rule_is_correct_sales_whatever_jevs_pick() -> None:
+    d = _parsed("5 classic hindi 6", "report_sales")
+    assert d.action == "correct_sales" and d.raw_action == "report_sales"
+    assert d.args["item_id"] == "i2" and d.args["quantity"] == 5
+    d = _parsed("4 special instead of 3", "sales_period")
+    assert d.action == "correct_sales" and d.raw_action == "sales_period"
+
+
+def test_without_a_negation_jevs_pick_stands() -> None:
+    d = _parsed("3 special 5 classic", "report_sales")
+    assert d.action == "report_sales" and len(d.args["items"]) == 2

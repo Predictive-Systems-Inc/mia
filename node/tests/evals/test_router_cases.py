@@ -99,14 +99,14 @@ def test_gated_summary_ignores_reported_languages_and_the_tune_half() -> None:
 
 
 def test_the_gate_is_the_q40_bar() -> None:
-    from tests.evals.test_router_eval import _gate_failures
+    from tests.evals.gate import gate_failures
 
     def gated(wrong: float, right: float, ask: float) -> dict[str, object]:
         return {"all": {"wrong": wrong}, "by_language": {"en": {"right": right, "ask": ask}}}
 
-    assert _gate_failures(gated(0.02, 0.80, 0.15)) == []
-    assert _gate_failures(gated(0.021, 0.80, 0.15)) == ["wrong 0.021"]
-    assert _gate_failures(gated(0.0, 0.79, 0.16)) == ["en right 0.79", "en ask 0.16"]
+    assert gate_failures(gated(0.02, 0.80, 0.15)) == []
+    assert gate_failures(gated(0.021, 0.80, 0.15)) == ["wrong 0.021"]
+    assert gate_failures(gated(0.0, 0.79, 0.16)) == ["en right 0.79", "en ask 0.16"]
 
 
 def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:

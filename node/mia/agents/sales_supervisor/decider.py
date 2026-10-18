@@ -131,11 +131,31 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     return {}, None  # clarify
 
 
+def _parse(answers: dict[str, Any], q: Query) -> Decision:
+    """The shared parse, except that a correction by rule (a negation dropped a number from a
+    single group) is `correct_sales` whatever Jev's action pick was; `raw_action` keeps Jev's
+    pick and the confidence comes from the item pick only."""
+    top = answers.get("action")
+    if q.corrected and len(q.groups) == 1 and isinstance(top, dict):
+        forced = {
+            **answers,
+            "action": {
+                **top,
+                "choice": "correct_sales",
+                "confidence": 1.0,
+                "probabilities": {"correct_sales": 1.0},
+            },
+        }
+        decision = shared.parse(forced, q, actions=ACTIONS, args=_args)
+        return decision.model_copy(update={"raw_action": str(top.get("choice", ""))})
+    return shared.parse(answers, q, actions=ACTIONS, args=_args)
+
+
 async def decide(q: Query) -> Decision:
     """One Jev request for the query. Raises JevUnreachable when Jev cannot be reached, and
     JevError (DecideError for an answer outside the options) when no usable answer came."""
     return await shared.decide(
         q,
         build_request=build_request,
-        parse=partial(shared.parse, q=q, actions=ACTIONS, args=_args),
+        parse=partial(_parse, q=q),
     )

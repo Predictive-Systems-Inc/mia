@@ -13,9 +13,9 @@ from mia.i18n import t
 DESCRIPTIONS = {
     "inventory_manager": (
         "Stock: items sold out or running low, how many are left, leftovers (trays left over)"
-        " and waste (items thrown away) at closing, what to prepare or bake tomorrow, ingredients and packaging to buy before a"
-        " day, placing supplier orders (not who approves them); not how many were sold. A"
-        " sell-out message is stock."
+        " and waste (items thrown away) at closing, what to prepare or bake tomorrow,"
+        " ingredients and packaging to buy before a day, placing supplier orders (not who"
+        " approves them); not how many were sold. A sell-out message is stock."
     ),
     "bookkeeper": (
         "Money: the cash count against sales, a cash drawer short or over, expenses and"
@@ -28,9 +28,9 @@ DESCRIPTIONS = {
         " hiring; not who works which shift and not adding people to a branch."
     ),
     "branch_manager": (
-        "Running the shop: branches, the menu and new menu items, prices and item short codes, who approves what,"
-        " shop opening hours, people and their roles, permits, the weekly summary, coaching and"
-        " tips for staff; not a day's counts and not a shift change."
+        "Running the shop: branches, the menu and new menu items, prices and item short codes,"
+        " who approves what, shop opening hours, people and their roles, permits, the weekly"
+        " summary, coaching and tips for staff; not a day's counts and not a shift change."
     ),
 }
 

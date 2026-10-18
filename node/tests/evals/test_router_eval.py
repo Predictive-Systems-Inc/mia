@@ -27,6 +27,7 @@ from mia.core.db import utcnow
 from mia.core.egress import EgressContext, egress_context
 from mia.core.models import Actor, Branch, Event, Person, UsageCloudRequest
 from mia.settings import get_settings
+from tests.evals.gate import gate_failures
 from tests.evals.router_cases import CASES, GATED_LANGS, Case
 
 pytestmark = pytest.mark.evals
@@ -149,18 +150,6 @@ def _gated(results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _gate_failures(gated: dict[str, Any]) -> list[str]:
-    """The Q40 bar on a fresh gate half: wrong at most 2% (hard), and per gated language right
-    at least 80% and ask at most 15% (greetings left out). Empty when the gate passes."""
-    failed = [f"wrong {gated['all']['wrong']}"] if gated["all"]["wrong"] > 0.02 else []
-    for lang, v in gated["by_language"].items():
-        if v["right"] < 0.80:
-            failed.append(f"{lang} right {v['right']}")
-        if v["ask"] > 0.15:
-            failed.append(f"{lang} ask {v['ask']}")
-    return failed
-
-
 def _print(title: str, table: dict[str, Any]) -> None:
     print(f"\n{title}\n{'':18}{'n':>5}", "".join(f"{s[:5]:>7}" for s in SCORES), end="")
     print(f"{'err':>5}{'p50':>6}{'p95':>6}{'tok':>6}")
@@ -206,7 +195,7 @@ def test_router(engine: Engine, branch: Branch) -> None:
         json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8",
     )
-    assert not _gate_failures(summary["gated"]), _gate_failures(summary["gated"])
+    assert not gate_failures(summary["gated"]), gate_failures(summary["gated"])
 
 
 def test_deferral_and_recovery(

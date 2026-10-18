@@ -29,8 +29,8 @@ from mia.core.egress import EgressContext, egress_context
 from mia.core.models import Actor, Branch, Person, UsageCloudRequest
 from mia.settings import get_settings
 from mia.templates.retail.models import RetailItem
+from tests.evals.gate import gate_failures
 from tests.evals.sales_cases import CASES, GATED_LANGS, Case
-from tests.evals.test_router_eval import _gate_failures
 
 pytestmark = pytest.mark.evals
 
@@ -228,5 +228,5 @@ def test_sales_supervisor_decider(engine: Engine, session: Session, ferinos: Fer
         json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8",
     )
-    failed = _gate_failures(summary["gated"])  # the Q40 bar, as the router's
+    failed = gate_failures(summary["gated"])  # the Q40 bar, as the router's
     assert not failed, failed
