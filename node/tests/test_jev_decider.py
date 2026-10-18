@@ -352,3 +352,17 @@ def test_shared_threshold_is_the_shift_supervisors() -> None:
     from mia.agents import decider as shared
 
     assert shared.THRESHOLD is actions.THRESHOLD
+
+
+def test_pseudonymised_covers_lists_of_strings_in_the_state() -> None:
+    from mia.agents.decider import pseudonymised
+    from mia.core.egress import Pseudonymiser
+
+    pseudo = Pseudonymiser({"Maria": "Person_1"})
+    body = {
+        "state": {"groups": ["3 special for Maria"], "n": 3, "none": None, "m": "Maria"},
+        "questions": {},
+    }
+    state = pseudonymised(body, pseudo)["state"]
+    assert state["groups"] == ["3 special for Person_1"]
+    assert state["n"] == 3 and state["none"] is None and state["m"] == "Person_1"

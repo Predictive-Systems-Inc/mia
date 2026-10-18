@@ -140,11 +140,19 @@ def parse(
 
 
 def pseudonymised(body: dict[str, Any], pseudo: Pseudonymiser) -> dict[str, Any]:
-    """The request with names replaced in the values that can carry them (the state and the
-    option descriptions) and nowhere else: question keys, option ids and instructions leave as
+    """The request with names replaced in the values that can carry them (the state, lists of
+    strings item by item, and the option descriptions) and nowhere else: question keys, option ids and instructions leave as
     they are. The shared pseudonymiser also takes words that start with a name (a "Per" takes
     "person"), so it never sees the whole body."""
-    state = {k: pseudo.apply(v) if isinstance(v, str) else v for k, v in body["state"].items()}
+
+    def clean(v: Any) -> Any:
+        if isinstance(v, str):
+            return pseudo.apply(v)
+        if isinstance(v, list):
+            return [pseudo.apply(x) if isinstance(x, str) else x for x in v]
+        return v
+
+    state = {k: clean(v) for k, v in body["state"].items()}
     questions = {
         qid: {**q, "criteria": {key: pseudo.apply(text) for key, text in q["criteria"].items()}}
         for qid, q in body["questions"].items()

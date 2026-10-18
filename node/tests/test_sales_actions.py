@@ -1,8 +1,11 @@
+import dataclasses
 import datetime as dt
 from typing import Any
 
+import pytest
+
 from mia.agents.decider import Reader
-from mia.agents.sales_supervisor.actions import Query, pre_parse
+from mia.agents.sales_supervisor.actions import Query, build_request, pre_parse
 from mia.agents.sales_supervisor.decider import _args
 
 TODAY = dt.date(2026, 10, 19)  # a Monday
@@ -68,7 +71,7 @@ def test_report_sales_maps_each_group_to_an_item() -> None:
         {"item_id": "i1", "quantity": 3},
         {"item_id": "i2", "quantity": 5},
     ]
-    assert out["total"] == 1450
+    assert out["total"] == 145000  # major units typed, minor units sent
 
 
 def test_group_picked_none_is_missing() -> None:
@@ -86,11 +89,12 @@ def test_set_target_amount_from_total_and_periods() -> None:
     out, missing = args(
         "set_target", "target total 5000", {"target_period": "month", "branch": "not_stated"}
     )
+    assert out["amount"] == 500000
     assert missing is None
     assert (out["period"], out["starts_on"], out["amount"], out["branch_id"]) == (
         "month",
         "2026-10-01",
-        5000,
+        500000,
         None,
     )
     assert (
@@ -103,3 +107,30 @@ def test_period_report_defaults_to_this_month_and_weekdays() -> None:
     assert (out["start"], out["end"], out["branch_id"]) == ("2026-10-01", "2026-10-31", "all")
     out, _ = args("sales_period", "how was sunday", {"period": "sun", "branch": "not_stated"})
     assert out["start"] == out["end"] == "2026-10-18"
+
+
+def test_target_amount_is_never_a_small_group_quantity() -> None:
+    month = {"target_period": "month", "branch": "all"}
+    out, _ = args("set_target", "target 480,000 for the mall", month)
+    assert out["amount"] == 48000000
+    out, _ = args("set_target", "target for 3 days 5000", month)
+    assert out["amount"] == 500000
+    assert args("set_target", "target 50", month)[1] == "amount"
+    assert args("set_target", "target 500 and 700", month)[1] == "amount"
+
+
+def test_item_instructions_carry_no_message_text() -> None:
+    message = "3 zorblax 5 quuxberry"
+    request = build_request(query(message), "m")
+    for question in request["questions"].values():
+        for g in query(message).groups:
+            assert g.raw not in question["instructions"]
+            assert "zorblax" not in question["instructions"]
+    assert request["questions"]["item_1"]["instructions"].count("index 1") == 1
+
+
+def test_currency_symbols_are_stripped_and_query_is_frozen() -> None:
+    assert pre_parse("kabuuan \u20b11,450")[1] == 1450
+    assert pre_parse("total $1450")[1] == 1450
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        query("x").message = "y"  # type: ignore[misc]

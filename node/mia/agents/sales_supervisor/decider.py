@@ -46,6 +46,21 @@ def _period(value: str | None, today: dt.date) -> tuple[dt.date, dt.date]:
     return _month(today.replace(day=1))
 
 
+def _minor(value: int) -> int:
+    """Major units as typed to minor units."""
+    # ponytail: exponent 2 (PHP, EUR); a currency table when a zero-decimal currency appears
+    return value * 100
+
+
+def _target_amount(q: Query) -> int | None:
+    """The stated total, else the one number of at least 100 in the message; never a small
+    count (a quantity is not a target)."""
+    if q.total is not None:
+        return q.total
+    big = [g.quantity for g in q.groups if g.quantity is not None and g.quantity >= 100]
+    return big[0] if len(big) == 1 else None
+
+
 def _branch(r: Reader) -> str | None:
     return r.pick("branch", {*r.q.branches, "all"})
 
@@ -68,7 +83,7 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
             items.append({"item_id": item, "quantity": g.quantity})
         args: dict[str, Any] = {
             "items": items,
-            "total": q.total,
+            "total": None if q.total is None else _minor(q.total),
             "business_date": None,
             "source_message_id": None,
         }
@@ -92,12 +107,11 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     if action == "set_target":
         period = r.pick("target_period", {"day", "month"}, count_unstated=True) or "month"
         starts = q.today if period == "day" else q.today.replace(day=1)
-        single = q.groups[0].quantity if len(q.groups) == 1 else None
-        amount = q.total if q.total is not None else single
+        amount = _target_amount(q)
         args = {
             "period": period,
             "starts_on": starts.isoformat(),
-            "amount": amount,
+            "amount": None if amount is None else _minor(amount),
             "branch_id": _branch(r),
         }
         return args, None if amount is not None else "amount"

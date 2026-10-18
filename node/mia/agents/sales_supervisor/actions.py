@@ -85,7 +85,7 @@ class Group:
     raw: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class Query:
     """Everything one Jev request is built from; no database access after build_query."""
 
@@ -108,7 +108,8 @@ def _number(token: str) -> int | None:
 def pre_parse(text: str) -> tuple[list[Group], int | None]:
     """Groups of (quantity, item words) in either order, and the stated total if any. Pure;
     item words are not matched to the menu here (Jev does that against the menu)."""
-    tokens = re.sub(r"(?<=\d),(?=\d)", "", text.lower()).replace(",", " ").split()
+    text = re.sub(r"(?<!\w)[\u20b1\u20ac$p](?=\d)", "", text.lower())  # a currency symbol
+    tokens = re.sub(r"(?<=\d),(?=\d)", "", text).replace(",", " ").split()
     numbers = [i for i, tok in enumerate(tokens) if tok.isdigit()]
     drop: set[int] = set()
     total: int | None = None
@@ -233,10 +234,10 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
             },
         ),
     }
-    for i, g in enumerate(q.groups):
+    for i in range(len(q.groups)):
         questions[f"item_{i}"] = _choice(
-            f"Which menu item do the words of group {i} ({g.raw!r} in `groups`) name? Words may"
-            " be a short code, a name or a nickname.",
+            f"Which menu item do the words of the group at index {i} of `groups` in the state"
+            " name? Words may be a short code, a name or a nickname.",
             {**q.items, NONE: "None of these"},
         )
     return {"model": model, "state": state, "questions": questions}
