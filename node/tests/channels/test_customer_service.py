@@ -201,6 +201,7 @@ def test_an_out_row_without_its_customer_is_failed(
         delete = "DELETE FROM customer_service_customers WHERE id = ?"
         raw.exec_driver_sql(delete, (customer.id,))
         raw.commit()
+        raw.exec_driver_sql("PRAGMA foreign_keys=ON")  # the pooled connection is reused
     assert asyncio.run(public.send_pending(db.utcnow())) == 0
     with Session(db.get_engine()) as other:
         lost = other.get(CustomerMessage, row.id)
