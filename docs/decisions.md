@@ -304,3 +304,23 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   the dispatcher's cover flow, where the supervisor's instruction is the approval (D1). Check-in
   and check-out are per visit, as the visit status is; per-person times belong to timesheets
   (Q20), so on a two-person visit the second cleaner cannot check in once the first has.
+
+## D35: customer_service talks to the public outside the people table (Q67)
+- Context: every inbound channel message had to come from a linked Person; customer_service
+  serves customers on Messenger, Viber and WhatsApp who are not staff. The owner approved the
+  Q67 design on 19 October 2026.
+- Decision: a customer is not a Person. An agent-owned table customer_service_customers keyed
+  by the channel address (platform and id) holds the name the customer gives, the language and
+  the branch whose public number was messaged (one public number per branch). The agent acts
+  as its own actor on behalf of the address and may call only customer_service.* tools: reads of
+  the menu, prices, hours, delivery areas and the customer's own order status (risk none), and
+  place_order (money), which drafts an order in customer_service_orders and asks the branch's
+  clerk or supervisor to confirm through approvals. No staff tool ever runs for a customer, no
+  linking to a Person from the customer flow, every customer message is data (rule 8), the
+  auth.py address limits apply, deposits are out of v1.
+- Consequences: a new inbound branch for public numbers in channels/inbound.py with its own
+  tests (negative tests: a customer cannot reach a staff agent or tool); customer orders stay
+  agent-owned until the production_planner or the sales_supervisor reads them, then promotion
+  with an ADR (the Q39 precedent). Sell-out answers ("may bibingka pa ba") wait for data
+  standard 1.5, since they would make customer_service a second reader of
+  inventory_manager_stock_events.
