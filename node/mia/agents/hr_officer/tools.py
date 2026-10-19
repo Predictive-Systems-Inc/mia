@@ -556,6 +556,27 @@ def balance(deps: AgentDeps, args: PersonInput, tool_call_id: str) -> BalanceOut
     )
 
 
+class LeavePreview(BaseModel):
+    """What a leave request takes, for its approval card: working days and the service
+    incentive leave days left once it is approved."""
+
+    days: int
+    left_after: int
+
+
+def preview_leave(deps: AgentDeps, args: RequestLeaveInput, tool_call_id: str) -> LeavePreview:
+    """The working days the acting person's leave would take (calendar.leave_days) and their
+    balance after it (unpaid leave takes no service incentive leave). Reads only, after the
+    same own-row checks as balance. Raises LookupError without a contract."""
+    now = balance(deps, PersonInput(), tool_call_id)
+    contract = _contract(deps.session, deps.person.id, deps.today)
+    days = calendar.leave_days(args.start, args.end, contract.rest_day, _holidays())
+    used = now.used + (days if args.kind in SIL_KINDS else 0)
+    return LeavePreview(
+        days=days, left_after=calendar.sil_balance(contract.start_date, deps.today, used)
+    )
+
+
 # ---- holiday ------------------------------------------------------------------------------
 
 

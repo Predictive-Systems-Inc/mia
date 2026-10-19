@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
-from mia.agents.decider import Decision
+from mia.agents.decider import THRESHOLD, Decision
 from mia.agents.hr_officer import MANIFEST, actions, decider, due, replies, tools
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
@@ -21,10 +21,12 @@ from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
 from mia.core.models import Event, Message, Thread
+from mia.core.rbac import PermissionDenied, Resource, get_rbac
 from mia.i18n import t
 from mia.settings import get_settings
 
 _BINDINGS = {b.tool_id: b for b in tools.BINDINGS}  # importing tools registers its handlers
+_CERTIFICATE_TOOL = Resource(kind="tool", name=f"{MANIFEST.id}.certificate_text")
 
 
 def _last_question(session: Session, thread: Thread) -> Message | None:
@@ -85,6 +87,17 @@ def _did_you_mean(
         QuickRepliesBlock(options=[*options, other]),
     ]
     options[other] = Decision(action="clarify", confidence=1.0).model_dump(mode="json")
+    return _ask(session, deps, thread, blocks, options)
+
+
+def _ask(
+    session: Session,
+    deps: AgentDeps,
+    thread: Thread,
+    blocks: list[Block],
+    options: replies.Options,
+) -> ChatReply:
+    """Store a question with buttons and remember what each button runs."""
     reply = store_reply(session, deps, thread, blocks)
     after = {"options": options, "message_id": reply.message_id}
     events.emit(session, "decision.clarify_asked", ("thread", thread.id), None, after, deps.actor)
@@ -92,10 +105,19 @@ def _did_you_mean(
 
 
 def _refusal(
-    session: Session, deps: AgentDeps, thread: Thread, tool: str, out: dict[str, Any]
+    session: Session,
+    deps: AgentDeps,
+    thread: Thread,
+    tool: str,
+    out: dict[str, Any],
+    args: dict[str, Any],
 ) -> ChatReply:
-    """The reply to a refused tool call: another person's records (or a certificate by someone
-    who may not issue one) is not allowed; nothing on record yet says so."""
+    """The reply to a refused tool call: a leave refused before approval says why; another
+    person's records (or a certificate by someone who may not issue one) is not allowed;
+    nothing on record yet says so."""
+    refused = replies.leave_refused(out["message"], args, deps.lang)
+    if tool == "request_leave" and out["status"] == "invalid" and refused is not None:
+        return store_reply(session, deps, thread, refused)
     if out["status"] == "denied":
         key = "hr.not_allowed.certificate" if tool == "certificate_text" else "hr.not_allowed"
     else:
@@ -112,18 +134,59 @@ def _run(
         inp = binding.input_type.model_validate(args)
     except ValidationError:
         return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
-    out = call_tool(deps, binding, inp, new_id())
+    call_id = new_id()
+    leave = inp if isinstance(inp, tools.RequestLeaveInput) else None
+    preview = _preview(deps, leave, call_id) if leave is not None else None
+    summary = ""
+    if leave is not None and preview is not None:
+        summary = replies.leave_summary(deps.person.name, leave, preview, deps.lang)
+    out = call_tool(deps, binding, inp, call_id, summary)
+    if leave is not None and out.get("status") == "approval_required":
+        approval_id = str(out["approval_id"])
+        waiting = replies.leave_waiting(summary, leave, preview, approval_id, deps.lang)
+        return store_reply(session, deps, thread, waiting)
     if "status" in out and "message" in out:  # a ToolRefusal
-        return _refusal(session, deps, thread, tool, out)
+        return _refusal(session, deps, thread, tool, out, inp.model_dump(mode="json"))
     blocks = replies.tool_reply(tool, out, args, deps.lang)
     return store_reply(session, deps, thread, blocks)
 
 
+def _preview(
+    deps: AgentDeps, leave: tools.RequestLeaveInput, call_id: str
+) -> tools.LeavePreview | None:
+    """The leave's working days and balance after for its card; None when the request cannot
+    be previewed (the guard then refuses it with the reason)."""
+    try:
+        return tools.preview_leave(deps, leave, call_id)
+    except (LookupError, PermissionDenied):
+        return None
+
+
+def _missing(
+    session: Session, deps: AgentDeps, thread: Thread, decision: Decision
+) -> ChatReply | None:
+    """The reply to a sure decision that lacks one input: a leave without dates asks the day
+    with buttons; a certificate by someone who may not issue one is not allowed. None
+    otherwise ("Did you mean" follows)."""
+    if decision.confidence < THRESHOLD:
+        return None
+    if decision.raw_action == "file_leave" and decision.missing == "leave_start":
+        return _ask(session, deps, thread, *replies.ask_leave_days(decision, deps.today, deps.lang))
+    lacks_person = decision.raw_action == "certificate" and decision.missing == "person"
+    if lacks_person and not get_rbac().check(
+        deps.actor, _CERTIFICATE_TOOL, "execute", session=session
+    ):
+        return reply_text(session, deps, thread, t("hr.not_allowed.certificate", deps.lang))
+    return None
+
+
 def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) -> ChatReply:
-    """Log the decision, then ask "Did you mean", run its tool through the guard, or word a
-    conversation reply."""
+    """Log the decision, then ask what is missing or "Did you mean", run its tool through the
+    guard, or word a conversation reply."""
     after = decision.model_dump(mode="json")
     events.emit(session, "decision.made", ("thread", thread.id), None, after, deps.actor)
+    if decision.action == "clarify" and (asked := _missing(session, deps, thread, decision)):
+        return asked
     if decision.action == "clarify":
         return _did_you_mean(session, deps, thread, decision)
     spec = actions.ACTIONS.get(decision.action)

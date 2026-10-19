@@ -6,14 +6,22 @@ reply; no model writes one."""
 import datetime as dt
 from typing import Any
 
+from mia.agents.decider import Decision
 from mia.agents.hr_officer.actions import WHICH
 from mia.agents.hr_officer.tools import (
+    BalanceOutput,
+    CertificateOutput,
     ContributionsOutput,
+    HolidayOutput,
     HoursOutput,
+    LeavePreview,
     NextPaydayOutput,
+    PayslipOutput,
+    RequestLeaveInput,
     ThirteenthOutput,
 )
-from mia.chat.blocks import Block, TextBlock
+from mia.agents.parsing import DAY_NAMES, EN_WEEKDAYS
+from mia.chat.blocks import ApprovalCardBlock, Block, CardField, QuickRepliesBlock, TextBlock
 from mia.core.money import format_money
 from mia.i18n import t
 
@@ -24,6 +32,10 @@ CONVERSATION_KEYS = {
     "goodbye": "conversation.goodbye",
 }
 KINDS = ("sss", "philhealth", "pagibig")
+LEAVE_REFUSALS = ("no_contract", "in_the_past", "no_working_days", "overlaps")
+# The day buttons a leave without dates offers, from today (a QuickRepliesBlock holds six).
+ASKED_DAYS = 6
+Options = dict[str, dict[str, Any]]  # button label -> the decision a tap runs
 
 
 def conversation_reply(kind: str, lang: str) -> list[Block]:
@@ -80,4 +92,78 @@ def tool_reply(tool: str, out: dict[str, Any], args: dict[str, Any], lang: str) 
     if tool == "last_contributions":
         c = ContributionsOutput.model_validate(out)
         return _contributions(c, str(args.get("which", "all")), lang)
-    return _text("reply.not_built", lang)  # ponytail: leave, holiday, payslip, certificate: Task 5
+    if tool == "balance":
+        b = BalanceOutput.model_validate(out)
+        return _text("hr.balance", lang, left=b.left, total=b.total, used=b.used)
+    if tool == "holiday":
+        d = HolidayOutput.model_validate(out)
+        day = str(args.get("day"))
+        return _text(f"hr.holiday.{d.kind}", lang, date=day, name=d.name, rate=d.rate_percent)
+    if tool == "resend_payslip":
+        slip = PayslipOutput.model_validate(out)
+        start, end = slip.cutoff_start.isoformat(), slip.cutoff_end.isoformat()
+        return _text("hr.payslip_sent", lang, start=start, end=end)  # amounts: the notification
+    if tool == "certificate_text":
+        return [TextBlock(text=CertificateOutput.model_validate(out).text)]
+    return _text("reply.not_built", lang)  # request_leave runs on approve, set_contract in v2
+
+
+def leave_refused(reason: str, args: dict[str, Any], lang: str) -> list[Block] | None:
+    """The reason a leave was refused before any approval, in words; None for another refusal."""
+    if reason not in LEAVE_REFUSALS:
+        return None
+    return _text(f"hr.leave_refused.{reason}", lang, start=args["start"], end=args["end"])
+
+
+def leave_summary(name: str, leave: RequestLeaveInput, preview: LeavePreview, lang: str) -> str:
+    """The leave in words for the approver: who, the dates, the working days, the balance after
+    (never the kind: a sick leave stays off the log)."""
+    start, end = leave.start.isoformat(), leave.end.isoformat()
+    days, left = preview.days, preview.left_after
+    return t("hr.leave.summary", lang, name=name, start=start, end=end, days=days, left=left)
+
+
+def leave_waiting(
+    summary: str,
+    leave: RequestLeaveInput,
+    preview: LeavePreview | None,
+    approval_id: str,
+    lang: str,
+) -> list[Block]:
+    """The requester's reply: the leave waits for head staff, with its approval card (the
+    dates, the working days and the balance after)."""
+    start, end = leave.start.isoformat(), leave.end.isoformat()
+    card = ApprovalCardBlock(
+        approval_id=approval_id, title=t("hr.leave.approval_title", lang), summary=summary
+    )
+    card.fields = [
+        CardField(label=t("hr.field.dates", lang), value=_span(leave.start, leave.end, lang))
+    ]
+    if preview is not None:
+        card.fields += [
+            CardField(label=t("hr.field.working_days", lang), value=str(preview.days)),
+            CardField(label=t("hr.field.leave_left", lang), value=str(preview.left_after)),
+        ]
+    card.fields.append(CardField(label=t("field.status", lang), value=card.status))
+    return [TextBlock(text=t("hr.leave.waiting", lang, start=start, end=end)), card]
+
+
+def ask_leave_days(decision: Decision, today: dt.date, lang: str) -> tuple[list[Block], Options]:
+    """Which day the leave is for: one button per day from today (the weekday and the date),
+    each filing a one-day leave of the kind asked; longer leave is typed."""
+    names = DAY_NAMES.get(lang, EN_WEEKDAYS)
+    kind = decision.args.get("kind") or "vacation"
+    options: Options = {}
+    for i in range(ASKED_DAYS):
+        d = today + dt.timedelta(days=i)
+        day = d.isoformat()
+        label = t("hr.leave.day", lang, weekday=names[d.weekday()].capitalize(), date=day)
+        args = {"kind": kind, "start": day, "end": day}
+        options[label] = Decision(
+            action="file_leave", args=args, confidence=1.0, raw_action="file_leave"
+        ).model_dump(mode="json")
+    blocks: list[Block] = [
+        TextBlock(text=t("hr.leave.which_days", lang)),
+        QuickRepliesBlock(options=list(options)),
+    ]
+    return blocks, options

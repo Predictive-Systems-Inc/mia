@@ -270,8 +270,9 @@ def test_an_overlap_found_at_approval_writes_nothing(session: Session, hr: Ferin
     assert session.exec(select(Leave).where(Leave.approval_id == approval.id)).all() == []
     assert len(session.exec(select(Leave).where(Leave.person_id == ana.id)).all()) == 1
     assert session.exec(select(Event).where(Event.action == "hr.leave_refused")).one()
-    assert [x for x in told(session, ana) if "overlaps" in x]
-    assert [x for x in told(session, marites) if "overlaps" in x]
+    said = "The leave from 2026-10-28 to 2026-10-29 overlaps a leave already approved."
+    assert said in told(session, ana)
+    assert said in told(session, marites)
 
 
 def test_an_approved_leave_tells_the_requester_and_updates_the_balance(
