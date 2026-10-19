@@ -190,7 +190,7 @@ def test_error_during_a_turn_marks_failed_and_apologises_once(
     link(people["Juha"], ADDR)
     assert post(client, sim, msg("Olen kipeä huomenna.", "m1")) == 200
     row = session.exec(select(ChannelInbound)).one()
-    assert row.status == "failed" and "model down" in (row.error or "")
+    assert (row.status, row.error) == ("failed", "RuntimeError")  # the class, never the text
     assert sum("jokin meni vikaan" in t for t in texts_to(sim)) == 1
 
 

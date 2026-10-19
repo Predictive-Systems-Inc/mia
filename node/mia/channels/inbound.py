@@ -343,12 +343,13 @@ def _done(session: Session, inbound_id: str) -> None:
 
 
 def _fail(inbound_id: str, error: str) -> tuple[str, str, str | None]:
-    """Mark the row failed and queue one apology. Returns (channel, address, direct text)."""
+    """Mark the row failed with `error` (an exception class name, never its text) and queue one
+    apology. Returns (channel, address, direct text)."""
     with session_scope() as session:
         row = session.get(ChannelInbound, inbound_id)
         if row is None:
             return "", "", None
-        _finish(session, row, "failed", error[:500])
+        _finish(session, row, "failed", error)
         person = session.get(Person, row.person_id) if row.person_id else None
         if person is None:
             return row.channel, row.address, _both("channel.error")
@@ -388,11 +389,12 @@ async def handle_inbound(inbound_id: str) -> None:
             for text in step.direct:
                 if row is not None:
                     await outbox.send_direct(row.channel, row.address, [TextBlock(text=text)], "fi")
-    except Exception as exc:  # noqa: BLE001 - every failure must reach the person once
+    except Exception as exc:  # every failure must reach the person once
         await asyncio.to_thread(session.rollback)
-        channel, address, direct = await asyncio.to_thread(
-            _fail, inbound_id, f"{type(exc).__name__}: {exc}"
-        )
+        # The class name only: an exception's text can carry row data (SQL parameters hold
+        # an address or a name), and the inbound_failed event is on the append-only chain.
+        log.exception("inbound message %s failed", inbound_id)  # the text stays on the node
+        channel, address, direct = await asyncio.to_thread(_fail, inbound_id, type(exc).__name__)
         if direct and channel:
             await outbox.send_direct(channel, address, [TextBlock(text=direct)], "fi")
     finally:

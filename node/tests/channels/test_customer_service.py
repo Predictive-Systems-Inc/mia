@@ -5,6 +5,7 @@ before the network and nothing goes out past the 24-hour window."""
 import asyncio
 import functools
 import json
+import threading
 from collections.abc import Iterator
 from typing import Any
 
@@ -17,7 +18,7 @@ from mia.agents.customer_service.models import Complaint, Customer, CustomerMess
 from mia.agents.decider import Decision
 from mia.api.main import app
 from mia.channels import linking, outbox
-from mia.channels.base import ChannelPayload, DeliveryResult
+from mia.channels.base import ChannelPayload, DeliveryResult, InboundMessage
 from mia.channels.inbound import _both
 from mia.channels.simulator import SimAdapter
 from mia.chat.blocks import QuickRepliesBlock, TextBlock
@@ -680,3 +681,86 @@ def test_the_name_scrub_keeps_words_that_start_with_the_name(
     answer(monkeypatch, "greeting", seen=seen)
     say(client, sim, "market price? Mark here", address=MARK_ADDR)
     assert seen[-1]["state"]["message"] == "market price? Customer here"
+
+
+# ---- a failed customer step and two first messages at once (C1) -----------------------------
+
+
+def chain_text(session: Session) -> str:
+    session.expire_all()
+    return json.dumps([e.model_dump(mode="json") for e in session.exec(select(Event))])
+
+
+def test_a_failed_customer_step_writes_the_exception_class_only(
+    shop: Shop,
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The review's probe: a read that raced the first insert makes the second insert fail; the
+    IntegrityError's text holds the SQL parameters (the address and the name), and the chain
+    is append-only, so only the class name may reach it."""
+    answer(monkeypatch, "greeting")
+    say(client, sim, "hello po", name="Mila Santos")
+    monkeypatch.setattr(public, "_find", lambda session, msg: None)
+    assert say(client, sim, "hello ulit", name="Mila Santos") == [_both("channel.error")]
+    failed = session.exec(select(Event).where(Event.action == "channel.inbound_failed")).one()
+    assert failed.after is not None and failed.after["error"] == "IntegrityError"
+    chain = chain_text(session)
+    assert ADDR.lstrip("+") not in chain and "Mila" not in chain and "Santos" not in chain
+
+
+def test_two_first_messages_at_once_make_one_customer(
+    shop: Shop, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two webhook posts from a new number: the second arrives while the first has inserted the
+    customer row but not committed it. The second reads the row only after the first commits
+    (the write lock first), so it finds the row instead of inserting a second one."""
+    now = db.utcnow()
+    inserted, read = threading.Event(), threading.Event()
+    real_find, real_upsert = public._find, public._upsert
+
+    def find(s: Session, m: InboundMessage) -> Customer | None:
+        row = real_find(s, m)
+        if m.text == "second":
+            read.set()  # without the lock it saw no row yet
+        return row
+
+    def upsert(s: Session, row: Customer | None, m: InboundMessage, at: Any) -> Customer:
+        out = real_upsert(s, row, m, at)
+        if m.text == "first":
+            inserted.set()
+            read.wait(timeout=1)  # with the lock the second read waits for this commit
+        return out
+
+    monkeypatch.setattr(public, "_find", find)
+    monkeypatch.setattr(public, "_upsert", upsert)
+    got: dict[str, Customer | None] = {}
+
+    def arrive(text: str) -> None:
+        msg = InboundMessage(
+            channel="sim",
+            address=ADDR,
+            channel_message_id=new_id(),
+            text=text,
+            name="Mila Santos",
+            received_at=now,
+        )
+        with Session(db.get_engine(), expire_on_commit=False) as own:
+            got[text] = public._arrive(own, new_id(), msg, text, now)
+            own.commit()
+
+    first = threading.Thread(target=arrive, args=("first",))
+    first.start()
+    inserted.wait(timeout=5)
+    second = threading.Thread(target=arrive, args=("second",))
+    second.start()
+    first.join()
+    second.join()
+    a, b = got["first"], got["second"]  # a KeyError here: that message failed
+    assert a is not None and b is not None and a.id == b.id  # the second message is answered
+    session.expire_all()
+    assert len(session.exec(select(Customer).where(Customer.address == ADDR)).all()) == 1
+    chain = chain_text(session)
+    assert ADDR.lstrip("+") not in chain and "Mila" not in chain and "Santos" not in chain

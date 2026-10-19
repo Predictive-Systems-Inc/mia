@@ -184,7 +184,10 @@ def _arrive(
     session: Session, inbound_id: str, msg: InboundMessage, text: str, now: dt.datetime
 ) -> Customer | None:
     """Record the message. None when the turn stops here: the customer is held (ignored, no
-    write and no event at all), or is over the hourly limit (held now, one hold reply queued)."""
+    write and no event at all), or is over the hourly limit (held now, one hold reply queued).
+    The write lock comes first, so two first messages from one number (two webhook posts)
+    never both read no row and insert (rule 11, the `_lease` pattern)."""
+    session.execute(sql("UPDATE customer_service_customers SET id = id WHERE 0"))
     found = _find(session, msg)
     if found is not None and found.held_until is not None and found.held_until > now:
         return None

@@ -2,6 +2,8 @@
 
 import asyncio
 import datetime as dt
+import hashlib
+import json
 
 import httpx
 import pytest
@@ -12,6 +14,7 @@ from mia.channels.service import deliver
 from mia.channels.simulator import SimAdapter
 from mia.channels.transport import ChannelBlocked, ChannelTransport
 from mia.chat.blocks import TextBlock
+from mia.core import keys
 from mia.core.db import utcnow
 from mia.core.models import Actor, ChannelOutbox, Event, Person
 from tests.channels.conftest import LinkFn
@@ -178,3 +181,24 @@ def test_stale_on_demand_messages_expire_instead_of_being_sent(
     assert asyncio.run(outbox.send_due(utcnow(), on_demand_for=ADDR)) == 0
     session.refresh(row)
     assert row.status == "expired" and sim.sent == []
+
+
+def _digest_of(body: dict[str, object]) -> str:
+    return json.dumps(body, sort_keys=True)
+
+
+def test_the_payload_hash_is_keyed_never_a_plain_sha256(
+    session: Session, people: dict[str, Person], sim: SimAdapter, link: LinkFn
+) -> None:
+    """A fixed reply text leaves only the number unknown, so a plain hash of the body (which
+    holds the address) could be brute-forced back to it."""
+    _queue(session, people["Juha"], link)
+    asyncio.run(outbox.send_due(utcnow()))
+    asyncio.run(outbox.send_direct("sim", ADDR, [TextBlock(text="Hei")], "fi"))
+    sent = session.exec(select(Event).where(Event.action == "channel.sent")).all()
+    assert len(sent) == 2 and len(sim.sent) == 2
+    for event, payload in zip(sent, sim.sent, strict=True):
+        body = _digest_of(payload.body)
+        assert event.after is not None
+        assert event.after["payload_hash"] != hashlib.sha256(body.encode()).hexdigest()
+        assert event.after["payload_hash"] == keys.code_hmac(body)
