@@ -1,5 +1,7 @@
 """The hr officer's answer to one chat turn: Jev picks the action (MIA_DECIDER=jev), code
-runs the tool and words the reply. The emergency script runs before this, in chat.service, for every agent."""
+runs the tool and words the reply. The emergency script runs before this, in chat.service, for
+every agent. Decisions of a sensitive action (pay, hours, leave) are logged with their args
+hidden; a button's decision is kept on its message row, not in the log."""
 
 import asyncio
 import datetime as dt
@@ -11,7 +13,7 @@ from zoneinfo import ZoneInfo
 from pydantic import ValidationError
 from sqlmodel import Session, col, select
 
-from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
+from mia.agents.base import REDACTED, AgentDeps, AgentSpec, Turn, call_tool
 from mia.agents.decider import THRESHOLD, Decision
 from mia.agents.hr_officer import MANIFEST, actions, decider, due, replies, tools
 from mia.agents.shift_supervisor.classifier import classify
@@ -28,6 +30,25 @@ from mia.settings import get_settings
 
 _BINDINGS = {b.tool_id: b for b in tools.BINDINGS}  # importing tools registers its handlers
 _CERTIFICATE_TOOL = Resource(kind="tool", name=f"{MANIFEST.id}.certificate_text")
+_SENSITIVE_TOOLS = {s.name for s in MANIFEST.tools if s.sensitive}
+
+
+def _sensitive(action: str) -> bool:
+    spec = actions.ACTIONS.get(action)
+    return spec is not None and spec.tool in _SENSITIVE_TOOLS
+
+
+def _logged(decision: dict[str, Any]) -> dict[str, Any]:
+    """A decision dump as the log keeps it: the args of an action whose tool is sensitive (pay,
+    hours, leave) hidden with their keys kept, in the alternatives too."""
+
+    def hide(d: dict[str, Any]) -> dict[str, Any]:
+        if _sensitive(d["action"]) or _sensitive(d.get("raw_action", "")):
+            return {**d, "args": {k: REDACTED for k in d.get("args", {})}}
+        return d
+
+    out = hide(decision)
+    return {**out, "alternatives": [hide(a) for a in out.get("alternatives", [])]}
 
 
 def _last_question(session: Session, thread: Thread) -> Message | None:
@@ -50,7 +71,7 @@ def _tapped(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Dec
         return None
     if asked.timestamp.astimezone(ZoneInfo(deps.branch.timezone)).date() != deps.today:
         return None
-    chosen = ((asked.after or {}).get("options") or {}).get(text.strip())
+    chosen = replies.button_decisions(last.blocks).get(text.strip())
     return Decision.model_validate(chosen) if chosen else None
 
 
@@ -98,9 +119,12 @@ def _ask(
     blocks: list[Block],
     options: replies.Options,
 ) -> ChatReply:
-    """Store a question with buttons and remember what each button runs."""
+    """Store a question with buttons; what each button runs is kept on the message row (the
+    event logs it with sensitive args hidden, and then the reply is sensitive too)."""
+    logged = {label: _logged(d) for label, d in options.items()}
+    blocks = replies.with_decisions(blocks, options, sensitive=logged != options)
     reply = store_reply(session, deps, thread, blocks)
-    after = {"options": options, "message_id": reply.message_id}
+    after = {"options": logged, "message_id": reply.message_id}
     events.emit(session, "decision.clarify_asked", ("thread", thread.id), None, after, deps.actor)
     return reply
 
@@ -196,7 +220,7 @@ def _leave_days(deps: AgentDeps) -> list[dt.date]:
 def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) -> ChatReply:
     """Log the decision, then ask what is missing or "Did you mean", run its tool through the
     guard, or word a conversation reply."""
-    after = decision.model_dump(mode="json")
+    after = _logged(decision.model_dump(mode="json"))
     events.emit(session, "decision.made", ("thread", thread.id), None, after, deps.actor)
     if decision.action == "clarify" and (asked := _missing(session, deps, thread, decision)):
         return asked

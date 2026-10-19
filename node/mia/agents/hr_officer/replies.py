@@ -1,10 +1,11 @@
 """Reply blocks for the hr officer: each tool result worded from i18n keys (minutes as "7h 30m",
-one line per pay kind,
-dates as ISO, money through format_money), and the conversation replies. Code words every
-reply; no model writes one."""
+one line per pay kind, dates as ISO, money through format_money), the payslip, and the
+conversation replies. Code words every reply; no model writes one."""
 
 import datetime as dt
 from typing import Any
+
+from pydantic import Field
 
 from mia.agents.decider import Decision
 from mia.agents.hr_officer.actions import WHICH
@@ -36,6 +37,34 @@ LEAVE_REFUSALS = ("no_contract", "in_the_past", "no_working_days", "overlaps")
 # The day buttons a leave without dates offers (a QuickRepliesBlock holds six).
 ASKED_DAYS = 6
 Options = dict[str, dict[str, Any]]  # button label -> the decision a tap runs
+
+
+class Buttons(QuickRepliesBlock):
+    """Quick replies whose decisions are stored with the message row (block dumps keep them;
+    the chat API and the channels show the options only). Sensitive when a decision carries a
+    leave kind or a pay question, so the row's event hides the blocks."""
+
+    decisions: Options = Field(default_factory=dict)
+    sensitive: bool = False
+
+
+def with_decisions(blocks: list[Block], options: Options, *, sensitive: bool) -> list[Block]:
+    """The blocks with each quick replies block carrying the decisions its taps run."""
+    return [
+        Buttons(options=b.options, decisions=options, sensitive=sensitive)
+        if isinstance(b, QuickRepliesBlock)
+        else b
+        for b in blocks
+    ]
+
+
+def button_decisions(stored: list[dict[str, Any]]) -> Options:
+    """The decisions behind the buttons of a stored message's blocks (label -> decision)."""
+    found: Options = {}
+    for block in stored:
+        if block.get("type") == "quick_replies":
+            found.update(block.get("decisions") or {})
+    return found
 
 
 def conversation_reply(kind: str, lang: str) -> list[Block]:

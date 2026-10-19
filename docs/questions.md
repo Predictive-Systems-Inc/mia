@@ -503,3 +503,9 @@ Format for each entry:
 - Question: How do the five service incentive leave days a year build up?
 - Assumed answer: 0 before one year of service; five days credited in full at each service anniversary, less the days used in the current service year, never negative. The owner may prefer monthly accrual.
 - Blocking: no.
+
+## Q64: The user's own pay and leave words in the event log
+- Where: node/mia/chat/service.py (the user message row and its chat_messages.created event); node/mia/chat/replies.py (`_store`)
+- Question: Should a user message that carries pay or leave words ("sick today", "my SSS is 400") be redacted from the hash chain, like the agent's sensitive answers now are?
+- Assumed answer: no. The user's own words stay in their event; Mia's answers of a sensitive tool (pay, hours, leave) and buttons that carry a leave kind are redacted (text and blocks kept in the row only).
+- Blocking: no.

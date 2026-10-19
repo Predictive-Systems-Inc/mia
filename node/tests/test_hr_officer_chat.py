@@ -18,7 +18,7 @@ from mia.chat.access import agents_for
 from mia.chat.blocks import ApprovalCardBlock, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.service import run_turn
 from mia.core import approvals, jev, orgconfig
-from mia.core.models import Actor, Approval, Branch, Event, Person
+from mia.core.models import Actor, Approval, Branch, Event, Message, Person
 from mia.core.money import format_money
 from mia.core.people import set_language
 from mia.i18n import t
@@ -407,3 +407,51 @@ def test_a_regular_holiday_is_worded_with_its_rate() -> None:
         " 100% if you do not and worked the day before."
     )
     assert [b.text for b in blocks if isinstance(b, TextBlock)] == [said]
+
+
+def _leaves(value: Any) -> list[Any]:
+    """Every leaf value (string or number) of a JSON value."""
+    if isinstance(value, dict):
+        return [x for v in value.values() for x in _leaves(v)]
+    if isinstance(value, list):
+        return [x for v in value for x in _leaves(v)]
+    return [value]
+
+
+def test_pay_and_leave_stay_off_the_chain_through_chat(
+    session: Session, hr: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hours, contributions, the 13th month, the balance and a sick leave (typed dates and the
+    day buttons) through run_turn: no event carries an amount, a minute total, a duration, the
+    leave kind or a reason, while the message rows the people read still do."""
+    _, people = hr
+    ana, liza = people["Ana"], people["Liza"]
+    replies_seen: list[ChatReply] = []
+    _answers(monkeypatch, "my_hours", period="this_cutoff")
+    replies_seen.append(_turn(session, liza, "how many hours did I work this cutoff"))
+    for action, slots in (("contributions", {"which": "all"}), ("thirteenth", {})):
+        _answers(monkeypatch, action, **slots)
+        replies_seen.append(_turn(session, ana, "magkano"))
+    _answers(monkeypatch, "leave_balance")
+    replies_seen.append(_turn(session, ana, "how many leave days do I have left"))
+    _answers(monkeypatch, "file_leave", leave_kind="sick", leave_start="d0", leave_end="d1")
+    replies_seen.append(_turn(session, ana, LEAVE_ASKED))
+    _answers(monkeypatch, "file_leave", leave_kind="sick")
+    asked = _turn(session, ana, "pa-file po ng leave")
+    tapped = _turn(session, ana, "Wednesday 2026-10-21", asked.thread_id)
+    approval = session.get(Approval, _card(tapped).approval_id)
+    assert approval is not None and approval.evidence["input"]["kind"] == "sick"
+    replies_seen += [asked, tapped]
+    said = [b.text for r in replies_seen for b in r.blocks if isinstance(b, TextBlock)]
+    assert "Regular 24h" in said[0] and "₱" in said[1] and "₱" in said[2]
+    slip = test_hr_tools.last_payslip(session, ana)
+    amounts = {slip.gross, slip.net, *(int(d["amount"]) for d in slip.deductions)}
+    logged = [x for e in session.exec(select(Event)).all() for x in _leaves([e.before, e.after])]
+    texts = [x for x in logged if isinstance(x, str)]
+    for needle in ("₱", "24h", "2h 30m", "1h 30m", "sick", "Family trip", "Fever", *said):
+        assert not any(needle in x for x in texts), needle
+    assert not amounts & {x for x in logged if isinstance(x, int)}
+    assert not {24 * 60, 150, 90} & {x for x in logged if isinstance(x, int)}  # Liza's minutes
+    rows = session.exec(select(Message).where(Message.agent_id == MANIFEST.id)).all()
+    kept = "\n".join(m.text for m in rows)
+    assert all(line in kept for line in said)  # the rows the people read keep every answer

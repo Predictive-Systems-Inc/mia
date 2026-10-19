@@ -105,9 +105,11 @@ def _store(
     model_messages: list[dict[str, Any]],
 ) -> ChatReply:
     """Store Mia's message after deps.notice. A resumed turn's reply is a notification (event
-    notification.sent) and goes out on the person's linked channels too."""
+    notification.sent) and goes out on the person's linked channels too. A sensitive reply
+    (_sensitive) keeps its text and blocks in the row and out of its event, as notify() does."""
     blocks = [*deps.notice, *blocks]
     role, action = (NOTIFICATION, "notification.sent") if deps.resumed else ("assistant", None)
+    sensitive = _sensitive(session, deps, thread, blocks)
     message = store.insert(
         session,
         Message(
@@ -122,8 +124,8 @@ def _store(
         ),
         deps.actor,
         action=action,
+        redact=("text", "blocks") if sensitive else (),
     )
-    sensitive = _sensitive(session, deps, thread, blocks)
     if deps.resumed:
         deliver(
             session,
@@ -148,10 +150,14 @@ EXPOSING_TOOLS = (f"{MANIFEST.id}.visit_details", "visit_details")
 
 
 def _sensitive(session: Session, deps: AgentDeps, thread: Thread, blocks: list[Block]) -> bool:
-    """The reply is sensitive when a block says so, a tool handed the model access notes in
-    this turn, or an earlier turn of the thread did (the notes stay in the model history, so
-    any later free-text reply may repeat them)."""
+    """The reply is sensitive when a block says so, the turn ran a tool the manifest marks
+    sensitive (pay, hours, leave), a tool handed the model access notes in this turn, or an
+    earlier turn of the thread did (the notes stay in the model history, so any later
+    free-text reply may repeat them)."""
     if any(getattr(b, "sensitive", False) for b in blocks):
+        return True
+    marked = {s.id for s in deps.manifest.tools if s.sensitive}
+    if any(e.tool in marked for e in deps.tool_log):
         return True
     if any(e.tool in EXPOSING_TOOLS and e.output.get("access_notes") for e in deps.tool_log):
         return True
