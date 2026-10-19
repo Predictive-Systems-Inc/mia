@@ -5,3 +5,4 @@ Planned for the initial build: 001 stack, 002 data standard v1.0 field list, 003
 - [014](014-shift-supervisor-and-shared-tables.md) The dispatcher becomes the shift supervisor; shared tables
 - [015](015-many-agents-per-person.md) Many agents per person, with a router
 - [016](016-language-chosen-once.md) The reply language is chosen once
+- [017](017-data-standard-1-5-sales-and-stock-tables.md) Data standard 1.5, the sales and stock tables become shared

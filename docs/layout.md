@@ -21,6 +21,7 @@ mia/
                             backup | verify-db | ...
       core/                 models, db, ids, events, store, rbac, approvals, egress, usage, people,
                             absences, cover requests, timesheets, incidents (data standard 1.4),
+                            sales counts, targets and notes, stock events (data standard 1.5),
                             geocoding (pluggable providers), orgconfig (organisation settings),
                             keys (master key, HKDF, scrypt, TOTP), auth (sessions, codes,
                             credentials, devices, clients; ADR 011), scheduling (recurrence,
@@ -41,9 +42,9 @@ mia/
                             rules.py, tools.py (incl. incidents),
                             agent.py, turn.py (its chat turn and AgentSpec),
                             tests/scenarios.yaml (and scenarios_en.yaml)
-        sales_supervisor/   manifest.yaml, job.md, prompts/, models.py (counts, targets, notes),
-                            actions.py and decider.py (Jev), tools.py, calc.py, due.py,
-                            replies.py, turn.py, tests/scenarios.yaml (chat scenarios)
+        sales_supervisor/   manifest.yaml, job.md, prompts/, actions.py and decider.py (Jev),
+                            tools.py, calc.py, due.py, replies.py, turn.py,
+                            tests/scenarios.yaml (chat scenarios); its tables are core (1.5)
         inventory_manager/  Inventory Manager: the mia agent scaffold shape (turn.py, actions.py, ...)
         hr_officer/         HR Officer: the mia agent scaffold shape (turn.py, actions.py, ...)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)

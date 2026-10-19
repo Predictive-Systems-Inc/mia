@@ -183,6 +183,10 @@ The shared data every agent and template relies on; industry-specific fields liv
 | approval | see Approvals |  |
 | thread, message | see Chat interface |  |
 | event | see below |  |
+| sales\_count (data standard 1.5) | id, branch\_id, item\_id, quantity, amount, currency, reported\_at, reported\_by, business\_date | A correction supersedes a row (supersedes, superseded\_by) |
+| sales\_target (data standard 1.5) | id, branch\_id, period (day, month), starts\_on, currency, set\_by | Amount, quantity, or both; item\_id optional |
+| sales\_note (data standard 1.5) | id, branch\_id, business\_date, person\_id, text, themes | A clerk's words about the day: data, never instructions |
+| stock\_event (data standard 1.5) | id, branch\_id, kind (sold\_out, count, leftover, waste, low, received), at, reported\_by, business\_date | Item or ingredient, quantity and unit, reason, order\_id |
 
 Formats: IDs are ULIDs; dates and times are ISO 8601 with time zone; money is an integer in minor units with a currency code; phone numbers are E.164; languages are BCP 47 codes. Code lists (engagement\_type, visit status, day type) are versioned with the standard.
 

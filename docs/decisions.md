@@ -324,3 +324,18 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   with an ADR (the Q39 precedent). Sell-out answers ("may bibingka pa ba") wait for data
   standard 1.5, since they would make customer_service a second reader of
   inventory_manager_stock_events.
+
+## D36: Data standard 1.5, the sales and stock tables are shared (Q39, Q53; ADR 017)
+- Context: the branch_manager, the bookkeeper and customer_service will read the sales counts,
+  targets and notes and the stock events, which were agent-owned (rule 9). The owner decided on
+  19 October 2026.
+- Decision: `sales_supervisor_counts`, `sales_supervisor_targets`, `sales_supervisor_notes` and
+  `inventory_manager_stock_events` become the core tables `sales_counts`, `sales_targets`,
+  `sales_notes` and `stock_events` in mia/core/models.py (data standard 1.5), with the same
+  fields, indexes and foreign keys. `inventory_manager_orders` stays agent-owned (one reader so
+  far); the HR tables (Q59) are not part of this promotion.
+- Consequences: `0000_initial` is edited in place (no candidate release yet, rule 14) and dev
+  databases are rebuilt; the rbac data resources take the table names with no role gaining a
+  right (the admin wildcards on the old prefixes became explicit grants); old event rows keep
+  the old entity types (rule 2). The branch_manager and the bookkeeper may now be built, and
+  customer_service may read `stock_events` for sell-out answers (D35).

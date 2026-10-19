@@ -359,6 +359,7 @@ Format for each entry:
 - Question: Should sales counts, targets and notes be core tables now (data standard 1.5), since the branch_manager, inventory_manager and bookkeeper will read them, or agent-owned until one of them exists?
 - Assumed answer: agent-owned (`sales_supervisor_*`) now, because rule 9 makes a table shared only once a second agent reads it and changing the data standard needs the owner's explicit yes; promoted to core with an ADR when the branch_manager is built, by an in-place edit of `0000_initial` before the first candidate release (rule 14). Column names are chosen so the move is a table rename.
 - Blocking: no now; yes before part 3 starts.
+- Answered 19 Oct 2026 (D36, ADR 017): core tables `sales_counts`, `sales_targets`, `sales_notes` (data standard 1.5).
 
 ## Q40: Router gate decisions after the 19 Oct run
 - Where: docs/superpowers/specs/2026-10-18-router-follow-up-design.md (carried-over section); docs/research/router-2026-10-19.md
@@ -443,6 +444,7 @@ Format for each entry:
 - Question: `inventory_manager_stock_events` and `inventory_manager_orders` are agent-owned today; the bookkeeper (expenses from orders) and the branch manager (stock in the weekly summary) will read them. Promote them with the sales tables as data standard 1.5?
 - Assumed answer: yes, in the same promotion (Q39), by an in-place edit of `0000_initial` before the first candidate and one ADR.
 - Blocking: no now; yes before the bookkeeper or the branch manager is built.
+- Answered 19 Oct 2026 (D36, ADR 017): `inventory_manager_stock_events` became the core table `stock_events` (data standard 1.5); `inventory_manager_orders` stays agent-owned (one reader so far).
 
 ## Q54: The bake plan without the sales counts
 - Where: docs/superpowers/specs/2026-10-19-inventory-manager-design.md (section 7); mia/agents/inventory_manager/calc.py
@@ -479,6 +481,7 @@ Format for each entry:
 - Question: `hr_officer_contracts`, `hr_officer_payslips`, `hr_officer_leave` are agent-owned; the bookkeeper (payroll cost) and the shift supervisor (leave in rosters) will read them.
 - Assumed answer: promoted with Q39 and Q53 as data standard 1.5.
 - Blocking: no now; yes before the bookkeeper reads payroll or rosters read leave.
+- Answered in part 19 Oct 2026 (D36, ADR 017): the HR tables were not part of data standard 1.5 and stay agent-owned; their promotion still waits for the owner, before the bookkeeper reads payroll or rosters read leave.
 
 ## Q60: The cutoff and payday rule
 - Where: node/mia/agents/hr_officer/calendar.py; config/org/ferinos/settings.yaml `payroll`
