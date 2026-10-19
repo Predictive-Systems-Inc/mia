@@ -25,7 +25,7 @@ from mia.agents.hr_officer.tools import (
     RequestLeaveInput,
     SetContractInput,
 )
-from mia.core import approvals, events, orgconfig
+from mia.core import approvals, events, orgconfig, people
 from mia.core.models import Actor, Approval, Branch, Event, Message, Person, Thread
 from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied
@@ -47,7 +47,8 @@ def day(n: int) -> dt.date:
 
 @pytest.fixture
 def hr(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Ferinos]:
-    """The Ferino's seed on TODAY with the clock at 10:00 Manila that day (it keeps running)."""
+    """The Ferino's seed on TODAY with the clock at 10:00 Manila that day (it keeps running),
+    everyone set to English."""
     from mia.templates.retail import seed as retail_seed
 
     start = dt.datetime.now(dt.UTC)
@@ -63,6 +64,9 @@ def hr(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Ferinos]:
         get_settings.cache_clear()
         orgconfig.load.cache_clear()
         kiosk = retail_seed.seed(session, today=TODAY)
+        # The seed speaks Filipino; the tests read English replies (their literals).
+        for person in session.exec(select(Person)).all():
+            people.set_language(session, Actor.system(kiosk.id), person, "en")
         session.commit()
         yield kiosk, {p.name.split()[0]: p for p in session.exec(select(Person)).all()}
     get_settings.cache_clear()

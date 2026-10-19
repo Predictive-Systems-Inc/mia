@@ -214,11 +214,19 @@ FI_WEEKDAYS_ESSIVE = [
     "sunnuntaina",
 ]  # fmt: skip
 
+# Today: hil "subong", war "yana", bcl "ngunyan"; tomorrow: hil and war "buwas", bcl "sa aga".
 DAY_WORDS = {
-    "today": 0, "tänään": 0, "ngayon": 0, "karon": 0,
-    "tomorrow": 1, "huomenna": 1, "bukas": 1, "ugma": 1,
+    "today": 0, "tänään": 0, "ngayon": 0, "karon": 0, "subong": 0, "yana": 0, "ngunyan": 0,
+    "ngonyan": 0,
+    "tomorrow": 1, "huomenna": 1, "bukas": 1, "ugma": 1, "buwas": 1, "sa aga": 1,
 }  # fmt: skip
-NEXT_WEEK = ("next week", "sa susunod na linggo", "susunod na linggo", "ensi viikon")
+# ceb "sunod semana", hil "masunod nga semana", war "sunod nga semana", bcl "sunod na semana".
+NEXT_WEEK = (
+    "next week", "sa susunod na linggo", "susunod na linggo", "ensi viikon",
+    "sa sunod semana", "sunod semana", "sa sunod nga semana", "ha sunod nga semana",
+    "sunod nga semana", "sa masunod nga semana", "masunod nga semana", "sa sunod na semana",
+    "sunod na semana",
+)  # fmt: skip
 _MONTH_NAMES = (
     ("january", "jan", "enero"), ("february", "feb", "pebrero"), ("march", "mar", "marso"),
     ("april", "apr", "abril"), ("may", "mayo"), ("june", "jun", "hunyo"),
@@ -238,9 +246,14 @@ _WD = _alt(_WEEKDAY_INDEX)
 _MON = _alt(MONTHS)
 _DATE = re.compile(
     r"\b(?P<iso>\d{4}-\d{2}-\d{2})\b"
-    rf"|\b(?:{_alt(NEXT_WEEK)})\s+(?:on\s+)?(?P<nw>{_WD})\w*"
+    rf"|\b(?:{_alt(NEXT_WEEK)}),?\s+(?:on\s+)?(?P<nw>{_WD})\w*"
+    # The weekday before it: ceb "Biyernes sa sunod semana", bcl "an Biyernes sa sunod na semana".
+    rf"|\b(?P<wn>{_WD})\w*\s+(?:{_alt(NEXT_WEEK)})\b"
     rf"|\b(?P<d1>\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?(?P<m1>{_MON})\b\.?"
     rf"|\b(?P<m2>{_MON})\.?\s+(?P<d2>\d{{1,2}})(?:st|nd|rd|th)?\b(?!:)"
+    # hil "subong nga bulan", war "yana nga semana", bcl "ngunyan na cutoff" name a period, not
+    # today (ponytail: any word after but "adlaw", the day; list the periods if one misreads).
+    r"|\b(?P<this>(?:subong|yana|ngunyan|ngonyan)\s+ng?a\s+(?!adlaw\b)\w+)"
     rf"|\b(?P<rel>{_alt(DAY_WORDS)})\b"
     # "(sa) susunod na linggo" and "ngayong linggo" name a week: consumed, never a Sunday.
     r"|\b(?P<week>(?:sa\s+)?susunod\s+na\s+linggo|ngayong\s+linggo)\b"
@@ -267,12 +280,14 @@ def _after(weekday: int, anchor: dt.date) -> dt.date:
 
 def find_dates(text: str, today: dt.date, lang: str) -> list[tuple[str, dt.date]]:
     """Dates in the message in text order as (id "d0", "d1", ..., date). Pure. Finds the
-    today and tomorrow words, weekday names (en, fi, fil, ceb: the next such day after today,
-    or after the date before it in the message, so "next week Monday to Wednesday" is one
-    week), "next week <weekday>" (that weekday of the following week), "<d> <month>" and
+    today and tomorrow words (en, fi, fil, ceb, hil, war, bcl), weekday names (en, fi, fil,
+    ceb: the next such day after today, or after the date before it in the message, so "next week Monday to Wednesday" is one
+    week), "next week <weekday>" and "<weekday> next week" (that weekday of the following week,
+    also in ceb, hil, war and bcl), "<d> <month>" and
     "<month> <d>" with English or Filipino month names (the year nearest to today), and ISO
     dates. A bare number is never a date; an invalid date is skipped; "(sa) susunod na linggo"
-    and "ngayong linggo" without a weekday after them are a week, not a date."""
+    and "ngayong linggo" without a weekday after them are a week, not a date; "subong nga bulan"
+    and the like (this month, this week) are a period, not today."""
     found: list[dt.date] = []
     for m in _DATE.finditer(text):
         day: dt.date | None
@@ -281,16 +296,16 @@ def find_dates(text: str, today: dt.date, lang: str) -> list[tuple[str, dt.date]
                 day = dt.date.fromisoformat(m["iso"])
             except ValueError:
                 continue
-        elif m["nw"]:
+        elif m["nw"] or m["wn"]:
             monday = today + dt.timedelta(days=7 - today.weekday())
-            day = monday + dt.timedelta(days=_WEEKDAY_INDEX[m["nw"].lower()])
+            day = monday + dt.timedelta(days=_WEEKDAY_INDEX[(m["nw"] or m["wn"]).lower()])
         elif m["m1"] or m["m2"]:
             month = (m["m1"] or m["m2"]).lower()
             # ponytail: "may" is "there is" in Filipino and Cebuano; only English reads it.
             if month == "may" and lang != "en":
                 continue
             day = _month_day(MONTHS[month], int(m["d1"] or m["d2"]), today)
-        elif m["week"]:
+        elif m["week"] or m["this"]:
             continue
         elif m["rel"]:
             day = today + dt.timedelta(days=DAY_WORDS[m["rel"].lower()])

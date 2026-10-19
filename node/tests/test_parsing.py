@@ -170,3 +170,45 @@ def test_find_dates_a_filipino_week_phrase_alone_is_not_a_sunday() -> None:
         ("d0", dt.date(2026, 10, 26))
     ]
     assert find_dates("sa Linggo", MONDAY, "fil") == [("d0", dt.date(2026, 10, 25))]
+
+
+def test_find_dates_today_tomorrow_and_next_week_in_cebuano() -> None:
+    assert find_dates("leave ko ugma", MONDAY, "ceb") == [("d0", dt.date(2026, 10, 20))]
+    assert find_dates(
+        "Mag-file ko og leave sunod semana, Lunes hangtod Miyerkules", MONDAY, "ceb"
+    ) == [
+        ("d0", dt.date(2026, 10, 26)),
+        ("d1", dt.date(2026, 10, 28)),
+    ]
+    assert find_dates("holiday ba ang Biyernes sa sunod semana?", MONDAY, "ceb") == [
+        ("d0", dt.date(2026, 10, 30))
+    ]
+
+
+def test_find_dates_today_tomorrow_and_next_week_in_hiligaynon() -> None:
+    assert find_dates("holiday bala buwas?", MONDAY, "hil") == [("d0", dt.date(2026, 10, 20))]
+    assert find_dates("Masakit ako subong", MONDAY, "hil") == [("d0", MONDAY)]
+    assert find_dates("sa masunod nga semana Martes", MONDAY, "hil") == [
+        ("d0", dt.date(2026, 10, 27))
+    ]
+    assert find_dates("pila na ka oras ako nag-obra subong nga bulan", MONDAY, "hil") == []
+
+
+def test_find_dates_today_tomorrow_and_next_week_in_waray() -> None:
+    assert find_dates("holiday ba buwas?", MONDAY, "war") == [("d0", dt.date(2026, 10, 20))]
+    assert find_dates("Masakit ako yana", MONDAY, "war") == [("d0", MONDAY)]
+    assert find_dates("holiday ba an Biyernes ha sunod nga semana?", MONDAY, "war") == [
+        ("d0", dt.date(2026, 10, 30))
+    ]
+    assert find_dates("pira na an akon overtime yana nga bulan", MONDAY, "war") == []
+
+
+def test_find_dates_today_tomorrow_and_next_week_in_bikol() -> None:
+    assert find_dates("holiday daw sa aga?", MONDAY, "bcl") == [("d0", dt.date(2026, 10, 20))]
+    assert find_dates("May helang ako ngunyan", MONDAY, "bcl") == [("d0", MONDAY)]
+    assert find_dates("leave sa sunod na semana, Lunes sagkod Miyerkules", MONDAY, "bcl") == [
+        ("d0", dt.date(2026, 10, 26)),
+        ("d1", dt.date(2026, 10, 28)),
+    ]
+    assert find_dates("sweldo na daw ngunyan na semana?", MONDAY, "bcl") == []
+    assert find_dates("marhay na aga", MONDAY, "bcl") == []
