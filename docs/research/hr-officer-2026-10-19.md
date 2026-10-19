@@ -6,14 +6,22 @@ from what Ferino's clerks, head staff and owner send? Synthetic data only (D18).
 `hr-officer-2026-10-19-0753.raw.json` (run 1, the committed descriptions) and
 `hr-officer-2026-10-19-0755.raw.json` (run 2, after one tuning edit on the tune half).
 
-**Result: the gate passes.** Run 2, gate half, six gated languages (300 cases), against the
-Q40 bar (`tests/evals/gate.py`): wrong at >= 0.6 is 0.0% (bar at most 2%: pass); right 90% to
-94% per language (bar at least 80%: all pass); ask 6% to 10% (bar at most 15%: all pass). No
-errors. Run 1 failed (hil right 78%; hil, war and bcl ask 20%, 20% and 16%). Two runs were
-allowed; this is the second.
+**What happened, in order.**
 
-**Do not tune on this gate half again.** Its texts were scored in two runs and its misses are
-listed below; the next rerun needs a fresh gate half (new seeds).
+1. **Run 1 (`0753`, committed descriptions) failed the gate.** Gate half, 300 cases: hil right
+   78% (bar at least 80%); ask hil 20%, war 20%, bcl 16% (bar at most 15%). Wrong 0.3%, one
+   case: "pila ang SIL ko" (hil, leave_balance) read as `my_payslip` at 0.69.
+2. **One edit to `agents/hr_officer/actions.py` followed.** Its wording was taken from the tune
+   half's misses, but it was made after the gate failure had been seen.
+3. **Run 2 (`0755`) reran the same gate half and passed.** Wrong 0.0%; right 90% to 94% per
+   language; ask 6% to 10%; no errors.
+4. **That gate half is spent.** Its texts were scored in both runs and its misses are listed
+   below; the next run needs fresh gate seeds. Do not tune on this gate half again.
+
+Nobody authorised the rerun: it was the implementer's call, and the controller recorded it
+afterwards as a deviation from the skill, in which the developer decides on a rerun. Read run
+2's pass with that in mind: the edit was not chosen from the gate half, but it was chosen
+knowing the gate half had failed.
 
 ## Setup
 
@@ -114,7 +122,7 @@ wording did not move it.
 
 ## Top ten confusions (run 2, both halves, 600 cases)
 
-The harness does not record Jev's top pick under a clarify; it is read from the inputs the
+These runs did not record Jev's top pick under a clarify; it is read from the inputs the
 clarify carries.
 
 | Count | Expected | Got | Score |
@@ -132,8 +140,8 @@ clarify carries.
 ## Latency, tokens, cost
 
 Wall time 58 s (run 1) and 57 s (run 2) for 600 requests at concurrency 4, about 0.38 s per
-request on average. This harness does not yet record per-case seconds or the usage rows' tokens
-(the inventory harness does); the request is the same shape as the inventory decider's (about
+request on average. The harness did not record per-case seconds or the usage rows' tokens in these
+runs (it does now); the request is the same shape as the inventory decider's (about
 3,800 tokens per message there), so a 600-case run is roughly 2.3 million tokens and, at
 TypeSafe's $0.042 per million input tokens, about $0.10. That is an estimate, not a measure.
 
@@ -160,8 +168,8 @@ TypeSafe's $0.042 per million input tokens, about $0.10. That is an estimate, no
 - **Do not tune on this gate half again.** A next rerun needs fresh gate seeds.
 - Add the ceb, hil, war and bcl "next week" and today or tomorrow words to `find_dates`, and let
   code resolve the holiday day from them.
-- Record per-case seconds, Jev's top pick (`raw_action`) and the usage tokens in this harness,
-  as the inventory harness does.
+- The harness now records per-case seconds, Jev's top pick (`raw_action`) and the usage
+  tokens (after these runs), so the next run's confusions and cost are read, not inferred.
 - The non-English messages are drafts (Q28 to Q35).
 
 ## Router

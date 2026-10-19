@@ -20,6 +20,12 @@ def test_ten_cases_per_language_and_scenario_five_per_half() -> None:
     assert set(counts.values()) == {5}
 
 
+def test_every_action_but_clarify_has_cases_and_no_pair_repeats() -> None:
+    assert {c.expected_action for c in CASES} == set(ACTIONS) - {"clarify"}
+    pairs = [(c.lang, c.text) for c in CASES]
+    assert len(pairs) == len(set(pairs)), Counter(pairs).most_common(3)
+
+
 def test_no_text_appears_in_both_halves() -> None:
     tune = {c.text.casefold().strip() for c in CASES if c.half == "tune"}
     gate = {c.text.casefold().strip() for c in CASES if c.half == "gate"}

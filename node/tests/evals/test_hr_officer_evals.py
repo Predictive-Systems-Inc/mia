@@ -1,20 +1,22 @@
 """Real-Jev hr officer decider evaluation, asserted with the Q40 bar of tests/evals/gate.py.
-Run: MIA_DECIDER=jev MIA_ORG=ferinos uv run pytest node/tests/evals/test_hr_officer_evals.py -m evals -s
-(needs MIA_TYPESAFE_KEY; skips while the case list is empty). Each case runs build_query and
-decider.decide on Ferino's seeded demo through egress (pseudonymised, rule 6), with today pinned
-to the case set's TODAY. The gate reads the gate half only; the tune half is for tuning the
-action descriptions."""
+Run: MIA_DECIDER=jev MIA_ORG=ferinos uv run pytest
+node/tests/evals/test_hr_officer_evals.py -m evals -s (needs MIA_TYPESAFE_KEY; skips while the
+case list is empty). Each case runs build_query and decider.decide on Ferino's seeded demo
+through egress (pseudonymised, rule 6), with today pinned to the case set's TODAY. Each result
+keeps Jev's own pick (raw_action), the seconds and the usage-row tokens. The gate reads the
+gate half only; the tune half is for tuning the action descriptions."""
 
 import asyncio
 import datetime as dt
 import json
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps
 from mia.agents.decider import THRESHOLD
@@ -22,7 +24,7 @@ from mia.agents.hr_officer import MANIFEST, decider
 from mia.agents.hr_officer.actions import build_query
 from mia.core import jev
 from mia.core.egress import EgressContext, egress_context
-from mia.core.models import Actor, Branch, Person
+from mia.core.models import Actor, Branch, Person, UsageCloudRequest
 from mia.settings import get_settings
 from tests.evals import gate
 from tests.evals.hr_officer_cases import CASES, GATED_LANGS, TODAY, Case, on
@@ -32,6 +34,7 @@ pytestmark = pytest.mark.evals
 SCORES = ("right", "wrong", "ask", "other")
 RESEARCH = Path(__file__).parents[3] / "docs" / "research"
 Ferinos = tuple[Branch, dict[str, Person]]
+PURPOSE = f"{MANIFEST.id}.decide.eval"
 
 
 def _report_path(now: dt.datetime) -> Path:
@@ -59,8 +62,10 @@ def _deps(session: Session, case: Case, person_id: str) -> AgentDeps:
     )
 
 
-async def _one(case: Case, engine: Engine, person_id: str, sem: asyncio.Semaphore) -> Any:
-    result: dict[str, Any] = {**case.__dict__, "action": None, "error": None}
+async def _one(i: int, case: Case, engine: Engine, person_id: str, sem: asyncio.Semaphore) -> Any:
+    """One decided case; its egress purpose carries the case index so its tokens can be found
+    afterwards."""
+    result: dict[str, Any] = {"i": i, **case.__dict__, "action": None, "error": None}
     async with sem:
         with Session(engine, expire_on_commit=False) as session:
             deps = _deps(session, case, person_id)
@@ -70,15 +75,17 @@ async def _one(case: Case, engine: Engine, person_id: str, sem: asyncio.Semaphor
                 actor=deps.actor,
                 organisation_id=deps.organisation_id,
                 agent_id=MANIFEST.id,
-                purpose=f"{MANIFEST.id}.decide.eval",
+                purpose=f"{PURPOSE}/{i}",
                 level="pseudonymised",
                 provider="typesafe",
             )
+            start = time.perf_counter()
             try:
                 with egress_context(ctx):
                     decision = await asyncio.wait_for(decider.decide(query), timeout=30)
                 result |= {"action": decision.action, "missing": decision.missing}
-                result |= {"args": decision.args}
+                result |= {"args": decision.args, "raw_action": decision.raw_action}
+                result["seconds"] = time.perf_counter() - start
                 result["confidence"] = decision.confidence
             except (jev.JevError, TimeoutError) as exc:
                 result["error"] = str(exc) or type(exc).__name__
@@ -117,11 +124,18 @@ def test_decider(engine: Engine, session: Session, ferinos: Ferinos) -> None:
 
     async def run() -> list[dict[str, Any]]:
         sem = asyncio.Semaphore(4)
-        return list(await asyncio.gather(*(_one(c, engine, senders[c.role], sem) for c in CASES)))
+        cases = enumerate(CASES)
+        return list(
+            await asyncio.gather(*(_one(i, c, engine, senders[c.role], sem) for i, c in cases))
+        )
 
     results = asyncio.run(run())
+    usage = session.exec(
+        select(UsageCloudRequest).where(col(UsageCloudRequest.task).startswith(PURPOSE))
+    ).all()
+    tokens = {int(u.task.rsplit("/", 1)[1]): u.input_tokens + u.output_tokens for u in usage}
     for r in results:
-        r["score"] = _score(r)
+        r["tokens"], r["score"] = tokens.get(r["i"], 0), _score(r)
     gated_rows = [r for r in results if r["half"] == "gate" and r["lang"] in GATED_LANGS]
     by_lang: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in gated_rows:
