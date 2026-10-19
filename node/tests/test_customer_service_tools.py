@@ -214,8 +214,34 @@ def test_a_forged_evidence_order_id_is_refused(cs: Shop, session: Session) -> No
 def test_approve_refuses_an_order_no_longer_waiting(cs: Shop, session: Session) -> None:
     a = waiting(cs, session)
     call_tool(customer_deps(cs, session), BINDING[CANCEL], EmptyInput(), new_id())
+    with pytest.raises(ApprovalError, match="withdrawn"):  # cancel_order closed the approval
+        approvals.decide(session, a.id, ana(cs), "approved", stepped_up_at=utcnow())
+    with pytest.raises(LookupError):  # and the handler re-reads the row on its own
+        tools.apply_order_approval(session, a, ana(cs))
+
+
+def test_cancel_order_withdraws_the_pending_approval(cs: Shop, session: Session) -> None:
+    a = waiting(cs, session)
+    out = call_tool(customer_deps(cs, session), BINDING[CANCEL], EmptyInput(), new_id())
+    assert out["status"] == "cancelled" and a.status == "withdrawn"
+    assert session.exec(select(Event).where(Event.action == "approval.withdrawn")).one()
+
+
+def test_a_pickup_already_past_or_a_known_order_id_is_refused(cs: Shop, session: Session) -> None:
+    assert place(cs, session, hour=9)["message"] == "past"  # open since 09:00, the clock is 10:00
+    assert place(cs, session, order_id=seeded_order(session, "en").id)["message"] == "order"
+    assert not session.exec(select(Approval)).all()
+
+
+def test_a_late_approval_of_a_passed_pickup_is_refused_and_the_customer_told(
+    cs: Shop, session: Session
+) -> None:
+    a = waiting(cs, session)  # pickup today at 16:00
+    cs.pin(17)
     with pytest.raises(LookupError):
         approvals.decide(session, a.id, ana(cs), "approved", stepped_up_at=utcnow())
+    assert order_of(a).status == "rejected"
+    assert last_out(session).text == t("cs.order_rejected.other", "fil", time="16:00")
 
 
 def test_staff_tools_refuse_the_customer_role(cs: Shop, session: Session) -> None:
@@ -240,7 +266,7 @@ def test_a_clerk_lists_only_their_branch_orders(cs: Shop, session: Session) -> N
 
 def test_an_order_over_the_max_quantity_is_refused(cs: Shop, session: Session) -> None:
     out = place(cs, session, quantity=51)
-    assert (out["status"], out["message"]) == ("invalid", "'too_large'")
+    assert (out["status"], out["message"]) == ("invalid", "too_large")
     assert not session.exec(select(Approval)).all()
 
 
@@ -256,11 +282,11 @@ def test_record_waiting_refuses_an_approval_for_another_input(cs: Shop, session:
 
 
 def test_an_order_outside_the_hours_or_area_or_menu_is_refused(cs: Shop, session: Session) -> None:
-    assert place(cs, session, hour=22)["message"] == "'closed'"
-    assert place(cs, session, fulfilment="delivery", delivery_area="Cebu")["message"] == "'area'"
+    assert place(cs, session, hour=22)["message"] == "closed"
+    assert place(cs, session, fulfilment="delivery", delivery_area="Cebu")["message"] == "area"
     deps, args = customer_deps(cs, session), order_input(session)
     args.lines[0].item_id = new_id()
-    assert call_tool(deps, BINDING[PLACE], args, new_id())["message"] == "'item'"
+    assert call_tool(deps, BINDING[PLACE], args, new_id())["message"] == "item"
     assert not session.exec(select(Approval)).all()
 
 
@@ -271,7 +297,7 @@ def test_a_ready_order_cannot_be_cancelled(cs: Shop, session: Session) -> None:
         "t1",
     )
     out = call_tool(customer_deps(cs, session), BINDING[CANCEL], EmptyInput(), new_id())
-    assert (out["status"], out["message"]) == ("invalid", "'ready'")
+    assert (out["status"], out["message"]) == ("invalid", "ready")
 
 
 def test_a_clerk_of_another_branch_cannot_mark_an_order(cs: Shop, session: Session) -> None:

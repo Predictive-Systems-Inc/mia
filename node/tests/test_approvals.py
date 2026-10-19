@@ -320,3 +320,36 @@ def test_manifest_loads_from_yaml(tmp_path: Path) -> None:
     assert manifest.tool("payer.pay").name == "pay"
     with pytest.raises(KeyError):
         manifest.tool("payer.nope")
+
+
+def test_the_requester_withdraws_a_pending_request(
+    session: Session, people: dict[str, Person]
+) -> None:
+    requester = Actor.person(people["Juha"]).as_agent("agent.shift_supervisor")
+    row = approvals.withdraw(session, _request(session, requester), requester, "cancelled")
+    assert row.status == "withdrawn"
+    event = session.exec(select(Event).where(Event.action == "approval.withdrawn")).one()
+    assert event.after is not None and event.after["reason"] == "cancelled"
+
+
+def test_a_stranger_cannot_withdraw_a_request(session: Session, people: dict[str, Person]) -> None:
+    row = _request(session, Actor.person(people["Juha"]).as_agent("agent.shift_supervisor"))
+    for stranger in [
+        Actor.person(people["Sanna"]),
+        Actor.person(people["Mikael"]).as_agent("agent.shift_supervisor"),  # the same agent id
+    ]:
+        with pytest.raises(ApprovalError):
+            approvals.withdraw(session, row, stranger, "cancelled")
+    assert row.status == "pending"
+
+
+def test_a_withdrawn_request_cannot_be_decided_or_withdrawn_again(
+    session: Session, people: dict[str, Person]
+) -> None:
+    requester = Actor.person(people["Juha"]).as_agent("agent.shift_supervisor")
+    row = _request(session, requester)
+    approvals.withdraw(session, row, Actor.system(row.branch_id), "cancelled")
+    with pytest.raises(ApprovalError, match="withdrawn"):
+        approvals.decide(session, row.id, Actor.person(people["Sanna"]), "approved")
+    with pytest.raises(ApprovalError):
+        approvals.withdraw(session, row, requester, "again")

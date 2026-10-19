@@ -205,6 +205,27 @@ def decide(
     return approval
 
 
+def withdraw(session: Session, approval: Approval, actor: Actor, reason: str) -> Approval:
+    """Close an open (pending or escalated) request without a decision: status `withdrawn`,
+    event `approval.withdrawn` with the reason, no handler runs. Only the requester (its
+    principal or on_behalf_of id) or the system may withdraw; raises ApprovalError otherwise
+    or when the request is no longer open. An agent's id is shared by everyone it acts for,
+    so a request made on behalf of someone needs that someone."""
+    if approval.status not in ("pending", "escalated"):
+        raise ApprovalError(f"approval is {approval.status}")
+    requester = approval.requester_on_behalf_of or approval.requester_id
+    if actor.principal.type != "system" and requester not in actor.ids:
+        raise ApprovalError("only the requester withdraws a request")
+    return store.update(
+        session,
+        approval,
+        {"status": "withdrawn", "reason": reason},
+        actor,
+        action="approval.withdrawn",
+        approval_id=approval.id,
+    )
+
+
 def pending(session: Session, branch_id: str) -> list[Approval]:
     """Open approvals for a branch, oldest first."""
     stmt = (

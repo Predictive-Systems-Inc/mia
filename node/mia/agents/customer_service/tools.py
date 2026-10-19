@@ -17,8 +17,7 @@ admin decides it in the app; apply_order_approval re-reads the waiting row (the 
 items still active) and confirms it, apply_order_rejection rejects it, and each queues the
 customer's reply. Both find the customer by the approval's on_behalf_of, never a Person.
 
-Refusals raise KeyError(reason) (a LookupError, so call_tool answers `invalid` with the quoted
-reason).
+Refusals raise LookupError(reason), so call_tool answers `invalid` with the reason.
 """
 
 import datetime as dt
@@ -75,7 +74,7 @@ def _customer(deps: CustomerDeps) -> Customer:
     who = deps.actor.on_behalf_of
     row = deps.session.get(Customer, who.id) if who and who.type == "customer" else None
     if row is None:
-        raise KeyError("customer")
+        raise LookupError("customer")
     return row
 
 
@@ -194,7 +193,8 @@ class AreaOutput(BaseModel):
 
 
 def delivery_area(deps: CustomerDeps, args: AreaInput, tool_call_id: str) -> AreaOutput:
-    """The configured area and its fee, or none; always the branch to pick up from."""
+    """The configured area and its fee, or none; always the branch to pick up from. Reads the
+    organisation's configuration, no table, so the guard's tool execute check is the only one."""
     area = _area(args.name)
     return AreaOutput(
         area=area.name if area else None,
@@ -218,23 +218,37 @@ class PlaceOrderInput(BaseModel):
     delivery_note: str | None = None
 
 
+def _order_branch(deps: CustomerDeps) -> Branch:
+    """The branch an order belongs to: the customer's row branch (precheck and row agree)."""
+    branch = deps.session.get(Branch, _customer(deps).branch_id)
+    if branch is None:
+        raise LookupError("branch")
+    return branch
+
+
 def _order_precheck(deps: CustomerDeps, args: PlaceOrderInput, tool_call_id: str) -> None:
     """The guard's precheck for place_order (after the permission check, before the approval):
-    every item active here, at most max_order_quantity items, the pickup within the opening
-    hours, a delivery to a configured area. Raises KeyError item, too_large, closed or area."""
+    a new order_id, every item active at the customer's branch, at most max_order_quantity
+    items, a pickup still ahead and within the opening hours, a delivery to a configured area.
+    Raises LookupError order, item, too_large, past, closed or area."""
     _require(deps.session, deps.actor, ITEMS, "read", tool_call_id)
     _require(deps.session, deps.actor, HOURS, "read", tool_call_id)
+    if deps.session.get(Order, args.order_id) is not None:
+        raise LookupError("order")
+    branch = _order_branch(deps)
     ids = {line.item_id for line in args.lines}
-    if len(_active_items(deps.session, deps.branch, list(ids))) != len(ids):
-        raise KeyError("item")
+    if len(_active_items(deps.session, branch, list(ids))) != len(ids):
+        raise LookupError("item")
     limit = orgconfig.load().customer_service.max_order_quantity
     if sum(line.quantity for line in args.lines) > limit:
-        raise KeyError("too_large")
-    rows = shop_hours.load(deps.session, deps.branch.id)
-    if not calc.within_hours(deps.branch, rows, args.pickup_at):
-        raise KeyError("closed")
+        raise LookupError("too_large")
+    if args.pickup_at <= db.utcnow():
+        raise LookupError("past")
+    rows = shop_hours.load(deps.session, branch.id)
+    if not calc.within_hours(branch, rows, args.pickup_at):
+        raise LookupError("closed")
     if args.fulfilment == "delivery" and _area(args.delivery_area) is None:
-        raise KeyError("area")
+        raise LookupError("area")
 
 
 def read_order(deps: CustomerDeps, order_id: str, tool_call_id: str) -> Order:
@@ -244,7 +258,7 @@ def read_order(deps: CustomerDeps, order_id: str, tool_call_id: str) -> Order:
     owner = row.customer_id if row else None
     _require(deps.session, deps.actor, _owned(ORDERS, owner), "read", tool_call_id)
     if row is None:
-        raise KeyError("order")
+        raise LookupError("order")
     return row
 
 
@@ -283,7 +297,7 @@ def _order_card(
 def record_waiting(deps: CustomerDeps, args: PlaceOrderInput, approval_id: str) -> Order:
     """Write the order `waiting` (event customer_service.order_placed) for the pending
     place_order approval the guard just made for exactly this input and customer, and send its
-    card to the branch's clerks and supervisors (sensitive). Raises KeyError for any other
+    card to the branch's clerks and supervisors (sensitive). Raises LookupError for any other
     approval, so no order row exists without its approval."""
     session, customer = deps.session, _customer(deps)
     approval = session.get(Approval, approval_id)
@@ -295,12 +309,11 @@ def record_waiting(deps: CustomerDeps, args: PlaceOrderInput, approval_id: str) 
         and approval.evidence.get("input") == args.model_dump(mode="json")
     )
     if approval is None or not ours:
-        raise KeyError("approval")
+        raise LookupError("approval")
     tool_call_id = str(approval.evidence.get("tool_call_id"))
     _require(session, deps.actor, _owned(ORDERS, customer.id), "write", tool_call_id)
-    items = {
-        i.id: i for i in _active_items(session, deps.branch, [ln.item_id for ln in args.lines])
-    }
+    branch = _order_branch(deps)
+    items = {i.id: i for i in _active_items(session, branch, [ln.item_id for ln in args.lines])}
     area = _area(args.delivery_area) if args.fulfilment == "delivery" else None
     lines = [
         {"item_id": ln.item_id, "quantity": ln.quantity, "unit_price": items[ln.item_id].price}
@@ -313,7 +326,7 @@ def record_waiting(deps: CustomerDeps, args: PlaceOrderInput, approval_id: str) 
         session,
         Order(
             id=args.order_id,
-            branch_id=customer.branch_id,
+            branch_id=branch.id,
             customer_id=customer.id,
             lines=lines,
             total=total,
@@ -330,7 +343,6 @@ def record_waiting(deps: CustomerDeps, args: PlaceOrderInput, approval_id: str) 
         tool_call_id=tool_call_id,
         approval_id=approval.id,
     )
-    branch = deps.branch
 
     def words(lang: str) -> list[Block]:
         return _order_card(session, order, customer, branch, lang)
@@ -360,13 +372,17 @@ def order_status(deps: CustomerDeps, args: EmptyInput, tool_call_id: str) -> Sta
 
 def cancel_order(deps: CustomerDeps, args: EmptyInput, tool_call_id: str) -> StatusOutput:
     """Cancel the customer's latest open order while it is waiting or confirmed (event
-    customer_service.order_cancelled) and tell the branch's clerks and supervisors. Raises
-    KeyError ready for a ready order (the customer calls the shop) and no_order for none."""
+    customer_service.order_cancelled), withdraw a waiting order's approval so nobody decides
+    it, and tell the branch's clerks and supervisors. Raises LookupError ready for a ready
+    order (the customer calls the shop) and no_order for none."""
     row = _latest(deps, (*CANCELLABLE, "ready"), "write", tool_call_id)
     if row is None:
-        raise KeyError("no_order")
+        raise LookupError("no_order")
     if row.status == "ready":
-        raise KeyError("ready")
+        raise LookupError("ready")
+    approval = deps.session.get(Approval, row.approval_id) if row.approval_id else None
+    if approval is not None and approval.status in ("pending", "escalated"):
+        approvals.withdraw(deps.session, approval, deps.actor, "cancelled")
     store.update(
         deps.session,
         row,
@@ -488,17 +504,17 @@ def _branch_order(deps: AgentDeps, order_id: str, tool_call_id: str) -> Order:
     _require(deps.session, deps.actor, ORDERS, "write", tool_call_id)
     row = deps.session.get(Order, order_id)
     if row is None or row.branch_id != deps.branch.id:
-        raise KeyError("order")
+        raise LookupError("order")
     return row
 
 
 def mark_ready(deps: AgentDeps, args: OrderRef, tool_call_id: str) -> StatusOutput:
     """A confirmed order of the branch becomes ready (event customer_service.order_ready) and
-    the customer's reply is queued (sent only inside their 24-hour window). KeyError status
+    the customer's reply is queued (sent only inside their 24-hour window). LookupError status
     for any other status."""
     row = _branch_order(deps, args.order_id, tool_call_id)
     if row.status != "confirmed":
-        raise KeyError("status")
+        raise LookupError("status")
     action = f"{MANIFEST.id}.order_ready"
     store.update(
         deps.session, row, {"status": "ready"}, deps.actor, action=action, tool_call_id=tool_call_id
@@ -512,10 +528,10 @@ def mark_ready(deps: AgentDeps, args: OrderRef, tool_call_id: str) -> StatusOutp
 
 def mark_picked_up(deps: AgentDeps, args: OrderRef, tool_call_id: str) -> StatusOutput:
     """A confirmed or ready order of the branch is picked up (event
-    customer_service.order_picked_up). KeyError status for any other status."""
+    customer_service.order_picked_up). LookupError status for any other status."""
     row = _branch_order(deps, args.order_id, tool_call_id)
     if row.status not in STAFF_ORDER_STATUSES:
-        raise KeyError("status")
+        raise LookupError("status")
     action = f"{MANIFEST.id}.order_picked_up"
     store.update(
         deps.session,
@@ -534,11 +550,11 @@ class ComplaintRef(BaseModel):
 
 def resolve_complaint(deps: AgentDeps, args: ComplaintRef, tool_call_id: str) -> StatusOutput:
     """An open complaint of the branch is resolved by the acting person (event
-    customer_service.complaint_resolved). KeyError complaint when there is none open."""
+    customer_service.complaint_resolved). LookupError complaint when there is none open."""
     _require(deps.session, deps.actor, COMPLAINTS, "write", tool_call_id)
     row = deps.session.get(Complaint, args.complaint_id)
     if row is None or row.branch_id != deps.branch.id or row.status != "open":
-        raise KeyError("complaint")
+        raise LookupError("complaint")
     changes = {"status": "resolved", "resolved_by": deps.person.id, "resolved_at": db.utcnow()}
     action = f"{MANIFEST.id}.complaint_resolved"
     store.update(deps.session, row, changes, deps.actor, action=action, tool_call_id=tool_call_id)
@@ -552,15 +568,15 @@ def _decided(session: Session, approval: Approval, decider: Actor) -> tuple[Orde
     """The order and customer of a place_order approval, and the agent acting for the decider
     (checked: the agent and the decider may write orders). The customer is the approval's
     on_behalf_of (a customer row, never a Person); the order is the evidence's order_id, and
-    must name this approval and this customer. Raises KeyError otherwise."""
+    must name this approval and this customer. Raises LookupError otherwise."""
     public.ensure_role()  # decide runs outside any turn: no agent has loaded the role
     customer = session.get(Customer, approval.requester_on_behalf_of or "")
     raw = approval.evidence.get("input")
     order = session.get(Order, str(raw.get("order_id"))) if isinstance(raw, dict) else None
     if customer is None or order is None:
-        raise KeyError("order")
+        raise LookupError("order")
     if order.approval_id != approval.id or order.customer_id != customer.id:
-        raise KeyError("order")
+        raise LookupError("order")
     actor = decider.as_agent(MANIFEST.roles.agent_role)
     _require(session, actor, ORDERS, "write", None)
     return order, customer, actor
@@ -569,14 +585,19 @@ def _decided(session: Session, approval: Approval, decider: Actor) -> tuple[Orde
 def apply_order_approval(session: Session, approval: Approval, decider: Actor) -> None:
     """Approval handler: the order row must still be waiting and every item still active;
     then it is confirmed with decided_by (event customer_service.order_confirmed) and the
-    customer's reply is queued. Raises KeyError otherwise (the decision rolls back)."""
+    customer's reply is queued. Raises LookupError otherwise (the decision rolls back); a
+    pickup already past is first rejected (reason other, the customer told) and committed."""
     order, customer, actor = _decided(session, approval, decider)
     if order.status != "waiting":
-        raise KeyError("status")
+        raise LookupError("status")
     ids = {ln["item_id"] for ln in order.lines}
     branch = session.get(Branch, order.branch_id)
     if branch is None or len(_active_items(session, branch, list(ids))) != len(ids):
-        raise KeyError("item")
+        raise LookupError("item")
+    if order.pickup_at <= db.utcnow():  # approved too late: the customer is told, not served
+        _reject(session, approval, decider, order, customer, actor, "other")
+        session.commit()  # raised inside a request: the rollback must not lose the reply
+        raise LookupError("past")
     changes = {"status": "confirmed", "decided_by": decider.principal.id}
     action = f"{MANIFEST.id}.order_confirmed"
     store.update(session, order, changes, actor, action=action, approval_id=approval.id)
@@ -592,8 +613,22 @@ def apply_order_rejection(session: Session, approval: Approval, decider: Actor) 
     order, customer, actor = _decided(session, approval, decider)
     if order.status != "waiting":
         return
-    branch = session.get(Branch, order.branch_id)
     reason = approval.reason if approval.reason in REJECT_REASONS else "other"
+    _reject(session, approval, decider, order, customer, actor, reason)
+
+
+def _reject(
+    session: Session,
+    approval: Approval,
+    decider: Actor,
+    order: Order,
+    customer: Customer,
+    actor: Actor,
+    reason: str,
+) -> None:
+    """The order rejected with decided_by (event customer_service.order_rejected) and the
+    customer's reply with the reason key queued."""
+    branch = session.get(Branch, order.branch_id)
     changes = {"status": "rejected", "decided_by": decider.principal.id}
     action = f"{MANIFEST.id}.order_rejected"
     store.update(session, order, changes, actor, action=action, approval_id=approval.id)
