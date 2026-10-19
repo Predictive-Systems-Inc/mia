@@ -263,6 +263,7 @@ def test_a_leave_request_waits_for_head_staff(
     assert [(f.label, f.value) for f in card.fields] == [
         ("Dates", "2026-10-27 to 2026-10-28"),
         ("Working days", "2"),
+        ("Paid days", "2"),
         ("Leave left after", "3"),
         ("Status", "pending"),
     ]
@@ -288,7 +289,8 @@ def test_an_approved_leave_tells_the_requester_and_updates_the_balance(
     session.commit()
     row = session.exec(select(Leave).where(Leave.approval_id == card.approval_id)).one()
     assert (row.status, row.days) == ("approved", 2)
-    assert "Your leave from 2026-10-27 to 2026-10-28 is approved." in told(session, ana)
+    said = "Your leave from 2026-10-27 to 2026-10-28 is approved.\nPaid leave days: 2 of 2."
+    assert said in told(session, ana)
     _answers(monkeypatch, "leave_balance")
     assert (
         _turn(session, ana, asked).text() == "Leave days left this service year: 3 of 5 (2 used)."

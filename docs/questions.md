@@ -515,3 +515,9 @@ Format for each entry:
 - Question: The contributions read the monthly basic as the daily rate times 26, whatever was worked, so a cutoff with one approved day would net below zero. Should they read the month's actual earnings instead?
 - Assumed answer: for v1 the deductions are taken in order (SSS, PhilHealth, Pag-IBIG) while the gross lasts, so the net is never below zero. Contributions on the month's actual earnings is the fuller rule, to settle with the accountant (Q61).
 - Blocking: no.
+
+## Q66: The approver's free-text reason in approval.decided
+- Where: node/mia/core/approvals.py (`decide`), node/mia/core/models.py (`Approval.__redact__`)
+- Question: The hr officer's hr.leave_rejected event no longer logs the approver's reason, but the core approval.decided event still snapshots `Approval.reason`. Should approval.decided redact that free-text reason?
+- Assumed answer: no for v1; the reason stays in the core event.
+- Blocking: no.

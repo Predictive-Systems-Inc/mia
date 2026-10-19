@@ -30,7 +30,7 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.hr_officer import MANIFEST, calc, calendar, ph
 from mia.agents.hr_officer.models import Contract, Leave, Payslip
-from mia.chat.blocks import TextBlock
+from mia.chat.blocks import Block, TextBlock
 from mia.chat.channels import notify
 from mia.core import approvals, events, orgconfig, store
 from mia.core.db import utcnow
@@ -143,24 +143,6 @@ def _last_payslip(session: Session, person_id: str) -> Payslip:
     if not slips:
         raise LookupError("no payslip yet")
     return slips[-1]
-
-
-def _anniversary(start: dt.date, year: int) -> dt.date:
-    """The start date's day in the year (28 February for a 29 February start)."""
-    try:
-        return start.replace(year=year)
-    except ValueError:
-        return start.replace(year=year, day=28)
-
-
-def _service_year(start: dt.date, today: dt.date) -> tuple[dt.date, dt.date]:
-    """The current service year: from the last anniversary on or before today (the start date
-    in the first year) to the day before the next one."""
-    begin = _anniversary(start, today.year)
-    if begin > today:
-        begin = _anniversary(start, today.year - 1)
-    begin = max(begin, start)
-    return begin, _anniversary(start, begin.year + 1) - dt.timedelta(days=1)
 
 
 # ---- hours --------------------------------------------------------------------------------
@@ -472,7 +454,8 @@ def apply_leave_approval(session: Session, approval: Approval, decider: Actor) -
     with a leave approved meanwhile, not in the past by now); when it fails, write nothing and
     tell both sides the reason (_refuse_approved). Else re-run request_leave as the requester
     (their permissions, the approval in deps.approved, the evidence input) so the leave is
-    written as approved, then tell the requester. Raises LookupError when the requester or the
+    written as approved, then tell the requester, with how many of its days are paid
+    (calc.paid_days), in a sensitive notification. Raises LookupError when the requester or the
     input cannot be found."""
     person, branch = _requester(session, approval)
     args = _requested_input(approval)
@@ -495,8 +478,14 @@ def apply_leave_approval(session: Session, approval: Approval, decider: Actor) -
         _refuse_approved(session, approval, decider, args, exc.reason)
         return
     leave = request_leave(deps, args, tool_call_id)
-    text = t("hr.leave_approved", lang, start=leave.start.isoformat(), end=leave.end.isoformat())
-    notify(session, person, [TextBlock(text=text)], Actor.system(branch.id), MANIFEST.id)
+    contract = _contract(session, person.id, deps.today)
+    paid = calc.paid_days(session, contract, leave.kind, leave.start, leave.days, leave.leave_id)
+    texts = [
+        t("hr.leave_approved", lang, start=leave.start.isoformat(), end=leave.end.isoformat()),
+        t("hr.leave.paid_days", lang, paid=paid, days=leave.days),
+    ]
+    blocks: list[Block] = [TextBlock(text=text) for text in texts]
+    notify(session, person, blocks, Actor.system(branch.id), MANIFEST.id, sensitive=True)
 
 
 def apply_leave_rejection(session: Session, approval: Approval, decider: Actor) -> None:
@@ -535,7 +524,7 @@ def balance(deps: AgentDeps, args: PersonInput, tool_call_id: str) -> BalanceOut
     LookupError without a contract."""
     person = _subject(deps, args.person_id, [CONTRACTS, LEAVE], tool_call_id)
     contract = _contract(deps.session, person.id, deps.today)
-    begin, end = _service_year(contract.start_date, deps.today)
+    begin, end = calendar.service_year(contract.start_date, deps.today)
     stmt = (
         select(Leave)
         .where(Leave.person_id == person.id)
@@ -569,23 +558,27 @@ def leave_days_ahead(deps: AgentDeps, count: int, tool_call_id: str) -> list[dt.
 
 
 class LeavePreview(BaseModel):
-    """What a leave request takes, for its approval card: working days and the service
-    incentive leave days left once it is approved."""
+    """What a leave request takes, for its approval card: working days, how many of them are
+    paid (calc.paid_days) and the service incentive leave days left once it is approved."""
 
     days: int
+    paid: int
     left_after: int
 
 
 def preview_leave(deps: AgentDeps, args: RequestLeaveInput, tool_call_id: str) -> LeavePreview:
-    """The working days the acting person's leave would take (calendar.leave_days) and their
-    balance after it (unpaid leave takes no service incentive leave). Reads only, after the
+    """The working days the acting person's leave would take (calendar.leave_days), how many
+    are paid (calc.paid_days) and their balance after it (unpaid leave takes no service
+    incentive leave). Reads only, after the
     same own-row checks as balance. Raises LookupError without a contract."""
     now = balance(deps, PersonInput(), tool_call_id)
     contract = _contract(deps.session, deps.person.id, deps.today)
     days = calendar.leave_days(args.start, args.end, contract.rest_day, calc.holidays())
     used = now.used + (days if args.kind in SIL_KINDS else 0)
     return LeavePreview(
-        days=days, left_after=calendar.sil_balance(contract.start_date, deps.today, used)
+        days=days,
+        paid=calc.paid_days(deps.session, contract, args.kind, args.start, days),
+        left_after=calendar.sil_balance(contract.start_date, deps.today, used),
     )
 
 

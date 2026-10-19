@@ -62,11 +62,38 @@ def _approved(session: Session, person_id: str, start: dt.date, end: dt.date) ->
     )
 
 
-def _paid_leave(
+def paid_days(
+    session: Session,
+    contract: Contract,
+    kind: str,
+    start: dt.date,
+    days: int,
+    leave_id: str = "~",
+) -> int:
+    """How many of a leave's days are paid: none for unpaid leave; for vacation or sick, at
+    most the SIL balance at its start (calendar.sil_balance) less the days of the person's
+    approved vacation and sick leaves that start before it in that service year (by start,
+    then id; "~" sorts after every id, for a leave not yet written)."""
+    if kind not in calendar.SIL_KINDS:
+        return 0
+    begin, _ = calendar.service_year(contract.start_date, start)
+    stmt = (
+        select(Leave)
+        .where(Leave.person_id == contract.person_id)
+        .where(Leave.status == "approved")
+        .where(col(Leave.kind).in_(calendar.SIL_KINDS))
+        .where(col(Leave.start_date) >= begin)
+        .where(col(Leave.start_date) <= start)
+    )
+    used = sum(r.days for r in session.exec(stmt) if (r.start_date, r.id) < (start, leave_id))
+    return min(days, calendar.sil_balance(contract.start_date, start, used))
+
+
+def _leave_split(
     session: Session, contract: Contract, start: dt.date, end: dt.date, days: Mapping[dt.date, str]
-) -> set[dt.date]:
+) -> tuple[set[dt.date], set[dt.date]]:
     """The person's approved vacation and sick leave days (calendar.leave_dates) from start to
-    end."""
+    end, split into paid and unpaid: the first paid_days of each leave are paid, the rest not."""
     stmt = (
         select(Leave)
         .where(Leave.person_id == contract.person_id)
@@ -75,9 +102,16 @@ def _paid_leave(
         .where(col(Leave.start_date) <= end)
         .where(col(Leave.end_date) >= start)
     )
-    spans = [(row.start_date, row.end_date) for row in session.exec(stmt)]
-    found = calendar.leave_dates(spans, contract.rest_day, days)
-    return {d for d in found if start <= d <= end}
+    paid: set[dt.date] = set()
+    unpaid: set[dt.date] = set()
+    for row in session.exec(stmt):
+        dates = sorted(
+            calendar.leave_dates([(row.start_date, row.end_date)], contract.rest_day, days)
+        )
+        n = paid_days(session, contract, row.kind, row.start_date, len(dates), row.id)
+        paid.update(dates[:n])
+        unpaid.update(dates[n:])
+    return {d for d in paid if start <= d <= end}, {d for d in unpaid if start <= d <= end}
 
 
 def cutoff_pay(
@@ -89,20 +123,24 @@ def cutoff_pay(
     days: Mapping[dt.date, str],
 ) -> ph.PayslipCalc | None:
     """The cutoff's payslip for the contract's person (ph.payslip at the contract's rate): the
-    approved minutes by day, the paid leave days in the cutoff and its unworked regular
-    holidays whose working day before was worked or on paid leave (calendar). None when there
-    is nothing to pay (no approved time, paid leave or holiday pay)."""
-    # ponytail: every approved vacation or sick day pays, even past the five SIL days (head
-    # staff saw the balance on the card); cap at the balance if an owner asks for it.
+    approved minutes by day, the leave days in the cutoff (paid within the SIL balance, the
+    rest shown unpaid; paid_days) and its unworked regular holidays whose working day before
+    was worked or on paid leave (calendar). None when there is nothing to pay (no approved
+    time, paid leave or holiday pay)."""
     person, rest = contract.person_id, contract.rest_day
     minutes = minutes_by_day(session, person, start, end, tz, rest, days)
     worked = {sheet.date for sheet in _approved(session, person, start - LOOKBACK, end)}
-    on_leave = _paid_leave(session, contract, start - LOOKBACK, end, days)
-    leave_days = sum(start <= d <= end for d in on_leave)
-    unworked = calendar.unworked_regular_holidays(start, end, rest, days, worked, on_leave)
+    paid, unpaid = _leave_split(session, contract, start - LOOKBACK, end, days)
+    leave_days = sum(start <= d <= end for d in paid)
+    unworked = calendar.unworked_regular_holidays(start, end, rest, days, worked, paid)
     if not (minutes or leave_days or unworked):
         return None
     rate = contract.daily_rate
     return ph.payslip(
-        minutes, rate, ph.monthly_basic(rate), leave_days=leave_days, holidays=len(unworked)
+        minutes,
+        rate,
+        ph.monthly_basic(rate),
+        leave_days=leave_days,
+        holidays=len(unworked),
+        unpaid_leave_days=sum(start <= d <= end for d in unpaid),
     )

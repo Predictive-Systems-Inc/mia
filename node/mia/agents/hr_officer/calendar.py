@@ -104,6 +104,24 @@ def unworked_regular_holidays(
     ]
 
 
+def _anniversary(start: dt.date, year: int) -> dt.date:
+    """The start date's day in the year (28 February for a 29 February start)."""
+    try:
+        return start.replace(year=year)
+    except ValueError:
+        return start.replace(year=year, day=28)
+
+
+def service_year(start: dt.date, day: dt.date) -> tuple[dt.date, dt.date]:
+    """The service year holding the day: from the last anniversary on or before it (the start
+    date in the first year) to the day before the next one."""
+    begin = _anniversary(start, day.year)
+    if begin > day:
+        begin = _anniversary(start, day.year - 1)
+    begin = max(begin, start)
+    return begin, _anniversary(start, begin.year + 1) - dt.timedelta(days=1)
+
+
 def sil_balance(start_date: dt.date, today: dt.date, used: int) -> int:
     """Service incentive leave left: 0 before one year of service; from each service
     anniversary, five days credited in full less the days used in the current service year,

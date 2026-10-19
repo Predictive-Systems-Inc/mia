@@ -146,8 +146,11 @@ regular, overtime, night, rest day, holiday by the contract and the calendar).
 helper the due work and the seed use):
 - Worked minutes by kind at the hourly rate (daily rate / 8) times the kind's rate.
 - Paid leave: each approved vacation or sick leave day in the cutoff that is a working day
-  (not the rest day, not a regular holiday) pays the daily rate (line `paid_leave`). Unpaid
-  leave pays nothing.
+  (not the rest day, not a regular holiday) pays the daily rate (line `paid_leave`), within
+  the SIL balance at the start of that leave (the balance before it, the person's leaves taken
+  in service-year order by start date; `calc.paid_days`). Days past the balance are unpaid and
+  shown as line `unpaid_leave` at no pay. The leave card and the approved notification say how
+  many of the days are paid. Leave of kind unpaid pays nothing and has no line.
 - An unworked regular holiday pays 100% of the daily rate (line `unworked_holiday`) when the
   person did not work it, it is not their rest day, and the working day before it (back over
   the rest day and other regular holidays) was worked or on paid leave. A special day not
@@ -240,7 +243,8 @@ languages. 8. Evals, gates, docs.
 - A 29 February start: `_service_year` begins on 28 February in other years while
   `sil_balance` credits on 1 March (a day apart).
 - Contributions read daily rate x 26 whatever was worked; the fuller rule is the month's
-  actual earnings (Q65). Paid leave pays every approved vacation or sick day, even past the
-  five SIL days; an unworked regular holiday on the rest day pays nothing (Q61).
+  actual earnings (Q65). An unworked regular holiday on the rest day pays nothing (Q61).
+- HR answers (a reply of a sensitive tool) reach outside channels as an app link, as notify()
+  sends a sensitive notification.
 - The router description still names cash advances and hiring, so those requests land at
   the HR officer, which says they are not built yet (Q57); revisit when they are built.

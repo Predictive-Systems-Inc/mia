@@ -61,10 +61,40 @@ def _cutoff_pay(session: Session, person: Person, holidays: dict[dt.date, str]) 
     return [f"{line.kind} {line.minutes}" for line in pay.lines]
 
 
-def test_the_cutoff_pays_approved_leave_days(session: Session, hr: Ferinos) -> None:
-    """Liza's seeded vacation (Saturday 10 and Sunday 11 October) is two paid leave days."""
+def test_leave_past_the_sil_balance_is_unpaid(session: Session, hr: Ferinos) -> None:
+    """Liza (under a year of service, 0 SIL) is not paid her seeded two vacation days: they
+    show as an unpaid leave line."""
     _, people = hr
-    assert _cutoff_pay(session, people["Liza"], {}) == ["regular 5280", "paid_leave 960"]
+    assert _cutoff_pay(session, people["Liza"], {}) == ["regular 5280", "unpaid_leave 960"]
+
+
+def _approved_leave(session: Session, people: dict[str, Person], start: int, end: int) -> None:
+    ana = people["Ana"]
+    args = test_hr_tools.leave(test_hr_tools.day(start), test_hr_tools.day(end))
+    out = test_hr_tools.file_leave(session, ana, f"l{start}", args)
+    test_hr_tools.decide(session, out["approval_id"], people["Marites"], "approved")
+
+
+def _late_october(session: Session, person: Person) -> list[str]:
+    contract = session.exec(select(Contract).where(Contract.person_id == person.id)).one()
+    end = dt.date(2026, 10, 31)
+    pay = calc.cutoff_pay(session, contract, dt.date(2026, 10, 16), end, MNL, {})
+    assert pay is not None
+    return [f"{line.kind} {line.minutes}" for line in pay.lines if "leave" in line.kind]
+
+
+def test_leave_within_the_balance_is_paid(session: Session, hr: Ferinos) -> None:
+    """Ana (5 SIL left) takes Tuesday 27 and Wednesday 28 October: both paid."""
+    _, people = hr
+    _approved_leave(session, people, 8, 9)
+    assert _late_october(session, people["Ana"]) == ["paid_leave 960"]
+
+
+def test_a_six_day_leave_with_five_left_pays_five(session: Session, hr: Ferinos) -> None:
+    """Ana's Tuesday 20 to Sunday 25 October (six working days; Monday is her rest day)."""
+    _, people = hr
+    _approved_leave(session, people, 1, 6)
+    assert _late_october(session, people["Ana"]) == ["paid_leave 2400", "unpaid_leave 480"]
 
 
 def test_an_unworked_regular_holiday_pays_when_the_day_before_was_worked(

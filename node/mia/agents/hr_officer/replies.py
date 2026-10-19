@@ -195,7 +195,7 @@ def leave_waiting(
     lang: str,
 ) -> list[Block]:
     """The requester's reply: the leave waits for head staff, with its approval card (the
-    dates, the working days and the balance after)."""
+    dates, the working days, how many are paid and the balance after)."""
     start, end = leave.start.isoformat(), leave.end.isoformat()
     card = ApprovalCardBlock(
         approval_id=approval_id, title=t("hr.leave.approval_title", lang), summary=summary
@@ -206,6 +206,7 @@ def leave_waiting(
     if preview is not None:
         card.fields += [
             CardField(label=t("hr.field.working_days", lang), value=str(preview.days)),
+            CardField(label=t("hr.field.paid_days", lang), value=str(preview.paid)),
             CardField(label=t("hr.field.leave_left", lang), value=str(preview.left_after)),
         ]
     card.fields.append(CardField(label=t("field.status", lang), value=card.status))

@@ -140,3 +140,12 @@ def test_one_approved_day_never_nets_below_zero() -> None:
         ("pagibig", 1_175),
     ]
     assert slip.net == 0
+
+
+def test_unpaid_leave_days_show_as_a_line_at_no_pay() -> None:
+    slip = payslip([Minutes(regular=480)], DAILY, monthly_basic(DAILY), unpaid_leave_days=1)
+    assert [(line.kind, line.minutes, line.amount) for line in slip.lines] == [
+        ("regular", 480, 60_000),
+        ("unpaid_leave", 480, 0),
+    ]
+    assert slip.gross == 60_000

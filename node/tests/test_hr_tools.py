@@ -188,7 +188,8 @@ def test_thirteenth_month_is_a_twelfth_of_basic_earned(session: Session, hr: Fer
     earned = 2 * 13 * 61000  # 16 to 30 September and 1 to 15 October: 13 days each at 610.00
     assert (out.earned_basic, out.estimate, out.paid_in) == (earned, 132167, 12)
     liza = tools.thirteenth_month(deps_for(session, people["Liza"]), PersonInput(), "t2")
-    assert liza.earned_basic == earned  # 11 days worked and 2 of paid leave count as basic
+    # September's 13 days and October's 11 worked; her 2 leave days are unpaid (0 SIL).
+    assert liza.earned_basic == (13 + 11) * 61000
     assert out.currency == "PHP"
 
 
@@ -548,3 +549,19 @@ def test_a_contract_before_a_later_one_is_refused(session: Session, hr: Ferinos)
         tools.set_contract(rosa, SetContractInput(**terms, start_date=day(10)), "s2")
     after = session.exec(select(Contract).where(Contract.person_id == ana.id)).all()
     assert [c.model_dump() for c in after] == [c.model_dump() for c in before]
+
+
+def test_the_card_and_the_approval_say_how_many_days_are_paid(
+    session: Session, hr: Ferinos
+) -> None:
+    """Six working days with five SIL days left: five are paid, on the preview and in the
+    approved notification."""
+    _, people = hr
+    ana = people["Ana"]
+    args = leave(day(1), day(6))
+    preview = tools.preview_leave(deps_for(session, ana), args, "p1")
+    assert (preview.days, preview.paid, preview.left_after) == (6, 5, 0)
+    out = file_leave(session, ana, "l1", args)
+    decide(session, out["approval_id"], people["Marites"], "approved")
+    said = t("hr.leave.paid_days", "en", paid=5, days=6)
+    assert any(said in note for note in told(session, ana))

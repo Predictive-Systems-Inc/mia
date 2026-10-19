@@ -49,6 +49,7 @@ REGULAR_MINUTES = 480  # eight hours a day
 # Payslip lines for days paid though not worked, at 100% of the daily rate.
 PAID_LEAVE = "paid_leave"  # approved vacation or sick (service incentive) leave days
 UNWORKED_HOLIDAY = "unworked_holiday"  # a regular holiday not worked (calendar rule)
+UNPAID_LEAVE = "unpaid_leave"  # vacation or sick days past the SIL balance, shown at no pay
 BASIC_KINDS = ("regular", PAID_LEAVE)  # the lines the 13th month counts as basic pay
 NIGHT_START = dt.time(22)
 NIGHT_END = dt.time(6)
@@ -163,11 +164,13 @@ def payslip(
     *,
     leave_days: int = 0,
     holidays: int = 0,
+    unpaid_leave_days: int = 0,
 ) -> PayslipCalc:
     """One cutoff's payslip: a line per pay kind worked (its minutes summed over the days, at
     hourly rate = daily_rate / 8 times the kind's rate, rounded half up to the centavo), a
     paid_leave line (leave_days at the daily rate) and an unworked_holiday line (holidays,
-    unworked regular holidays, at 100% of the daily rate) when there are any, the gross, half
+    unworked regular holidays, at 100% of the daily rate) when there are any, an unpaid_leave
+    line (unpaid_leave_days, leave past the SIL balance, at no pay) so it shows, the gross, half
     of each monthly contribution for the semi-monthly cutoff (rounded half up, Q61) taken in
     order while the gross lasts, and the net (gross less deductions, never below zero).
     Integer arithmetic only."""
@@ -181,6 +184,8 @@ def payslip(
     for kind, days in ((PAID_LEAVE, leave_days), (UNWORKED_HOLIDAY, holidays)):
         if days:
             lines.append(Line(kind, days * REGULAR_MINUTES, 100, days * daily_rate))
+    if unpaid_leave_days:
+        lines.append(Line(UNPAID_LEAVE, unpaid_leave_days * REGULAR_MINUTES, 0, 0))
     gross = sum(line.amount for line in lines)
     monthly = {
         "sss": sss_employee(monthly_basic),
