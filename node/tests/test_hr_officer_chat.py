@@ -297,8 +297,8 @@ def test_a_rejected_leave_tells_the_requester(
 def test_leave_dates_are_asked_when_missing(
     session: Session, hr: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No date found: a button per day from today in the person's weekday names (Ana back on
-    Filipino); a tap files that one day."""
+    """No date found: a button per working day from tomorrow in the person's weekday names (Ana
+    back on Filipino); a tap files that one day."""
     branch, people = hr
     ana = set_language(session, Actor.system(branch.id), people["Ana"], "fil")
     _answers(monkeypatch, "file_leave", leave_kind="sick")
@@ -306,13 +306,13 @@ def test_leave_dates_are_asked_when_missing(
     said = [b.text for b in reply.blocks if isinstance(b, TextBlock)]
     assert said == [t("hr.leave.which_days", "fil")]
     (buttons,) = [b for b in reply.blocks if isinstance(b, QuickRepliesBlock)]
-    assert buttons.options == [
-        "Lunes 2026-10-19",
+    assert buttons.options == [  # from tomorrow; Ana's Monday rest day is never offered
         "Martes 2026-10-20",
         "Miyerkules 2026-10-21",
         "Huwebes 2026-10-22",
         "Biyernes 2026-10-23",
         "Sabado 2026-10-24",
+        "Linggo 2026-10-25",
     ]
     tapped = _turn(session, ana, "Martes 2026-10-20", reply.thread_id)
     approval = session.get(Approval, _card(tapped).approval_id)
@@ -395,3 +395,15 @@ def test_a_clerk_cannot_get_a_certificate(
     assert "person" not in jev_on[0]["questions"]
     assert reply.text() == t("hr.not_allowed.certificate", EN)
     assert session.exec(select(Event).where(Event.action == "hr.certificate_issued")).all() == []
+    (denied,) = session.exec(select(Event).where(Event.action == "rbac.deny")).all()
+    assert (denied.after or {})["resource"] == f"tool:{MANIFEST.id}.certificate_text"
+
+
+def test_a_regular_holiday_is_worded_with_its_rate() -> None:
+    out = tools.HolidayOutput(kind="regular", rate_percent=200, name="Christmas Day")
+    blocks = replies.tool_reply("holiday", out.model_dump(mode="json"), {"day": "2026-12-25"}, EN)
+    said = (
+        "2026-12-25 is Christmas Day, a regular holiday: 200% of your daily rate if you work,"
+        " 100% if you do not and worked the day before."
+    )
+    assert [b.text for b in blocks if isinstance(b, TextBlock)] == [said]

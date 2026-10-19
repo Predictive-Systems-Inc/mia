@@ -476,3 +476,14 @@ def test_a_new_contract_ends_the_old_one(session: Session, hr: Ferinos) -> None:
     assert tools._contract(session, ana.id, dt.date(2026, 11, 1)).id == new.id
     event = session.exec(select(Event).where(Event.action == "hr.contract_set")).one()
     assert "65000" not in str(event.after)  # the rate stays off the chain
+
+
+def test_the_leave_days_ahead_skip_the_rest_day_and_holidays(session: Session, hr: Ferinos) -> None:
+    """From 23 December: Christmas (regular) and Ana's Monday rest day are skipped, Christmas
+    Eve (special) is a working day, Rizal Day (regular) is skipped."""
+    _, people = hr
+    deps = deps_for(session, people["Ana"])
+    deps.today = dt.date(2026, 12, 23)
+    assert tools.leave_days_ahead(deps, 5, "a1") == [
+        dt.date(2026, 12, d) for d in (24, 26, 27, 29, 31)
+    ]

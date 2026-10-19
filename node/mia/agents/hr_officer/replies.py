@@ -33,7 +33,7 @@ CONVERSATION_KEYS = {
 }
 KINDS = ("sss", "philhealth", "pagibig")
 LEAVE_REFUSALS = ("no_contract", "in_the_past", "no_working_days", "overlaps")
-# The day buttons a leave without dates offers, from today (a QuickRepliesBlock holds six).
+# The day buttons a leave without dates offers (a QuickRepliesBlock holds six).
 ASKED_DAYS = 6
 Options = dict[str, dict[str, Any]]  # button label -> the decision a tap runs
 
@@ -148,14 +148,15 @@ def leave_waiting(
     return [TextBlock(text=t("hr.leave.waiting", lang, start=start, end=end)), card]
 
 
-def ask_leave_days(decision: Decision, today: dt.date, lang: str) -> tuple[list[Block], Options]:
-    """Which day the leave is for: one button per day from today (the weekday and the date),
-    each filing a one-day leave of the kind asked; longer leave is typed."""
+def ask_leave_days(
+    decision: Decision, days: list[dt.date], lang: str
+) -> tuple[list[Block], Options]:
+    """Which day the leave is for: one button per offered day (the weekday and the date), each
+    filing a one-day leave of the kind asked; longer leave is typed."""
     names = DAY_NAMES.get(lang, EN_WEEKDAYS)
     kind = decision.args.get("kind") or "vacation"
     options: Options = {}
-    for i in range(ASKED_DAYS):
-        d = today + dt.timedelta(days=i)
+    for d in days:
         day = d.isoformat()
         label = t("hr.leave.day", lang, weekday=names[d.weekday()].capitalize(), date=day)
         args = {"kind": kind, "start": day, "end": day}

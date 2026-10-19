@@ -556,6 +556,22 @@ def balance(deps: AgentDeps, args: PersonInput, tool_call_id: str) -> BalanceOut
     )
 
 
+def leave_days_ahead(deps: AgentDeps, count: int, tool_call_id: str) -> list[dt.date]:
+    """The acting person's next `count` days from tomorrow that a one-day leave can take (not
+    their rest day, not a regular holiday), after the read check on their own contract. Raises
+    LookupError without a contract."""
+    _check(deps, _owned(CONTRACTS, deps.person.id), "read", tool_call_id)
+    contract = _contract(deps.session, deps.person.id, deps.today)
+    holidays = _holidays()
+    found: list[dt.date] = []
+    day = deps.today
+    while len(found) < count:  # ponytail: a rest day a week means at most 8 days per 6 found
+        day += dt.timedelta(days=1)
+        if calendar.leave_days(day, day, contract.rest_day, holidays):
+            found.append(day)
+    return found
+
+
 class LeavePreview(BaseModel):
     """What a leave request takes, for its approval card: working days and the service
     incentive leave days left once it is approved."""

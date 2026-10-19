@@ -2,6 +2,7 @@
 runs the tool and words the reply. The emergency script runs before this, in chat.service, for every agent."""
 
 import asyncio
+import datetime as dt
 import html
 from dataclasses import replace
 from typing import Any
@@ -115,9 +116,10 @@ def _refusal(
     """The reply to a refused tool call: a leave refused before approval says why; another
     person's records (or a certificate by someone who may not issue one) is not allowed;
     nothing on record yet says so."""
-    refused = replies.leave_refused(out["message"], args, deps.lang)
-    if tool == "request_leave" and out["status"] == "invalid" and refused is not None:
-        return store_reply(session, deps, thread, refused)
+    if tool == "request_leave" and out["status"] == "invalid":
+        refused = replies.leave_refused(out["message"], args, deps.lang)
+        if refused is not None:
+            return store_reply(session, deps, thread, refused)
     if out["status"] == "denied":
         key = "hr.not_allowed.certificate" if tool == "certificate_text" else "hr.not_allowed"
     else:
@@ -171,13 +173,24 @@ def _missing(
     if decision.confidence < THRESHOLD:
         return None
     if decision.raw_action == "file_leave" and decision.missing == "leave_start":
-        return _ask(session, deps, thread, *replies.ask_leave_days(decision, deps.today, deps.lang))
-    lacks_person = decision.raw_action == "certificate" and decision.missing == "person"
-    if lacks_person and not get_rbac().check(
-        deps.actor, _CERTIFICATE_TOOL, "execute", session=session
-    ):
-        return reply_text(session, deps, thread, t("hr.not_allowed.certificate", deps.lang))
+        days = _leave_days(deps)
+        return _ask(session, deps, thread, *replies.ask_leave_days(decision, days, deps.lang))
+    if decision.raw_action == "certificate" and decision.missing == "person":
+        try:  # the denial is logged as rbac.deny, like the guard's
+            get_rbac().require(deps.actor, _CERTIFICATE_TOOL, "execute", session=session)
+        except PermissionDenied:
+            return reply_text(session, deps, thread, t("hr.not_allowed.certificate", deps.lang))
     return None
+
+
+def _leave_days(deps: AgentDeps) -> list[dt.date]:
+    """The days the leave buttons offer: the person's next working days from tomorrow; without
+    a contract (or the right to read it) the next days, which the guard then refuses with the
+    reason."""
+    try:
+        return tools.leave_days_ahead(deps, replies.ASKED_DAYS, new_id())
+    except (LookupError, PermissionDenied):
+        return [deps.today + dt.timedelta(days=i) for i in range(1, replies.ASKED_DAYS + 1)]
 
 
 def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) -> ChatReply:
