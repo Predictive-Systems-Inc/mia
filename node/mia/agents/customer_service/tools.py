@@ -1,6 +1,674 @@
 """The customer service's tools: typed inputs and outputs, permission checked data access, writes
-only through mia.core.store. None yet; each new tool is a manifest entry plus a binding here."""
+only through mia.core.store.
 
-from mia.agents.base import ToolBinding
+Customer tools take CustomerDeps and act for the customer in `deps.actor.on_behalf_of` (the
+customer row's ULID), never for a customer named in the input. Each read and write of a
+customer's row is checked with that row's customer_id as the owner, so the customer's
+read_own and write_own allow only their own rows; another customer's row is an rbac deny (the
+agent principal holds the plain grants). Staff tools take AgentDeps and see only their branch.
 
-BINDINGS: list[ToolBinding] = []
+Orders go through the approvals guard: place_order is risk money with `approval: always`. Its
+precheck (_order_precheck) refuses unknown or inactive items, too many items, a time outside
+the opening hours and an area not configured, before anything is asked; then the guard creates
+the approval (evidence: the tool call id and the validated input with the code-made order_id)
+and stops. The caller then runs record_waiting, which writes the order `waiting` only for that
+pending approval and shows the clerks and supervisors its card. A clerk, supervisor, owner or
+admin decides it in the app; apply_order_approval re-reads the waiting row (the approval's own,
+items still active) and confirms it, apply_order_rejection rejects it, and each queues the
+customer's reply. Both find the customer by the approval's on_behalf_of, never a Person.
+
+Refusals raise KeyError(reason) (a LookupError, so call_tool answers `invalid` with the quoted
+reason).
+"""
+
+import datetime as dt
+from collections.abc import Callable
+from typing import Literal
+from zoneinfo import ZoneInfo
+
+from pydantic import AwareDatetime, BaseModel, Field
+from sqlmodel import Session, col, or_, select
+
+from mia.agents.base import AgentDeps, ToolBinding
+from mia.agents.customer_service import MANIFEST, calc, public
+from mia.agents.customer_service.actions import STAFF_ORDER_STATUSES
+from mia.agents.customer_service.models import Complaint, Customer, Order
+from mia.agents.customer_service.public import CustomerDeps
+from mia.chat.blocks import ApprovalCardBlock, Block, CardField, TextBlock
+from mia.chat.channels import notify
+from mia.core import approvals, db, orgconfig, store
+from mia.core.models import Actor, Approval, Branch, Person
+from mia.core.money import format_money
+from mia.core.rbac import Resource, get_rbac
+from mia.i18n import t
+from mia.templates.retail import hours as shop_hours
+from mia.templates.retail.models import RetailBranchHours, RetailItem
+
+PLACE_ORDER = f"{MANIFEST.id}.place_order"
+ORDERS = Resource(kind="data", name=Order.__tablename__)
+CUSTOMERS = Resource(kind="data", name=Customer.__tablename__)
+COMPLAINTS = Resource(kind="data", name=Complaint.__tablename__)
+ITEMS = Resource(kind="data", name=RetailItem.__tablename__)
+HOURS = Resource(kind="data", name=RetailBranchHours.__tablename__)
+CANCELLABLE = ("waiting", "confirmed")
+SHOWN = ("waiting", "confirmed", "ready", "picked_up")  # the statuses order_status reports
+REJECT_REASONS = ("closed", "sold_out", "too_large")  # else the customer reads `other`
+STAFF_ROLES = {"clerk", "supervisor"}
+
+
+# ---- shared helpers -----------------------------------------------------------------------
+
+
+def _require(
+    session: Session, actor: Actor, resource: Resource, action: str, tool_call_id: str | None
+) -> None:
+    get_rbac().require(actor, resource, action, session=session, tool_call_id=tool_call_id)
+
+
+def _owned(resource: Resource, customer_id: str | None) -> Resource:
+    """The resource owned by the customer, so read_own and write_own apply to their rows."""
+    return resource.model_copy(update={"owner_id": customer_id})
+
+
+def _customer(deps: CustomerDeps) -> Customer:
+    """The customer the agent acts for: the actor's on_behalf_of row, never an input."""
+    who = deps.actor.on_behalf_of
+    row = deps.session.get(Customer, who.id) if who and who.type == "customer" else None
+    if row is None:
+        raise KeyError("customer")
+    return row
+
+
+def _first_name(customer: Customer) -> str:
+    return (customer.name or "").split(" ", 1)[0]
+
+
+def _who(customer: Customer) -> str:
+    """How staff tell customers apart: the first name and the number's last four digits."""
+    return f"{_first_name(customer)} ({calc.last_four(customer.address)})".strip()
+
+
+def _active_items(session: Session, branch: Branch, ids: list[str] | None) -> list[RetailItem]:
+    """The branch's active items (its own and every branch's), menu order; only `ids` if given."""
+    here = or_(col(RetailItem.branch_id) == branch.id, col(RetailItem.branch_id).is_(None))
+    stmt = select(RetailItem).where(RetailItem.active).where(here)
+    if ids is not None:
+        stmt = stmt.where(col(RetailItem.id).in_(ids))
+    return list(session.exec(stmt.order_by(col(RetailItem.sort_order))))
+
+
+def _area(name: str | None) -> orgconfig.DeliveryArea | None:
+    """The configured delivery area of that name (case and accents ignored), else None."""
+    if name is None:
+        return None
+    return next(
+        (a for a in orgconfig.load().delivery_areas if calc.fold(a.name) == calc.fold(name)), None
+    )
+
+
+def _staff(session: Session, branch_id: str, roles: set[str]) -> list[Person]:
+    rows = session.exec(
+        select(Person).where(Person.branch_id == branch_id).where(Person.status == "active")
+    ).all()
+    return [p for p in rows if roles & set(p.roles)]
+
+
+def _tell_staff(
+    session: Session,
+    branch_id: str,
+    roles: set[str],
+    words: Callable[[str], list[Block]],
+    actor: Actor,
+) -> None:
+    """A sensitive notification (a customer's first name and number digits) to each active
+    person of the branch holding one of the roles, worded in their language."""
+    for person in _staff(session, branch_id, roles):
+        blocks = words(person.language or "en")
+        notify(session, person, blocks, actor, MANIFEST.id, sensitive=True)
+
+
+def _local(when: dt.datetime, branch: Branch) -> str:
+    return f"{when.astimezone(ZoneInfo(branch.timezone)):%H:%M}"
+
+
+class EmptyInput(BaseModel):
+    """No input: the tool answers for the acting customer or the staff member's branch."""
+
+
+class StatusOutput(BaseModel):
+    order_id: str | None
+    status: str | None
+
+
+# ---- customer tools -------------------------------------------------------------------------
+
+
+class HoursOutput(BaseModel):
+    is_open: bool
+    closes_at: dt.datetime | None
+    next_open: dt.datetime
+
+
+def hours(deps: CustomerDeps, args: EmptyInput, tool_call_id: str) -> HoursOutput:
+    """Whether the branch is open now, until when, and its next opening."""
+    _require(deps.session, deps.actor, HOURS, "read", tool_call_id)
+    state = calc.open_state(deps.branch, shop_hours.load(deps.session, deps.branch.id), db.utcnow())
+    return HoursOutput(is_open=state.is_open, closes_at=state.closes_at, next_open=state.next_open)
+
+
+class PricesInput(BaseModel):
+    item_ids: list[str] = Field(default_factory=list)  # empty: the whole menu
+
+
+class PriceOut(BaseModel):
+    item_id: str
+    name: str
+    price: int  # minor units
+    currency: str
+
+
+class PricesOutput(BaseModel):
+    items: list[PriceOut]
+
+
+def prices(deps: CustomerDeps, args: PricesInput, tool_call_id: str) -> PricesOutput:
+    """The prices of the asked items that are active here (the menu when none are asked)."""
+    _require(deps.session, deps.actor, ITEMS, "read", tool_call_id)
+    rows = _active_items(deps.session, deps.branch, args.item_ids or None)
+    return PricesOutput(
+        items=[
+            PriceOut(item_id=i.id, name=i.name, price=i.price, currency=i.currency) for i in rows
+        ]
+    )
+
+
+class AreaInput(BaseModel):
+    name: str | None = None
+
+
+class AreaOutput(BaseModel):
+    area: str | None  # None: not delivered there (or no area named)
+    fee: int | None
+    currency: str | None
+    pickup_branch: str
+
+
+def delivery_area(deps: CustomerDeps, args: AreaInput, tool_call_id: str) -> AreaOutput:
+    """The configured area and its fee, or none; always the branch to pick up from."""
+    area = _area(args.name)
+    return AreaOutput(
+        area=area.name if area else None,
+        fee=area.fee if area else None,
+        currency=area.currency if area else None,
+        pickup_branch=deps.branch.name,
+    )
+
+
+class LineIn(BaseModel):
+    item_id: str
+    quantity: int = Field(ge=1)
+
+
+class PlaceOrderInput(BaseModel):
+    order_id: str  # made by code (new_id) before the call, so the approval names its row
+    lines: list[LineIn] = Field(min_length=1)
+    fulfilment: Literal["pickup", "delivery"]
+    pickup_at: AwareDatetime  # rule 10
+    delivery_area: str | None = None
+    delivery_note: str | None = None
+
+
+def _order_precheck(deps: CustomerDeps, args: PlaceOrderInput, tool_call_id: str) -> None:
+    """The guard's precheck for place_order (after the permission check, before the approval):
+    every item active here, at most max_order_quantity items, the pickup within the opening
+    hours, a delivery to a configured area. Raises KeyError item, too_large, closed or area."""
+    _require(deps.session, deps.actor, ITEMS, "read", tool_call_id)
+    _require(deps.session, deps.actor, HOURS, "read", tool_call_id)
+    ids = {line.item_id for line in args.lines}
+    if len(_active_items(deps.session, deps.branch, list(ids))) != len(ids):
+        raise KeyError("item")
+    limit = orgconfig.load().customer_service.max_order_quantity
+    if sum(line.quantity for line in args.lines) > limit:
+        raise KeyError("too_large")
+    rows = shop_hours.load(deps.session, deps.branch.id)
+    if not calc.within_hours(deps.branch, rows, args.pickup_at):
+        raise KeyError("closed")
+    if args.fulfilment == "delivery" and _area(args.delivery_area) is None:
+        raise KeyError("area")
+
+
+def read_order(deps: CustomerDeps, order_id: str, tool_call_id: str) -> Order:
+    """One of the customer's orders. Checked with the row's customer_id as the owner before
+    anything is returned, so another customer's (or a missing) order is PermissionDenied."""
+    row = deps.session.get(Order, order_id)
+    owner = row.customer_id if row else None
+    _require(deps.session, deps.actor, _owned(ORDERS, owner), "read", tool_call_id)
+    if row is None:
+        raise KeyError("order")
+    return row
+
+
+def place_order(deps: CustomerDeps, args: PlaceOrderInput, tool_call_id: str) -> StatusOutput:
+    """Runs only with an approved place_order approval (the guard asks first, and the approve
+    handler confirms the row itself): the order's status."""
+    row = read_order(deps, args.order_id, tool_call_id)
+    return StatusOutput(order_id=row.id, status=row.status)
+
+
+def _order_card(
+    session: Session, order: Order, customer: Customer, branch: Branch, lang: str
+) -> list[Block]:
+    """The clerks' and supervisors' approval card: items, total, pickup time, the customer's
+    first name and the last four digits of their number."""
+    names = {i.id: i.name for i in session.exec(select(RetailItem)).all()}
+    items = ", ".join(f"{ln['quantity']} {names.get(ln['item_id'], '?')}" for ln in order.lines)
+    who = _who(customer)
+    card = ApprovalCardBlock(
+        approval_id=order.approval_id or "",
+        title=t("cs.staff.order_title", lang),
+        summary=who,
+        fields=[
+            CardField(label=t("cs.field.items", lang), value=items),
+            CardField(
+                label=t("cs.field.total", lang),
+                value=format_money(order.total, order.currency, lang),
+            ),
+            CardField(label=t("cs.field.pickup", lang), value=_local(order.pickup_at, branch)),
+            CardField(label=t("cs.field.customer", lang), value=who),
+        ],
+    )
+    return [TextBlock(text=t("cs.staff.order_waiting", lang, who=who)), card]
+
+
+def record_waiting(deps: CustomerDeps, args: PlaceOrderInput, approval_id: str) -> Order:
+    """Write the order `waiting` (event customer_service.order_placed) for the pending
+    place_order approval the guard just made for exactly this input and customer, and send its
+    card to the branch's clerks and supervisors (sensitive). Raises KeyError for any other
+    approval, so no order row exists without its approval."""
+    session, customer = deps.session, _customer(deps)
+    approval = session.get(Approval, approval_id)
+    ours = (
+        approval is not None
+        and approval.type == PLACE_ORDER
+        and approval.status == "pending"
+        and approval.requester_on_behalf_of == customer.id
+        and approval.evidence.get("input") == args.model_dump(mode="json")
+    )
+    if approval is None or not ours:
+        raise KeyError("approval")
+    tool_call_id = str(approval.evidence.get("tool_call_id"))
+    _require(session, deps.actor, _owned(ORDERS, customer.id), "write", tool_call_id)
+    items = {
+        i.id: i for i in _active_items(session, deps.branch, [ln.item_id for ln in args.lines])
+    }
+    area = _area(args.delivery_area) if args.fulfilment == "delivery" else None
+    lines = [
+        {"item_id": ln.item_id, "quantity": ln.quantity, "unit_price": items[ln.item_id].price}
+        for ln in args.lines
+    ]
+    total = calc.order_total(
+        [(ln.quantity, items[ln.item_id].price) for ln in args.lines], area.fee if area else 0
+    )
+    order = store.insert(
+        session,
+        Order(
+            id=args.order_id,
+            branch_id=customer.branch_id,
+            customer_id=customer.id,
+            lines=lines,
+            total=total,
+            currency=items[args.lines[0].item_id].currency,
+            fulfilment=args.fulfilment,
+            pickup_at=args.pickup_at,
+            delivery_area=area.name if area else None,
+            delivery_note=args.delivery_note,
+            status="waiting",
+            approval_id=approval.id,
+        ),
+        deps.actor,
+        action=f"{MANIFEST.id}.order_placed",
+        tool_call_id=tool_call_id,
+        approval_id=approval.id,
+    )
+    branch = deps.branch
+
+    def words(lang: str) -> list[Block]:
+        return _order_card(session, order, customer, branch, lang)
+
+    _tell_staff(session, customer.branch_id, STAFF_ROLES, words, deps.actor)
+    return order
+
+
+def _latest(
+    deps: CustomerDeps, statuses: tuple[str, ...], action: str, tool_call_id: str
+) -> Order | None:
+    customer = _customer(deps)
+    _require(deps.session, deps.actor, _owned(ORDERS, customer.id), action, tool_call_id)
+    return deps.session.exec(
+        select(Order)
+        .where(Order.customer_id == customer.id)
+        .where(col(Order.status).in_(statuses))
+        .order_by(col(Order.id).desc())
+    ).first()
+
+
+def order_status(deps: CustomerDeps, args: EmptyInput, tool_call_id: str) -> StatusOutput:
+    """The customer's latest order that is not cancelled or rejected, or none."""
+    row = _latest(deps, SHOWN, "read", tool_call_id)
+    return StatusOutput(order_id=row.id if row else None, status=row.status if row else None)
+
+
+def cancel_order(deps: CustomerDeps, args: EmptyInput, tool_call_id: str) -> StatusOutput:
+    """Cancel the customer's latest open order while it is waiting or confirmed (event
+    customer_service.order_cancelled) and tell the branch's clerks and supervisors. Raises
+    KeyError ready for a ready order (the customer calls the shop) and no_order for none."""
+    row = _latest(deps, (*CANCELLABLE, "ready"), "write", tool_call_id)
+    if row is None:
+        raise KeyError("no_order")
+    if row.status == "ready":
+        raise KeyError("ready")
+    store.update(
+        deps.session,
+        row,
+        {"status": "cancelled"},
+        deps.actor,
+        action=f"{MANIFEST.id}.order_cancelled",
+        tool_call_id=tool_call_id,
+    )
+    customer, branch = _customer(deps), deps.branch
+
+    def words(lang: str) -> list[Block]:
+        who = _who(customer)
+        text = t("cs.staff.order_cancelled", lang, who=who, time=_local(row.pickup_at, branch))
+        return [TextBlock(text=text)]
+
+    _tell_staff(deps.session, branch.id, STAFF_ROLES, words, deps.actor)
+    return StatusOutput(order_id=row.id, status=row.status)
+
+
+class ComplainInput(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class ComplaintOutput(BaseModel):
+    complaint_id: str
+
+
+def complain(deps: CustomerDeps, args: ComplainInput, tool_call_id: str) -> ComplaintOutput:
+    """Log the customer's complaint (event customer_service.complaint_logged, text redacted)
+    and tell the branch's supervisors its text in a sensitive notification."""
+    customer = _customer(deps)
+    _require(deps.session, deps.actor, _owned(COMPLAINTS, customer.id), "write", tool_call_id)
+    row = store.insert(
+        deps.session,
+        Complaint(branch_id=customer.branch_id, customer_id=customer.id, text=args.text),
+        deps.actor,
+        action=f"{MANIFEST.id}.complaint_logged",
+        tool_call_id=tool_call_id,
+    )
+
+    def words(lang: str) -> list[Block]:
+        who = _who(customer)
+        return [TextBlock(text=t("cs.staff.complaint", lang, who=who, text=args.text))]
+
+    _tell_staff(deps.session, customer.branch_id, {"supervisor"}, words, deps.actor)
+    return ComplaintOutput(complaint_id=row.id)
+
+
+# ---- staff tools ----------------------------------------------------------------------------
+
+
+class LineOut(BaseModel):
+    item_id: str
+    name: str
+    quantity: int
+
+
+class OrderOut(BaseModel):
+    order_id: str
+    status: str
+    pickup_at: dt.datetime
+    fulfilment: str
+    lines: list[LineOut]
+    total: int
+    currency: str
+    customer: str  # the first name only
+
+
+class OrdersOutput(BaseModel):
+    orders: list[OrderOut]
+
+
+def orders_today(deps: AgentDeps, args: EmptyInput, tool_call_id: str) -> OrdersOutput:
+    """The branch's confirmed and ready orders picked up today (local), by pickup time."""
+    for resource in (ORDERS, CUSTOMERS, ITEMS):
+        _require(deps.session, deps.actor, resource, "read", tool_call_id)
+    tz = ZoneInfo(deps.branch.timezone)
+    rows = deps.session.exec(
+        select(Order, Customer)
+        .where(Order.customer_id == Customer.id)
+        .where(Order.branch_id == deps.branch.id)
+        .where(col(Order.status).in_(STAFF_ORDER_STATUSES))
+    ).all()
+    # pickup_at is an ISO string with its own offset, so the day is compared here, not in SQL
+    today = sorted(
+        ((o, c) for o, c in rows if o.pickup_at.astimezone(tz).date() == deps.today),
+        key=lambda row: row[0].pickup_at,
+    )
+    names = {i.id: i.name for i in deps.session.exec(select(RetailItem)).all()}
+    return OrdersOutput(
+        orders=[
+            OrderOut(
+                order_id=o.id,
+                status=o.status,
+                pickup_at=o.pickup_at,
+                fulfilment=o.fulfilment,
+                lines=[
+                    LineOut(
+                        item_id=ln["item_id"],
+                        name=names.get(ln["item_id"], "?"),
+                        quantity=ln["quantity"],
+                    )
+                    for ln in o.lines
+                ],
+                total=o.total,
+                currency=o.currency,
+                customer=_first_name(c),
+            )
+            for o, c in today
+        ]
+    )
+
+
+class OrderRef(BaseModel):
+    order_id: str
+
+
+def _branch_order(deps: AgentDeps, order_id: str, tool_call_id: str) -> Order:
+    _require(deps.session, deps.actor, ORDERS, "write", tool_call_id)
+    row = deps.session.get(Order, order_id)
+    if row is None or row.branch_id != deps.branch.id:
+        raise KeyError("order")
+    return row
+
+
+def mark_ready(deps: AgentDeps, args: OrderRef, tool_call_id: str) -> StatusOutput:
+    """A confirmed order of the branch becomes ready (event customer_service.order_ready) and
+    the customer's reply is queued (sent only inside their 24-hour window). KeyError status
+    for any other status."""
+    row = _branch_order(deps, args.order_id, tool_call_id)
+    if row.status != "confirmed":
+        raise KeyError("status")
+    action = f"{MANIFEST.id}.order_ready"
+    store.update(
+        deps.session, row, {"status": "ready"}, deps.actor, action=action, tool_call_id=tool_call_id
+    )
+    customer = deps.session.get(Customer, row.customer_id)
+    if customer is not None:
+        text = t("cs.order_ready", customer.language, time=_local(row.pickup_at, deps.branch))
+        public.queue(deps.session, customer, [TextBlock(text=text)], deps.actor)
+    return StatusOutput(order_id=row.id, status=row.status)
+
+
+def mark_picked_up(deps: AgentDeps, args: OrderRef, tool_call_id: str) -> StatusOutput:
+    """A confirmed or ready order of the branch is picked up (event
+    customer_service.order_picked_up). KeyError status for any other status."""
+    row = _branch_order(deps, args.order_id, tool_call_id)
+    if row.status not in STAFF_ORDER_STATUSES:
+        raise KeyError("status")
+    action = f"{MANIFEST.id}.order_picked_up"
+    store.update(
+        deps.session,
+        row,
+        {"status": "picked_up"},
+        deps.actor,
+        action=action,
+        tool_call_id=tool_call_id,
+    )
+    return StatusOutput(order_id=row.id, status=row.status)
+
+
+class ComplaintRef(BaseModel):
+    complaint_id: str
+
+
+def resolve_complaint(deps: AgentDeps, args: ComplaintRef, tool_call_id: str) -> StatusOutput:
+    """An open complaint of the branch is resolved by the acting person (event
+    customer_service.complaint_resolved). KeyError complaint when there is none open."""
+    _require(deps.session, deps.actor, COMPLAINTS, "write", tool_call_id)
+    row = deps.session.get(Complaint, args.complaint_id)
+    if row is None or row.branch_id != deps.branch.id or row.status != "open":
+        raise KeyError("complaint")
+    changes = {"status": "resolved", "resolved_by": deps.person.id, "resolved_at": db.utcnow()}
+    action = f"{MANIFEST.id}.complaint_resolved"
+    store.update(deps.session, row, changes, deps.actor, action=action, tool_call_id=tool_call_id)
+    return StatusOutput(order_id=row.order_id, status=row.status)
+
+
+# ---- the order approval -----------------------------------------------------------------
+
+
+def _decided(session: Session, approval: Approval, decider: Actor) -> tuple[Order, Customer, Actor]:
+    """The order and customer of a place_order approval, and the agent acting for the decider
+    (checked: the agent and the decider may write orders). The customer is the approval's
+    on_behalf_of (a customer row, never a Person); the order is the evidence's order_id, and
+    must name this approval and this customer. Raises KeyError otherwise."""
+    public.ensure_role()  # decide runs outside any turn: no agent has loaded the role
+    customer = session.get(Customer, approval.requester_on_behalf_of or "")
+    raw = approval.evidence.get("input")
+    order = session.get(Order, str(raw.get("order_id"))) if isinstance(raw, dict) else None
+    if customer is None or order is None:
+        raise KeyError("order")
+    if order.approval_id != approval.id or order.customer_id != customer.id:
+        raise KeyError("order")
+    actor = decider.as_agent(MANIFEST.roles.agent_role)
+    _require(session, actor, ORDERS, "write", None)
+    return order, customer, actor
+
+
+def apply_order_approval(session: Session, approval: Approval, decider: Actor) -> None:
+    """Approval handler: the order row must still be waiting and every item still active;
+    then it is confirmed with decided_by (event customer_service.order_confirmed) and the
+    customer's reply is queued. Raises KeyError otherwise (the decision rolls back)."""
+    order, customer, actor = _decided(session, approval, decider)
+    if order.status != "waiting":
+        raise KeyError("status")
+    ids = {ln["item_id"] for ln in order.lines}
+    branch = session.get(Branch, order.branch_id)
+    if branch is None or len(_active_items(session, branch, list(ids))) != len(ids):
+        raise KeyError("item")
+    changes = {"status": "confirmed", "decided_by": decider.principal.id}
+    action = f"{MANIFEST.id}.order_confirmed"
+    store.update(session, order, changes, actor, action=action, approval_id=approval.id)
+    text = t("cs.order_confirmed", customer.language, time=_local(order.pickup_at, branch))
+    public.queue(session, customer, [TextBlock(text=text)], public.customer_actor(customer))
+
+
+def apply_order_rejection(session: Session, approval: Approval, decider: Actor) -> None:
+    """Reject handler: a waiting order becomes rejected with decided_by (event
+    customer_service.order_rejected with the reason key) and the customer is told the reason
+    (closed, sold_out, too_large, else other); nothing is owed. An order no longer waiting
+    (cancelled meanwhile) is left as it is."""
+    order, customer, actor = _decided(session, approval, decider)
+    if order.status != "waiting":
+        return
+    branch = session.get(Branch, order.branch_id)
+    reason = approval.reason if approval.reason in REJECT_REASONS else "other"
+    changes = {"status": "rejected", "decided_by": decider.principal.id}
+    action = f"{MANIFEST.id}.order_rejected"
+    store.update(session, order, changes, actor, action=action, approval_id=approval.id)
+    time = _local(order.pickup_at, branch) if branch else ""
+    text = t(f"cs.order_rejected.{reason}", customer.language, time=time)
+    public.queue(session, customer, [TextBlock(text=text)], public.customer_actor(customer))
+
+
+approvals.register_handler(PLACE_ORDER, apply_order_approval)
+approvals.register_reject_handler(PLACE_ORDER, apply_order_rejection)
+
+
+BINDINGS: list[ToolBinding] = [
+    ToolBinding(
+        f"{MANIFEST.id}.hours",
+        hours,
+        EmptyInput,
+        "Whether the shop is open now, and when it opens or closes.",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.prices",
+        prices,
+        PricesInput,
+        "Prices of menu items (the whole menu when none are named).",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.delivery_area",
+        delivery_area,
+        AreaInput,
+        "Whether the shop delivers to an area, and the fee.",
+    ),
+    ToolBinding(
+        PLACE_ORDER,
+        place_order,
+        PlaceOrderInput,
+        "Place an order for pickup or delivery. A clerk or supervisor confirms it first.",
+        precheck=_order_precheck,
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.order_status",
+        order_status,
+        EmptyInput,
+        "The status of the customer's latest order.",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.cancel_order",
+        cancel_order,
+        EmptyInput,
+        "Cancel the customer's latest order before it is ready.",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.complain",
+        complain,
+        ComplainInput,
+        "Log a complaint and tell the supervisor.",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.orders_today",
+        orders_today,
+        EmptyInput,
+        "Today's confirmed and ready customer orders.",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.mark_ready", mark_ready, OrderRef, "Mark a customer order ready for pickup."
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.mark_picked_up",
+        mark_picked_up,
+        OrderRef,
+        "Mark a customer order picked up.",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.resolve_complaint",
+        resolve_complaint,
+        ComplaintRef,
+        "Resolve a customer complaint.",
+    ),
+]

@@ -146,8 +146,9 @@ p, admin, *, tool:hr_officer.certificate_text, execute, allow
 p, admin, *, tool:hr_officer.set_contract, execute, allow
 
 # customer (a member of the public on a channel, customer_service only): inherits nothing, no
-# agent:*:use; every grant one by one. read_own and write_own gate by role only; the tools
-# scope rows to the customer's own id.
+# agent:*:use; every grant one by one. read_own and write_own allow a row only when its owner
+# is the customer's own id: the tools pass the row's customer_id as owner_id, so another
+# customer's row is an rbac deny (rbac.principal_allowed).
 p, customer, *, tool:customer_service.hours, execute, allow
 p, customer, *, tool:customer_service.prices, execute, allow
 p, customer, *, tool:customer_service.delivery_area, execute, allow
