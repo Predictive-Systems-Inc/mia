@@ -77,7 +77,10 @@ mia/
                             test_sales_supervisor_scenarios.py runs the sales scenarios.yaml;
                             inventory_manager_cases.py, test_inventory_cases.py (offline shape
                             and scoring check) and test_inventory_manager_evals.py for the
-                            real-Jev inventory decider eval; <id>_cases.py and
+                            real-Jev inventory decider eval; hr_officer_cases.py,
+                            test_hr_cases.py (offline shape and scoring check) and
+                            test_hr_officer_evals.py for the real-Jev hr decider eval;
+                            <id>_cases.py and
                             test_<id>_evals.py from the scaffold)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,
                             research/ (research notes and dated evaluation reports, ADR 012)

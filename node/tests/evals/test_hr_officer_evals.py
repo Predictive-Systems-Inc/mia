@@ -1,8 +1,9 @@
 """Real-Jev hr officer decider evaluation, asserted with the Q40 bar of tests/evals/gate.py.
-Run: MIA_DECIDER=jev uv run pytest node/tests/evals/test_hr_officer_evals.py -m evals -s
+Run: MIA_DECIDER=jev MIA_ORG=ferinos uv run pytest node/tests/evals/test_hr_officer_evals.py -m evals -s
 (needs MIA_TYPESAFE_KEY; skips while the case list is empty). Each case runs build_query and
-decider.decide on Ferino's seeded demo through egress (pseudonymised, rule 6). The gate reads
-the gate half only; the tune half is for tuning the action descriptions."""
+decider.decide on Ferino's seeded demo through egress (pseudonymised, rule 6), with today pinned
+to the case set's TODAY. The gate reads the gate half only; the tune half is for tuning the
+action descriptions."""
 
 import asyncio
 import datetime as dt
@@ -10,7 +11,6 @@ import json
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import Engine
@@ -25,7 +25,7 @@ from mia.core.egress import EgressContext, egress_context
 from mia.core.models import Actor, Branch, Person
 from mia.settings import get_settings
 from tests.evals import gate
-from tests.evals.hr_officer_cases import CASES, GATED_LANGS, Case
+from tests.evals.hr_officer_cases import CASES, GATED_LANGS, TODAY, Case, on
 
 pytestmark = pytest.mark.evals
 
@@ -53,7 +53,7 @@ def _deps(session: Session, case: Case, person_id: str) -> AgentDeps:
         person=person,
         branch=branch,
         organisation_id=branch.organisation_id,
-        today=dt.datetime.now(ZoneInfo(branch.timezone)).date(),
+        today=TODAY,
         lang=case.lang,
         manifest=MANIFEST,
     )
@@ -78,6 +78,7 @@ async def _one(case: Case, engine: Engine, person_id: str, sem: asyncio.Semaphor
                 with egress_context(ctx):
                     decision = await asyncio.wait_for(decider.decide(query), timeout=30)
                 result |= {"action": decision.action, "missing": decision.missing}
+                result |= {"args": decision.args}
                 result["confidence"] = decision.confidence
             except (jev.JevError, TimeoutError) as exc:
                 result["error"] = str(exc) or type(exc).__name__
@@ -86,14 +87,16 @@ async def _one(case: Case, engine: Engine, person_id: str, sem: asyncio.Semaphor
 
 
 def _score(r: dict[str, Any]) -> str:
-    """right, wrong (another action at >= the threshold), ask (clarify or a missing input), or
-    other (an error, or another action below the threshold)."""
+    """right (the action and every expected input), wrong (another input, or another action at
+    >= the threshold), ask (clarify or a missing input), or other (an error, or another action
+    below the threshold)."""
     if r["error"] is not None:
         return "other"
     if r["action"] == "clarify" or r["missing"] is not None:
         return "ask"
     if r["action"] == r["expected_action"]:
-        return "right"
+        slots = r["expected_slots"].items()
+        return "right" if all(r["args"].get(k) == on(v) for k, v in slots) else "wrong"
     return "wrong" if r["confidence"] >= THRESHOLD else "other"
 
 

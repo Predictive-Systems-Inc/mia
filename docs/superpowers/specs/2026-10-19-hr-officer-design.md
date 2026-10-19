@@ -207,4 +207,8 @@ the decider gate at the Q40 bar on a fresh gate half; ten router seeds per gated
 languages. 8. Evals, gates, docs.
 
 ## Carried over
-(none yet)
+- Decider gate (19 Oct, docs/research/hr-officer-2026-10-19.md): passes at the Q40 bar on the
+  gate half after one tuning edit (wrong 0.0%; right en 94%, fil 94%, ceb 92%, hil 90%, war
+  90%, bcl 90%; ask 6% to 10%). Leave requests are the ask cost (63% right, every miss a
+  clarify with the right dates); "next week" and today or tomorrow words in ceb, hil, war and
+  bcl are not in `find_dates` yet. The router gate was not rerun (description unchanged).

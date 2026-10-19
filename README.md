@@ -234,6 +234,18 @@ gate half at the Q40 bar):
 `MIA_DECIDER=jev uv run pytest node/tests/evals/test_inventory_manager_evals.py -m evals -s`
 (needs `MIA_TYPESAFE_KEY`; writes `docs/research/inventory-manager-<date>-<HHMM>.raw.json`).
 
+The HR officer answers a person's own pay and leave questions: hours worked in a cutoff or
+month, the next payday, the 13th month so far, the SSS, PhilHealth and Pag-IBIG shares of the
+last payslip, leave requests (approved by head staff on a card) and the leave balance, holiday
+pay, a payslip sent again and, for the owner, a certificate of employment text. It answers
+only with `MIA_DECIDER=jev`. Its decider eval (600 synthetic messages in six languages, gated on
+the gate half at the Q40 bar):
+`MIA_DECIDER=jev MIA_ORG=ferinos uv run pytest node/tests/evals/test_hr_officer_evals.py -m evals -s`
+(needs `MIA_TYPESAFE_KEY`; writes `docs/research/hr-officer-<date>-<HHMM>.raw.json`). The
+contribution tables in `agents/hr_officer/ph.py` are written from memory and must be checked
+with an accountant before a real payslip (Q61); the 2026 holiday list in
+`config/org/ferinos/holidays.yaml` is a draft to verify (Q62).
+
 To evaluate a model: `MIA_EVAL_MODEL=gateway/<route>` or `local/<model>`, then
 `uv run pytest node/tests/evals -m evals`.
 
