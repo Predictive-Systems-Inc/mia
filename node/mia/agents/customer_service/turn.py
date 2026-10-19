@@ -1,25 +1,33 @@
-"""The customer service's answer to one chat turn: Jev picks the action (MIA_DECIDER=jev), code
-words the reply. The emergency script runs before this, in chat.service, for every agent."""
+"""The customer service's answer to one staff chat turn: Jev picks a STAFF action
+(MIA_DECIDER=jev), code runs the tool through the guard and words the reply. A customer's
+action or another agent's tapped decision asks to rephrase. The emergency script runs before
+this, in chat.service, for every agent."""
 
 import asyncio
 import html
 from dataclasses import replace
+from typing import Any
 from zoneinfo import ZoneInfo
 
+from pydantic import ValidationError
 from sqlmodel import Session, col, select
 
-from mia.agents.base import AgentDeps, AgentSpec, Turn
-from mia.agents.customer_service import MANIFEST, actions, decider, replies
+from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
+from mia.agents.customer_service import MANIFEST, actions, decider, due, replies, tools
+from mia.agents.customer_service.models import Customer, Order
 from mia.agents.decider import Decision
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import reply_text, store_reply
 from mia.core import events
 from mia.core.egress import EgressContext, egress_context
+from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
 from mia.core.models import Event, Message, Thread
 from mia.i18n import t
 from mia.settings import get_settings
+
+_BINDINGS = {b.tool_id: b for b in tools.BINDINGS}
 
 
 def _last_question(session: Session, thread: Thread) -> Message | None:
@@ -90,6 +98,32 @@ def _did_you_mean(
     return reply
 
 
+def _names(session: Session, out: dict[str, Any]) -> dict[str, str]:
+    """The short name of the customer of each order the tool output names, by order id."""
+    ids = [o["order_id"] for o in out.get("orders", [])] or [out.get("order_id")]
+    names = {}
+    for order_id in ids:
+        order = session.get(Order, order_id or "")
+        customer = session.get(Customer, order.customer_id) if order else None
+        if order is not None and customer is not None:
+            names[order.id] = replies.short_name(customer.name)
+    return names
+
+
+def _run(
+    session: Session, deps: AgentDeps, thread: Thread, tool: str, args: dict[str, Any]
+) -> ChatReply:
+    """Run one staff tool through the guard and word the reply."""
+    binding = _BINDINGS[f"{MANIFEST.id}.{tool}"]
+    try:
+        inp = binding.input_type.model_validate(args)
+    except ValidationError:
+        return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
+    out = call_tool(deps, binding, inp, new_id())
+    blocks = replies.staff_reply(tool, out, _names(session, out), deps.lang, deps.branch.timezone)
+    return store_reply(session, deps, thread, blocks)
+
+
 def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) -> ChatReply:
     """Log the decision, then ask, word a conversation reply, or say a tool is not there yet."""
     after = decision.model_dump(mode="json")
@@ -97,10 +131,10 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     if decision.action == "clarify":
         return _did_you_mean(session, deps, thread, decision)
     spec = actions.ACTIONS.get(decision.action)
-    if spec is None:  # a tapped decision of another agent
+    if spec is None or decision.action not in actions.STAFF:  # another agent's, or a customer's
         return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
-    if spec.tool is not None:  # ponytail: tools.BINDINGS is empty; run it through call_tool
-        return reply_text(session, deps, thread, t("reply.unavailable", deps.lang))
+    if spec.tool is not None:
+        return _run(session, deps, thread, spec.tool, decision.args)
     kind = str(decision.args.get("kind", "other"))
     return store_reply(session, deps, thread, replies.conversation_reply(kind, deps.lang))
 
@@ -149,6 +183,6 @@ SPEC = AgentSpec(
         " ready or picked up, resolving a complaint; not sales counts."
     ),
     handle_turn=handle_turn,
-    run_due=None,
+    run_due=due.run_due,
     stream_agent=None,
 )

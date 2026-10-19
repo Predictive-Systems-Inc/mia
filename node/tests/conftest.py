@@ -246,6 +246,7 @@ CLOCK_USERS = (
     "mia.channels.inbound",
     "mia.channels.simulator",
     "mia.agents.customer_service.public",
+    "mia.agents.customer_service.due",
 )
 
 

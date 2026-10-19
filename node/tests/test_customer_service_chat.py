@@ -1,22 +1,27 @@
-"""The customer service in chat, through run_turn with the fake Jev. Scaffolded with one test (a
-greeting); the plan's scenarios add the rest here."""
+"""The customer service in chat, through run_turn with the fake Jev: a greeting, and the staff
+side (scenario 8): today's orders, an order marked ready and picked up, and a tapped decision
+outside STAFF asked to rephrase."""
 
 import asyncio
 import functools
 from typing import Any
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from mia.agents.customer_service import MANIFEST
+from mia.agents.customer_service.models import CustomerMessage
+from mia.agents.decider import Decision
 from mia.chat.access import agents_for
-from mia.chat.blocks import TextBlock
+from mia.chat.blocks import ChatReply, TextBlock
 from mia.chat.service import run_turn
-from mia.core import jev, orgconfig
-from mia.core.models import Branch, Person
+from mia.core import events, jev, orgconfig
+from mia.core.models import Actor, Branch, Person
 from mia.i18n import t
 from mia.settings import get_settings
+from tests.conftest import Shop
 from tests.jev_fake import answers_for, fake_jev
+from tests.test_customer_service_tools import seeded_order
 
 Ferinos = tuple[Branch, dict[str, Person]]
 
@@ -74,3 +79,92 @@ def test_only_the_given_roles_are_offered_the_agent(
         assert [a.id for a in agents_for(session, person)] == [MANIFEST.id], role
     outsider = Person(name="x", roles=["viewer"], branch_id=branch.id)
     assert agents_for(session, outsider) == []
+
+
+# ---- the staff side (scenario 8) ------------------------------------------------------------
+
+
+@pytest.fixture
+def staff(monkeypatch: pytest.MonkeyPatch, cs: Shop) -> Shop:
+    """The cs seed in Jev mode with this agent as the org's only agent."""
+    only = orgconfig.OrgSettings(agents=[MANIFEST.id])
+    monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: only))
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")
+    get_settings.cache_clear()
+    return cs
+
+
+def _turn(session: Session, person: Person, text: str, thread: str | None = None) -> ChatReply:
+    reply = asyncio.run(run_turn(session, None, person, text, thread))
+    session.commit()
+    return reply
+
+
+def _said(reply: ChatReply) -> list[str]:
+    return [b.text for b in reply.blocks if isinstance(b, TextBlock)]
+
+
+def _last_out(session: Session) -> CustomerMessage:
+    return session.exec(
+        select(CustomerMessage)
+        .where(CustomerMessage.direction == "out")
+        .order_by(col(CustomerMessage.id).desc())
+    ).first() or pytest.fail("no out message")
+
+
+def _tap(
+    session: Session, person: Person, monkeypatch: pytest.MonkeyPatch, action: str
+) -> ChatReply:
+    """Tap a button whose decision is `action`, on a question asked in the person's thread."""
+    _answers(monkeypatch, "greeting", conversation="greeting")
+    first = _turn(session, person, "hi")
+    chosen = Decision(action=action, confidence=1.0).model_dump(mode="json")
+    after = {"options": {"Go": chosen}, "message_id": first.message_id}
+    thread = ("thread", first.thread_id)
+    events.emit(
+        session, "decision.clarify_asked", thread, None, after, Actor.system(person.branch_id)
+    )
+    session.commit()
+    return _turn(session, person, "Go", first.thread_id)
+
+
+def test_staff_list_todays_orders(
+    staff: Shop, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _answers(monkeypatch, "staff_orders_today")
+    reply = _turn(session, staff.people["Liza"], "orders today")
+    assert _said(reply) == [t("cs.orders_today", "fil", orders="15:00 Mila R. (Classic x10)")]
+
+
+def test_staff_mark_ready_and_picked_up(
+    staff: Shop, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    liza = staff.people["Liza"]
+    _answers(monkeypatch, "staff_mark_ready")  # the only open order today, so no pick needed
+    reply = _turn(session, liza, "ready na yung kay Mila")
+    assert _said(reply) == [t("cs.staff.marked_ready", "fil", who="Mila R.")]
+    assert _last_out(session).text == t("cs.order_ready", "fil", time="15:00")
+    _answers(monkeypatch, "staff_mark_picked_up")
+    reply = _turn(session, liza, "picked up na")
+    assert _said(reply) == [t("cs.staff.marked_picked_up", "fil", who="Mila R.")]
+    assert seeded_order(session, "fil").status == "picked_up"
+
+
+def test_marking_with_no_open_order_asks_to_rephrase(
+    staff: Shop, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _answers(monkeypatch, "staff_mark_picked_up")
+    _turn(session, staff.people["Liza"], "picked up na")
+    reply = _turn(session, staff.people["Liza"], "picked up na ulit")  # nothing open is left
+    assert _said(reply) == [t("clarify.rephrase", "fil")]
+
+
+@pytest.mark.parametrize("action", ["record_counts", "hours", "place_order"])
+def test_a_tapped_decision_outside_staff_asks_to_rephrase(
+    staff: Shop, session: Session, monkeypatch: pytest.MonkeyPatch, action: str
+) -> None:
+    """Another agent's decision, or a customer's: nothing runs."""
+    reply = _tap(session, staff.people["Liza"], monkeypatch, action)
+    assert _said(reply) == [t("clarify.rephrase", "fil")]
+    assert seeded_order(session, "fil").status == "confirmed"
