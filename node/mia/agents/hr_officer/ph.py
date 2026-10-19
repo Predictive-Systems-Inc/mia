@@ -44,6 +44,10 @@ RATES: dict[str, Fraction] = {
     "special_holiday": SPECIAL_HOLIDAY,
 }
 REGULAR_MINUTES = 480  # eight hours a day
+# Payslip lines for days paid though not worked, at 100% of the daily rate.
+PAID_LEAVE = "paid_leave"  # approved vacation or sick (service incentive) leave days
+UNWORKED_HOLIDAY = "unworked_holiday"  # a regular holiday not worked (calendar rule)
+BASIC_KINDS = ("regular", PAID_LEAVE)  # the lines the 13th month counts as basic pay
 NIGHT_START = dt.time(22)
 NIGHT_END = dt.time(6)
 # The monthly basic the tables read for a daily-paid worker: daily rate times 26 (the usual
@@ -150,11 +154,21 @@ class PayslipCalc:
     net: int
 
 
-def payslip(minutes_by_day: Sequence[Minutes], daily_rate: int, monthly_basic: int) -> PayslipCalc:
+def payslip(
+    minutes_by_day: Sequence[Minutes],
+    daily_rate: int,
+    monthly_basic: int,
+    *,
+    leave_days: int = 0,
+    holidays: int = 0,
+) -> PayslipCalc:
     """One cutoff's payslip: a line per pay kind worked (its minutes summed over the days, at
-    hourly rate = daily_rate / 8 times the kind's rate, rounded half up to the centavo), the
-    gross, half of each monthly contribution for the semi-monthly cutoff (rounded half up,
-    Q61) and the net (gross less deductions). Integer arithmetic only."""
+    hourly rate = daily_rate / 8 times the kind's rate, rounded half up to the centavo), a
+    paid_leave line (leave_days at the daily rate) and an unworked_holiday line (holidays,
+    unworked regular holidays, at 100% of the daily rate) when there are any, the gross, half
+    of each monthly contribution for the semi-monthly cutoff (rounded half up, Q61) taken in
+    order while the gross lasts, and the net (gross less deductions, never below zero).
+    Integer arithmetic only."""
     lines = []
     for f in fields(Minutes):
         minutes = sum(getattr(day, f.name) for day in minutes_by_day)
@@ -162,6 +176,9 @@ def payslip(minutes_by_day: Sequence[Minutes], daily_rate: int, monthly_basic: i
             rate = RATES[f.name]
             amount = _half_up(Fraction(daily_rate * minutes, 8 * 60) * rate)
             lines.append(Line(f.name, minutes, int(rate * 100), amount))
+    for kind, days in ((PAID_LEAVE, leave_days), (UNWORKED_HOLIDAY, holidays)):
+        if days:
+            lines.append(Line(kind, days * REGULAR_MINUTES, 100, days * daily_rate))
     gross = sum(line.amount for line in lines)
     monthly = {
         "sss": sss_employee(monthly_basic),
@@ -169,5 +186,11 @@ def payslip(minutes_by_day: Sequence[Minutes], daily_rate: int, monthly_basic: i
         "pagibig": pagibig_employee(monthly_basic),
     }
     # ponytail: half a month's contribution per cutoff; some employers take it all on one.
-    deductions = [Line(k, 0, 0, _half_up(Fraction(v, 2))) for k, v in monthly.items()]
-    return PayslipCalc(lines, gross, deductions, gross - sum(d.amount for d in deductions))
+    # Contributions read daily_rate x 26, whatever was worked, so a short cutoff caps them at
+    # the gross; the fuller rule reads the month's actual earnings (Q65).
+    deductions, left = [], gross
+    for kind, monthly_share in monthly.items():
+        amount = min(left, _half_up(Fraction(monthly_share, 2)))
+        deductions.append(Line(kind, 0, 0, amount))
+        left -= amount
+    return PayslipCalc(lines, gross, deductions, left)

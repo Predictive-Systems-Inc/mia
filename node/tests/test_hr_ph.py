@@ -116,3 +116,27 @@ def test_a_payslip_at_the_26000_credit() -> None:
     # SSS 1,300 / 2, PhilHealth 650 / 2, Pag-IBIG 200 / 2.
     assert [d.amount for d in slip.deductions] == [65_000, 32_500, 10_000]
     assert slip.net == 392_500
+
+
+def test_paid_leave_and_an_unworked_regular_holiday_are_lines_at_the_daily_rate() -> None:
+    slip = payslip([Minutes(regular=480)], DAILY, monthly_basic(DAILY), leave_days=2, holidays=1)
+    assert [(line.kind, line.minutes, line.rate_percent, line.amount) for line in slip.lines] == [
+        ("regular", 480, 100, 60_000),
+        ("paid_leave", 960, 100, 120_000),  # two days at 600.00
+        ("unworked_holiday", 480, 100, 60_000),  # 100% of the daily rate
+    ]
+    assert slip.gross == 240_000
+
+
+def test_one_approved_day_never_nets_below_zero() -> None:
+    """One day at 610.00 against half-month contributions on 610.00 x 26 (15,860 a month):
+    SSS 400.00 and PhilHealth 198.25 fit, Pag-IBIG is cut to the 11.75 left, net 0."""
+    daily = 61_000
+    slip = payslip([Minutes(regular=480)], daily, monthly_basic(daily))
+    assert slip.gross == 61_000
+    assert [(d.kind, d.amount) for d in slip.deductions] == [
+        ("sss", 40_000),
+        ("philhealth", 19_825),
+        ("pagibig", 1_175),
+    ]
+    assert slip.net == 0

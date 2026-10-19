@@ -136,6 +136,8 @@ STRINGS: dict[str, str | list[str]] = {
     "hr.pay.rest_day": "Aldo ning pamipahinga",
     "hr.pay.regular_holiday": "Regular holiday",
     "hr.pay.special_holiday": "Special day",
+    "hr.pay.paid_leave": "Paid leave",
+    "hr.pay.unworked_holiday": "Regular holiday, not worked",
     "hr.approval_reminder": "Deng timesheet a manenayang pamag-aprubar: {count}. Misara ya ing cutoff king {end}.",
     "hr.payslips_missed": "E meibie deng payslip para king {start} angga {end} bayu ing susunod a sueldu ({count} a tau). Pakibayaran yu la mano-mano.",
     "hr.leave_refused.no_contract": "E ma-file ing leave manibat {start} angga {end}: alang kontratang meitala.",

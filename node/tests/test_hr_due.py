@@ -117,7 +117,10 @@ def test_payslips_are_due_from_nine_on_payday_until_the_next_payday() -> None:
 
     assert at(PAYDAY) == second and at(PAYDAY.replace(hour=8, minute=59)) == oct_1
     assert at(PAYDAY + dt.timedelta(days=14)) == second  # 19 November, still before the next
-    assert due.paid_cutoffs(PAYDAY, "Asia/Manila", payroll, {}) == (second, oct_1)
+    assert due.paid_cutoffs(PAYDAY, "Asia/Manila", payroll, {}) == (
+        (second, PAYDAY.date()),
+        (oct_1, dt.date(2026, 10, 20)),
+    )
 
 
 def test_a_payday_on_a_sunday_pays_the_day_before() -> None:
@@ -211,10 +214,12 @@ def test_a_branch_pays_from_its_own_contract_only(session: Session, hr: Ferinos,
     store.insert(session, Contract.model_validate(other.model_dump()), Actor.system(branch.id))
     session.commit()
     assert tools._contract(session, pao.id, dt.date(2026, 10, 31)).daily_rate == 99_999
-    (_,) = due.issue_payslips(session, stall, (OCT_16, dt.date(2026, 10, 31)), PAYDAY)
+    (_,) = due.issue_payslips(
+        session, stall, ((OCT_16, dt.date(2026, 10, 31)), PAYDAY.date()), PAYDAY
+    )
     slip = _slips(session)[pao.id]
     days = calc.minutes_by_day(
-        session, pao.id, OCT_16, dt.date(2026, 10, 31), MNL, own.rest_day, tools._holidays()
+        session, pao.id, OCT_16, dt.date(2026, 10, 31), MNL, own.rest_day, calc.holidays()
     )
     expected = ph.payslip(days, own.daily_rate, ph.monthly_basic(own.daily_rate))
     assert (slip.branch_id, slip.gross, slip.net) == (stall.id, expected.gross, expected.net)
@@ -230,7 +235,12 @@ def test_an_issued_payslip_is_not_recomputed(session: Session, hr: Ferinos, pin:
     assert _tick(session, pin, PAYDAY.replace(hour=16)) == 0
     ana_branch = session.get(Branch, people["Ana"].branch_id)
     assert ana_branch is not None
-    assert due.issue_payslips(session, ana_branch, (OCT_16, dt.date(2026, 10, 31)), PAYDAY) == []
+    assert (
+        due.issue_payslips(
+            session, ana_branch, ((OCT_16, dt.date(2026, 10, 31)), PAYDAY.date()), PAYDAY
+        )
+        == []
+    )
     assert _slips(session)[people["Ana"].id].model_dump() == before
 
 

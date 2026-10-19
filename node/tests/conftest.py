@@ -250,16 +250,17 @@ def ferinos(
     from mia.core import orgconfig
     from mia.templates.retail import seed as retail_seed
 
+    load = orgconfig.load  # a test may patch orgconfig.load: clear the real cache after it
     with monkeypatch.context() as m:
         m.setenv("MIA_ORG", "ferinos")
         get_settings.cache_clear()
-        orgconfig.load.cache_clear()
+        load.cache_clear()
         kiosk = retail_seed.seed(session)
         session.commit()
         staff = {p.name.split()[0]: p for p in session.exec(select(Person)).all()}
         yield kiosk, staff
     get_settings.cache_clear()
-    orgconfig.load.cache_clear()
+    load.cache_clear()
 
 
 MANILA = ZoneInfo("Asia/Manila")

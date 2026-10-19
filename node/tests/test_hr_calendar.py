@@ -2,11 +2,13 @@ import datetime as dt
 
 from mia.agents.hr_officer.calendar import (
     cutoff,
+    leave_dates,
     leave_days,
     next_cutoff_end,
     payday,
     previous_cutoff,
     sil_balance,
+    unworked_regular_holidays,
     working_days,
 )
 
@@ -55,3 +57,38 @@ def test_sil_balance_five_days_at_each_anniversary_less_used() -> None:
     assert sil_balance(start, D(2026, 4, 19), 0) == 5  # exactly one year
     assert sil_balance(start, D(2027, 4, 19), 2) == 3  # two years, 2 used this year
     assert sil_balance(start, D(2027, 4, 19), 7) == 0  # never negative
+
+
+def test_leave_dates_are_the_working_days_of_each_leave() -> None:
+    holidays = {D(2026, 8, 31): "regular", D(2026, 8, 21): "special"}
+    spans = [(D(2026, 8, 20), D(2026, 8, 24)), (D(2026, 8, 31), D(2026, 8, 31))]
+    # Sunday the 23rd and the regular holiday are no leave days; the special day is one.
+    assert leave_dates(spans, SUNDAY, holidays) == {
+        D(2026, 8, 20), D(2026, 8, 21), D(2026, 8, 22), D(2026, 8, 24),
+    }  # fmt: skip
+
+
+def test_an_unworked_regular_holiday_pays_after_a_day_worked_or_on_leave() -> None:
+    """National Heroes Day, Monday 31 August 2026; the working day before is Saturday the 29th
+    (Sunday the 30th is the rest day)."""
+    heroes, saturday = D(2026, 8, 31), D(2026, 8, 29)
+    holidays = {heroes: "regular", D(2026, 8, 21): "special"}
+    start, end = D(2026, 8, 16), D(2026, 8, 31)
+
+    def paid(worked: set[dt.date], on_leave: set[dt.date] | None = None) -> list[dt.date]:
+        return unworked_regular_holidays(start, end, SUNDAY, holidays, worked, on_leave or set())
+
+    assert paid({saturday}) == [heroes]
+    assert paid(set(), {saturday}) == [heroes]  # on paid leave the day before
+    assert paid({D(2026, 8, 28)}) == []  # absent on the working day before
+    assert paid({saturday, heroes}) == []  # worked: paid as worked time (200%) instead
+    assert unworked_regular_holidays(start, end, 0, holidays, {saturday}, set()) == []  # rest day
+
+
+def test_an_unworked_special_day_pays_nothing() -> None:
+    holidays = {D(2026, 8, 21): "special"}
+    worked = {D(2026, 8, 20)}
+    assert (
+        unworked_regular_holidays(D(2026, 8, 16), D(2026, 8, 31), SUNDAY, holidays, worked, set())
+        == []
+    )

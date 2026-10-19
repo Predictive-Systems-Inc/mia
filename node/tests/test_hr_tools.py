@@ -59,10 +59,11 @@ def hr(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Ferinos]:
 
     for name in CLOCK_USERS:
         monkeypatch.setattr(importlib.import_module(name), "utcnow", now)
+    load = orgconfig.load  # a test may patch orgconfig.load: clear the real cache after it
     with monkeypatch.context() as m:
         m.setenv("MIA_ORG", "ferinos")
         get_settings.cache_clear()
-        orgconfig.load.cache_clear()
+        load.cache_clear()
         kiosk = retail_seed.seed(session, today=TODAY)
         # The seed speaks Filipino; the tests read English replies (their literals).
         for person in session.exec(select(Person)).all():
@@ -70,7 +71,7 @@ def hr(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Ferinos]:
         session.commit()
         yield kiosk, {p.name.split()[0]: p for p in session.exec(select(Person)).all()}
     get_settings.cache_clear()
-    orgconfig.load.cache_clear()
+    load.cache_clear()
 
 
 def deps_for(session: Session, person: Person) -> AgentDeps:
@@ -183,8 +184,10 @@ def test_payday_is_the_next_one_after_the_cutoff(session: Session, hr: Ferinos) 
 def test_thirteenth_month_is_a_twelfth_of_basic_earned(session: Session, hr: Ferinos) -> None:
     _, people = hr
     out = tools.thirteenth_month(deps_for(session, people["Ana"]), PersonInput(), "t1")
-    earned = 2 * 11 * 61000  # the September 16 to 30 and October 1 to 15 payslips
-    assert (out.earned_basic, out.estimate, out.paid_in) == (earned, 111833, 12)
+    earned = 2 * 13 * 61000  # 16 to 30 September and 1 to 15 October: 13 days each at 610.00
+    assert (out.earned_basic, out.estimate, out.paid_in) == (earned, 132167, 12)
+    liza = tools.thirteenth_month(deps_for(session, people["Liza"]), PersonInput(), "t2")
+    assert liza.earned_basic == earned  # 11 days worked and 2 of paid leave count as basic
     assert out.currency == "PHP"
 
 
@@ -192,8 +195,9 @@ def test_contributions_come_from_the_last_payslip(session: Session, hr: Ferinos)
     _, people = hr
     ana = people["Ana"]
     out = tools.last_contributions(deps_for(session, ana), ContributionsInput(), "c1")
-    assert (out.sss, out.cutoff_end) == (11 * 61000 // 20, dt.date(2026, 10, 15))
-    assert out.philhealth is None  # not on the seeded payslip
+    # Half a month on 610.00 x 26 = 15,860: SSS 800.00, PhilHealth 396.50, Pag-IBIG 200.00.
+    assert (out.sss, out.philhealth, out.pagibig) == (40_000, 19_825, 10_000)
+    assert out.cutoff_end == dt.date(2026, 10, 15)
     only = tools.last_contributions(
         deps_for(session, ana), ContributionsInput(which="pagibig"), "c2"
     )

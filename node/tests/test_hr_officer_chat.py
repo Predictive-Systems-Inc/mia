@@ -120,12 +120,12 @@ def test_thirteenth_month_is_a_twelfth_of_basic_earned(
         for line in s.lines
         if line["kind"] == "regular"
     )
-    assert earned == 2 * 671000  # two seeded payslips of 11 days at 610.00
+    assert earned == 2 * 793000  # two seeded payslips of 13 days at 610.00
     _answers(monkeypatch, "thirteenth")
     reply = _turn(session, ana, "how much is my 13th month")
     estimate = round(earned / 12)
     assert reply.text() == f"13th month so far: {_money(estimate)} (paid in December)."
-    assert _money(estimate) == "₱1,118.33"
+    assert _money(estimate) == "₱1,321.67"
 
 
 def test_the_13th_month_is_paid_in_december(session: Session, hr: Ferinos) -> None:
@@ -138,18 +138,30 @@ def test_the_13th_month_is_paid_in_december(session: Session, hr: Ferinos) -> No
 def test_contributions_come_from_the_last_payslip(
     session: Session, hr: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The seeded payslips deduct SSS only (5% of 6,710.00); the others are none on record."""
+    """The seeded payslips come from ph.payslip: half a month each on 610.00 x 26."""
     _, people = hr
     ana = people["Ana"]
     _answers(monkeypatch, "contributions", which="all")
     reply = _turn(session, ana, "magkano ang hulog ko")
-    none = "none on record"
-    assert reply.text() == f"2026-10-15: SSS ₱335.50, PhilHealth {none}, Pag-IBIG {none}"
+    assert reply.text() == "2026-10-15: SSS ₱400.00, PhilHealth ₱198.25, Pag-IBIG ₱100.00"
     _answers(monkeypatch, "contributions", which="sss")
-    assert _turn(session, ana, "is my SSS paid").text() == "2026-10-15: SSS ₱335.50"
+    assert _turn(session, ana, "is my SSS paid").text() == "2026-10-15: SSS ₱400.00"
     _answers(monkeypatch, "contributions", which="philhealth")
     reply = _turn(session, ana, "magkano ang PhilHealth ko")
-    assert reply.text() == f"2026-10-15: PhilHealth {none}"
+    assert reply.text() == "2026-10-15: PhilHealth ₱198.25"
+
+
+def test_contributions_in_filipino(
+    session: Session, hr: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    branch, people = hr
+    ana = set_language(session, Actor.system(branch.id), people["Ana"], "fil")
+    _answers(monkeypatch, "contributions", which="philhealth")
+    reply = _turn(session, ana, "magkano ang PhilHealth ko")
+    amount = format_money(19825, "PHP", "fil")
+    assert reply.text() == t(
+        "hr.contribution", "fil", cutoff="2026-10-15", name="PhilHealth", amount=amount
+    )
 
 
 def test_no_payslip_yet_is_said(
@@ -362,8 +374,8 @@ def test_a_payslip_is_resent(
     assert reply.text() == "I sent your payslip for 2026-10-01 to 2026-10-15 again."
     (note,) = [x for x in told(session, ana) if x.startswith("Your payslip")]
     assert note == (
-        "Your payslip for 2026-10-01 to 2026-10-15: gross ₱6,710.00, deductions ₱335.50,"
-        " net ₱6,374.50."
+        "Your payslip for 2026-10-01 to 2026-10-15: gross ₱7,930.00, deductions ₱698.25,"
+        " net ₱7,231.75."
     )
 
 
@@ -404,7 +416,7 @@ def test_a_regular_holiday_is_worded_with_its_rate() -> None:
     blocks = replies.tool_reply("holiday", out.model_dump(mode="json"), {"day": "2026-12-25"}, EN)
     said = (
         "2026-12-25 is Christmas Day, a regular holiday: 200% of your daily rate if you work,"
-        " 100% if you do not and worked the day before."
+        " 100% if you do not and you worked, or were on paid leave, on the working day before."
     )
     assert [b.text for b in blocks if isinstance(b, TextBlock)] == [said]
 
@@ -426,6 +438,7 @@ def test_pay_and_leave_stay_off_the_chain_through_chat(
     leave kind or a reason, while the message rows the people read still do."""
     _, people = hr
     ana, liza = people["Ana"], people["Liza"]
+    seeded = {e.id for e in session.exec(select(Event)).all()}  # the seed's own sales amounts
     replies_seen: list[ChatReply] = []
     _answers(monkeypatch, "my_hours", period="this_cutoff")
     replies_seen.append(_turn(session, liza, "how many hours did I work this cutoff"))
@@ -446,7 +459,8 @@ def test_pay_and_leave_stay_off_the_chain_through_chat(
     assert "Regular 24h" in said[0] and "₱" in said[1] and "₱" in said[2]
     slip = test_hr_tools.last_payslip(session, ana)
     amounts = {slip.gross, slip.net, *(int(d["amount"]) for d in slip.deductions)}
-    logged = [x for e in session.exec(select(Event)).all() for x in _leaves([e.before, e.after])]
+    new = [e for e in session.exec(select(Event)).all() if e.id not in seeded]
+    logged = [x for e in new for x in _leaves([e.before, e.after])]
     texts = [x for x in logged if isinstance(x, str)]
     for needle in ("₱", "24h", "2h 30m", "1h 30m", "sick", "Family trip", "Fever", *said):
         assert not any(needle in x for x in texts), needle

@@ -44,7 +44,7 @@ CONTRACTS = Resource(kind="data", name=Contract.__tablename__)
 PAYSLIPS = Resource(kind="data", name=Payslip.__tablename__)
 LEAVE = Resource(kind="data", name=Leave.__tablename__)
 TIMESHEETS = Resource(kind="data", name="core.timesheet")
-SIL_KINDS = ("vacation", "sick")  # the kinds the service incentive leave pays for
+SIL_KINDS = calendar.SIL_KINDS  # the kinds the service incentive leave pays for
 THIRTEENTH_MONTH = 12  # paid in December
 HOLIDAY_RATES = {
     "regular": int(ph.REGULAR_HOLIDAY * 100),
@@ -117,11 +117,6 @@ def _branch_of(session: Session, person: Person) -> Branch:
     if branch is None:
         raise LookupError("the person's branch")
     return branch
-
-
-def _holidays() -> dict[dt.date, str]:
-    """The organisation's holidays: date to kind (regular or special)."""
-    return {h.date: h.kind for h in orgconfig.load().holidays}
 
 
 def _contract(session: Session, person_id: str, today: dt.date) -> Contract:
@@ -205,7 +200,7 @@ def hours(deps: AgentDeps, args: HoursInput, tool_call_id: str) -> HoursOutput:
     contract = _contract(deps.session, person.id, deps.today)
     zone = ZoneInfo(_branch_of(deps.session, person).timezone)
     days = calc.minutes_by_day(
-        deps.session, person.id, args.start, args.end, zone, contract.rest_day, _holidays()
+        deps.session, person.id, args.start, args.end, zone, contract.rest_day, calc.holidays()
     )
     return HoursOutput(
         person_id=person.id,
@@ -238,7 +233,7 @@ def next_payday(deps: AgentDeps, args: NextPaydayInput, tool_call_id: str) -> Ne
     the current or the next one's) and the cutoff it pays (calendar.payday, Q60). Reads only
     config."""
     lag = orgconfig.load().payroll.pay_lag_days
-    holidays = _holidays()
+    holidays = calc.holidays()
     current = calendar.cutoff(deps.today)
     following = calendar.cutoff(current[1] + dt.timedelta(days=1))
     for start, end in (calendar.previous_cutoff(deps.today), current, following):
@@ -265,18 +260,19 @@ class ThirteenthOutput(BaseModel):
 
 
 def thirteenth_month(deps: AgentDeps, args: PersonInput, tool_call_id: str) -> ThirteenthOutput:
-    """One twelfth (rounded half up) of the regular pay lines of this calendar year's issued
-    payslips (by cutoff end), paid in December. Raises LookupError without a contract."""
+    """One twelfth (rounded half up) of the basic pay lines (ph.BASIC_KINDS: regular and paid
+    leave) of this calendar year's issued payslips (by cutoff end), paid in December. Raises
+    LookupError without a contract."""
     person = _subject(deps, args.person_id, [CONTRACTS, PAYSLIPS], tool_call_id)
     contract = _contract(deps.session, person.id, deps.today)
-    # ponytail: basic is the regular line only; holiday and rest day pay for unworked days
-    # would join it when a payslip carries them.
+    # ponytail: holiday pay (unworked_holiday) stays out of basic, as the 13th month rules
+    # read it; ask the accountant if the owner counts it (Q61).
     earned = sum(
         line["amount"]
         for slip in _payslips(deps.session, person.id)
         if slip.cutoff_end.year == deps.today.year
         for line in slip.lines
-        if line.get("kind") == "regular"
+        if line.get("kind") in ph.BASIC_KINDS
     )
     return ThirteenthOutput(
         earned_basic=earned,
@@ -379,7 +375,7 @@ def check_leave(deps: AgentDeps, args: RequestLeaveInput, tool_call_id: str) -> 
         raise LeaveRefused("no_contract") from None
     if args.start < deps.today:
         raise LeaveRefused("in_the_past")
-    if calendar.leave_days(args.start, args.end, contract.rest_day, _holidays()) == 0:
+    if calendar.leave_days(args.start, args.end, contract.rest_day, calc.holidays()) == 0:
         raise LeaveRefused("no_working_days")
     stmt = (
         select(Leave)
@@ -416,7 +412,7 @@ def request_leave(deps: AgentDeps, args: RequestLeaveInput, tool_call_id: str) -
     if (done := deps.session.exec(stmt).first()) is not None:
         return _leave_out(done)
     contract = _contract(deps.session, deps.person.id, deps.today)
-    days = calendar.leave_days(args.start, args.end, contract.rest_day, _holidays())
+    days = calendar.leave_days(args.start, args.end, contract.rest_day, calc.holidays())
     row = store.insert(
         deps.session,
         Leave(
@@ -562,7 +558,7 @@ def leave_days_ahead(deps: AgentDeps, count: int, tool_call_id: str) -> list[dt.
     LookupError without a contract."""
     _check(deps, _owned(CONTRACTS, deps.person.id), "read", tool_call_id)
     contract = _contract(deps.session, deps.person.id, deps.today)
-    holidays = _holidays()
+    holidays = calc.holidays()
     found: list[dt.date] = []
     day = deps.today
     while len(found) < count:  # ponytail: a rest day a week means at most 8 days per 6 found
@@ -586,7 +582,7 @@ def preview_leave(deps: AgentDeps, args: RequestLeaveInput, tool_call_id: str) -
     same own-row checks as balance. Raises LookupError without a contract."""
     now = balance(deps, PersonInput(), tool_call_id)
     contract = _contract(deps.session, deps.person.id, deps.today)
-    days = calendar.leave_days(args.start, args.end, contract.rest_day, _holidays())
+    days = calendar.leave_days(args.start, args.end, contract.rest_day, calc.holidays())
     used = now.used + (days if args.kind in SIL_KINDS else 0)
     return LeavePreview(
         days=days, left_after=calendar.sil_balance(contract.start_date, deps.today, used)

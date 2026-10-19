@@ -509,3 +509,9 @@ Format for each entry:
 - Question: Should a user message that carries pay or leave words ("sick today", "my SSS is 400") be redacted from the hash chain, like the agent's sensitive answers now are?
 - Assumed answer: no. The user's own words stay in their event; Mia's answers of a sensitive tool (pay, hours, leave) and buttons that carry a leave kind are redacted (text and blocks kept in the row only).
 - Blocking: no.
+
+## Q65: Contributions on a short cutoff
+- Where: node/mia/agents/hr_officer/ph.py (`payslip`)
+- Question: The contributions read the monthly basic as the daily rate times 26, whatever was worked, so a cutoff with one approved day would net below zero. Should they read the month's actual earnings instead?
+- Assumed answer: for v1 the deductions are taken in order (SSS, PhilHealth, Pag-IBIG) while the gross lasts, so the net is never below zero. Contributions on the month's actual earnings is the fuller rule, to settle with the accountant (Q61).
+- Blocking: no.

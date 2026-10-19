@@ -9,7 +9,9 @@ issued. The reminder is due from 09:00 local two days before a cutoff ends. Each
 marker event on the branch (alerts._mark) checked first, so each fires at most once per branch
 and cutoff; nothing to send leaves no marker. An issued payslip is never recomputed: a person
 who already has one for the cutoff is skipped, and the table's unique (person_id,
-cutoff_start) backs that. All run outside quiet hours at 09:00, so nothing is held.
+cutoff_start) backs that. None of it is urgent: a send at 09:00 is outside quiet hours, but a
+late first tick (say 22:00 on payday) inside them has its channel copies held until quiet hours
+end (the app copy is stored at once).
 """
 
 import datetime as dt
@@ -17,9 +19,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict
 from zoneinfo import ZoneInfo
 
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, func, select
 
-from mia.agents.hr_officer import MANIFEST, calc, calendar, ph, tools
+from mia.agents.hr_officer import MANIFEST, calc, calendar
 from mia.agents.hr_officer.actions import WHICH
 from mia.agents.hr_officer.models import Contract, Payslip
 from mia.agents.hr_officer.replies import duration
@@ -38,22 +40,23 @@ ISSUED = "hr.payslips_issued"
 REMINDED = "hr.approval_reminded"
 MISSED = "hr.payslips_missed"  # the marker and its i18n key
 Cutoff = tuple[dt.date, dt.date]
+Paid = tuple[Cutoff, dt.date]  # a cutoff and its payday
 
 # ---- what is due (pure) ---------------------------------------------------------------------
 
 
 def paid_cutoffs(
     now: dt.datetime, tz: str, payroll: Payroll, holidays: Mapping[dt.date, str]
-) -> tuple[Cutoff, Cutoff]:
+) -> tuple[Paid, Paid]:
     """The two latest cutoffs whose payday (calendar.payday) has come by `now`, each from 09:00
-    local on it: the latest first, then the one before."""
+    local on it, with that payday: the latest first, then the one before."""
     local = now.astimezone(ZoneInfo(tz))
-    found: list[Cutoff] = []
+    found: list[Paid] = []
     cut = calendar.cutoff(local.date())
     while len(found) < 2:
         pay = calendar.payday(cut[1], payroll.pay_lag_days, holidays)
         if dt.datetime.combine(pay, AT, local.tzinfo) <= local:
-            found.append(cut)
+            found.append((cut, pay))
         cut = calendar.previous_cutoff(cut[0])
     return found[0], found[1]
 
@@ -64,7 +67,7 @@ def payslips_due(
     """The cutoff to pay at `now`: the latest whose payday has come (from 09:00 local on it,
     on any later day until the next payday comes); the tick issues it while its marker is
     missing."""
-    return paid_cutoffs(now, tz, payroll, holidays)[0]
+    return paid_cutoffs(now, tz, payroll, holidays)[0][0]
 
 
 def approval_reminder(now: dt.datetime, tz: str) -> Cutoff | None:
@@ -131,28 +134,28 @@ def payslip_blocks(slip: Payslip, lang: str) -> list[Block]:
 
 
 def _issue_one(
-    session: Session, branch: Branch, contract: Contract, cutoff: Cutoff, now: dt.datetime
+    session: Session,
+    branch: Branch,
+    contract: Contract,
+    paid: Paid,
+    now: dt.datetime,
 ) -> Message | None:
     person = session.get(Person, contract.person_id)
-    start, end = cutoff
+    (start, end), pay_date = paid
     if person is None or _issued(session, person.id, start):
         return None
-    holidays = tools._holidays()
-    days = calc.minutes_by_day(
-        session, person.id, start, end, ZoneInfo(branch.timezone), contract.rest_day, holidays
-    )
-    if not days:
-        # ponytail: no approved time, no payslip (a zero gross would net negative after the
-        # contributions). Ceiling: no final pay and no payslip for a no-work cutoff; both are
-        # follow-ups.
+    zone = ZoneInfo(branch.timezone)
+    pay = calc.cutoff_pay(session, contract, start, end, zone, calc.holidays())
+    if pay is None:
+        # ponytail: nothing to pay, no payslip. Ceiling: no final pay and no payslip for a
+        # no-work cutoff; both are follow-ups.
         return None
-    pay = ph.payslip(days, contract.daily_rate, ph.monthly_basic(contract.daily_rate))
     slip = Payslip(
         branch_id=branch.id,
         person_id=person.id,
         cutoff_start=start,
         cutoff_end=end,
-        pay_date=calendar.payday(end, orgconfig.load().payroll.pay_lag_days, holidays),
+        pay_date=pay_date,
         lines=[asdict(line) for line in pay.lines],
         gross=pay.gross,
         deductions=[{"kind": d.kind, "amount": d.amount} for d in pay.deductions],
@@ -169,16 +172,14 @@ def _issue_one(
     return message
 
 
-def issue_payslips(
-    session: Session, branch: Branch, cutoff: Cutoff, now: dt.datetime
-) -> list[Message]:
+def issue_payslips(session: Session, branch: Branch, paid: Paid, now: dt.datetime) -> list[Message]:
     """One payslip per person of the branch with a contract in force at the cutoff's end and
-    approved time in it, from calc and ph.payslip (event hr.payslip_issued each), told to the
-    person in their language. A person already issued one for the cutoff is skipped. Returns
-    the notifications sent."""
+    something to pay in it (calc.cutoff_pay: approved time, paid leave, holiday pay), dated
+    the given payday (event hr.payslip_issued each), told to the person in their language. A
+    person already issued one for the cutoff is skipped. Returns the notifications sent."""
     sent = [
-        _issue_one(session, branch, c, cutoff, now)
-        for c in _contracts(session, branch.id, cutoff[1])
+        _issue_one(session, branch, c, paid, now)
+        for c in _contracts(session, branch.id, paid[0][1])
     ]
     return [m for m in sent if m is not None]
 
@@ -188,13 +189,14 @@ def issue_payslips(
 
 def _drafts(session: Session, branch_id: str, cutoff: Cutoff) -> int:
     stmt = (
-        select(Timesheet.id)
+        select(func.count())
+        .select_from(Timesheet)
         .where(Timesheet.branch_id == branch_id)
         .where(Timesheet.status == "draft")
         .where(col(Timesheet.date) >= cutoff[0])
         .where(col(Timesheet.date) <= cutoff[1])
     )
-    return len(session.exec(stmt).all())
+    return session.exec(stmt).one()
 
 
 def remind_approvals(session: Session, branch: Branch, cutoff: Cutoff) -> list[Message]:
@@ -237,15 +239,12 @@ def _mark(
 
 
 def _unpaid(session: Session, branch: Branch, cutoff: Cutoff) -> int:
-    """How many of the branch's people had approved time in the cutoff and no payslip for it."""
-    holidays, zone = tools._holidays(), ZoneInfo(branch.timezone)
+    """How many of the branch's people had something to pay in the cutoff (calc.cutoff_pay)
+    and no payslip for it."""
+    holidays, zone = calc.holidays(), ZoneInfo(branch.timezone)
     return sum(
         not _issued(session, c.person_id, cutoff[0])
-        and bool(
-            calc.minutes_by_day(
-                session, c.person_id, cutoff[0], cutoff[1], zone, c.rest_day, holidays
-            )
-        )
+        and calc.cutoff_pay(session, c, cutoff[0], cutoff[1], zone, holidays) is not None
         for c in _contracts(session, branch.id, cutoff[1])
     )
 
@@ -284,9 +283,11 @@ def _once(
 # ponytail: an unmarked cutoff is rechecked on every tick until it is marked or the next payday
 # comes (a few queries per branch); keep a "nothing to do" marker if ticks ever get costly.
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
-    latest, before = paid_cutoffs(now, branch.timezone, orgconfig.load().payroll, tools._holidays())
+    latest, (before, _) = paid_cutoffs(
+        now, branch.timezone, orgconfig.load().payroll, calc.holidays()
+    )
     count = _once(
-        session, branch, ISSUED, latest, lambda: issue_payslips(session, branch, latest, now)
+        session, branch, ISSUED, latest[0], lambda: issue_payslips(session, branch, latest, now)
     )
     if not alerts._marked(session, ISSUED, branch.id, before[0]):
         count += _once(

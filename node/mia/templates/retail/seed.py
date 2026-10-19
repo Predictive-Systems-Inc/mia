@@ -7,14 +7,16 @@ All rows are written through mia.core.store, so seeding appears in the events lo
 
 import datetime as dt
 import random
+from dataclasses import asdict
 from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
+from mia.agents.hr_officer import calc, calendar
 from mia.agents.hr_officer.models import Contract, Leave, Payslip
 from mia.agents.inventory_manager.models import StockEvent, SupplierOrder
 from mia.agents.sales_supervisor.models import SalesCount, SalesTarget
-from mia.core import events, store
+from mia.core import events, orgconfig, store
 from mia.core.models import (
     Actor,
     Branch,
@@ -205,12 +207,16 @@ def _leave_plan(today: dt.date) -> list[tuple[str, str, dt.date, dt.date, int, s
 def _seed_hr(
     session: Session, branches: list[Branch], staff: dict[str, Person], today: dt.date
 ) -> None:
-    """Seed-only HR data: contracts, a Counter shift per branch with a fortnight of completed
-    visits and approved timesheets (inserted directly with a note; the real flow is the shift
-    supervisor's draft and approval), two approved leave rows and two issued payslips per clerk.
-    The payslip numbers are plain data, not computed."""
+    """Seed-only HR data: contracts, a Counter shift per branch with completed visits and
+    approved timesheets from the start of the last two closed cutoffs to yesterday (inserted
+    directly with a note; the real flow is the shift supervisor's draft and approval), two
+    approved leave rows and an issued payslip per clerk for each of those cutoffs, computed by
+    calc.cutoff_pay and dated calendar.payday as the tick would issue them."""
     owner = staff["Rosa"].id
     where = {name: index for name, _, index, _ in PEOPLE}
+    cutoffs = _cutoffs(today, 2)
+    back = (today - cutoffs[0][0]).days
+    contracts: dict[str, Contract] = {}
     for name, kind, rate, start, position in CONTRACTS:
         branch = branches[where[name]]
         contract = Contract(
@@ -224,7 +230,7 @@ def _seed_hr(
             position=position,
             set_by=owner,
         )
-        store.insert(session, contract, Actor.system(branch.id))
+        contracts[name] = store.insert(session, contract, Actor.system(branch.id))
     leave_plan = _leave_plan(today)
     for index, branch in enumerate(branches):
         actor = Actor.system(branch.id)
@@ -252,7 +258,7 @@ def _seed_hr(
                 for n in range((end - start).days + 1)
             }
             _seed_shifts(
-                session, branch, index, job, staff[name], owner, today, (begin, finish), off
+                session, branch, index, job, staff[name], owner, today, (begin, finish), off, back
             )
     for name, kind, start, end, days, reason in leave_plan:
         leave = Leave(
@@ -266,26 +272,27 @@ def _seed_hr(
             reason=reason,
         )
         store.insert(session, leave, Actor.system(leave.branch_id))
+    holidays, lag = calc.holidays(), orgconfig.load().payroll.pay_lag_days
     for name in SHIFTS:
         branch = branches[where[name]]
-        rate = next(r for n, _, r, _, _ in CONTRACTS if n == name)
-        for start, end in _cutoffs(today, 2):
-            gross = 11 * rate
-            sss = gross // 20
+        zone = ZoneInfo(branch.timezone)
+        for start, end in cutoffs:
+            pay = calc.cutoff_pay(session, contracts[name], start, end, zone, holidays)
+            if pay is None:
+                continue
+            pay_date = calendar.payday(end, lag, holidays)
             slip = Payslip(
                 branch_id=branch.id,
                 person_id=staff[name].id,
                 cutoff_start=start,
                 cutoff_end=end,
-                pay_date=end + dt.timedelta(days=5),
-                lines=[{"kind": "regular", "days": 11, "rate": rate, "amount": gross}],
-                gross=gross,
-                deductions=[{"kind": "sss", "amount": sss}],
-                net=gross - sss,
+                pay_date=pay_date,
+                lines=[asdict(line) for line in pay.lines],
+                gross=pay.gross,
+                deductions=[{"kind": d.kind, "amount": d.amount} for d in pay.deductions],
+                net=pay.net,
                 currency=CURRENCY,
-                issued_at=dt.datetime.combine(
-                    end + dt.timedelta(days=5), dt.time(9, 0), ZoneInfo(branch.timezone)
-                ),
+                issued_at=dt.datetime.combine(pay_date, dt.time(9, 0), zone),
             )
             store.insert(session, slip, Actor.system(branch.id))
 
@@ -300,16 +307,17 @@ def _seed_shifts(
     today: dt.date,
     hours: tuple[str, str],
     off: set[dt.date],
+    back: int,
 ) -> None:
-    """One completed visit and one approved timesheet per working day of the last 14 days for
-    a clerk, skipping the contract's rest day and the days in `off` (approved leave). The late
+    """One completed visit and one approved timesheet per working day of the last `back` days
+    for a clerk, skipping the contract's rest day and the days in `off` (approved leave). The late
     clerk's most recent working day runs to the late end time."""
     begin, finish = hours
     zone = ZoneInfo(branch.timezone)
     rest = REST_DAYS[index]
     actor = Actor.system(branch.id)
     late_pending = clerk.name == LATE_SHIFT[0]
-    for offset in range(1, 15):
+    for offset in range(1, back + 1):
         day = today - dt.timedelta(days=offset)
         if day.weekday() == rest or day in off:
             continue

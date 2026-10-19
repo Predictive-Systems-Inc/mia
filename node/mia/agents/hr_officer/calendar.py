@@ -5,10 +5,11 @@ leave days and the service incentive leave balance. Holidays are a mapping of da
 """
 
 import datetime as dt
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 
 SUNDAY = 6
 SIL_DAYS = 5  # service incentive leave days per year of service
+SIL_KINDS = ("vacation", "sick")  # the leave kinds the service incentive leave pays for
 
 
 def _month_end(day: dt.date) -> dt.date:
@@ -54,6 +55,53 @@ def working_days(
 def leave_days(start: dt.date, end: dt.date, rest_day: int, holidays: Mapping[dt.date, str]) -> int:
     """The leave days a request from start to end inclusive uses: its working days."""
     return working_days(start, end, rest_day, holidays)
+
+
+def leave_dates(
+    spans: Iterable[tuple[dt.date, dt.date]], rest_day: int, holidays: Mapping[dt.date, str]
+) -> set[dt.date]:
+    """The leave days of the spans (first and last day inclusive): each day that is a working
+    day (working_days), so a rest day or a regular holiday inside a leave is no leave day."""
+    return {
+        start + dt.timedelta(days=i)
+        for start, end in spans
+        for i in range((end - start).days + 1)
+        if working_days(
+            start + dt.timedelta(days=i), start + dt.timedelta(days=i), rest_day, holidays
+        )
+    }
+
+
+def _working_day_before(day: dt.date, rest_day: int, holidays: Mapping[dt.date, str]) -> dt.date:
+    """The last working day before the day, back over the rest day and regular holidays."""
+    day -= dt.timedelta(days=1)
+    while not working_days(day, day, rest_day, holidays):
+        day -= dt.timedelta(days=1)
+    return day
+
+
+def unworked_regular_holidays(
+    start: dt.date,
+    end: dt.date,
+    rest_day: int,
+    holidays: Mapping[dt.date, str],
+    worked: set[dt.date],
+    on_leave: set[dt.date],
+) -> list[dt.date]:
+    """The regular holidays from start to end paid at 100% though not worked: not worked, not
+    on the rest day, and the working day before was worked or on paid leave. A special day
+    not worked pays nothing (no work, no pay)."""
+    # ponytail: an unworked regular holiday on the rest day pays nothing; ask the accountant
+    # whether the contract pays it (Q61).
+    days = (start + dt.timedelta(days=i) for i in range((end - start).days + 1))
+    return [
+        d
+        for d in days
+        if holidays.get(d) == "regular"
+        and d.weekday() != rest_day
+        and d not in worked
+        and _working_day_before(d, rest_day, holidays) in worked | on_leave
+    ]
 
 
 def sil_balance(start_date: dt.date, today: dt.date, used: int) -> int:
