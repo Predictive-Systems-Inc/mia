@@ -195,6 +195,8 @@ def decide(
         raise HTTPException(403, "step_up_required") from exc
     except approvals.ApprovalError as exc:
         raise HTTPException(403, str(exc)) from exc
+    except LookupError as exc:  # the handler refused: its row changed since the request
+        raise HTTPException(409, str(exc)) from exc
     return DecideResponse(approval_id=row.id, status=row.status, decided_by=row.decided_by)
 
 

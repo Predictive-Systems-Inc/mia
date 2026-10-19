@@ -240,7 +240,7 @@ def test_a_late_approval_of_a_passed_pickup_is_refused_and_the_customer_told(
     cs.pin(17)
     with pytest.raises(LookupError):
         approvals.decide(session, a.id, ana(cs), "approved", stepped_up_at=utcnow())
-    assert order_of(a).status == "rejected"
+    assert (order_of(a).status, a.status, a.reason) == ("rejected", "expired", "past")
     assert last_out(session).text == t("cs.order_rejected.other", "fil", time="16:00")
 
 

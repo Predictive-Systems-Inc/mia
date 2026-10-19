@@ -586,7 +586,8 @@ def apply_order_approval(session: Session, approval: Approval, decider: Actor) -
     """Approval handler: the order row must still be waiting and every item still active;
     then it is confirmed with decided_by (event customer_service.order_confirmed) and the
     customer's reply is queued. Raises LookupError otherwise (the decision rolls back); a
-    pickup already past is first rejected (reason other, the customer told) and committed."""
+    pickup already past is first rejected (reason other, the customer told), the approval
+    expired (reason past) and committed."""
     order, customer, actor = _decided(session, approval, decider)
     if order.status != "waiting":
         raise LookupError("status")
@@ -596,6 +597,10 @@ def apply_order_approval(session: Session, approval: Approval, decider: Actor) -
         raise LookupError("item")
     if order.pickup_at <= db.utcnow():  # approved too late: the customer is told, not served
         _reject(session, approval, decider, order, customer, actor, "other")
+        expired = {"status": "expired", "reason": "past"}  # the pickup passed before anyone acted
+        store.update(
+            session, approval, expired, actor, action="approval.expired", approval_id=approval.id
+        )
         session.commit()  # raised inside a request: the rollback must not lose the reply
         raise LookupError("past")
     changes = {"status": "confirmed", "decided_by": decider.principal.id}
