@@ -11,26 +11,34 @@ nothing holds the write lock across an await (rules 11, 12).
 
 import asyncio
 import datetime as dt
+import logging
 import threading
 import weakref
 from dataclasses import dataclass, field
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import text as sql
 from sqlmodel import Session, col, select
 
-from mia.agents.base import Manifest, ToolLogEntry
-from mia.agents.customer_service import MANIFEST
+from mia.agents.base import Manifest, ToolLogEntry, call_tool
+from mia.agents.customer_service import MANIFEST, actions, calc, decider, replies
 from mia.agents.customer_service.models import Customer, CustomerMessage
+from mia.agents.decider import Decision
 from mia.channels import outbox
 from mia.channels.base import DeliveryResult, InboundMessage
-from mia.chat.blocks import Block, TextBlock
+from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.core import auth, keys, orgconfig, store
 from mia.core.db import session_scope, utcnow
+from mia.core.egress import EgressContext, Pseudonymiser, egress_context
+from mia.core.ids import new_id
+from mia.core.jev import JevError
 from mia.core.models import Actor, Branch, ChannelInbound, Organisation, Principal
 from mia.core.rbac import Rbac, get_rbac
-from mia.i18n import t
+from mia.i18n import SUPPORTED, t
+from mia.settings import get_settings
+from mia.templates.retail import hours as shop_hours
 
 THROTTLE = "customer_message"
 WINDOW = dt.timedelta(hours=24)
@@ -40,6 +48,8 @@ MESSAGE_IN = f"{MANIFEST.id}.message_in"
 MESSAGE_OUT = f"{MANIFEST.id}.message_out"
 SKIPPED = f"{MANIFEST.id}.reminder_skipped"
 ATTEMPT = f"{MANIFEST.id}.attempt"
+LANGUAGE = f"{MANIFEST.id}.language_set"
+log = logging.getLogger(__name__)
 _BLOCKS: TypeAdapter[list[Block]] = TypeAdapter(list[Block])
 
 
@@ -217,19 +227,178 @@ def _deps(session: Session, customer: Customer, now: dt.datetime) -> CustomerDep
     )
 
 
-async def _decide(customer: Customer, text: str) -> str:
-    """The action the message wants."""
-    return "greeting"  # ponytail: Task 5 wires the Jev decider here (after the commit)
+def _last(session: Session, customer: Customer, direction: str, skip: int = 0) -> str | None:
+    """The text of the customer's latest message in that direction (skipping `skip`)."""
+    row = session.exec(
+        select(CustomerMessage)
+        .where(CustomerMessage.customer_id == customer.id)
+        .where(CustomerMessage.direction == direction)
+        .order_by(col(CustomerMessage.id).desc())
+        .offset(skip)
+    ).first()
+    return row.text if row else None
 
 
-def _act(deps: CustomerDeps, action: str) -> list[Block]:
-    """The reply blocks for one decided action. Every action words the menu for now."""
-    return [TextBlock(text=t("cs.menu", deps.lang))]  # ponytail: Task 5 dispatches CUSTOMER
+def _last_out_options(session: Session, customer: Customer) -> tuple[str, list[str]]:
+    """The latest reply's text and its quick-reply options."""
+    row = session.exec(
+        select(CustomerMessage)
+        .where(CustomerMessage.customer_id == customer.id)
+        .where(CustomerMessage.direction == "out")
+        .order_by(col(CustomerMessage.id).desc())
+    ).first()
+    if row is None:
+        return "", []
+    quick = [b for b in _BLOCKS.validate_python(row.blocks) if isinstance(b, QuickRepliesBlock)]
+    return row.text, [o for b in quick for o in b.options]
 
 
-def _answer(session: Session, customer: Customer, action: str, now: dt.datetime) -> None:
+def _scrubbed(customer: Customer, text: str) -> str:
+    """The text with the customer's own stored name (and each part of it) replaced, as the
+    shared pseudonymiser replaces staff names, so it never reaches Jev (rule 8)."""
+    name = (customer.name or "").strip()
+    if not name:
+        return text
+    names = {name: "Customer"} | {part: "Customer" for part in name.split()}
+    return Pseudonymiser(names).apply(text)
+
+
+def _query(session: Session, customer: Customer, text: str, now: dt.datetime) -> actions.Query:
+    """The Jev query for the message (reads only). A tapped pickup time answers the time
+    question, so the order message before it is asked again with the time added."""
+    branch = session.get(Branch, customer.branch_id)
+    if branch is None:
+        raise LookupError(f"branch {customer.branch_id} not found")
+    lang = customer.language
+    previous, options = _last_out_options(session, customer)
+    if previous == t("cs.ask_time", lang) and text in options:
+        text = f"{_last(session, customer, 'in', skip=1) or ''} {text}"
+    today = now.astimezone(ZoneInfo(branch.timezone)).date()
+    message = _scrubbed(customer, text)
+    return actions.build_query(session, branch, "customer", message, previous, today, lang)
+
+
+def _context(session: Session, customer: Customer) -> EgressContext:
+    branch = session.get(Branch, customer.branch_id)
+    org = branch.organisation_id if branch else ""
+    level = get_settings().MIA_EGRESS_LEVEL
+    purpose = f"{MANIFEST.id}.decide"
+    actor = customer_actor(customer)
+    return EgressContext(session, actor, org, MANIFEST.id, purpose, level, provider="typesafe")
+
+
+async def _decide(session: Session, customer: Customer, text: str, now: dt.datetime) -> Decision:
+    """Jev's decision for the message: the query is read in a worker thread, then the request
+    goes out with nothing uncommitted (rule 11). Raises JevError (JevUnreachable included)."""
+    query = await asyncio.to_thread(_query, session, customer, text, now)
+    await asyncio.to_thread(session.commit)
+    with egress_context(_context(session, customer)):
+        return await decider.decide(query)
+
+
+def _call(deps: CustomerDeps, tool: str, args: BaseModel) -> dict[str, Any]:
+    """Run one customer tool through the guard (call_tool commits after it)."""
+    binding = next(b for b in tools.BINDINGS if b.tool_id == f"{MANIFEST.id}.{tool}")
+    return call_tool(deps, binding, args, new_id())
+
+
+def _open_times(deps: CustomerDeps, day: dt.date, now: dt.datetime) -> list[str]:
+    """Up to three whole hours of `day` the shop is open, after now: the time question's
+    quick replies (WhatsApp shows at most three buttons)."""
+    rows = shop_hours.load(deps.session, deps.branch.id)
+    if not shop_hours.open_days(rows)(day):
+        return []
+    at = shop_hours.at(deps.branch, rows, day, closing=False)
+    end = shop_hours.at(deps.branch, rows, day, closing=True)
+    times: list[str] = []
+    while at < end and len(times) < 3:
+        if at > now:
+            times.append(f"{at:%H:%M}")
+        at += dt.timedelta(hours=1)
+    return times
+
+
+def _order(deps: CustomerDeps, decision: Decision, now: dt.datetime) -> list[Block]:
+    """Place the order the decision reads. The order_id is made here, never taken from the
+    decision; the guard asks staff and the order is recorded waiting for that approval."""
+    a, tz = decision.args, deps.branch.timezone
+    day = dt.date.fromisoformat(str(a["day"]))
+    if not a.get("time"):
+        return replies.ask_time(deps.lang, _open_times(deps, day, now))
+    args = tools.PlaceOrderInput(
+        order_id=new_id(),
+        lines=[tools.LineIn(item_id=ln["item_id"], quantity=ln["quantity"]) for ln in a["lines"]],
+        fulfilment=a["fulfilment"],
+        pickup_at=calc.pickup_at(day, dt.time.fromisoformat(str(a["time"])), tz),
+        delivery_area=a.get("area"),
+    )
+    out = _call(deps, "place_order", args)
+    if out["status"] == "approval_required":
+        tools.record_waiting(deps, args, str(out["approval_id"]))
+        out = {"time": replies.hhmm(args.pickup_at, tz)}
+    return replies.customer_reply("place_order", out, deps.lang, tz)
+
+
+def _act(deps: CustomerDeps, decision: Decision, text: str, now: dt.datetime) -> list[Block]:
+    """The reply blocks for one decision: each CUSTOMER action through its tool; a missing
+    pickup time asks for one; any other action (greeting, clarify) words the menu."""
+    action, a, tz = decision.action, decision.args, deps.branch.timezone
+    if action == "clarify" and decision.missing == "pickup_time":
+        day = dt.date.fromisoformat(str(a.get("day") or deps.today.isoformat()))
+        return replies.ask_time(deps.lang, _open_times(deps, day, now))
+    if action == "language_switch" and a.get("language") in SUPPORTED:
+        language = str(a["language"])
+        changes = {"language": language}
+        store.update(deps.session, deps.customer, changes, deps.actor, action=LANGUAGE)
+        deps.lang = language
+        return replies.customer_reply("greeting", {}, language, tz)
+    inputs: dict[str, BaseModel] = {
+        "hours": tools.EmptyInput(),
+        "prices": tools.PricesInput(item_ids=a.get("item_ids") or []),
+        "delivery_area": tools.AreaInput(name=a.get("area")),
+        "order_status": tools.EmptyInput(),
+        "cancel_order": tools.EmptyInput(),
+        "complaint": tools.ComplainInput(text=text[:2000]),
+    }
+    if action == "place_order":
+        return _order(deps, decision, now)
+    if action not in inputs:
+        return replies.customer_reply("greeting", {}, deps.lang, tz)
+    spec = actions.ACTIONS[action]
+    out = _call(deps, str(spec.tool), inputs[action])
+    return replies.customer_reply(action, out, deps.lang, tz)
+
+
+def _answer(
+    session: Session, customer: Customer, decision: Decision, text: str, now: dt.datetime
+) -> None:
     deps = _deps(session, customer, now)
-    queue(session, customer, _act(deps, action), deps.actor)
+    queue(session, customer, _act(deps, decision, text, now), deps.actor)
+
+
+def _unavailable(session: Session, customer_id: str) -> None:
+    """After a failed turn: roll back what it left, then queue cs.unavailable."""
+    session.rollback()
+    customer = session.get(Customer, customer_id)
+    if customer is not None:
+        blocks: list[Block] = [TextBlock(text=t("cs.unavailable", customer.language))]
+        queue(session, customer, blocks, customer_actor(customer))
+    session.commit()
+
+
+async def _turn(session: Session, customer: Customer, text: str, now: dt.datetime) -> None:
+    """Decide and answer; any failure (Jev unreachable, egress off, a bug) is cs.unavailable
+    in the customer's language, never silence."""
+    customer_id = customer.id
+    try:
+        if get_settings().MIA_DECIDER != "jev":
+            raise JevError("the Jev decider is off")
+        decision = await _decide(session, customer, text, now)
+        await asyncio.to_thread(_answer, session, customer, decision, text, now)
+        await asyncio.to_thread(session.commit)
+    except Exception:
+        log.exception("customer turn failed")  # the traceback stays on the node
+        await asyncio.to_thread(_unavailable, session, customer_id)
 
 
 async def public_turn(
@@ -242,9 +411,7 @@ async def public_turn(
     customer = await asyncio.to_thread(_arrive, session, inbound_id, msg, text, now)
     await asyncio.to_thread(session.commit)  # nothing holds the write lock across Jev
     if customer is not None:
-        action = await _decide(customer, text)
-        await asyncio.to_thread(_answer, session, customer, action, now)
-        await asyncio.to_thread(session.commit)
+        await _turn(session, customer, text, now)
     await send_pending(utcnow())
 
 
@@ -325,3 +492,8 @@ async def send_pending(now: dt.datetime) -> int:
             results = [DeliveryResult(ok=False, error_code="no_adapter")]
         sent += await asyncio.to_thread(_record, lease, results)
     return sent
+
+
+# tools imports this module (CustomerDeps, queue); imported last so either loads first, and the
+# order approval handlers register wherever the public turn runs.
+from mia.agents.customer_service import tools
