@@ -1,16 +1,19 @@
 """The hr officer's work on the tick: payslips issued on payday, and head staff reminded to
 approve timesheets two days before a cutoff closes.
 
-What is due is pure code (rule 7): from 09:00 local on a cutoff's payday (calendar.payday, moved
-back off a Sunday or a holiday), and from 09:00 local two days before a cutoff ends. Each send
-leaves a marker event on the branch (alerts._mark) checked first, so each fires at most once
-per branch and cutoff; nothing to send leaves no marker. An issued payslip is never recomputed:
-a person who already has one for the cutoff is skipped, and the table's unique (person_id,
-cutoff_start) backs that. Both run outside quiet hours, so nothing is held (send_after).
+What is due is pure code (rule 7). Payslips are due from 09:00 local on a cutoff's payday
+(calendar.payday, moved back off a Sunday or a holiday) on any later tick until the branch's
+marker exists, so a node down on payday issues them on its first tick after; once the next
+payday comes the missed cutoff is reported to head staff (marker hr.payslips_missed), never
+issued. The reminder is due from 09:00 local two days before a cutoff ends. Each send leaves a
+marker event on the branch (alerts._mark) checked first, so each fires at most once per branch
+and cutoff; nothing to send leaves no marker. An issued payslip is never recomputed: a person
+who already has one for the cutoff is skipped, and the table's unique (person_id,
+cutoff_start) backs that. All run outside quiet hours at 09:00, so nothing is held.
 """
 
 import datetime as dt
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict
 from zoneinfo import ZoneInfo
 
@@ -33,23 +36,35 @@ AT = dt.time(9)  # both run from 09:00 local
 REMIND_BEFORE = dt.timedelta(days=2)
 ISSUED = "hr.payslips_issued"
 REMINDED = "hr.approval_reminded"
+MISSED = "hr.payslips_missed"  # the marker and its i18n key
 Cutoff = tuple[dt.date, dt.date]
 
 # ---- what is due (pure) ---------------------------------------------------------------------
 
 
+def paid_cutoffs(
+    now: dt.datetime, tz: str, payroll: Payroll, holidays: Mapping[dt.date, str]
+) -> tuple[Cutoff, Cutoff]:
+    """The two latest cutoffs whose payday (calendar.payday) has come by `now`, each from 09:00
+    local on it: the latest first, then the one before."""
+    local = now.astimezone(ZoneInfo(tz))
+    found: list[Cutoff] = []
+    cut = calendar.cutoff(local.date())
+    while len(found) < 2:
+        pay = calendar.payday(cut[1], payroll.pay_lag_days, holidays)
+        if dt.datetime.combine(pay, AT, local.tzinfo) <= local:
+            found.append(cut)
+        cut = calendar.previous_cutoff(cut[0])
+    return found[0], found[1]
+
+
 def payslips_due(
     now: dt.datetime, tz: str, payroll: Payroll, holidays: Mapping[dt.date, str]
-) -> Cutoff | None:
-    """The cutoff whose payday is today, from 09:00 local to the day's end, else None."""
-    local = now.astimezone(ZoneInfo(tz))
-    if local.time() < AT:
-        return None
-    today = local.date()
-    for start, end in (calendar.previous_cutoff(today), calendar.cutoff(today)):
-        if calendar.payday(end, payroll.pay_lag_days, holidays) == today:
-            return start, end
-    return None
+) -> Cutoff:
+    """The cutoff to pay at `now`: the latest whose payday has come (from 09:00 local on it,
+    on any later day until the next payday comes); the tick issues it while its marker is
+    missing."""
+    return paid_cutoffs(now, tz, payroll, holidays)[0]
 
 
 def approval_reminder(now: dt.datetime, tz: str) -> Cutoff | None:
@@ -64,15 +79,16 @@ def approval_reminder(now: dt.datetime, tz: str) -> Cutoff | None:
 
 
 def _contracts(session: Session, branch_id: str, day: dt.date) -> list[Contract]:
-    """The branch's contracts in force on the day, one per person (tools._contract's pick)."""
-    people = session.exec(select(Contract.person_id).where(Contract.branch_id == branch_id))
-    out = []
-    for person_id in sorted(set(people)):
-        try:
-            out.append(tools._contract(session, person_id, day))
-        except LookupError:
-            continue
-    return out
+    """The branch's own contracts in force on the day, one per person (the latest started), so
+    a person who moved branches is paid here from this branch's contract only."""
+    rows = session.exec(select(Contract).where(Contract.branch_id == branch_id))
+    latest: dict[str, Contract] = {}
+    for c in rows:
+        if c.start_date <= day and (c.end_date is None or c.end_date >= day):
+            kept = latest.get(c.person_id)
+            if kept is None or (c.start_date, c.id) > (kept.start_date, kept.id):
+                latest[c.person_id] = c
+    return [latest[k] for k in sorted(latest)]
 
 
 def _issued(session: Session, person_id: str, start: dt.date) -> bool:
@@ -220,21 +236,67 @@ def _mark(
     alerts._mark(session, branch.id, action, ("branch", branch.id), data)
 
 
+def _unpaid(session: Session, branch: Branch, cutoff: Cutoff) -> int:
+    """How many of the branch's people had approved time in the cutoff and no payslip for it."""
+    holidays, zone = tools._holidays(), ZoneInfo(branch.timezone)
+    return sum(
+        not _issued(session, c.person_id, cutoff[0])
+        and bool(
+            calc.minutes_by_day(
+                session, c.person_id, cutoff[0], cutoff[1], zone, c.rest_day, holidays
+            )
+        )
+        for c in _contracts(session, branch.id, cutoff[1])
+    )
+
+
+def report_missed(session: Session, branch: Branch, cutoff: Cutoff) -> list[Message]:
+    """Head staff told that the cutoff's payslips were not issued before the next payday (the
+    node was down); nothing is issued for it. Nothing when nobody is unpaid."""
+    count = _unpaid(session, branch, cutoff)
+    if not count:
+        return []
+    start, end = cutoff[0].isoformat(), cutoff[1].isoformat()
+    return [
+        notify(
+            session,
+            p,
+            [TextBlock(text=t(MISSED, p.language, count=count, start=start, end=end))],
+            Actor.system(branch.id),
+            MANIFEST.id,
+        )
+        for p in alerts.supervisors(session, branch.id)
+    ]
+
+
+def _once(
+    session: Session, branch: Branch, action: str, cutoff: Cutoff, send: Callable[[], list[Message]]
+) -> int:
+    """Run send unless the branch has the cutoff's marker; mark it when something was sent."""
+    if alerts._marked(session, action, branch.id, cutoff[0]):
+        return 0
+    sent = send()
+    if sent:
+        _mark(session, branch, action, cutoff, sent)
+    return len(sent)
+
+
+# ponytail: an unmarked cutoff is rechecked on every tick until it is marked or the next payday
+# comes (a few queries per branch); keep a "nothing to do" marker if ticks ever get costly.
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
-    settings = orgconfig.load()
-    count = 0
-    pay = payslips_due(now, branch.timezone, settings.payroll, tools._holidays())
-    if pay is not None and not alerts._marked(session, ISSUED, branch.id, pay[0]):
-        sent = issue_payslips(session, branch, pay, now)
-        if sent:
-            _mark(session, branch, ISSUED, pay, sent)
-        count += len(sent)
+    latest, before = paid_cutoffs(now, branch.timezone, orgconfig.load().payroll, tools._holidays())
+    count = _once(
+        session, branch, ISSUED, latest, lambda: issue_payslips(session, branch, latest, now)
+    )
+    if not alerts._marked(session, ISSUED, branch.id, before[0]):
+        count += _once(
+            session, branch, MISSED, before, lambda: report_missed(session, branch, before)
+        )
     remind = approval_reminder(now, branch.timezone)
-    if remind is not None and not alerts._marked(session, REMINDED, branch.id, remind[0]):
-        sent = remind_approvals(session, branch, remind)
-        if sent:
-            _mark(session, branch, REMINDED, remind, sent)
-        count += len(sent)
+    if remind is not None:
+        count += _once(
+            session, branch, REMINDED, remind, lambda: remind_approvals(session, branch, remind)
+        )
     return count
 
 

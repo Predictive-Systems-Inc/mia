@@ -57,6 +57,7 @@ def notify(
         blocks=[b.model_dump(mode="json") for b in blocks],
     )
     # A sensitive body (a payslip, say) stays in the row the person reads, never in the log.
+    sensitive = sensitive or any(getattr(b, "sensitive", False) for b in blocks)  # as deliver()
     hidden = ("text", "blocks") if sensitive else ()
     stored = store.insert(session, message, actor, action="notification.sent", redact=hidden)
     deliver(

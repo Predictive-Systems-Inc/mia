@@ -9,12 +9,13 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlmodel import Session, select
 
-from mia.agents.hr_officer import MANIFEST, due
-from mia.agents.hr_officer.models import Payslip
+from mia.agents.hr_officer import MANIFEST, calc, due, ph, tools
+from mia.agents.hr_officer.models import Contract, Payslip
 from mia.agents.shift_supervisor import timesheets
 from mia.channels import registry
 from mia.channels.simulator import SimAdapter
 from mia.core import events, orgconfig, store
+from mia.core.ids import new_id
 from mia.core.models import (
     Actor,
     Branch,
@@ -107,27 +108,31 @@ def _to_draft(session: Session, people: dict[str, Person], day: dt.date) -> Time
 # ---- what is due (pure) ---------------------------------------------------------------------
 
 
-def test_payslips_are_due_from_nine_on_payday() -> None:
-    payroll = Payroll(pay_lag_days=5)
-    assert due.payslips_due(PAYDAY, "Asia/Manila", payroll, {}) == (OCT_16, dt.date(2026, 10, 31))
-    early = PAYDAY.replace(hour=8, minute=59)
-    assert due.payslips_due(early, "Asia/Manila", payroll, {}) is None
-    assert due.payslips_due(PAYDAY + dt.timedelta(days=1), "Asia/Manila", payroll, {}) is None
+def test_payslips_are_due_from_nine_on_payday_until_the_next_payday() -> None:
+    payroll, oct_1 = Payroll(pay_lag_days=5), (dt.date(2026, 10, 1), dt.date(2026, 10, 15))
+    second = (OCT_16, dt.date(2026, 10, 31))
+
+    def at(moment: dt.datetime) -> tuple[dt.date, dt.date]:
+        return due.payslips_due(moment, "Asia/Manila", payroll, {})
+
+    assert at(PAYDAY) == second and at(PAYDAY.replace(hour=8, minute=59)) == oct_1
+    assert at(PAYDAY + dt.timedelta(days=14)) == second  # 19 November, still before the next
+    assert due.paid_cutoffs(PAYDAY, "Asia/Manila", payroll, {}) == (second, oct_1)
 
 
 def test_a_payday_on_a_sunday_pays_the_day_before() -> None:
     """1 to 15 December pays Sunday the 20th: moved back to Saturday the 19th, and to Friday
     the 18th when that Saturday is a holiday (calendar.payday, Q60)."""
     payroll, cutoff = Payroll(pay_lag_days=5), (dt.date(2026, 12, 1), dt.date(2026, 12, 15))
+    november = (dt.date(2026, 11, 16), dt.date(2026, 11, 30))
 
-    def at(day: int, holidays: dict[dt.date, str]) -> tuple[dt.date, dt.date] | None:
+    def at(day: int, holidays: dict[dt.date, str]) -> tuple[dt.date, dt.date]:
         moment = dt.datetime(2026, 12, day, 9, 0, tzinfo=MNL)
         return due.payslips_due(moment, "Asia/Manila", payroll, holidays)
 
     saturday_off = {dt.date(2026, 12, 19): "special"}
-    assert at(20, saturday_off) is None and at(19, saturday_off) is None
-    assert at(18, saturday_off) == cutoff
-    assert at(20, {}) is None and at(19, {}) == cutoff
+    assert at(17, saturday_off) == november and at(18, saturday_off) == cutoff
+    assert at(18, {}) == november and at(19, {}) == cutoff
 
 
 def test_the_reminder_is_due_two_days_before_the_cutoff_ends() -> None:
@@ -162,6 +167,57 @@ def test_payslips_are_issued_once_per_cutoff(session: Session, hr: Ferinos, pin:
     assert {len(mall.after["message_ids"]), len(stall.after["message_ids"])} == {1, 2}  # type: ignore[index]
     assert _tick(session, pin, PAYDAY.replace(hour=15)) == 0
     assert len(_slips(session)) == 3 and len(_notes(session, people["Ana"])) == 1
+
+
+def test_a_first_tick_late_on_payday_issues_them(session: Session, hr: Ferinos, pin: Pin) -> None:
+    assert _tick(session, pin, PAYDAY.replace(hour=10, minute=37)) == 3
+    assert len(_slips(session)) == 3
+
+
+def test_a_node_down_on_payday_issues_on_its_first_tick_after(
+    session: Session, hr: Ferinos, pin: Pin
+) -> None:
+    assert _tick(session, pin, (PAYDAY + dt.timedelta(days=1)).replace(hour=10, minute=37)) == 3
+    assert len(_slips(session)) == 3 and len(_markers(session, due.ISSUED)) == 2
+
+
+def test_a_cutoff_missed_past_the_next_payday_is_reported_not_issued(
+    session: Session, hr: Ferinos, pin: Pin
+) -> None:
+    """Down from before 5 November to after 20 November (the next payday): 16 to 31 October
+    is reported to head staff, never issued."""
+    _, people = hr
+    late = dt.datetime(2026, 11, 21, 10, 37, tzinfo=MNL)
+    assert _tick(session, pin, late) == 2  # one note to each branch's supervisor
+    assert _slips(session) == {}
+    for name, count in (("Marites", 2), ("Jun", 1)):
+        (note,) = _notes(session, people[name])
+        lang = people[name].language
+        assert note.text == t(due.MISSED, lang, count=count, start="2026-10-16", end="2026-10-31")
+    assert len(_markers(session, due.MISSED)) == 2
+    assert _tick(session, pin, late + dt.timedelta(hours=1)) == 0
+
+
+def test_a_branch_pays_from_its_own_contract_only(session: Session, hr: Ferinos, pin: Pin) -> None:
+    """Pao (the stall) has a newer contract at the mall: the stall's payslip uses the stall's."""
+    branch, people = hr
+    pao = people["Pao"]
+    stall = session.get(Branch, pao.branch_id)
+    assert stall is not None and stall.id != branch.id
+    own = tools._contract(session, pao.id, TODAY)
+    other = own.model_copy(
+        update={"id": new_id(), "branch_id": branch.id, "daily_rate": 99_999, "start_date": OCT_16}
+    )
+    store.insert(session, Contract.model_validate(other.model_dump()), Actor.system(branch.id))
+    session.commit()
+    assert tools._contract(session, pao.id, dt.date(2026, 10, 31)).daily_rate == 99_999
+    (_,) = due.issue_payslips(session, stall, (OCT_16, dt.date(2026, 10, 31)), PAYDAY)
+    slip = _slips(session)[pao.id]
+    days = calc.minutes_by_day(
+        session, pao.id, OCT_16, dt.date(2026, 10, 31), MNL, own.rest_day, tools._holidays()
+    )
+    expected = ph.payslip(days, own.daily_rate, ph.monthly_basic(own.daily_rate))
+    assert (slip.branch_id, slip.gross, slip.net) == (stall.id, expected.gross, expected.net)
 
 
 def test_an_issued_payslip_is_not_recomputed(session: Session, hr: Ferinos, pin: Pin) -> None:

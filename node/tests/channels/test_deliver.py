@@ -178,6 +178,22 @@ def test_notify_keeps_the_app_copy_and_delivers(
     assert event.action == "notification.sent" and event.after and event.after["text"] == "Hei"
 
 
+def test_a_sensitive_block_redacts_the_notification_event(
+    session: Session, people: dict[str, Person]
+) -> None:
+    """notify() redacts by the same rule as deliver(): one sensitive block is enough."""
+    from mia.chat.blocks import CardBlock, CardField
+
+    juha = people["Juha"]
+    card = CardBlock(
+        title="Kamppi", fields=[CardField(label="Access", value="Door 4711")], sensitive=True
+    )
+    message = notify(session, juha, [card], Actor.system(juha.branch_id), "shift_supervisor")
+    assert "4711" in str(message.blocks)
+    event = session.exec(select(Event).where(Event.entity_id == message.id)).one()
+    assert event.after and event.after["blocks"] == "<redacted>" and "4711" not in str(event.after)
+
+
 def test_deliver_marks_a_sensitive_block_itself(
     session: Session, sim: SimAdapter, people: dict[str, Person], link: LinkFn
 ) -> None:
