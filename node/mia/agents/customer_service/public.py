@@ -2,8 +2,8 @@
 
 Guarantees: the sender becomes a customer principal (the customer row's ULID, never the
 address) that the agent acts for, and rbac checks both (rule 4); the turn never reaches the
-router, run_turn, a Thread or a staff agent; every event carries the agent principal on behalf
-of the customer and no name or address (rule 5, `__redact__`); the throttle key is an HMAC of
+router, run_turn, a Thread or a staff agent; every customer_service.* event carries the agent
+on behalf of the customer and no name or address (rule 5, `__redact__`); the throttle key is an HMAC of
 `channel:address`; replies are out rows sent by send_pending, leased and committed before the
 network, and never sent outside the 24-hour window (Q68); DB work runs in worker threads and
 nothing holds the write lock across an await (rules 11, 12).
@@ -39,6 +39,7 @@ HELD = f"{MANIFEST.id}.held"
 MESSAGE_IN = f"{MANIFEST.id}.message_in"
 MESSAGE_OUT = f"{MANIFEST.id}.message_out"
 SKIPPED = f"{MANIFEST.id}.reminder_skipped"
+ATTEMPT = f"{MANIFEST.id}.attempt"
 _BLOCKS: TypeAdapter[list[Block]] = TypeAdapter(list[Block])
 
 
@@ -67,12 +68,22 @@ def runs() -> bool:
 def customer_actor(customer: Customer) -> Actor:
     """The agent acting on behalf of the customer. The customer principal's id is the row's
     ULID and its only role is `customer` (inherits nothing, no agent use)."""
-    role = MANIFEST.roles.agent_role
     return Actor(
-        principal=Principal(type="agent", id=role, roles=[role]),
+        principal=agent_principal(),
         on_behalf_of=Principal(type="customer", id=customer.id, roles=["customer"]),
         branch_id=customer.branch_id,
     )
+
+
+def agent_principal() -> Principal:
+    """The customer service's agent principal."""
+    role = MANIFEST.roles.agent_role
+    return Principal(type="agent", id=role, roles=[role])
+
+
+def _agent_only(branch_id: str) -> Actor:
+    """The agent alone, for an out row whose customer row is gone."""
+    return Actor(principal=agent_principal(), branch_id=branch_id)
 
 
 def window_open(last_inbound_at: dt.datetime | None, now: dt.datetime) -> bool:
@@ -127,12 +138,17 @@ def _first_branch(session: Session) -> Branch:
     return branch
 
 
-def _upsert(session: Session, msg: InboundMessage, now: dt.datetime) -> Customer:
-    row = session.exec(
+def _find(session: Session, msg: InboundMessage) -> Customer | None:
+    return session.exec(
         select(Customer)
         .where(Customer.channel == msg.channel)
         .where(Customer.address == msg.address)
     ).first()
+
+
+def _upsert(
+    session: Session, row: Customer | None, msg: InboundMessage, now: dt.datetime
+) -> Customer:
     if row is None:
         branch = _first_branch(session)
         org = session.get(Organisation, branch.organisation_id)
@@ -153,18 +169,19 @@ def _upsert(session: Session, msg: InboundMessage, now: dt.datetime) -> Customer
 
 
 def _arrive(
-    session: Session, inbound_id: str, msg: InboundMessage, now: dt.datetime
+    session: Session, inbound_id: str, msg: InboundMessage, text: str, now: dt.datetime
 ) -> Customer | None:
-    """Record the message. None when the turn stops here: the customer is held (ignored), or
-    is over the hourly limit (held now, one hold reply queued)."""
-    customer = _upsert(session, msg, now)
+    """Record the message. None when the turn stops here: the customer is held (ignored, no
+    write and no event at all), or is over the hourly limit (held now, one hold reply queued)."""
+    found = _find(session, msg)
+    if found is not None and found.held_until is not None and found.held_until > now:
+        return None
+    customer = _upsert(session, found, msg, now)
     actor = customer_actor(customer)
     inbound = session.get(ChannelInbound, inbound_id)
     if inbound is not None:
         changes = {"branch_id": customer.branch_id}
         store.update(session, inbound, changes, actor, action="channel.matched")
-    if customer.held_until is not None and customer.held_until > now:
-        return None
     key = throttle_key(msg.channel, msg.address)
     per_hour = orgconfig.load().customer_service.messages_per_hour
     limit = auth.Limit(per_hour, auth.H1, auth.H1)
@@ -172,12 +189,12 @@ def _arrive(
         store.update(session, customer, {"held_until": now + auth.H1}, actor, action=HELD)
         queue(session, customer, [TextBlock(text=t("cs.held", customer.language))], actor)
         return None
-    auth.record_attempt(session, THROTTLE, key, False, now, actor=actor)
+    auth.record_attempt(session, THROTTLE, key, False, now, actor=actor, action=ATTEMPT)
     message = CustomerMessage(
         branch_id=customer.branch_id,
         customer_id=customer.id,
         direction="in",
-        text=(msg.button or msg.text).strip(),
+        text=text,
         at=now,
     )
     store.insert(session, message, actor, action=MESSAGE_IN)
@@ -221,10 +238,11 @@ async def public_turn(
     """One customer message: arrive (customer row, hold and throttle, message row), commit,
     decide, act, commit, then send what is queued. The caller marks the inbound row."""
     ensure_role()
-    customer = await asyncio.to_thread(_arrive, session, inbound_id, msg, now)
+    text = (msg.button or msg.text).strip()
+    customer = await asyncio.to_thread(_arrive, session, inbound_id, msg, text, now)
     await asyncio.to_thread(session.commit)  # nothing holds the write lock across Jev
     if customer is not None:
-        action = await _decide(customer, (msg.button or msg.text).strip())
+        action = await _decide(customer, text)
         await asyncio.to_thread(_answer, session, customer, action, now)
         await asyncio.to_thread(session.commit)
     await send_pending(utcnow())
@@ -253,7 +271,10 @@ def _lease(now: dt.datetime) -> list[_Lease]:
         ).all()
         for row in rows:
             customer = session.get(Customer, row.customer_id)
-            if customer is None:
+            if customer is None:  # nobody to send to: never left queued
+                failed = f"{MANIFEST.id}.message_failed"
+                agent = _agent_only(row.branch_id)
+                store.update(session, row, {"status": "failed"}, agent, action=failed)
                 continue
             actor = customer_actor(customer)
             if not window_open(customer.last_inbound_at, now):
@@ -279,14 +300,15 @@ def _record(lease: _Lease, results: list[DeliveryResult]) -> bool:
     ok = all(r.ok for r in results)
     with session_scope() as session:
         row = session.get(CustomerMessage, lease.id)
-        customer = session.get(Customer, row.customer_id) if row else None
-        if row is None or customer is None:
+        if row is None:
             return ok
+        customer = session.get(Customer, row.customer_id)
+        actor = customer_actor(customer) if customer else _agent_only(row.branch_id)
         changes: dict[str, object] = {"status": "sent" if ok else "failed"}
         if ok and results:
             changes["channel_message_id"] = results[-1].channel_message_id
         action = f"{MANIFEST.id}.message_{changes['status']}"
-        store.update(session, row, changes, customer_actor(customer), action=action)
+        store.update(session, row, changes, actor, action=action)
     return ok
 
 

@@ -15,8 +15,9 @@ from sqlmodel import Session, col, select
 from mia.agents.customer_service import MANIFEST, public
 from mia.agents.customer_service.models import Customer, CustomerMessage
 from mia.api.main import app
-from mia.channels import outbox
+from mia.channels import linking, outbox
 from mia.channels.base import ChannelPayload, DeliveryResult
+from mia.channels.inbound import _both
 from mia.channels.simulator import SimAdapter
 from mia.chat.blocks import QuickRepliesBlock, TextBlock
 from mia.core import db, jev, orgconfig, store
@@ -26,6 +27,7 @@ from mia.core.orgconfig import ChannelConfig
 from mia.core.rbac import Resource, get_rbac
 from mia.i18n import t
 from mia.settings import get_settings
+from tests.channels.conftest import LinkFn
 from tests.channels.test_inbound import post, texts_to
 from tests.conftest import Shop
 from tests.jev_fake import answers_for, fake_jev
@@ -148,6 +150,61 @@ def test_a_held_customer_gets_one_hold_reply_then_nothing(
     monkeypatch.setattr(orgconfig, "load", lambda org=None: tight)
     got = [say(client, sim, f"hi {i}") for i in range(4)]
     assert got == [[t("cs.menu", "fil")]] * 2 + [[t("cs.held", "fil")], []]
+
+
+def test_a_held_customer_writes_no_event_at_all(
+    shop: Shop, client: TestClient, sim: SimAdapter, session: Session
+) -> None:
+    counts = []
+    for i in range(32):
+        say(client, sim, f"hi {i}")
+        customer = session.exec(select(Customer).where(Customer.address == ADDR)).one()
+        mine = select(Event).where(Event.on_behalf_of == customer.id)
+        counts.append(len(session.exec(mine).all()))
+    assert counts[31] == counts[30]  # the 32nd message: held, nothing written
+    held = session.exec(select(Event).where(Event.action == f"{MANIFEST.id}.held")).all()
+    attempts = session.exec(select(Event).where(Event.action == f"{MANIFEST.id}.attempt")).all()
+    assert len(held) == 1 and len(attempts) == 30
+
+
+def test_an_inactive_staff_address_still_gets_not_linked(
+    shop: Shop, client: TestClient, sim: SimAdapter, session: Session, link: LinkFn
+) -> None:
+    liza = shop.people["Liza"]
+    link(liza, ADDR)
+    store.update(session, liza, {"status": "inactive"}, Actor.system(liza.branch_id))
+    session.commit()
+    assert say(client, sim, "hello po") == [_both("channel.not_linked")]
+    assert session.exec(select(Customer).where(Customer.address == ADDR)).first() is None
+
+
+def test_a_link_code_from_an_unlinked_address_is_redeemed(
+    shop: Shop, client: TestClient, sim: SimAdapter, session: Session
+) -> None:
+    marites, ana = shop.people["Marites"], shop.people["Ana"]
+    code = linking.create_code(session, Actor.person(marites), ana, "invite")
+    session.commit()
+    assert any("Ana" in text for text in say(client, sim, f"LINK {code}"))
+    assert linking.identity_for(session, "sim", ADDR)
+    assert session.exec(select(Customer).where(Customer.address == ADDR)).first() is None
+
+
+def test_an_out_row_without_its_customer_is_failed(
+    shop: Shop, client: TestClient, sim: SimAdapter, session: Session
+) -> None:
+    say(client, sim, "hello po")
+    customer = session.exec(select(Customer).where(Customer.address == ADDR)).one()
+    row = public.queue(session, customer, [TextBlock(text="hi")], public.customer_actor(customer))
+    session.commit()
+    with db.get_engine().connect() as raw:  # no service deletes customers; simulate a lost row
+        raw.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        delete = "DELETE FROM customer_service_customers WHERE id = ?"
+        raw.exec_driver_sql(delete, (customer.id,))
+        raw.commit()
+    assert asyncio.run(public.send_pending(db.utcnow())) == 0
+    with Session(db.get_engine()) as other:
+        lost = other.get(CustomerMessage, row.id)
+        assert lost is not None and lost.status == "failed"
 
 
 def test_send_pending_leases_before_sending(

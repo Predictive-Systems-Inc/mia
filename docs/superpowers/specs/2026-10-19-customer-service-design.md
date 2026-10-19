@@ -34,8 +34,8 @@ reads them; the `incidents` table stays untouched (its rows need a visit and a c
 
 - Customers: unlinked WhatsApp (and simulator) addresses writing to the node's number. Not a
   Person. The agent runs as `Principal(type="agent", id="agent.customer_service")` on behalf
-  of `Principal(type="customer", id="<channel>:<address>", roles=["customer"])`; rbac checks
-  both (rule 4). The `customer` role may execute only the customer tools below and `request`
+  of `Principal(type="customer", id=<customer_service_customers.id>, roles=["customer"])` (the
+  row's ULID, never the address); rbac checks both (rule 4). The `customer` role may execute only the customer tools below and `request`
   `place_order`; it is never offered an agent (`agent:*` use is not granted), so a customer
   message never reaches the router, a staff agent or a staff tool (negative tests).
 - Staff in the app: clerk and supervisor (`read_all`, `write_all` on orders of their branch:
