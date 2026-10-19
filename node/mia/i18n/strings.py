@@ -327,6 +327,15 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "hr.payslip_resent": (
             "Your payslip for {start} to {end}: gross {gross}, deductions {deductions}, net {net}."
         ),
+        "hr.payslip.line": "{kind} {time}: {amount}",
+        "hr.payslip.deduction": "{name}: {amount}",
+        "hr.pay.regular": "Regular",
+        "hr.pay.overtime": "Overtime",
+        "hr.pay.night": "Night differential",
+        "hr.pay.rest_day": "Rest day",
+        "hr.pay.regular_holiday": "Regular holiday",
+        "hr.pay.special_holiday": "Special day",
+        "hr.approval_reminder": "{count} timesheets still wait for approval; the cutoff closes {end}.",
         "stock.plan.more": "Bake more {item}.",
         "stock.plan.same": "Bake the same {item}.",
         "stock.plan.fewer": "Bake fewer {item}.",
@@ -738,6 +747,15 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
             "Palkkalaskelmasi {start} - {end}: brutto {gross}, vähennykset {deductions}, "
             "netto {net}."
         ),
+        "hr.payslip.line": "{kind} {time}: {amount}",
+        "hr.payslip.deduction": "{name}: {amount}",
+        "hr.pay.regular": "Normaali",
+        "hr.pay.overtime": "Ylityö",
+        "hr.pay.night": "Yölisä",
+        "hr.pay.rest_day": "Lepopäivä",
+        "hr.pay.regular_holiday": "Yleinen pyhäpäivä",
+        "hr.pay.special_holiday": "Erityinen vapaapäivä",
+        "hr.approval_reminder": "{count} tuntikirjausta odottaa yhä hyväksyntää; jakso päättyy {end}.",
         "stock.plan.more": "Leivo enemmän: {item}.",
         "stock.plan.same": "Leivo saman verran: {item}.",
         "stock.plan.fewer": "Leivo vähemmän: {item}.",
