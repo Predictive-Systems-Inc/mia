@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, col, select
 
-from mia.agents.customer_service import MANIFEST, public
+from mia.agents.customer_service import MANIFEST, public, tools
 from mia.agents.customer_service.models import Complaint, Customer, CustomerMessage, Order
 from mia.agents.decider import Decision
 from mia.api.main import app
@@ -301,6 +301,11 @@ def one(session: Session, model: type[Any]) -> Any:
     return rows[0]
 
 
+def the_customer(session: Session) -> Customer:
+    session.expire_all()
+    return session.exec(select(Customer).where(Customer.address == ADDR)).one()
+
+
 def new_order(session: Session) -> Order:
     session.expire_all()
     customer = session.exec(select(Customer).where(Customer.address == ADDR)).one()
@@ -383,6 +388,9 @@ def test_a_customer_asks_prices(
     answer(monkeypatch, "prices")
     got = say(client, sim, "magkano ang bibingka at puto bumbong")
     assert got == [prices_text("fil", ["Classic", "Puto bumbong"])]
+    menu = ["Special", "Classic", "Ube", "Salted egg", "Cheese overload", "Puto bumbong"]
+    menu += ["Box of 4", "Kape"]
+    assert say(client, sim, "magkano po") == [prices_text("fil", menu)]
 
 
 def test_an_order_waits_for_staff(
@@ -461,9 +469,13 @@ def test_a_delivery_area_question_reads_configuration(
     answer(monkeypatch, "delivery_area")
     got = say(client, sim, "nagdedeliver ba kayo sa Marikina")
     assert got == [t("cs.delivers", "fil", area="Marikina", fee="₱50.00")]
-    assert say(client, sim, "nagdedeliver ba kayo sa Cebu") == [
-        t("cs.no_delivery", "fil", branch="Mall kiosk")
-    ]
+    listed = [t("cs.delivery_areas", "fil", areas="Marikina ₱50.00", branch="Mall kiosk")]
+    assert say(client, sim, "may delivery ba kayo") == listed
+    assert say(client, sim, "nagdedeliver ba kayo sa Cebu") == listed  # code finds no area
+    none = orgconfig.load().model_copy(update={"delivery_areas": []})
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: none)
+    no_delivery = [t("cs.no_delivery", "fil", branch="Mall kiosk")]
+    assert say(client, sim, "may delivery ba kayo") == no_delivery
 
 
 def test_a_complaint_is_logged_and_the_supervisor_told(
@@ -477,7 +489,11 @@ def test_a_complaint_is_logged_and_the_supervisor_told(
     text = "sobrang tigas ng bibingka kahapon"
     assert say(client, sim, text) == [t("cs.complaint_thanks", "fil")]
     assert one(session, Complaint).status == "open"
-    assert text in notifications(session, shop.people["Marites"])[0].text
+    told = notifications(session, shop.people["Marites"])[0]
+    who = tools._who(the_customer(session))
+    assert told.text == t("cs.staff.complaint", "fil", who=who, text=text)
+    sent = session.exec(select(Event).where(Event.entity_id == told.id)).one()
+    assert sent.after is not None and sent.after["text"] == "<redacted>"  # sensitive
 
 
 def test_a_customer_cancels_before_the_order_is_ready(
@@ -491,6 +507,9 @@ def test_a_customer_cancels_before_the_order_is_ready(
     answer(monkeypatch, "cancel_order")
     assert say(client, sim, "cancel na lang po") == [t("cs.cancelled", "fil")]
     assert new_order(session).status == "cancelled"
+    who = tools._who(the_customer(session))
+    told = t("cs.staff.order_cancelled", "fil", who=who, time="10:00")
+    assert told in [m.text for m in notifications(session, shop.people["Ana"])]
     assert say(client, sim, "cancel na lang po") == [t("cs.no_order", "fil")]
 
 
@@ -610,12 +629,54 @@ def test_jev_down_or_egress_off_queues_unavailable(
 
 
 def test_a_failed_turn_queues_unavailable_not_the_channel_error(
-    shop: Shop, client: TestClient, sim: SimAdapter, monkeypatch: pytest.MonkeyPatch
+    shop: Shop,
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     answer(monkeypatch, "hours")
 
     def boom(*a: Any) -> None:
-        raise RuntimeError("bug")
+        raise RuntimeError("bug with secret text")
 
-    monkeypatch.setattr(public, "_act", boom)
+    hours = next(b for b in tools.BINDINGS if b.tool_id == f"{MANIFEST.id}.hours")
+    monkeypatch.setattr(hours, "impl", boom)
     assert say(client, sim, "open pa ba kayo") == [t("cs.unavailable", "fil")]
+    failed = session.exec(select(Event).where(Event.action == f"{MANIFEST.id}.turn_failed")).one()
+    assert failed.after == {"error": "RuntimeError"}
+    assert failed.on_behalf_of == the_customer(session).id
+
+
+def test_a_tapped_time_from_another_day_is_a_plain_message(
+    shop: Shop,
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answer(monkeypatch, "place_order", day="d0")
+    assert say(client, sim, "pa-order 10 bibingka bukas") == [t("cs.ask_time", "fil")]
+    shop.pin(9, days=1)  # the next morning: yesterday's question no longer holds
+    answer(monkeypatch, "place_order", time="t0")
+    assert say(client, sim, "10:00") == [t("cs.menu", "fil")]  # no items: nothing to order
+    session.expire_all()
+    assert not session.exec(
+        select(Order).where(Order.customer_id == the_customer(session).id)
+    ).all()
+
+
+def test_the_name_scrub_keeps_words_that_start_with_the_name(
+    shop: Shop,
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mark = session.exec(select(Customer).where(Customer.address == MARK_ADDR)).one()
+    store.update(session, mark, {"channel": "sim"}, Actor.system(mark.branch_id))
+    session.commit()
+    seen: list[dict[str, Any]] = []
+    answer(monkeypatch, "greeting", seen=seen)
+    say(client, sim, "market price? Mark here", address=MARK_ADDR)
+    assert seen[-1]["state"]["message"] == "market price? Customer here"

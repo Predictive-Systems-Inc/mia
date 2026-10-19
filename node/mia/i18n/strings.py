@@ -458,6 +458,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "cs.field.total": "Total",
         "cs.field.pickup": "Pickup",
         "cs.field.customer": "Customer",
+        "cs.delivery_areas": "We deliver to {areas}. You can also pick up at {branch}.",
         "chat.switched": "({agent})",
         "route.question": "Is this about:",
         "reply.busy": [
@@ -944,6 +945,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "cs.field.total": "Yhteensä",
         "cs.field.pickup": "Nouto",
         "cs.field.customer": "Asiakas",
+        "cs.delivery_areas": "Toimitamme alueille {areas}. Voit myös noutaa: {branch}.",
         "chat.switched": "({agent})",
         "route.question": "Koskeeko tämä:",
         "reply.busy": [

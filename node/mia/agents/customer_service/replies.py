@@ -2,11 +2,13 @@
 writes one. Money is in minor units through format_money, times on the branch clock."""
 
 import datetime as dt
+from collections.abc import Sequence
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.core.money import format_money
+from mia.core.orgconfig import DeliveryArea
 from mia.i18n import t
 
 # ponytail: reply.not_built stands in for the agent's own capabilities key until it has tools
@@ -52,6 +54,14 @@ def refused(out: dict[str, Any], lang: str) -> list[Block]:
     """A precheck refusal in words (the reason may come quoted, as str(KeyError) does)."""
     reason = str(out.get("message", "")).strip("'")
     return _text(f"cs.refused.{reason}" if reason in REFUSALS else "cs.unavailable", lang)
+
+
+def delivery_areas(areas: Sequence[DeliveryArea], branch: str, lang: str) -> list[Block]:
+    """The configured delivery areas with their fees, or cs.no_delivery when there are none."""
+    if not areas:
+        return _text("cs.no_delivery", lang, branch=branch)
+    listed = ", ".join(f"{a.name} {format_money(a.fee, a.currency, lang)}" for a in areas)
+    return _text("cs.delivery_areas", lang, areas=listed, branch=branch)
 
 
 def customer_reply(action: str, out: dict[str, Any], lang: str, tz: str) -> list[Block]:

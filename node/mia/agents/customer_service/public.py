@@ -12,6 +12,7 @@ nothing holds the write lock across an await (rules 11, 12).
 import asyncio
 import datetime as dt
 import logging
+import re
 import threading
 import weakref
 from dataclasses import dataclass, field
@@ -29,9 +30,9 @@ from mia.agents.decider import Decision
 from mia.channels import outbox
 from mia.channels.base import DeliveryResult, InboundMessage
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
-from mia.core import auth, keys, orgconfig, store
+from mia.core import auth, events, keys, orgconfig, store
 from mia.core.db import session_scope, utcnow
-from mia.core.egress import EgressContext, Pseudonymiser, egress_context
+from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError
 from mia.core.models import Actor, Branch, ChannelInbound, Organisation, Principal
@@ -49,6 +50,7 @@ MESSAGE_OUT = f"{MANIFEST.id}.message_out"
 SKIPPED = f"{MANIFEST.id}.reminder_skipped"
 ATTEMPT = f"{MANIFEST.id}.attempt"
 LANGUAGE = f"{MANIFEST.id}.language_set"
+TURN_FAILED = f"{MANIFEST.id}.turn_failed"
 log = logging.getLogger(__name__)
 _BLOCKS: TypeAdapter[list[Block]] = TypeAdapter(list[Block])
 
@@ -239,8 +241,8 @@ def _last(session: Session, customer: Customer, direction: str, skip: int = 0) -
     return row.text if row else None
 
 
-def _last_out_options(session: Session, customer: Customer) -> tuple[str, list[str]]:
-    """The latest reply's text and its quick-reply options."""
+def _last_out(session: Session, customer: Customer) -> tuple[str, list[str], dt.datetime | None]:
+    """The latest reply's text, its quick-reply options and when it was queued."""
     row = session.exec(
         select(CustomerMessage)
         .where(CustomerMessage.customer_id == customer.id)
@@ -248,19 +250,20 @@ def _last_out_options(session: Session, customer: Customer) -> tuple[str, list[s
         .order_by(col(CustomerMessage.id).desc())
     ).first()
     if row is None:
-        return "", []
+        return "", [], None
     quick = [b for b in _BLOCKS.validate_python(row.blocks) if isinstance(b, QuickRepliesBlock)]
-    return row.text, [o for b in quick for o in b.options]
+    return row.text, [o for b in quick for o in b.options], row.at
 
 
 def _scrubbed(customer: Customer, text: str) -> str:
-    """The text with the customer's own stored name (and each part of it) replaced, as the
-    shared pseudonymiser replaces staff names, so it never reaches Jev (rule 8)."""
-    name = (customer.name or "").strip()
-    if not name:
+    """The text with the customer's own stored name (and each part of it) replaced as whole
+    words, so it never reaches Jev (rule 8) while "market" from Mark stays a word. Unlike the
+    staff pseudonymiser, no inflected form is taken."""
+    parts = sorted({*(customer.name or "").split()}, key=len, reverse=True)
+    if not parts:
         return text
-    names = {name: "Customer"} | {part: "Customer" for part in name.split()}
-    return Pseudonymiser(names).apply(text)
+    pattern = r"\b(?:" + "|".join(map(re.escape, parts)) + r")\b"
+    return re.sub(pattern, "Customer", text, flags=re.IGNORECASE)
 
 
 def _query(session: Session, customer: Customer, text: str, now: dt.datetime) -> actions.Query:
@@ -269,11 +272,12 @@ def _query(session: Session, customer: Customer, text: str, now: dt.datetime) ->
     branch = session.get(Branch, customer.branch_id)
     if branch is None:
         raise LookupError(f"branch {customer.branch_id} not found")
-    lang = customer.language
-    previous, options = _last_out_options(session, customer)
-    if previous == t("cs.ask_time", lang) and text in options:
+    lang, tz = customer.language, ZoneInfo(branch.timezone)
+    today = now.astimezone(tz).date()
+    previous, options, asked = _last_out(session, customer)
+    same_day = asked is not None and asked.astimezone(tz).date() == today
+    if previous == t("cs.ask_time", lang) and text in options and same_day:
         text = f"{_last(session, customer, 'in', skip=1) or ''} {text}"
-    today = now.astimezone(ZoneInfo(branch.timezone)).date()
     message = _scrubbed(customer, text)
     return actions.build_query(session, branch, "customer", message, previous, today, lang)
 
@@ -298,7 +302,10 @@ async def _decide(session: Session, customer: Customer, text: str, now: dt.datet
 
 def _call(deps: CustomerDeps, tool: str, args: BaseModel) -> dict[str, Any]:
     """Run one customer tool through the guard (call_tool commits after it)."""
-    binding = next(b for b in tools.BINDINGS if b.tool_id == f"{MANIFEST.id}.{tool}")
+    tool_id = f"{MANIFEST.id}.{tool}"
+    binding = next((b for b in tools.BINDINGS if b.tool_id == tool_id), None)
+    if binding is None:
+        raise LookupError(f"no binding for {tool_id}")
     return call_tool(deps, binding, args, new_id())
 
 
@@ -366,6 +373,9 @@ def _act(deps: CustomerDeps, decision: Decision, text: str, now: dt.datetime) ->
         return replies.customer_reply("greeting", {}, deps.lang, tz)
     spec = actions.ACTIONS[action]
     out = _call(deps, str(spec.tool), inputs[action])
+    if action == "delivery_area" and a.get("area") is None and out.get("pickup_branch"):
+        areas = orgconfig.load().delivery_areas  # no area named: the configured ones
+        return replies.delivery_areas(areas, out["pickup_branch"], deps.lang)
     return replies.customer_reply(action, out, deps.lang, tz)
 
 
@@ -376,13 +386,17 @@ def _answer(
     queue(session, customer, _act(deps, decision, text, now), deps.actor)
 
 
-def _unavailable(session: Session, customer_id: str) -> None:
-    """After a failed turn: roll back what it left, then queue cs.unavailable."""
+def _unavailable(session: Session, customer_id: str, error: str) -> None:
+    """After a failed turn: roll back what it left, write customer_service.turn_failed with
+    the exception class only (no message text), then queue cs.unavailable."""
     session.rollback()
     customer = session.get(Customer, customer_id)
     if customer is not None:
+        actor = customer_actor(customer)
+        entity = (Customer.__tablename__, customer.id)
+        events.emit(session, TURN_FAILED, entity, None, {"error": error}, actor)
         blocks: list[Block] = [TextBlock(text=t("cs.unavailable", customer.language))]
-        queue(session, customer, blocks, customer_actor(customer))
+        queue(session, customer, blocks, actor)
     session.commit()
 
 
@@ -396,9 +410,9 @@ async def _turn(session: Session, customer: Customer, text: str, now: dt.datetim
         decision = await _decide(session, customer, text, now)
         await asyncio.to_thread(_answer, session, customer, decision, text, now)
         await asyncio.to_thread(session.commit)
-    except Exception:
+    except Exception as exc:
         log.exception("customer turn failed")  # the traceback stays on the node
-        await asyncio.to_thread(_unavailable, session, customer_id)
+        await asyncio.to_thread(_unavailable, session, customer_id, type(exc).__name__)
 
 
 async def public_turn(
