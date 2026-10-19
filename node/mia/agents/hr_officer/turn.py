@@ -115,7 +115,7 @@ def _run(
     out = call_tool(deps, binding, inp, new_id())
     if "status" in out and "message" in out:  # a ToolRefusal
         return _refusal(session, deps, thread, tool, out)
-    blocks = replies.tool_reply(tool, out, args, deps.lang, deps.branch.timezone)
+    blocks = replies.tool_reply(tool, out, args, deps.lang)
     return store_reply(session, deps, thread, blocks)
 
 

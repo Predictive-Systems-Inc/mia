@@ -1,4 +1,5 @@
 """Reply blocks for the hr officer: each tool result worded from i18n keys (minutes as "7h 30m",
+one line per pay kind,
 dates as ISO, money through format_money), and the conversation replies. Code words every
 reply; no model writes one."""
 
@@ -46,19 +47,21 @@ def _text(key: str, lang: str, **values: Any) -> list[Block]:
 
 
 def _contributions(out: ContributionsOutput, which: str, lang: str) -> list[Block]:
-    """One contribution when one was asked, else all three; one not deducted reads as zero."""
-    paid = {k: format_money(getattr(out, k) or 0, out.currency, lang) for k in KINDS}
+    """One contribution when one was asked, else all three; one not on the payslip reads as
+    none on record (never as zero money)."""
+    none = t("hr.contribution.none", lang)
+    amounts = {k: getattr(out, k) for k in KINDS}
+    paid = {
+        k: none if a is None else format_money(a, out.currency, lang) for k, a in amounts.items()
+    }
     cutoff = out.cutoff_end.isoformat()
     if which in KINDS:
         return _text("hr.contribution", lang, cutoff=cutoff, name=WHICH[which], amount=paid[which])
     return _text("hr.contributions", lang, cutoff=cutoff, **paid)
 
 
-def tool_reply(
-    tool: str, out: dict[str, Any], args: dict[str, Any], lang: str, zone: str
-) -> list[Block]:
-    """The reply to one successful tool result (tool is the name without the agent prefix;
-    zone is the branch's time zone, unused while every answer is in dates)."""
+def tool_reply(tool: str, out: dict[str, Any], args: dict[str, Any], lang: str) -> list[Block]:
+    """The reply to one successful tool result (tool is the name without the agent prefix)."""
     if tool == "hours":
         h = HoursOutput.model_validate(out)
         kinds = {k: duration(getattr(h, k)) for k in ("regular", "overtime", "night", "rest_day")}
