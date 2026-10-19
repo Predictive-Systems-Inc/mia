@@ -150,7 +150,7 @@ STRINGS: dict[str, str | list[str]] = {
     "hr.field.dates": "Mga petsa",
     "hr.field.working_days": "Araw ng trabaho",
     "hr.field.leave_left": "Matitirang leave",
-    "hr.balance": "Natitirang araw ng leave ngayong taon ng serbisyo: {left} sa {total} ({used} nagamit na).",
+    "hr.balance": "Natitirang araw ng leave ngayong taon ng serbisyo: {left} mula sa {total} ({used} nagamit na).",
     "hr.holiday.regular": "Ang {date} ay {name}, isang regular holiday: {rate}% ng arawang sahod ninyo kung papasok kayo, buong arawang sahod kung hindi kayo papasok at pumasok kayo noong araw bago nito.",
     "hr.holiday.special": "Ang {date} ay {name}, isang special non-working day: {rate}% ng arawang sahod ninyo kung papasok kayo.",
     "hr.holiday.none": "Hindi holiday ang {date}: ang karaniwang rate ({rate}%).",

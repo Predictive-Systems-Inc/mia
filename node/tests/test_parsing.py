@@ -183,6 +183,8 @@ def test_find_dates_today_tomorrow_and_next_week_in_cebuano() -> None:
     assert find_dates("holiday ba ang Biyernes sa sunod semana?", MONDAY, "ceb") == [
         ("d0", dt.date(2026, 10, 30))
     ]
+    # "karong bulana" (this month) is a period, never "karon" (today).
+    assert find_dates("pila na ka oras ko nagtrabaho karong bulana", MONDAY, "ceb") == []
 
 
 def test_find_dates_today_tomorrow_and_next_week_in_hiligaynon() -> None:
