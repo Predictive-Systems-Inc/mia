@@ -58,7 +58,8 @@ def test_scaffold_writes_the_package_and_edits_the_shared_files(tree: Path) -> N
     assert "mia.agents.quality_officer.models" in (tree / "node/mia/schema.py").read_text()
     assert "quality_officer/" in (tree / "docs/layout.md").read_text()
     router_cases = (tree / "node/tests/evals/router_cases.py").read_text()
-    assert 'PENDING: set[str] = {"quality_officer"}' in router_cases
+    pending = router_cases[router_cases.index("PENDING") :].split("}")[0]  # joins the ids waiting
+    assert '"quality_officer"' in pending
     assert (tree / "node/tests/test_quality_officer_chat.py") in written
     assert all(p.exists() for p in written)
 

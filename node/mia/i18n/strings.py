@@ -416,6 +416,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "agent.bookkeeper.label": "Bookkeeper",
         "agent.hr_officer.label": "HR Officer",
         "agent.branch_manager.label": "Branch Manager",
+        "agent.customer_service.label": "Customer Service",
         "chat.switched": "({agent})",
         "route.question": "Is this about:",
         "reply.busy": [
@@ -860,6 +861,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "agent.bookkeeper.label": "Kirjanpitäjä",
         "agent.hr_officer.label": "Henkilöstöasiantuntija",
         "agent.branch_manager.label": "Myymäläpäällikkö",
+        "agent.customer_service.label": "Asiakaspalvelu",
         "chat.switched": "({agent})",
         "route.question": "Koskeeko tämä:",
         "reply.busy": [

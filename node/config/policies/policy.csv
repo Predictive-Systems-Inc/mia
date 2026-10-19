@@ -157,3 +157,7 @@ p, owner, *, agent:branch_manager, use, allow
 p, owner, *, agent:inventory_manager, use, allow
 p, staff, *, agent:hr_officer, use, allow
 p, supervisor, *, agent:hr_officer, use, allow
+p, clerk, *, agent:customer_service, use, allow
+p, supervisor, *, agent:customer_service, use, allow
+p, owner, *, agent:customer_service, use, allow
+p, admin, *, agent:customer_service, use, allow

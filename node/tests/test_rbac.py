@@ -133,7 +133,7 @@ def test_shared_sales_and_stock_tables_keep_exactly_the_rights_they_had() -> Non
         spec = Manifest.load(path).roles
         rbac.load_agent_role(spec.agent_role, spec.grants, spec.denies)
         roles.append(spec.agent_role)
-    assert len(roles) == 11
+    assert len(roles) == 7 + len(list(agents.glob("*/manifest.yaml")))  # every agent role
     got = {
         table: {
             role: {a for a in ACTIONS if rbac.enforcer.enforce(role, "B", f"data:{table}", a)}

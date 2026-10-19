@@ -7,6 +7,7 @@ STRINGS: dict[str, str | list[str]] = {
     "agent.bookkeeper.label": "Bookkeeper",
     "agent.hr_officer.label": "HR Officer",
     "agent.branch_manager.label": "Branch Manager",
+    "agent.customer_service.label": "Customer Service",
     "chat.switched": "({agent})",
     "route.question": "Tungkol ba ito sa:",
     "reply.busy": [
