@@ -10,6 +10,7 @@ holds no customer name or address.
 
 import datetime as dt
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
@@ -178,12 +179,27 @@ def _items(session: Session, branch: Branch) -> dict[str, tuple[str, ...]]:
     return {i.id: (i.name, *i.short_codes) for i in rows}
 
 
+NAME_MARKERS = {"kay", "ni", "si"}  # the word before a person's name (ready na yung kay Ana)
+
+
+def _named(session: Session, branch: Branch, message: str) -> set[str]:
+    """The first names (folded) the message names: any of the branch's customers', and the
+    word after a name marker."""
+    # ponytail: a name without a marker and of no customer ("Ana ready na") is not seen, so every
+    # order stays a candidate and Jev picks; list staff names too if that misleads
+    words = fold(message).split()
+    after = {w for m, w in pairwise(words) if m in NAME_MARKERS and w.isalpha()}
+    rows = session.exec(select(Customer.name).where(Customer.branch_id == branch.id)).all()
+    known = {(fold(n or "").split() or [""])[0] for n in rows} & set(words)
+    return after | known
+
+
 def _orders(
     session: Session, branch: Branch, message: str, today: dt.date, names: dict[str, str]
 ) -> dict[str, str]:
-    """Today's confirmed and ready orders as id -> "pickup time, lines (status)"; only the
-    orders of the customers the message names by first name, when it names any (matched here
-    so no name reaches the query)."""
+    """Today's confirmed and ready orders as id -> "pickup time, lines (status)". When the
+    message names a first name, only the orders of customers of that name, none when no such
+    order is today's (matched here so no name reaches the query)."""
     tz = ZoneInfo(branch.timezone)
     open_rows = session.exec(
         select(Order, Customer)
@@ -196,9 +212,9 @@ def _orders(
         ((o, c) for o, c in open_rows if o.pickup_at.astimezone(tz).date() == today),
         key=lambda row: row[0].pickup_at,
     )
-    words = set(fold(message).split())
-    named = [o for o, c in rows if (fold(c.name or "").split() or [""])[0] in words]
-    orders = named or [o for o, _ in rows]
+    named = _named(session, branch, message)
+    first = {o.id: (fold(c.name or "").split() or [""])[0] for o, c in rows}
+    orders = [o for o, _ in rows if not named or first[o.id] in named]
     out = {}
     for o in orders:
         lines = ", ".join(f"{ln['quantity']} {names.get(ln['item_id'], '?')}" for ln in o.lines)

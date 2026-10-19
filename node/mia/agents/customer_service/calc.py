@@ -84,6 +84,15 @@ def match_items(text: str, items: Mapping[str, Sequence[str]]) -> list[str]:
     ]
 
 
+def match_item(words: str, items: Mapping[str, Sequence[str]]) -> str | None:
+    """The one item a count group's words name: the only match, else the only one named by its
+    whole name ("box of 4 bibingka" is the Box, bibingka only describing it); None otherwise."""
+    hits = match_items(words, items)
+    if len(hits) > 1:
+        hits = [i for i in hits if _names(words, items[i][0])]
+    return hits[0] if len(hits) == 1 else None
+
+
 def last_four(address: str) -> str:
     """The last four digits of a channel address (the last four characters when it has none)."""
     digits = "".join(c for c in address if c.isdigit())

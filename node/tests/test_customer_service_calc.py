@@ -6,6 +6,7 @@ import datetime as dt
 from sqlmodel import Session
 
 from mia.agents.customer_service import calc
+from mia.agents.parsing import menu_tokens, pre_parse
 from mia.core.orgconfig import DeliveryArea
 from mia.templates.retail import hours
 from mia.templates.retail.hours import business_date_at
@@ -68,3 +69,17 @@ def test_items_match_by_name_or_code_as_whole_words() -> None:
 def test_last_four_reads_the_digits() -> None:
     assert calc.last_four("+63 917 555 1234") == "1234"
     assert calc.last_four("sim-ab") == "m-ab"
+
+
+def test_a_name_with_a_digit_stays_one_token_for_pre_parse() -> None:
+    menu = menu_tokens([("Box of 4", ["b4", "box"]), ("Classic", ["bibingka"])])
+    groups, _ = pre_parse("1 box of 4 at 4 bibingka", menu)
+    assert [(g.quantity, g.words) for g in groups] == [(1, "box of 4 at"), (4, "bibingka")]
+
+
+def test_one_item_per_group_prefers_the_whole_name() -> None:
+    items = {"b": ("Box of 4", "b4", "box"), "c": ("Classic", "bibingka"), "u": ("Ube", "ube")}
+    assert calc.match_item("box of 4 bibingka", items) == "b"
+    assert calc.match_item("ube bibingka", items) == "u"
+    assert calc.match_item("bibingka", items) == "c"
+    assert calc.match_item("ube classic", items) is None  # two whole names: ask

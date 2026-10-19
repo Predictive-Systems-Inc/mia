@@ -134,3 +134,28 @@ def test_item_instructions_carry_no_message_text(cs: Shop, session: Session) -> 
 def test_the_query_holds_no_customer_name_or_address(cs: Shop, session: Session) -> None:
     fields = set(Query.__dataclass_fields__)
     assert not {"name", "address", "customer", "customer_name", "phone"} & fields
+
+
+def test_a_named_customer_with_no_order_today_gives_no_candidate(
+    cs: Shop, session: Session
+) -> None:
+    q = build(session, cs, "ready na yung kay Ana", side="staff")  # Mila's order is today's only
+    assert q.orders == {}
+    d = decide(q, "staff_mark_ready")
+    assert (d.action, d.missing, d.args) == ("clarify", "order", {"order_id": None})
+
+
+def test_no_name_offers_every_order_of_today(cs: Shop, session: Session) -> None:
+    q = build(session, cs, "ready na yung order", side="staff")
+    assert len(q.orders) == 1
+
+
+def test_a_box_of_4_is_one_item_with_its_own_quantity(cs: Shop, session: Session) -> None:
+    q = build(session, cs, "pa-order 1 Box of 4 bibingka, pickup 3pm")
+    d = decide(q, "place_order", time="t0")
+    assert d.args["lines"] == [{"item_id": item_id(session, "Box of 4"), "quantity": 1}]
+
+
+def test_four_bibingka_alone_is_four_classic(cs: Shop, session: Session) -> None:
+    d = decide(build(session, cs, "pa-order 4 bibingka, pickup 3pm"), "place_order", time="t0")
+    assert d.args["lines"] == [{"item_id": classic_id(session), "quantity": 4}]

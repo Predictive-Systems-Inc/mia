@@ -20,14 +20,14 @@ from mia.i18n import SUPPORTED
 
 
 def _lines(q: Query) -> list[dict[str, Any]] | None:
-    """One line per count group whose words name exactly one item; None when a group names
-    none or several, or there is no group."""
+    """One line per count group whose words name one item (calc.match_item); None when a
+    group names none or several, or there is no group."""
     lines = []
     for g in q.groups:
-        hits = calc.match_items(g.words, q.items)
-        if len(hits) != 1 or g.quantity is None:
+        item = calc.match_item(g.words, q.items)
+        if item is None or g.quantity is None:
             return None
-        lines.append({"item_id": hits[0], "quantity": g.quantity})
+        lines.append({"item_id": item, "quantity": g.quantity})
     return lines or None
 
 

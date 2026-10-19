@@ -29,10 +29,15 @@ class Group:
 
 
 def menu_tokens(items: Iterable[tuple[str, Sequence[str]]]) -> set[str]:
-    """The casefolded words of the item names and the short codes, from (name, codes) pairs."""
-    return {
-        w for name, codes in items for w in (*name.casefold().split(), *map(str.casefold, codes))
-    }
+    """The casefolded words of the item names and the short codes, from (name, codes) pairs,
+    and the whole casefolded name of an item whose name carries a digit ("box of 4")."""
+    tokens: set[str] = set()
+    for name, codes in items:
+        folded = name.casefold()
+        tokens |= {*folded.split(), *map(str.casefold, codes)}
+        if any(c.isdigit() for c in folded):
+            tokens.add(folded)  # whole, so pre_parse never reads its digit as a count
+    return tokens
 
 
 def _orient(kept: list[str], words_first: bool) -> list[tuple[int, list[str]]]:
@@ -80,14 +85,28 @@ def was_corrected(text: str) -> bool:
     return any(i in numbers for i in _negated(tokens, numbers))
 
 
+def _join_names(tokens: list[str], menu_tokens: Collection[str]) -> list[str]:
+    """The tokens with each run that spells a multi-word menu token ("box", "of", "4") joined
+    into that one token, longest first."""
+    phrases = sorted((m.split() for m in menu_tokens if " " in m), key=len, reverse=True)
+    out: list[str] = []
+    i = 0
+    while i < len(tokens):
+        hit = next((p for p in phrases if tokens[i : i + len(p)] == p), None)
+        out.append(" ".join(hit) if hit else tokens[i])
+        i += len(hit) if hit else 1
+    return out
+
+
 def pre_parse(text: str, menu_tokens: Collection[str]) -> tuple[list[Group], int | None]:
     """Groups of (quantity, item words) and the stated total if any. Pure; item words are not
     matched to the menu here (Jev does that). A negation word drops itself and the number after
     it (the old value of a correction). Both orientations are built, number-then-words and
     words-then-number, and the one whose words hold more `menu_tokens` (casefolded item name
     words and short codes) wins; on a tie, words-then-number only when the message ends with a
-    number and every number follows words."""
-    tokens = _tokens(text)
+    number and every number follows words. A menu token with spaces (an item name with a
+    digit, from menu_tokens) is kept whole."""
+    tokens = _join_names(_tokens(text), menu_tokens)
     numbers = [i for i, tok in enumerate(tokens) if tok.isdigit()]
     drop = _negated(tokens, numbers)
     numbers = [i for i in numbers if i not in drop]
