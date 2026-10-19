@@ -12,7 +12,6 @@ from mia.agents.registry import AGENTS
 from mia.core import auth
 from mia.core.models import Actor, Event
 from mia.core.rbac import Resource, get_rbac
-from tests.test_customer_service_tools import cs  # noqa: F401 (the fixture)
 
 
 def test_customer_message_limit_is_30_per_hour(session: Session) -> None:

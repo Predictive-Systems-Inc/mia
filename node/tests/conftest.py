@@ -3,9 +3,11 @@
 No network and no API keys: MIA_MODEL=test everywhere, and egress tests use mock transports.
 """
 
+import datetime as dt
 import importlib
 import os
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -21,7 +23,7 @@ from pydantic_ai import models
 from mia import i18n
 from mia.agents.shift_supervisor import agent as shift_supervisor_agent
 from mia.channels import registry
-from mia.core import db, keys, scheduling
+from mia.core import db, keys, orgconfig, scheduling
 from mia.core.models import Actor, Branch, Person
 from mia.schema import create_all
 from mia.settings import get_settings
@@ -303,3 +305,46 @@ def manila_at(monkeypatch: pytest.MonkeyPatch) -> Callable[[int, int], datetime]
 def manila_evening(manila_at: Callable[[int, int], datetime]) -> datetime:
     """The clock at 21:30 in Manila today: within two hours after the Mall kiosk closes."""
     return manila_at(21, 30)
+
+
+MNL = ZoneInfo("Asia/Manila")
+TODAY = dt.date(2026, 10, 20)  # a Tuesday
+
+
+@dataclass
+class Shop:
+    kiosk: Branch
+    people: dict[str, Person]
+    pin: Callable[..., dt.datetime]
+
+
+@pytest.fixture
+def cs(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Shop]:
+    """The Ferino's seed on TODAY (MIA_ORG=ferinos) with the clock at 10:00 Manila; pin(hour,
+    minute, days) moves the clock on every CLOCK_USERS module (it keeps running from there)."""
+    from mia.templates.retail import seed as retail_seed
+
+    start = dt.datetime.now(dt.UTC)  # only the elapsed time is read, never the date
+
+    def pin(hour: int, minute: int = 0, days: int = 0) -> dt.datetime:
+        local = dt.datetime.combine(TODAY + dt.timedelta(days=days), dt.time(hour, minute), MNL)
+
+        def now() -> dt.datetime:
+            return local.astimezone(dt.UTC) + (dt.datetime.now(dt.UTC) - start)
+
+        for name in CLOCK_USERS:
+            monkeypatch.setattr(importlib.import_module(name), "utcnow", now)
+        return local
+
+    pin(10)
+    load = orgconfig.load  # a test may patch orgconfig.load: clear the real cache after it
+    with monkeypatch.context() as m:
+        m.setenv("MIA_ORG", "ferinos")
+        get_settings.cache_clear()
+        load.cache_clear()
+        kiosk = retail_seed.seed(session, today=TODAY)
+        session.commit()
+        people = {p.name.split()[0]: p for p in session.exec(select(Person)).all()}
+        yield Shop(kiosk, people, pin)
+    get_settings.cache_clear()
+    load.cache_clear()

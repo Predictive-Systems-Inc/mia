@@ -26,15 +26,15 @@ from mia.core.orgconfig import ChannelConfig
 from mia.i18n import t
 from mia.settings import get_settings
 from tests.channels.test_inbound import post, texts_to
+from tests.conftest import Shop
 from tests.jev_fake import answers_for, fake_jev
-from tests.test_customer_service_tools import Shop, cs  # noqa: F401 (the fixture)
 
 ADDR = "+639170000199"  # a new customer (the seed's are ...101 and ...102)
 REAL_LOAD = orgconfig.load
 
 
 @pytest.fixture
-def shop(cs: Shop, sim: SimAdapter, monkeypatch: pytest.MonkeyPatch) -> Iterator[Shop]:  # noqa: F811
+def shop(cs: Shop, sim: SimAdapter, monkeypatch: pytest.MonkeyPatch) -> Iterator[Shop]:
     """Ferino's with the sim channel on and the customer service as its only agent, Jev mode."""
     settings = REAL_LOAD("ferinos").model_copy(
         update={"channels": {"sim": ChannelConfig(enabled=True)}, "agents": [MANIFEST.id]}
