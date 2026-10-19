@@ -9,6 +9,7 @@ from pydantic import Field
 
 from mia.agents.decider import Decision
 from mia.agents.hr_officer.actions import WHICH
+from mia.agents.hr_officer.models import Payslip
 from mia.agents.hr_officer.tools import (
     BalanceOutput,
     CertificateOutput,
@@ -135,6 +136,40 @@ def tool_reply(tool: str, out: dict[str, Any], args: dict[str, Any], lang: str) 
     if tool == "certificate_text":
         return [TextBlock(text=CertificateOutput.model_validate(out).text)]
     return _text("reply.not_built", lang)  # request_leave runs on approve, set_contract in v2
+
+
+def payslip_blocks(slip: Payslip, lang: str) -> list[Block]:
+    """The payslip in lang: the totals line (hr.payslip_resent), one line per pay kind with
+    its time and amount, one per deduction. Issued and resent payslips both read this way."""
+
+    def money(amount: int) -> str:
+        return format_money(amount, slip.currency, lang)
+
+    deducted = sum(int(d["amount"]) for d in slip.deductions)
+    head = t(
+        "hr.payslip_resent",
+        lang,
+        start=slip.cutoff_start.isoformat(),
+        end=slip.cutoff_end.isoformat(),
+        gross=money(slip.gross),
+        deductions=money(deducted),
+        net=money(slip.net),
+    )
+    lines = [
+        t(
+            "hr.payslip.line",
+            lang,
+            kind=t(f"hr.pay.{line['kind']}", lang),
+            time=duration(int(line["minutes"])),
+            amount=money(int(line["amount"])),
+        )
+        for line in slip.lines
+    ]
+    lines += [
+        t("hr.payslip.deduction", lang, name=WHICH[d["kind"]], amount=money(int(d["amount"])))
+        for d in slip.deductions
+    ]
+    return [TextBlock(text=text) for text in (head, *lines)]
 
 
 def leave_refused(reason: str, args: dict[str, Any], lang: str) -> list[Block] | None:

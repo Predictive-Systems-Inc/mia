@@ -1,6 +1,7 @@
 import datetime as dt
 
 from mia.agents.parsing import (
+    DAY_NAMES,
     find_dates,
     find_times,
     has_buy_word,
@@ -214,3 +215,11 @@ def test_find_dates_today_tomorrow_and_next_week_in_bikol() -> None:
     ]
     assert find_dates("sweldo na daw ngunyan na semana?", MONDAY, "bcl") == []
     assert find_dates("marhay na aga", MONDAY, "bcl") == []
+
+
+def test_domingo_is_sunday_in_hiligaynon_waray_and_bikol() -> None:
+    sunday = dt.date(2026, 10, 25)
+    for lang, text in (("hil", "sa Domingo"), ("war", "han Domingo"), ("bcl", "sa Domingo")):
+        assert find_dates(text, MONDAY, lang) == [("d0", sunday)], lang
+        assert DAY_NAMES[lang][6] == "domingo" and DAY_NAMES[lang][0] == "lunes"
+    assert find_dates("Miyerkoles", MONDAY, "hil") == [("d0", dt.date(2026, 10, 21))]

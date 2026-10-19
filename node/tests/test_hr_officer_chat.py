@@ -4,6 +4,7 @@ person's hours, leave requests decided by head staff on a card, holiday pay, the
 resent, the certificate text, conversation and injection."""
 
 import asyncio
+import datetime as dt
 import functools
 from typing import Any
 
@@ -366,17 +367,24 @@ def test_holiday_pay_question_reads_the_calendar(
 def test_a_payslip_is_resent(
     session: Session, hr: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The chat reply names the cutoff; the amounts are in the notification only."""
+    """The chat reply names the cutoff; the breakdown is in the notification only, as issued:
+    13 days of 8 hours at 610.00 and half a month of each contribution on 610.00 x 26."""
     _, people = hr
     ana = people["Ana"]
     _answers(monkeypatch, "my_payslip")
     reply = _turn(session, ana, "send my payslip")
     assert reply.text() == "I sent your payslip for 2026-10-01 to 2026-10-15 again."
     (note,) = [x for x in told(session, ana) if x.startswith("Your payslip")]
-    assert note == (
-        "Your payslip for 2026-10-01 to 2026-10-15: gross ₱7,930.00, deductions ₱698.25,"
-        " net ₱7,231.75."
-    )
+    assert note.splitlines() == [
+        (
+            "Your payslip for 2026-10-01 to 2026-10-15: gross ₱7,930.00, deductions ₱698.25,"
+            " net ₱7,231.75."
+        ),
+        "Regular 104h: ₱7,930.00",
+        "SSS: ₱400.00",
+        "PhilHealth: ₱198.25",
+        "Pag-IBIG: ₱100.00",
+    ]
 
 
 def test_the_owner_gets_a_certificate_text(
@@ -469,3 +477,11 @@ def test_pay_and_leave_stay_off_the_chain_through_chat(
     rows = session.exec(select(Message).where(Message.agent_id == MANIFEST.id)).all()
     kept = "\n".join(m.text for m in rows)
     assert all(line in kept for line in said)  # the rows the people read keep every answer
+
+
+def test_leave_day_buttons_are_in_hiligaynon_waray_and_bikol() -> None:
+    decision = Decision(action="clarify", args={"kind": "vacation"}, confidence=1.0)
+    for lang in ("hil", "war", "bcl"):
+        blocks, _ = replies.ask_leave_days(decision, [dt.date(2026, 10, 25)], lang)
+        (buttons,) = [b for b in blocks if isinstance(b, QuickRepliesBlock)]
+        assert buttons.options == [t("hr.leave.day", lang, weekday="Domingo", date="2026-10-25")]

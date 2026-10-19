@@ -30,6 +30,8 @@ PAGIBIG_LOW_PAY = 150_000
 PAGIBIG_CAP = 1_000_000
 
 # Premiums as fractions of the hourly rate. NIGHT is the night differential added on top.
+# ponytail: night is 10% of the base hourly rate even on overtime, rest day or holiday
+# minutes (the law takes 10% of that hour's own rate); split it per kind when a contract needs.
 OVERTIME = Fraction(125, 100)
 NIGHT = Fraction(10, 100)
 REST_DAY = Fraction(130, 100)

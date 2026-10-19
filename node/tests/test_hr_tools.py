@@ -25,10 +25,11 @@ from mia.agents.hr_officer.tools import (
     RequestLeaveInput,
     SetContractInput,
 )
-from mia.core import approvals, events, orgconfig, people
+from mia.core import approvals, events, orgconfig, people, store
 from mia.core.models import Actor, Approval, Branch, Event, Message, Person, Thread
 from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied
+from mia.i18n import t
 from mia.settings import get_settings
 from tests.conftest import CLOCK_USERS
 
@@ -491,3 +492,59 @@ def test_the_leave_days_ahead_skip_the_rest_day_and_holidays(session: Session, h
     assert tools.leave_days_ahead(deps, 5, "a1") == [
         dt.date(2026, 12, d) for d in (24, 26, 27, 29, 31)
     ]
+
+
+def test_a_leave_past_by_approval_time_writes_nothing(
+    session: Session, hr: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Filed for tomorrow, approved two days later: in the past by then, so refused."""
+    _, people = hr
+    ana, marites = people["Ana"], people["Marites"]
+    out = file_leave(session, ana, "l1", leave(day(1), day(1)))
+    later = dt.datetime.combine(day(2), dt.time(10), MNL)
+    monkeypatch.setattr(tools, "utcnow", lambda: later)
+    decide(session, out["approval_id"], marites, "approved")
+    assert session.exec(select(Leave).where(Leave.approval_id == out["approval_id"])).all() == []
+    said = t("hr.leave_refused.in_the_past", "en", start=day(1).isoformat(), end=day(1).isoformat())
+    assert said in told(session, ana) and said in told(session, marites)
+
+
+def test_a_leave_without_a_contract_by_approval_time_writes_nothing(
+    session: Session, hr: Ferinos
+) -> None:
+    _, people = hr
+    ana, marites = people["Ana"], people["Marites"]
+    out = file_leave(session, ana)
+    contract = tools._contract(session, ana.id, TODAY)
+    store.update(session, contract, {"end_date": day(-1)}, Actor.system(contract.branch_id))
+    decide(session, out["approval_id"], marites, "approved")
+    assert session.exec(select(Leave).where(Leave.approval_id == out["approval_id"])).all() == []
+    (refused,) = session.exec(select(Event).where(Event.action == "hr.leave_refused")).all()
+    assert (refused.after or {})["reason"] == "no_contract"
+
+
+def test_the_approvers_reject_reason_stays_off_the_chain(session: Session, hr: Ferinos) -> None:
+    _, people = hr
+    out = file_leave(session, people["Ana"])
+    approvals.decide(
+        session, str(out["approval_id"]), Actor.person(people["Marites"]), "rejected", "too busy"
+    )
+    (rejected,) = session.exec(select(Event).where(Event.action == "hr.leave_rejected")).all()
+    assert "too busy" not in str(rejected.after)
+
+
+def test_a_contract_before_a_later_one_is_refused(session: Session, hr: Ferinos) -> None:
+    """A row that starts on or after the new start date cannot be ended before it: refused,
+    nothing written."""
+    _, people = hr
+    ana, rosa = people["Ana"], deps_for(session, people["Rosa"])
+    terms = {
+        "person_id": ana.id, "employment_type": "regular", "daily_rate": 65000,
+        "currency": "PHP", "rest_day": 0, "position": "Senior clerk",
+    }  # fmt: skip
+    tools.set_contract(rosa, SetContractInput(**terms, start_date=day(30)), "s1")
+    before = session.exec(select(Contract).where(Contract.person_id == ana.id)).all()
+    with pytest.raises(LookupError):
+        tools.set_contract(rosa, SetContractInput(**terms, start_date=day(10)), "s2")
+    after = session.exec(select(Contract).where(Contract.person_id == ana.id)).all()
+    assert [c.model_dump() for c in after] == [c.model_dump() for c in before]

@@ -207,7 +207,19 @@ FI_WEEKDAYS = [
 ]  # fmt: skip
 FIL_WEEKDAYS = ["lunes", "martes", "miyerkules", "huwebes", "biyernes", "sabado", "linggo"]
 CEB_WEEKDAYS = ["lunes", "martes", "miyerkules", "huwebes", "biyernes", "sabado", "dominggo"]
-DAY_NAMES = {"en": EN_WEEKDAYS, "fi": FI_WEEKDAYS, "fil": FIL_WEEKDAYS, "ceb": CEB_WEEKDAYS}
+# Hiligaynon, Waray and Bikol share the Spanish-derived names, Sunday "Domingo".
+VISAYAN_WEEKDAYS = [
+    "lunes", "martes", "miyerkoles", "huwebes", "biyernes", "sabado", "domingo",
+]  # fmt: skip
+DAY_NAMES = {
+    "en": EN_WEEKDAYS,
+    "fi": FI_WEEKDAYS,
+    "fil": FIL_WEEKDAYS,
+    "ceb": CEB_WEEKDAYS,
+    "hil": VISAYAN_WEEKDAYS,
+    "war": VISAYAN_WEEKDAYS,
+    "bcl": VISAYAN_WEEKDAYS,
+}
 # Finnish "on a Monday" (essive), as the due messages use it: "kuin viime maanantaina".
 FI_WEEKDAYS_ESSIVE = [
     "maanantaina", "tiistaina", "keskiviikkona", "torstaina", "perjantaina", "lauantaina",
@@ -281,8 +293,9 @@ def _after(weekday: int, anchor: dt.date) -> dt.date:
 def find_dates(text: str, today: dt.date, lang: str) -> list[tuple[str, dt.date]]:
     """Dates in the message in text order as (id "d0", "d1", ..., date). Pure. Finds the
     today and tomorrow words (en, fi, fil, ceb, hil, war, bcl), weekday names (en, fi, fil,
-    ceb: the next such day after today, or after the date before it in the message, so "next
-    week Monday to Wednesday" is one week), "next week <weekday>" and "<weekday> next week"
+    ceb, hil, war, bcl: the next such day after today, or after the date before it in the
+    message, so "next week Monday to Wednesday" is one week), "next week <weekday>" and
+    "<weekday> next week"
     (that weekday of the following week, also in ceb, hil, war and bcl), "<d> <month>" and
     "<month> <d>" with English or Filipino month names (the year nearest to today), and ISO
     dates. A bare number is never a date; an invalid date is skipped; "(sa) susunod na linggo"

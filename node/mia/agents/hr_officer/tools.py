@@ -35,7 +35,6 @@ from mia.chat.channels import notify
 from mia.core import approvals, events, orgconfig, store
 from mia.core.db import utcnow
 from mia.core.models import Actor, Approval, Branch, Organisation, Person
-from mia.core.money import format_money
 from mia.core.rbac import Resource, get_rbac
 from mia.i18n import t
 
@@ -501,12 +500,13 @@ def apply_leave_approval(session: Session, approval: Approval, decider: Actor) -
 
 
 def apply_leave_rejection(session: Session, approval: Approval, decider: Actor) -> None:
-    """Reject handler: log hr.leave_rejected (no leave row is written) and tell the requester.
+    """Reject handler: log hr.leave_rejected with the dates only (no leave row is written, the
+    approver's reason stays on the approval) and tell the requester.
     Raises LookupError when the requester or the input cannot be found."""
     person, branch = _requester(session, approval)
     args = _requested_input(approval)
     start, end = args.start.isoformat(), args.end.isoformat()
-    after = {"start": start, "end": end, "reason": approval.reason}
+    after = {"start": start, "end": end}  # the approver's free-text reason stays in the row
     events.emit(
         session, "hr.leave_rejected", approval, None, after, decider, approval_id=approval.id
     )
@@ -634,29 +634,18 @@ class OwnInput(BaseModel):
 
 
 def resend_payslip(deps: AgentDeps, args: OwnInput, tool_call_id: str) -> PayslipOutput:
-    """The acting person's last issued payslip (own only), sent again to them as a sensitive
-    notification (outside channels get a link to the app) from the system. Raises LookupError
+    """The acting person's last issued payslip (own only), sent again to them with its
+    breakdown (replies.payslip_blocks, as issued) as a sensitive notification (outside
+    channels get a link to the app) from the system. Raises LookupError
     without a payslip."""
     person = _subject(deps, None, [PAYSLIPS], tool_call_id)
     slip = _last_payslip(deps.session, person.id)
-    lang = person.language or "en"
+    from mia.agents.hr_officer.replies import payslip_blocks  # replies imports this module
 
-    def money(amount: int) -> str:
-        return format_money(amount, slip.currency, lang)
-
-    text = t(
-        "hr.payslip_resent",
-        lang,
-        start=slip.cutoff_start.isoformat(),
-        end=slip.cutoff_end.isoformat(),
-        gross=money(slip.gross),
-        deductions=money(sum(int(d["amount"]) for d in slip.deductions)),
-        net=money(slip.net),
-    )
     message = notify(
         deps.session,
         person,
-        [TextBlock(text=text)],
+        payslip_blocks(slip, person.language or "en"),
         Actor.system(person.branch_id),
         MANIFEST.id,
         sensitive=True,
@@ -761,14 +750,18 @@ def set_contract(deps: AgentDeps, args: SetContractInput, tool_call_id: str) -> 
     hr.contract_set, the rate redacted) in the person's branch, and end every contract still
     open on that date the day before (event hr.contract_ended), so the rate history stays in
     the rows. Needs write_all on contracts (owner, admin). Raises LookupError for a person
-    outside the organisation."""
+    outside the organisation, or when one of their contracts starts on or after start_date
+    (it cannot end before it starts; nothing is written)."""
     _check(deps, CONTRACTS, "write_all", tool_call_id)
     person = deps.session.get(Person, args.person_id)
     branch = deps.session.get(Branch, person.branch_id) if person is not None else None
     if person is None or branch is None or branch.organisation_id != deps.organisation_id:
         raise LookupError("no such person")
     ended = args.start_date - dt.timedelta(days=1)
-    for old in deps.session.exec(select(Contract).where(Contract.person_id == person.id)):
+    rows = list(deps.session.exec(select(Contract).where(Contract.person_id == person.id)))
+    if any(old.start_date > ended for old in rows):
+        raise LookupError("a contract starts on or after that date")
+    for old in rows:
         if old.end_date is None or old.end_date > ended:
             store.update(
                 deps.session,

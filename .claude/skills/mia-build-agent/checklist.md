@@ -74,3 +74,10 @@ no test says so. Pin each line to the plan task that owns it.
 - Negative tests for permissions: `node/tests/test_sales_tools.py::test_a_clerk_cannot_set_a_target`.
 - Negative tests for egress: `node/tests/test_architecture.py::test_no_provider_sdk_outside_egress_and_model_factory`.
 - The plan's Review Focus list pinned to tasks, each with a named test: `docs/superpowers/plans/2026-10-19-sales-supervisor.md`.
+
+## Pay, leave and seeded money
+- Pay and leave stay off the chain on the whole chat path: a `run_turn` test asserts that no amount, minute total or leave kind appears in any event (chat_messages.created, decision.made, decision.clarify_asked): `node/mia/chat/replies.py` (`_store`), `node/tests/test_hr_officer_chat.py::test_pay_and_leave_stay_off_the_chain_through_chat`.
+- Seeded pay or money rows come from the same pure functions as the live path: `node/mia/templates/retail/seed.py` (`calc.cutoff_pay`), `node/tests/test_hr_officer_chat.py::test_contributions_come_from_the_last_payslip`.
+- A computed payslip never nets negative: `node/mia/agents/hr_officer/ph.py` (`payslip`), `node/tests/test_hr_ph.py::test_one_approved_day_never_nets_below_zero`.
+- Every pay rule a reply promises (holiday pay when not working, paid leave) is paid by the payslip, or the reply and the spec say it is not: `node/mia/agents/hr_officer/calendar.py` (`unworked_regular_holidays`), `node/tests/test_hr_calc.py::test_an_unworked_regular_holiday_pays_when_the_day_before_was_worked`.
+- The plan's Review Focus test names exist (a grep in the reviewer pass); a renamed test gets a dated note at the top of the plan: `docs/superpowers/plans/2026-10-19-hr-officer.md`; no test, the reviewer greps.

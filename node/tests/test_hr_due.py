@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlmodel import Session, select
 
-from mia.agents.hr_officer import MANIFEST, calc, due, ph, tools
+from mia.agents.hr_officer import MANIFEST, calc, due, ph, replies, tools
 from mia.agents.hr_officer.models import Contract, Payslip
 from mia.agents.shift_supervisor import timesheets
 from mia.channels import registry
@@ -163,7 +163,7 @@ def test_payslips_are_issued_once_per_cutoff(session: Session, hr: Ferinos, pin:
     (note,) = _notes(session, people["Ana"])
     assert ana.message_id == note.id
     lang = people["Ana"].language
-    assert note.text == "\n".join(b.text for b in due.payslip_blocks(ana, lang))
+    assert note.text == "\n".join(b.text for b in replies.payslip_blocks(ana, lang))
     issued = [e for e in _markers(session, "hr.payslip_issued") if e.entity_id == ana.id]
     assert issued and issued[0].after and issued[0].after["gross"] == events.REDACTED
     (mall, stall) = sorted(_markers(session, due.ISSUED), key=lambda e: e.entity_id)

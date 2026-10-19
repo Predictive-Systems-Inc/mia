@@ -22,15 +22,13 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, col, func, select
 
 from mia.agents.hr_officer import MANIFEST, calc, calendar
-from mia.agents.hr_officer.actions import WHICH
 from mia.agents.hr_officer.models import Contract, Payslip
-from mia.agents.hr_officer.replies import duration
+from mia.agents.hr_officer.replies import payslip_blocks
 from mia.agents.shift_supervisor import alerts
-from mia.chat.blocks import Block, TextBlock
+from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
 from mia.core import orgconfig, store
 from mia.core.models import Actor, Branch, Message, Person, Timesheet
-from mia.core.money import format_money
 from mia.core.orgconfig import Payroll
 from mia.i18n import t
 
@@ -97,40 +95,6 @@ def _contracts(session: Session, branch_id: str, day: dt.date) -> list[Contract]
 def _issued(session: Session, person_id: str, start: dt.date) -> bool:
     stmt = select(Payslip.id).where(Payslip.person_id == person_id)
     return session.exec(stmt.where(Payslip.cutoff_start == start)).first() is not None
-
-
-def payslip_blocks(slip: Payslip, lang: str) -> list[Block]:
-    """The payslip in lang: the totals line (hr.payslip_resent), one line per pay kind with
-    its time and amount, one per deduction."""
-
-    def money(amount: int) -> str:
-        return format_money(amount, slip.currency, lang)
-
-    deducted = sum(int(d["amount"]) for d in slip.deductions)
-    head = t(
-        "hr.payslip_resent",
-        lang,
-        start=slip.cutoff_start.isoformat(),
-        end=slip.cutoff_end.isoformat(),
-        gross=money(slip.gross),
-        deductions=money(deducted),
-        net=money(slip.net),
-    )
-    lines = [
-        t(
-            "hr.payslip.line",
-            lang,
-            kind=t(f"hr.pay.{line['kind']}", lang),
-            time=duration(int(line["minutes"])),
-            amount=money(int(line["amount"])),
-        )
-        for line in slip.lines
-    ]
-    lines += [
-        t("hr.payslip.deduction", lang, name=WHICH[d["kind"]], amount=money(int(d["amount"])))
-        for d in slip.deductions
-    ]
-    return [TextBlock(text=text) for text in (head, *lines)]
 
 
 def _issue_one(

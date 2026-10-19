@@ -1,5 +1,14 @@
 # HR Officer v1 Implementation Plan
 
+> 19 Oct 2026: built; the plan below is kept as written. The Sunday payday pays Saturday
+> (Q60), not Friday (`test_a_payday_on_a_sunday_pays_the_day_before`). Two Review Focus tests
+> were renamed: `test_night_minutes_across_midnight` is `test_split_a_shift_across_midnight`,
+> and `test_find_dates_next_week_weekday_in_filipino` is
+> `test_find_dates_next_week_weekday_in_english_filipino_and_finnish`. No leave row is written
+> while a request waits, and the balance is five days in full at the anniversary (Q63), not
+> pro rata. The fix wave added paid leave and unworked regular holiday lines and capped the
+> deductions at the gross (Q65).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Staff ask their hours, payday, 13th month and contributions, file leave that head staff approve with a tap, get payslips computed by code on payday; the owner gets a certificate text.

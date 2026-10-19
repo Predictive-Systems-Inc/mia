@@ -59,25 +59,28 @@ through the hierarchy; check the `g` lines). Tool and data lines in the plan's T
    the last issued payslip, from the dated tables in code (`ph.py`, `TABLES_AS_OF`, Q61 to
    verify with the accountant); remittance status is out (bookkeeper). Test
    `test_contributions_come_from_the_last_payslip`.
-5. **Leave.** "I want to file leave next week Monday to Wednesday", "sick today": a leave row
-   `requested` and an approval card to the branch's supervisors (fallback owners and admins);
-   the tap approves or rejects, the requester is told, the balance (five service incentive
-   leave days a year after one year of service, pro rata) is shown; "how many leave days do I
-   have left". Tests `test_a_leave_request_waits_for_head_staff`,
+5. **Leave.** "I want to file leave next week Monday to Wednesday", "sick today": an approval
+   card to the branch's supervisors (fallback owners and admins), and no leave row while it
+   waits; the tap approves (the row is written `approved`, after the request is checked again)
+   or rejects (no row), the requester is told, the balance (five service incentive leave days
+   credited in full at each service anniversary from one year of service, less the days used
+   in that service year; Q63) is shown; "how many leave days do I have left". Tests `test_a_leave_request_waits_for_head_staff`,
    `test_an_approved_leave_tells_the_requester_and_updates_the_balance`,
    `test_a_supervisor_cannot_approve_their_own_leave`.
 6. **Holiday pay.** "do we get holiday pay on Monday": from `holidays.yaml` the kind (regular,
    special non-working, none) and the rate rule (200% or 130%, 100% when not working on a
-   regular holiday after a worked day before). Test `test_holiday_pay_question_reads_the_calendar`.
+   regular holiday after a working day before that was worked or on paid leave). Test `test_holiday_pay_question_reads_the_calendar`.
 7. **Payslip again.** "my payslip is missing", "send my payslip": the last issued payslip's
-   breakdown resent as a notification. Test `test_a_payslip_is_resent`.
+   breakdown (the totals, a line per pay kind, a line per deduction, the same blocks as the
+   issued one) resent as a notification; the chat reply names the cutoff only. Test `test_a_payslip_is_resent`.
 8. **Certificate of employment.** The owner asks "COE for Ana": a fixed-format text (name,
    position from roles, branch, start date from the contract, today's date, the owner's
    name) for the owner to copy and sign; no model writes it. Test
    `test_the_owner_gets_a_certificate_text`.
 9. **Payslips on payday (due).** On each payday at 09:00 local, one payslip per person with an
-   active contract: regular, overtime, night differential, rest day and holiday pay, less SSS,
-   PhilHealth, Pag-IBIG; issued once per cutoff (a row), delivered as a notification in the
+   active contract and something to pay: regular, overtime, night differential, rest day and
+   holiday pay, paid leave and unworked regular holidays (see Pay rules in section 6), less
+   SSS, PhilHealth, Pag-IBIG (capped at the gross); issued once per cutoff (a row), delivered as a notification in the
    person's language; marker `hr.payslips_issued` per branch and cutoff. Test
    `test_payslips_are_issued_once_per_cutoff`.
 10. **Timesheet approval reminder (due).** Two days before the cutoff closes, head staff get the
@@ -91,8 +94,8 @@ Agent-owned, `mia/agents/hr_officer/models.py`:
 | Table | Row |
 | --- | --- |
 | `hr_officer_contracts` | `person_id` FK, `employment_type` (regular, probationary, part_time), `daily_rate: int` (minor units), `currency`, `rest_day: int` (weekday), `start_date`, `end_date: date | None`, `position: str`, `set_by` |
-| `hr_officer_payslips` | `person_id`, `cutoff_start`, `cutoff_end`, `pay_date`, `lines: list[dict]` JSON (kind, minutes or days, rate, amount), `gross: int`, `deductions: list[dict]` JSON, `net: int`, `currency`, `issued_at` TZDateTime, `message_id: str | None`; unique (`person_id`, `cutoff_start`) |
-| `hr_officer_leave` | `person_id`, `kind` (vacation, sick, unpaid), `start_date`, `end_date`, `days: int`, `status` (requested, approved, rejected), `approval_id`, `reason: str` (free text stored as data) |
+| `hr_officer_payslips` | `person_id`, `cutoff_start`, `cutoff_end`, `pay_date`, `lines: list[dict]` JSON (kind, minutes, rate_percent, amount; a paid leave or unworked holiday line counts 480 minutes a day), `gross: int`, `deductions: list[dict]` JSON, `net: int`, `currency`, `issued_at` TZDateTime, `message_id: str | None`; unique (`person_id`, `cutoff_start`) |
+| `hr_officer_leave` | `person_id`, `kind` (vacation, sick, unpaid), `start_date`, `end_date`, `days: int`, `status` (approved; a pending request has no row, a rejected one none), `approval_id`, `reason: str` (free text stored as data) |
 
 Config: `config/org/<org>/holidays.yaml` as a list of `{date, kind: regular | special, name}`
 read by `orgconfig` into `OrgSettings.holidays` (validated dates); Ferino's gets the 2026 PH
@@ -139,13 +142,31 @@ deductions`), `calendar.py` (cutoffs, paydays, holidays, working days, leave day
 dates skipping rest days and holidays), `calc.py` glue (split a timesheet's minutes into
 regular, overtime, night, rest day, holiday by the contract and the calendar).
 
+**Pay rules** (pure code, `ph.payslip` and `calendar`, joined by `calc.cutoff_pay`, the one
+helper the due work and the seed use):
+- Worked minutes by kind at the hourly rate (daily rate / 8) times the kind's rate.
+- Paid leave: each approved vacation or sick leave day in the cutoff that is a working day
+  (not the rest day, not a regular holiday) pays the daily rate (line `paid_leave`). Unpaid
+  leave pays nothing.
+- An unworked regular holiday pays 100% of the daily rate (line `unworked_holiday`) when the
+  person did not work it, it is not their rest day, and the working day before it (back over
+  the rest day and other regular holidays) was worked or on paid leave. A special day not
+  worked pays nothing.
+- The 13th month counts `regular` and `paid_leave` as basic pay.
+- Half of each monthly contribution (on daily rate x 26) per cutoff, taken in order (SSS,
+  PhilHealth, Pag-IBIG) while the gross lasts: the net is never below zero (Q65).
+
 **Due work:** payslips at 09:00 local on a payday (not urgent; quiet hours end before); the
 approval reminder at 09:00 two days before a cutoff ends (not urgent). Markers
 `hr.payslips_issued` (branch, cutoff) and `hr.approval_reminded` (branch, cutoff).
 
-**Events:** `hr.contract_set`, `hr.leave_requested`, `hr.leave_approved`, `hr.leave_rejected`,
-`hr.payslip_issued` (one per payslip), `hr.payslips_issued`, `hr.approval_reminded`,
-`hr.certificate_issued`.
+**Events:** `hr.contract_set`, `hr.contract_ended`, `hr.leave_approved`, `hr.leave_rejected`
+(dates only), `hr.leave_refused` (an approved leave that fails the check at decision time),
+`hr.payslip_issued` (one per payslip), `hr.payslips_issued`, `hr.payslips_missed` (a cutoff
+not issued before the next payday, reported to head staff), `hr.approval_reminded`,
+`hr.certificate_issued`. A leave request is `approval.requested` (evidence redacted). A chat
+reply of a sensitive tool keeps its text and blocks off its `chat_messages.created` event,
+and decisions of a sensitive action are logged with their args hidden (Q64).
 
 ## 7. Parsing
 
@@ -166,10 +187,12 @@ the certificate text, capabilities, not allowed) and `intent.hr_officer.*` in te
 Ferino's seed: a contract per person (daily rates in PHP: clerks 61000 centavos, supervisors
 80000, the owner none; rest day Monday for the mall, Tuesday for the stall; start dates in
 2025 and 2026 so one clerk has under a year of service), two approved leave rows, two issued
-payslips for the last two cutoffs per clerk (so questions have data), and
+payslips for the last two cutoffs per clerk (so questions have data; computed by
+`calc.cutoff_pay` from the seeded timesheets and leave, dated `calendar.payday`), and
 `config/org/ferinos/holidays.yaml` with the 2026 list; `settings.yaml` gains `payroll:` and
 `hr_officer` in `agents`. Approved timesheets for the retail org: the retail seed has no
-visits today; the seed adds, per clerk, two weeks of visits with check-in and check-out times
+visits today; the seed adds, per clerk, visits from the first of the two paid cutoffs to
+yesterday with check-in and check-out times
 through the existing core models (visits need a job and a location: one "Counter shift" job
 per branch) and approved timesheets through `shift_supervisor.timesheets` (built then
 approved by the owner), so hours have data. If that is heavy, the plan may seed timesheet
@@ -179,7 +202,7 @@ rows directly through `store.insert` with a note.
 
 Unit: `ph.py` (each multiplier, each table lookup at the boundaries, a full payslip example
 worked by hand), `calendar.py` (cutoffs across month ends, paydays moved off a Sunday and a
-holiday, leave days skipping rest days and holidays, pro rata balance), `find_dates`; tools
+holiday, leave days skipping rest days and holidays, the balance at the anniversary), `find_dates`; tools
 with mocked deps and a negative test per tool (another person's hours by a clerk, a clerk
 asking a certificate, a supervisor approving their own leave); chat through `run_turn` for
 every scenario; due tests at fixed clocks (payday morning, the day after, the reminder day);
@@ -212,3 +235,12 @@ languages. 8. Evals, gates, docs.
   unauthorised, and passed (wrong 0.0%, right 90% to 94%); that half is spent, the next run
   needs fresh gate seeds. Router gate not rerun (description unchanged).
 - A correction payslip for timesheets approved after the payday run.
+- Night differential is 10% of the base hourly rate even on overtime, rest day and holiday
+  minutes (the law takes 10% of that hour's own rate).
+- A 29 February start: `_service_year` begins on 28 February in other years while
+  `sil_balance` credits on 1 March (a day apart).
+- Contributions read daily rate x 26 whatever was worked; the fuller rule is the month's
+  actual earnings (Q65). Paid leave pays every approved vacation or sick day, even past the
+  five SIL days; an unworked regular holiday on the rest day pays nothing (Q61).
+- The router description still names cash advances and hiring, so those requests land at
+  the HR officer, which says they are not built yet (Q57); revisit when they are built.
