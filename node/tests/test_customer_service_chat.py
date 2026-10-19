@@ -11,7 +11,7 @@ import pytest
 from sqlmodel import Session, col, select
 
 from mia.agents.customer_service import MANIFEST
-from mia.agents.customer_service.models import CustomerMessage
+from mia.agents.customer_service.models import Complaint, CustomerMessage
 from mia.agents.decider import Decision
 from mia.chat.access import agents_for
 from mia.chat.blocks import ChatReply, TextBlock
@@ -199,3 +199,22 @@ def test_the_picked_up_reply_is_redacted_on_the_chain(
         .where(Event.action == "chat_messages.created")
     ).one()
     assert created.after is not None and created.after["text"] == "<redacted>"
+
+
+def test_a_supervisor_resolves_a_complaint_in_chat(
+    staff: Shop, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _answers(monkeypatch, "staff_resolve_complaint")  # the only open complaint, no pick needed
+    reply = _turn(session, staff.people["Marites"], "ayos na yung reklamo")
+    assert _said(reply) == [t("cs.staff.complaint_resolved", "fil")]
+    complaint = session.exec(select(Complaint)).one()
+    assert (complaint.status, complaint.resolved_by) == ("resolved", staff.people["Marites"].id)
+
+
+def test_a_clerk_cannot_resolve_a_complaint_in_chat(
+    staff: Shop, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _answers(monkeypatch, "staff_resolve_complaint")
+    reply = _turn(session, staff.people["Liza"], "ayos na yung reklamo")
+    assert _said(reply) == [t("denied.generic", "fil")]
+    assert session.exec(select(Complaint)).one().status == "open"

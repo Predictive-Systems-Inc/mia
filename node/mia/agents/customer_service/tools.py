@@ -39,7 +39,7 @@ from mia.core import approvals, db, orgconfig, store
 from mia.core.models import Actor, Approval, Branch, Person
 from mia.core.money import format_money
 from mia.core.rbac import Resource, get_rbac
-from mia.i18n import t
+from mia.i18n import SUPPORTED, t
 from mia.templates.retail import hours as shop_hours
 from mia.templates.retail.models import RetailBranchHours, RetailItem
 
@@ -194,7 +194,9 @@ class AreaOutput(BaseModel):
 
 def delivery_area(deps: CustomerDeps, args: AreaInput, tool_call_id: str) -> AreaOutput:
     """The configured area and its fee, or none; always the branch to pick up from. Reads the
-    organisation's configuration, no table, so the guard's tool execute check is the only one."""
+    organisation's configuration, no table, so the guard's tool execute check is the only one.
+    With no area named, public._act lists the configured areas from that same configuration
+    (no customer data, nothing to check)."""
     area = _area(args.name)
     return AreaOutput(
         area=area.name if area else None,
@@ -230,8 +232,9 @@ def _order_precheck(deps: CustomerDeps, args: PlaceOrderInput, tool_call_id: str
     """The guard's precheck for place_order (after the permission check, before the approval):
     a new order_id, every item active at the customer's branch, at most max_order_quantity
     items, a pickup still ahead and within the opening hours, a delivery to a configured area,
-    and no other order of the customer's still waiting. Raises LookupError order, pending, item,
-    too_large, past, closed or area."""
+    every price and the fee in one currency, and no other order of the customer's still
+    waiting. Raises LookupError order, pending, item, currency, too_large, past, closed or
+    area."""
     _require(deps.session, deps.actor, ITEMS, "read", tool_call_id)
     _require(deps.session, deps.actor, HOURS, "read", tool_call_id)
     if deps.session.get(Order, args.order_id) is not None:
@@ -240,8 +243,12 @@ def _order_precheck(deps: CustomerDeps, args: PlaceOrderInput, tool_call_id: str
         raise LookupError("pending")  # each waiting order asks every clerk and supervisor
     branch = _order_branch(deps)
     ids = {line.item_id for line in args.lines}
-    if len(_active_items(deps.session, branch, list(ids))) != len(ids):
+    items = _active_items(deps.session, branch, list(ids))
+    if len(items) != len(ids):
         raise LookupError("item")
+    area = _area(args.delivery_area) if args.fulfilment == "delivery" else None
+    if len({i.currency for i in items} | ({area.currency} if area else set())) > 1:
+        raise LookupError("currency")  # one total in one currency (record_waiting adds them)
     limit = orgconfig.load().customer_service.max_order_quantity
     if sum(line.quantity for line in args.lines) > limit:
         raise LookupError("too_large")
@@ -250,7 +257,7 @@ def _order_precheck(deps: CustomerDeps, args: PlaceOrderInput, tool_call_id: str
     rows = shop_hours.load(deps.session, branch.id)
     if not calc.within_hours(branch, rows, args.pickup_at):
         raise LookupError("closed")
-    if args.fulfilment == "delivery" and _area(args.delivery_area) is None:
+    if args.fulfilment == "delivery" and area is None:
         raise LookupError("area")
 
 
@@ -434,6 +441,32 @@ def complain(deps: CustomerDeps, args: ComplainInput, tool_call_id: str) -> Comp
     return ComplaintOutput(complaint_id=row.id)
 
 
+class LanguageInput(BaseModel):
+    language: str
+
+
+class LanguageOutput(BaseModel):
+    language: str
+
+
+def set_language(deps: CustomerDeps, args: LanguageInput, tool_call_id: str) -> LanguageOutput:
+    """The acting customer's reply language (event customer_service.language_set), checked
+    write_own on their own row. LookupError language for a code not in i18n.SUPPORTED."""
+    customer = _customer(deps)
+    _require(deps.session, deps.actor, _owned(CUSTOMERS, customer.id), "write", tool_call_id)
+    if args.language not in SUPPORTED:
+        raise LookupError("language")
+    store.update(
+        deps.session,
+        customer,
+        {"language": args.language},
+        deps.actor,
+        action=public.LANGUAGE,
+        tool_call_id=tool_call_id,
+    )
+    return LanguageOutput(language=customer.language)
+
+
 # ---- staff tools ----------------------------------------------------------------------------
 
 
@@ -462,18 +495,7 @@ def orders_today(deps: AgentDeps, args: EmptyInput, tool_call_id: str) -> Orders
     """The branch's confirmed and ready orders picked up today (local), by pickup time."""
     for resource in (ORDERS, CUSTOMERS, ITEMS):
         _require(deps.session, deps.actor, resource, "read", tool_call_id)
-    tz = ZoneInfo(deps.branch.timezone)
-    rows = deps.session.exec(
-        select(Order, Customer)
-        .where(Order.customer_id == Customer.id)
-        .where(Order.branch_id == deps.branch.id)
-        .where(col(Order.status).in_(STAFF_ORDER_STATUSES))
-    ).all()
-    # pickup_at is an ISO string with its own offset, so the day is compared here, not in SQL
-    today = sorted(
-        ((o, c) for o, c in rows if o.pickup_at.astimezone(tz).date() == deps.today),
-        key=lambda row: row[0].pickup_at,
-    )
+    today = open_orders(deps.session, deps.branch, day=deps.today)
     names = {i.id: i.name for i in deps.session.exec(select(RetailItem)).all()}
     return OrdersOutput(
         orders=[
@@ -716,6 +738,12 @@ BINDINGS: list[ToolBinding] = [
         complain,
         ComplainInput,
         "Log a complaint and tell the supervisor.",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.set_language",
+        set_language,
+        LanguageInput,
+        "Reply to the customer in another language from now on.",
     ),
     ToolBinding(
         f"{MANIFEST.id}.orders_today",

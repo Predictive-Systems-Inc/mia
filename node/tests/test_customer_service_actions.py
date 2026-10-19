@@ -14,7 +14,7 @@ from mia.agents.customer_service.actions import (
     build_request,
 )
 from mia.agents.customer_service.decider import parse
-from mia.agents.customer_service.models import Customer, Order
+from mia.agents.customer_service.models import Complaint, Customer, Order
 from mia.core import store
 from mia.core.models import Actor
 from mia.templates.retail.models import RetailItem
@@ -178,3 +178,14 @@ def test_a_marker_before_a_word_that_is_no_customer_keeps_the_orders(
     q = build(session, cs, "kay wala, ready na ba", side="staff")  # Cebuano "because none"
     assert len(q.orders) == 1
     assert decide(q, "staff_mark_ready").args == {"order_id": next(iter(q.orders))}
+
+
+def test_staff_resolve_complaint_offers_the_open_complaints_by_when_logged(
+    cs: Shop, session: Session
+) -> None:
+    complaint = session.exec(select(Complaint)).one()
+    q = build(session, cs, "ayos na yung reklamo", side="staff")
+    assert list(q.complaints) == [complaint.id] and complaint.text not in json.dumps(q.complaints)
+    d = decide(q, "staff_resolve_complaint")
+    assert (d.action, d.args) == ("staff_resolve_complaint", {"complaint_id": complaint.id})
+    assert build(session, cs, "ayos na", side="customer").complaints == {}

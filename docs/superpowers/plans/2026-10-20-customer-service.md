@@ -1,5 +1,13 @@
 # Customer Service v1 Implementation Plan
 
+> **Drift note (20 Oct 2026, after the whole-branch review):** the seeded Filipino customer
+> Ana Dizon is now Mila Reyes (Ana is a seeded clerk); `cs.ready_for_you` is now
+> `cs.order_ready`; the refusal reason is `too_large`, not `"too_large"` (no quotes);
+> `test_a_pickup_reminder_waits_for_quiet_hours` checks "not sent during quiet hours" (no
+> marker at 05:40, a reminder marker at 06:01), not "sent after them". The fix wave added
+> `set_language`, `staff_resolve_complaint`, `close_undecided` and
+> `customer_service.public_calls_per_hour` (see the spec).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ferino's customers message the shop's WhatsApp number for hours, prices, delivery areas, pickup orders that a clerk or supervisor confirms, order status, cancellations and complaints; staff list the day's orders and mark them ready or picked up.

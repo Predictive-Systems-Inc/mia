@@ -579,6 +579,24 @@ def test_english_please_switches_the_language(
     assert session.exec(select(Customer).where(Customer.address == ADDR)).one().language == "en"
 
 
+def test_the_language_changes_only_through_the_set_language_tool(
+    shop: Shop,
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answer(monkeypatch, "language_switch", language="en")
+    say(client, sim, "English please")
+    called = [e for e in tool_calls(session) if e.entity_id == f"{MANIFEST.id}.set_language"]
+    assert called
+    binding = next(b for b in tools.BINDINGS if b.tool_id == f"{MANIFEST.id}.set_language")
+    monkeypatch.setattr(binding, "impl", lambda deps, args, tool_call_id: args)  # writes nothing
+    answer(monkeypatch, "language_switch", language="fil")
+    say(client, sim, "Filipino po")
+    assert the_customer(session).language == "en"
+
+
 def test_a_negation_correction_changes_the_order_quantity(
     shop: Shop,
     client: TestClient,

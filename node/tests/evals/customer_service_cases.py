@@ -548,6 +548,20 @@ TUNE_ONLY: list[TuneRow] = [
 ]  # fmt: skip
 TUNE_ONLY_SCENARIOS = ("not_an_order", "security", "greeting", "language_switch")
 
+# Tune half only, staff side: staff_resolve_complaint came with the fix wave after both gate
+# runs, so it has no gate seeds; a run 3 writes fresh gate seeds for it with the rest.
+TUNE_STAFF_ONLY: list[Row] = [
+    ("the complaint is resolved", "ayos na yung reklamo", "nasulbad na ang reklamo",
+     "nasolusyunan na ang reklamo", "nasulbad na an reklamo", "naayos na an reklamo"),
+    ("we called the customer back, close the complaint",
+     "natawagan na namin ang customer, isara na ang reklamo",
+     "natawagan na namo ang customer, isira na ang reklamo",
+     "natawagan na namon ang customer, isira na ang reklamo",
+     "natawagan na namon an customer, isira na an reklamo",
+     "natawagan na mi an customer, isara na an reklamo"),
+]  # fmt: skip
+UNGATED = {"greeting", "language_switch", "staff_resolve_complaint"}  # tune half only
+
 
 def _half(seed: int) -> Literal["tune", "spent"]:
     """Even seeds of the ten are the tune half, odd seeds the spent gate half (run 1)."""
@@ -594,6 +608,11 @@ CASES: list[Case] = [
     *_plain(GATE_SEEDS, "gate"),
     *_orders(GATE_ORDERS, "gate"),
     *_staff(GATE_STAFF_ACTIONS, GATE_STAFF, "gate"),
+    *[
+        Case(lang, "staff", text, "staff_resolve_complaint", "supervisor")
+        for texts in TUNE_STAFF_ONLY
+        for lang, text in zip(GATED_LANGS, texts, strict=True)
+    ],
     *[
         Case(lang, scenario, text, action, "customer", expected_language=lang if asked is None else asked)
         for scenario, action, asked, *texts in TUNE_ONLY

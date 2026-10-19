@@ -42,21 +42,40 @@ def pickup_at(day: dt.date, at: dt.time, tz: str) -> dt.datetime:
     return dt.datetime.combine(day, at, ZoneInfo(tz))
 
 
-def within_hours(branch: Branch, hours: shop_hours.Hours, when: dt.datetime) -> bool:
-    """True when `when` falls on an open day from its opening up to (not at) its closing."""
-    day = when.astimezone(ZoneInfo(branch.timezone)).date()
-    if not shop_hours.open_days(hours)(day):
-        return False
-    # ponytail: a closing past midnight reads as before the opening; split the day if one does
+def hours_span(
+    branch: Branch, hours: shop_hours.Hours, day: dt.date
+) -> tuple[dt.datetime, dt.datetime]:
+    """The business day `day`'s opening and closing as aware local times; a closing at or
+    before the opening (16:00 to 02:00) is the next calendar day's."""
     start = shop_hours.at(branch, hours, day, closing=False)
-    return start <= when < shop_hours.at(branch, hours, day, closing=True)
+    end = shop_hours.at(branch, hours, day, closing=True)
+    return start, end if end > start else end + dt.timedelta(days=1)
+
+
+def business_day(branch: Branch, hours: shop_hours.Hours, when: dt.datetime) -> dt.date | None:
+    """The open business day whose hours hold `when` (from its opening up to, not at, its
+    closing): the local date, or the day before for a time after midnight within a closing
+    past midnight; None when the shop is closed then."""
+    local = when.astimezone(ZoneInfo(branch.timezone)).date()
+    is_day = shop_hours.open_days(hours)
+    for day in (local, local - dt.timedelta(days=1)):
+        start, end = hours_span(branch, hours, day)
+        if is_day(day) and start <= when < end:
+            return day
+    return None
+
+
+def within_hours(branch: Branch, hours: shop_hours.Hours, when: dt.datetime) -> bool:
+    """True when `when` falls within an open business day's hours (business_day)."""
+    return business_day(branch, hours, when) is not None
 
 
 def open_state(branch: Branch, hours: shop_hours.Hours, now: dt.datetime) -> OpenState:
     """Whether the shop is open at `now`, until when, and its next opening after `now`."""
     today = now.astimezone(ZoneInfo(branch.timezone)).date()
-    is_open = within_hours(branch, hours, now)
-    closes_at = shop_hours.at(branch, hours, today, closing=True) if is_open else None
+    day = business_day(branch, hours, now)
+    is_open = day is not None
+    closes_at = hours_span(branch, hours, day)[1] if day is not None else None
     is_day = shop_hours.open_days(hours)
     next_open = next(
         start

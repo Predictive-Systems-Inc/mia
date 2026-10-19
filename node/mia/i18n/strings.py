@@ -465,6 +465,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "cs.reminder": "A reminder: your order is ready for pickup at {time} today.",
         "cs.staff.marked_ready": "{who}'s order is marked ready.",
         "cs.staff.marked_picked_up": "{who}'s order is marked picked up.",
+        "cs.staff.complaint_resolved": "The complaint is marked resolved.",
         "cs.staff.cannot_mark": "I cannot mark that order. Ask for today's orders to check it.",
         "cs.delivery_areas": "We deliver to {areas}. You can also pick up at {branch}.",
         "intent.customer_service.hours": "Opening hours",
@@ -478,6 +479,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "intent.customer_service.staff_orders_today": "Today's orders",
         "intent.customer_service.staff_mark_ready": "Mark ready",
         "intent.customer_service.staff_mark_picked_up": "Mark picked up",
+        "intent.customer_service.staff_resolve_complaint": "Resolve a complaint",
         "chat.switched": "({agent})",
         "route.question": "Is this about:",
         "reply.busy": [
@@ -971,6 +973,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "cs.reminder": "Muistutus: tilauksesi on noudettavissa tänään klo {time}.",
         "cs.staff.marked_ready": "Tilaus ({who}) on merkitty valmiiksi.",
         "cs.staff.marked_picked_up": "Tilaus ({who}) on merkitty noudetuksi.",
+        "cs.staff.complaint_resolved": "Valitus on merkitty ratkaistuksi.",
         "cs.staff.cannot_mark": "En voi merkitä sitä tilausta. Pyydä tämän päivän tilaukset tarkistaaksesi sen.",
         "cs.delivery_areas": "Toimitamme alueille {areas}. Voit myös noutaa: {branch}.",
         "intent.customer_service.hours": "Aukioloajat",
@@ -984,6 +987,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "intent.customer_service.staff_orders_today": "Tämän päivän tilaukset",
         "intent.customer_service.staff_mark_ready": "Merkitse valmiiksi",
         "intent.customer_service.staff_mark_picked_up": "Merkitse noudetuksi",
+        "intent.customer_service.staff_resolve_complaint": "Merkitse valitus ratkaistuksi",
         "chat.switched": "({agent})",
         "route.question": "Koskeeko tämä:",
         "reply.busy": [

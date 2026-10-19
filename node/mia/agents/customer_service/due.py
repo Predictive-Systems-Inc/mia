@@ -12,6 +12,12 @@ outside quiet hours; it is queued (public.send_pending sends it, the tick awaits
 run_due) only inside the customer's 24-hour window, else the order is marked skipped. Each
 order's marker names its pickup time, so a moved pickup is reminded again. Each branch commits
 alone (alerts._each_branch).
+
+Ceilings (ponytail): a reminder waits out quiet hours only inside its hour; one whose whole
+hour is quiet (a pickup at 06:00 or earlier with the default 21:00 to 06:00) is dropped,
+never sent. A skipped reminder is final: a customer who writes later in the hour is not
+reminded. A registered WhatsApp template (Q68) or a reminder the evening before would lift
+both.
 """
 
 import datetime as dt
@@ -20,8 +26,8 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, col, select
 
 from mia.agents.customer_service import MANIFEST, public, replies, tools
-from mia.agents.customer_service.actions import STAFF_ORDER_STATUSES
-from mia.agents.customer_service.models import Customer, Order
+from mia.agents.customer_service.actions import open_orders
+from mia.agents.customer_service.models import Order
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
@@ -58,20 +64,8 @@ def reminder_due(order: Order, now: dt.datetime, quiet: bool) -> bool:
 # ---- data -------------------------------------------------------------------------------------
 
 
-def _open_orders(session: Session, branch: Branch) -> list[tuple[Order, Customer]]:
-    """The branch's confirmed and ready orders with their customers, by pickup time."""
-    rows = session.exec(
-        select(Order, Customer)
-        .where(Order.customer_id == Customer.id)
-        .where(Order.branch_id == branch.id)
-        .where(col(Order.status).in_(STAFF_ORDER_STATUSES))
-    ).all()
-    return sorted(rows, key=lambda row: row[0].pickup_at)
-
-
 def _lines(session: Session, branch: Branch, day: dt.date) -> list[str]:
     """The business date's open orders as order lines ("15:00 Mila R. (Classic x10)")."""
-    tz = ZoneInfo(branch.timezone)
     names = {i.id: i.name for i in session.exec(select(RetailItem)).all()}
     return [
         replies.order_line(
@@ -79,9 +73,7 @@ def _lines(session: Session, branch: Branch, day: dt.date) -> list[str]:
             replies.short_name(c.name),
             [(names.get(ln["item_id"], "?"), ln["quantity"]) for ln in o.lines],
         )
-        for o, c in _open_orders(session, branch)
-        # pickup_at is an ISO string with its own offset, so the day is compared here, not in SQL
-        if o.pickup_at.astimezone(tz).date() == day
+        for o, c in open_orders(session, branch, day=day)
     ]
 
 
@@ -128,7 +120,7 @@ def pickup_reminders(session: Session, branch: Branch, now: dt.datetime) -> int:
         now.astimezone(ZoneInfo(branch.timezone)).time().replace(tzinfo=None)
     )
     count = 0
-    for order, customer in _open_orders(session, branch):
+    for order, customer in open_orders(session, branch):
         if not reminder_due(order, now, quiet) or _reminded(session, order):
             continue
         actor = public.customer_actor(customer)

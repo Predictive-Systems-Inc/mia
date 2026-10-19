@@ -21,10 +21,11 @@ from mia.agents.customer_service.tools import (
     PricesInput,
 )
 from mia.chat.blocks import ApprovalCardBlock
-from mia.core import approvals, orgconfig
+from mia.core import approvals, orgconfig, store
 from mia.core.approvals import ApprovalError
 from mia.core.ids import new_id
 from mia.core.models import Actor, Approval, Branch, Event, Message, Person, Principal
+from mia.core.orgconfig import DeliveryArea
 from mia.core.rbac import PermissionDenied
 from mia.i18n import t
 from mia.templates.retail.models import RetailItem
@@ -276,6 +277,31 @@ def test_a_second_order_while_one_waits_is_refused(cs: Shop, session: Session) -
     out = place(cs, session, quantity=5)
     assert (out["status"], out["message"]) == ("invalid", "pending")
     assert len(session.exec(select(Approval)).all()) == 1
+
+
+def test_an_order_in_two_currencies_is_refused(
+    cs: Shop, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ube = session.exec(select(RetailItem).where(RetailItem.name == "Ube")).one()
+    lines = [LineIn(item_id=classic(session).id, quantity=1), LineIn(item_id=ube.id, quantity=1)]
+    store.update(session, ube, {"currency": "USD"}, Actor.system(cs.kiosk.id))
+    assert place(cs, session, lines=lines)["message"] == "currency"
+    area = DeliveryArea(name="Marikina", fee=5000, currency="USD")
+    usd = orgconfig.load().model_copy(update={"delivery_areas": [area]})
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: usd)
+    out = place(cs, session, fulfilment="delivery", delivery_area="Marikina")
+    assert out["message"] == "currency"
+    assert not session.exec(select(Approval)).all()
+
+
+def test_set_language_writes_only_the_acting_customers_row(cs: Shop, session: Session) -> None:
+    deps, tool = customer_deps(cs, session), BINDING[f"{MANIFEST.id}.set_language"]
+    out = call_tool(deps, tool, tools.LanguageInput(language="en"), new_id())
+    mila = session.exec(select(Customer).where(Customer.name == "Mila Reyes")).one()
+    assert out["language"] == mila.language == "en"
+    assert session.exec(select(Event).where(Event.action == public.LANGUAGE)).one()
+    bad = call_tool(deps, tool, tools.LanguageInput(language="xx"), new_id())
+    assert (bad["status"], bad["message"]) == ("invalid", "language")
 
 
 def test_record_waiting_refuses_an_approval_for_another_input(cs: Shop, session: Session) -> None:

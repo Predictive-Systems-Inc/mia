@@ -10,6 +10,7 @@ roles:
     - data:customer_service_orders:read
     - data:customer_service_orders:write
     - data:customer_service_customers:read
+    - data:customer_service_customers:write
     - data:customer_service_complaints:read
     - data:customer_service_complaints:write
     - data:retail_items:read
@@ -20,6 +21,7 @@ roles:
     - tool:customer_service.order_status:execute
     - tool:customer_service.cancel_order:execute
     - tool:customer_service.complain:execute
+    - tool:customer_service.set_language:execute
     - tool:customer_service.place_order:request
     - tool:customer_service.orders_today:execute
     - tool:customer_service.mark_ready:execute
@@ -36,6 +38,7 @@ tools:
   - {id: customer_service.order_status, kind: agent, risk: read, approval: never, reads: [customer_service_orders]}
   - {id: customer_service.cancel_order, kind: agent, risk: write_internal, approval: never, reads: [customer_service_orders], writes: [customer_service_orders, message]}
   - {id: customer_service.complain, kind: agent, risk: write_internal, sensitive: true, approval: never, writes: [customer_service_complaints, message]}
+  - {id: customer_service.set_language, kind: agent, risk: write_internal, approval: never, reads: [customer_service_customers], writes: [customer_service_customers]}
   - {id: customer_service.orders_today, kind: agent, risk: read, sensitive: true, approval: never, reads: [customer_service_orders, customer_service_customers, retail_items]}
   - {id: customer_service.mark_ready, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [customer_service_orders], writes: [customer_service_orders, customer_service_messages]}
   - {id: customer_service.mark_picked_up, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [customer_service_orders], writes: [customer_service_orders]}

@@ -40,6 +40,15 @@ def _order(r: Reader) -> tuple[dict[str, Any], str | None]:
     return {"order_id": order}, None if order else "order"
 
 
+def _complaint(r: Reader) -> tuple[dict[str, Any], str | None]:
+    """The open complaint: the only one, or Jev's pick among several."""
+    q: Query = r.q
+    complaint = next(iter(q.complaints)) if len(q.complaints) == 1 else None
+    if len(q.complaints) > 1:
+        complaint = r.pick("complaint", set(q.complaints))
+    return {"complaint_id": complaint}, None if complaint else "complaint"
+
+
 def _place_order(r: Reader) -> tuple[dict[str, Any], str | None]:
     """The order input; the day is today when not stated, the fulfilment pickup."""
     q: Query = r.q
@@ -73,6 +82,8 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         return {"language": language}, None if language else "language"
     if action in ("staff_mark_ready", "staff_mark_picked_up"):
         return _order(r)
+    if action == "staff_resolve_complaint":
+        return _complaint(r)
     if action == "greeting":
         return {"kind": r.pick("conversation", set(CONVERSATION)) or "other"}, None
     return {}, None  # hours, order_status, complaint, cancel_order, staff_orders_today, clarify

@@ -18,7 +18,7 @@ from sqlmodel import Session, col, or_, select
 
 from mia.agents.customer_service import MANIFEST
 from mia.agents.customer_service.calc import fold
-from mia.agents.customer_service.models import Customer, Order
+from mia.agents.customer_service.models import Complaint, Customer, Order
 from mia.agents.decider import NOT_STATED, Action
 from mia.agents.parsing import (
     Group,
@@ -40,7 +40,10 @@ CUSTOMER = {
     "hours", "prices", "place_order", "order_status", "delivery_area", "complaint",
     "cancel_order", "language_switch", "greeting", "clarify",
 }  # fmt: skip
-STAFF = {"staff_orders_today", "staff_mark_ready", "staff_mark_picked_up", "greeting", "clarify"}
+STAFF = {
+    "staff_orders_today", "staff_mark_ready", "staff_mark_picked_up", "staff_resolve_complaint",
+    "greeting", "clarify",
+}  # fmt: skip
 SIDES: dict[str, set[str]] = {"customer": CUSTOMER, "staff": STAFF}
 STAFF_ORDER_STATUSES = ("confirmed", "ready")  # the orders staff mark ready or picked up
 
@@ -147,6 +150,13 @@ ACTIONS: dict[str, Action] = {
         ("order",),
         _label("staff_mark_picked_up"),
     ),
+    "staff_resolve_complaint": Action(
+        "A staff member says a customer's complaint is dealt with or resolved (ayos na ang"
+        " reklamo, resolved na ang complaint, naayos na, nasolusyunan na).",
+        "resolve_complaint",
+        ("complaint",),
+        _label("staff_resolve_complaint"),
+    ),
     "greeting": Action(
         "No action above fits: a greeting or thanks on its own, a goodbye, a question about who"
         " Mia is or what it can do (who is this, sino ito), anything off topic, a request for"
@@ -177,6 +187,7 @@ class Query:
     dates: dict[str, str] = field(default_factory=dict)  # d0 -> ISO date
     areas: list[DeliveryArea] = field(default_factory=list)
     orders: dict[str, str] = field(default_factory=dict)  # staff: id -> "15:00, 10 Classic"
+    complaints: dict[str, str] = field(default_factory=dict)  # staff: id -> "logged ... 14:05"
     corrected: bool = False
     lang: str = "en"
 
@@ -240,17 +251,7 @@ def _orders(
     message names a first name (`named`, from _named), only the orders of customers of that
     name, none when no such order is today's (matched here so no name reaches the query)."""
     tz = ZoneInfo(branch.timezone)
-    open_rows = session.exec(
-        select(Order, Customer)
-        .where(Order.customer_id == Customer.id)
-        .where(Order.branch_id == branch.id)
-        .where(col(Order.status).in_(STAFF_ORDER_STATUSES))
-    ).all()
-    # pickup_at is an ISO string with its own offset, so the day is compared here, not in SQL
-    rows = sorted(
-        ((o, c) for o, c in open_rows if o.pickup_at.astimezone(tz).date() == today),
-        key=lambda row: row[0].pickup_at,
-    )
+    rows = open_orders(session, branch, day=today)
     first = {o.id: (fold(c.name or "").split() or [""])[0] for o, c in rows}
     orders = [o for o, _ in rows if not named or first[o.id] in named]
     out = {}
@@ -258,6 +259,19 @@ def _orders(
         lines = ", ".join(f"{ln['quantity']} {names.get(ln['item_id'], '?')}" for ln in o.lines)
         out[o.id] = f"{o.pickup_at.astimezone(tz):%H:%M}, {lines} ({o.status})"
     return out
+
+
+def _complaints(session: Session, branch: Branch) -> dict[str, str]:
+    """The branch's open complaints as id -> when it was logged (local), oldest first; never
+    the text or the customer (the text is the customer's own words)."""
+    tz = ZoneInfo(branch.timezone)
+    rows = session.exec(
+        select(Complaint)
+        .where(Complaint.branch_id == branch.id)
+        .where(Complaint.status == "open")
+        .order_by(col(Complaint.id))
+    ).all()
+    return {c.id: f"logged {c.created_at.astimezone(tz):%Y-%m-%d %H:%M}" for c in rows}
 
 
 def build_query(
@@ -292,6 +306,7 @@ def build_query(
         dates={i: d.isoformat() for i, d in find_dates(message, today, lang)},
         areas=list(orgconfig.load().delivery_areas),
         orders=orders,
+        complaints=_complaints(session, branch) if side == "staff" else {},
         corrected=was_corrected(message),
         lang=lang,
     )
@@ -347,10 +362,15 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
                 "Which language does the customer ask Mia to reply in?", {**languages, **unsaid}
             ),
         }
-    elif q.orders:
+    if q.orders:
         questions["order"] = _choice(
             "Which of today's customer orders does the staff member mean? Each is its pickup"
             " time, its items and its status.",
             {**q.orders, **unsaid},
+        )
+    if q.complaints:
+        questions["complaint"] = _choice(
+            "Which open customer complaint does the staff member mean? Each is when it was logged.",
+            {**q.complaints, **unsaid},
         )
     return {"model": model, "state": state, "questions": questions}

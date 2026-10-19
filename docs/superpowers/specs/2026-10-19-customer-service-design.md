@@ -107,13 +107,15 @@ waiting order at a time (a second is refused, `cs.refused.pending`).
 Actions (Jev, threshold 0.6, `MIA_DECIDER=jev`): hours, prices, place_order (slots: items with
 quantities, pickup or delivery, a time or a day phrase, an area), order_status, delivery_area
 (slot: area name), complaint, cancel_order, language_switch, greeting, staff_orders_today,
-staff_mark_ready (slot: customer or order), staff_mark_picked_up, clarify.
+staff_mark_ready (slot: customer or order), staff_mark_picked_up, staff_resolve_complaint
+(slot: which open complaint, by when it was logged), clarify.
 
 Tools (manifest; risk none unless stated; customer tools take the customer from the actor's
 on_behalf_of, never from input):
 - customer: `hours`, `prices` (items), `delivery_area` (name), `place_order` (money,
   approval always; approvers clerk, supervisor, owner, admin of the branch; app only), `order_status`,
-  `cancel_order` (own, waiting or confirmed only), `complain` (text).
+  `cancel_order` (own, waiting or confirmed only), `complain` (text), `set_language` (own row,
+  write_own; the language_switch action writes the row only through it).
 - staff: `orders_today` (read_all branch), `mark_ready` (write_all), `mark_picked_up`
   (write_all), `resolve_complaint` (supervisor and up).
 Approval handlers: approve re-reads the order from the row (the evidence carries the order id
@@ -213,3 +215,12 @@ side and the due work (8, 10). 7. Ten languages. 8. Evals, gates, docs.
   measured tokens.
 - Templates outside the 24-hour window (Q68), the `mia customers prune` command (Q69), the
   Messenger and Viber adapters (Q70) and a public number per branch (Q76) are not built.
+- A turn whose tool committed (a cancel done) and whose later step failed still tells the
+  customer "unavailable"; the action stands and the staff notice it sent tells the shop
+  (accepted as a ceiling, commented in `public._turn`).
+- The prune (Q69) also deletes the customer's `channel_inbound` rows: their body holds the
+  text, the profile name, the address and any shared point.
+- `staff_resolve_complaint` (and its slot) came with the fix wave after both gate runs: it
+  has tune cases only (`TUNE_STAFF_ONLY`) and is ungated until a run 3 writes fresh gate seeds.
+- A media or location message from a customer goes to Jev with empty text, and its inbound
+  body keeps the point (the review's M1, not in this fix wave).

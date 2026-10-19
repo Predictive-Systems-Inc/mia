@@ -208,6 +208,7 @@ STRINGS: dict[str, str | list[str]] = {
     "cs.reminder": "Pahanumdom: handa na ang inyo order para sa pickup sa {time} subong nga adlaw.",
     "cs.staff.marked_ready": "Namarkahan nga handa na ang order ni {who}.",
     "cs.staff.marked_picked_up": "Namarkahan nga nakuha na ang order ni {who}.",
+    "cs.staff.complaint_resolved": "Namarkahan nga nasolusyunan na ang reklamo.",
     "cs.staff.cannot_mark": "Indi ko mamarkahan ina nga order. Pamangkot sang mga order subong para ma-check.",
     "cs.delivery_areas": "Nagadeliver kami sa {areas}. Mahimo man ninyo kuhaon sa {branch}.",
     "intent.customer_service.hours": "Oras sang tindahan",
@@ -221,4 +222,5 @@ STRINGS: dict[str, str | list[str]] = {
     "intent.customer_service.staff_orders_today": "Mga order subong",
     "intent.customer_service.staff_mark_ready": "Markahi nga handa",
     "intent.customer_service.staff_mark_picked_up": "Markahi nga nakuha na",
+    "intent.customer_service.staff_resolve_complaint": "Markahi nga nasolusyunan ang reklamo",
 }

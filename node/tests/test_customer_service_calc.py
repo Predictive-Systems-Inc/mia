@@ -10,6 +10,7 @@ from mia.agents.parsing import menu_tokens, pre_parse
 from mia.core.orgconfig import DeliveryArea
 from mia.templates.retail import hours
 from mia.templates.retail.hours import business_date_at
+from mia.templates.retail.models import RetailBranchHours
 from tests.conftest import MNL, Shop
 
 AREAS = [
@@ -83,3 +84,19 @@ def test_one_item_per_group_prefers_the_whole_name() -> None:
     assert calc.match_item("ube bibingka", items) == "u"
     assert calc.match_item("bibingka", items) == "c"
     assert calc.match_item("ube classic", items) is None  # two whole names: ask
+
+
+def test_a_branch_closing_after_midnight_is_open_until_its_closing(cs: Shop) -> None:
+    """16:00 to 02:00: a time after midnight is the day before's business day."""
+    late = [
+        RetailBranchHours(branch_id=cs.kiosk.id, weekday=d, opens="16:00", closes="02:00")
+        for d in range(7)
+    ]
+    assert calc.within_hours(cs.kiosk, late, at(21, 23))
+    assert calc.within_hours(cs.kiosk, late, at(22, 1, 30))
+    assert not calc.within_hours(cs.kiosk, late, at(22, 2))
+    assert not calc.within_hours(cs.kiosk, late, at(21, 15))
+    assert calc.open_state(cs.kiosk, late, at(22, 1)) == calc.OpenState(True, at(22, 2), at(22, 16))
+    assert calc.hours_span(cs.kiosk, late, at(21, 0).date()) == (at(21, 16), at(22, 2))
+    closed_on_the_21st = [h for h in late if h.weekday != at(21, 0).weekday()]
+    assert not calc.within_hours(cs.kiosk, closed_on_the_21st, at(22, 1))

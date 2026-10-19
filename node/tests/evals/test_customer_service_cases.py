@@ -17,6 +17,7 @@ from tests.evals.customer_service_cases import (
     SCENARIOS,
     TODAY,
     TUNE_ONLY_SCENARIOS,
+    UNGATED,
     on,
 )
 
@@ -26,8 +27,11 @@ MENU = {name: (name, *codes) for name, codes, _ in ITEMS}  # id is the name here
 
 def test_ten_per_language_and_scenario_five_per_half() -> None:
     """Scenarios 1 to 8: ten messages per language (five tune, five in the spent gate half) and
-    five fresh gate messages; the cases outside them are in the tune half only."""
-    counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
+    five fresh gate messages; the cases outside them are in the tune half only (the staff
+    side's staff_resolve_complaint too, added after both gate runs)."""
+    late = [c for c in CASES if c.expected_action == "staff_resolve_complaint"]
+    assert late and {(c.scenario, c.half) for c in late} == {("staff", "tune")}
+    counts = Counter((c.lang, c.scenario, c.half) for c in CASES if c not in late)
     halves = ("tune", "spent", "gate")
     gated = {(lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in halves}
     extra = {(lang, s, "tune") for lang in GATED_LANGS for s in TUNE_ONLY_SCENARIOS}
@@ -51,7 +55,7 @@ def test_no_pair_repeats_and_every_action_but_clarify_has_cases() -> None:
     assert len(pairs) == len(set(pairs)), Counter(pairs).most_common(3)
     assert {c.expected_action for c in CASES} == (CUSTOMER | STAFF) - {"clarify"}
     gate = {c.expected_action for c in CASES if c.half == "gate"}
-    assert gate == (CUSTOMER | STAFF) - {"clarify", "greeting", "language_switch"}
+    assert gate == (CUSTOMER | STAFF) - {"clarify"} - UNGATED
 
 
 def test_each_side_expects_its_own_actions_and_senders() -> None:

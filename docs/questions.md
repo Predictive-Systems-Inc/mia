@@ -540,7 +540,7 @@ Format for each entry:
 ## Q69: Customer data retention
 - Where: node/mia/agents/customer_service/models.py (the four customer_service_* tables)
 - Question: How long are a customer's rows (the address, name, messages, orders and complaints) kept?
-- Assumed answer: 12 months after the customer's last message; then a `mia customers prune` command deletes the customer, message and complaint rows. The events stay, redacted (the identity never reaches the chain).
+- Assumed answer: 12 months after the customer's last message; then a `mia customers prune` command deletes the customer, message and complaint rows, and the customer's `channel_inbound` rows (their body holds the text, the profile name, the address and any shared point). The events stay, redacted (the identity never reaches the chain).
 - Blocking: no.
 
 ## Q70: Customer channels in v1

@@ -155,12 +155,14 @@ p, customer, *, tool:customer_service.delivery_area, execute, allow
 p, customer, *, tool:customer_service.order_status, execute, allow
 p, customer, *, tool:customer_service.cancel_order, execute, allow
 p, customer, *, tool:customer_service.complain, execute, allow
+p, customer, *, tool:customer_service.set_language, execute, allow
 p, customer, *, tool:customer_service.place_order, request, allow
 p, customer, *, data:retail_items, read, allow
 p, customer, *, data:retail_branch_hours, read, allow
 p, customer, *, data:customer_service_orders, read_own, allow
 p, customer, *, data:customer_service_orders, write_own, allow
 p, customer, *, data:customer_service_complaints, write_own, allow
+p, customer, *, data:customer_service_customers, write_own, allow
 
 # clerk: the day's customer orders, mark one ready or picked up (own branch)
 p, clerk, *, tool:customer_service.orders_today, execute, allow

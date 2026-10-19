@@ -121,7 +121,11 @@ def orders_line(orders: list[str]) -> str:
     return "; ".join(orders)
 
 
-STAFF_DONE = {"mark_ready": "cs.staff.marked_ready", "mark_picked_up": "cs.staff.marked_picked_up"}
+STAFF_DONE = {
+    "mark_ready": "cs.staff.marked_ready",
+    "mark_picked_up": "cs.staff.marked_picked_up",
+    "resolve_complaint": "cs.staff.complaint_resolved",  # names nobody
+}
 
 
 def staff_reply(

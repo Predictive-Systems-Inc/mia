@@ -51,6 +51,9 @@ SEEN = f"{MANIFEST.id}.customer_seen"
 HELD = f"{MANIFEST.id}.held"
 MESSAGE_IN = f"{MANIFEST.id}.message_in"
 MESSAGE_OUT = f"{MANIFEST.id}.message_out"
+# Two markers share this action: _lease writes it on every out row found outside the window
+# (the row's status `skipped`), and due.pickup_reminders on the order whose reminder was due
+# with the window closed (its pickup time). The entity (a message or an order) tells them apart.
 SKIPPED = f"{MANIFEST.id}.reminder_skipped"
 ATTEMPT = f"{MANIFEST.id}.attempt"
 LANGUAGE = f"{MANIFEST.id}.language_set"
@@ -341,8 +344,7 @@ def _open_times(deps: CustomerDeps, day: dt.date, now: dt.datetime) -> list[str]
     rows = shop_hours.load(deps.session, deps.branch.id)
     if not shop_hours.open_days(rows)(day):
         return []
-    at = shop_hours.at(deps.branch, rows, day, closing=False)
-    end = shop_hours.at(deps.branch, rows, day, closing=True)
+    at, end = calc.hours_span(deps.branch, rows, day)
     times: list[str] = []
     while at < end and len(times) < 3:
         if at > now:
@@ -380,11 +382,9 @@ def _act(deps: CustomerDeps, decision: Decision, text: str, now: dt.datetime) ->
         day = dt.date.fromisoformat(str(a.get("day") or deps.today.isoformat()))
         return replies.ask_time(deps.lang, _open_times(deps, day, now))
     if action == "language_switch" and a.get("language") in SUPPORTED:
-        language = str(a["language"])
-        changes = {"language": language}
-        store.update(deps.session, deps.customer, changes, deps.actor, action=LANGUAGE)
-        deps.lang = language
-        return replies.customer_reply("greeting", {}, language, tz)
+        _call(deps, "set_language", tools.LanguageInput(language=str(a["language"])))
+        deps.lang = deps.customer.language  # the row the tool wrote (or left, on a refusal)
+        return replies.customer_reply("greeting", {}, deps.lang, tz)
     inputs: dict[str, BaseModel] = {
         "hours": tools.EmptyInput(),
         "prices": tools.PricesInput(item_ids=a.get("item_ids") or []),
@@ -428,7 +428,10 @@ def _unavailable(session: Session, customer_id: str, error: str) -> None:
 
 async def _turn(session: Session, customer: Customer, text: str, now: dt.datetime) -> None:
     """Decide and answer; any failure (Jev unreachable, egress off, a bug) is cs.unavailable
-    in the customer's language, never silence."""
+    in the customer's language, never silence. Ceiling (ponytail): a tool that committed (call_tool
+    commits after each tool, a cancel done) followed by a failed step still reads
+    "unavailable" to the customer, though the action stands; the staff notice it sent tells
+    the shop. Say what was done instead if this confuses customers."""
     customer_id = customer.id
     try:
         if get_settings().MIA_DECIDER != "jev":
