@@ -23,6 +23,7 @@ from mia.core import db, jev, orgconfig, store
 from mia.core.ids import new_id
 from mia.core.models import Actor, ChannelInbound, Event, Message, Thread
 from mia.core.orgconfig import ChannelConfig
+from mia.core.rbac import Resource, get_rbac
 from mia.i18n import t
 from mia.settings import get_settings
 from tests.channels.test_inbound import post, texts_to
@@ -99,6 +100,17 @@ def test_customer_identity_stays_off_the_chain(
     assert ADDR not in chain and "Mila" not in chain
     hello = session.exec(select(Message).where(col(Message.text).contains("hello po"))).all()
     assert not hello and not session.exec(select(Thread)).all()
+
+
+@pytest.mark.usefixtures("fresh_rbac")
+def test_the_public_turn_works_on_a_fresh_enforcer(
+    shop: Shop, client: TestClient, sim: SimAdapter, session: Session
+) -> None:
+    assert say(client, sim, "hello po") == [t("cs.menu", "fil")]
+    customer = session.exec(select(Customer).where(Customer.address == ADDR)).one()
+    agent = public.customer_actor(customer).model_copy(update={"on_behalf_of": None})
+    hours = Resource(kind="tool", name=f"{MANIFEST.id}.hours")
+    assert get_rbac().check(agent, hours, "execute")
 
 
 def test_every_customer_event_is_the_agent_on_behalf_of_the_customer(

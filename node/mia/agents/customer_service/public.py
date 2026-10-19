@@ -11,6 +11,8 @@ nothing holds the write lock across an await (rules 11, 12).
 
 import asyncio
 import datetime as dt
+import threading
+import weakref
 from dataclasses import dataclass, field
 from zoneinfo import ZoneInfo
 
@@ -27,6 +29,7 @@ from mia.chat.blocks import Block, TextBlock
 from mia.core import auth, keys, orgconfig, store
 from mia.core.db import session_scope, utcnow
 from mia.core.models import Actor, Branch, ChannelInbound, Organisation, Principal
+from mia.core.rbac import Rbac, get_rbac
 from mia.i18n import t
 
 THROTTLE = "customer_message"
@@ -37,6 +40,23 @@ MESSAGE_IN = f"{MANIFEST.id}.message_in"
 MESSAGE_OUT = f"{MANIFEST.id}.message_out"
 SKIPPED = f"{MANIFEST.id}.reminder_skipped"
 _BLOCKS: TypeAdapter[list[Block]] = TypeAdapter(list[Block])
+
+
+_roles_loaded: "weakref.WeakSet[Rbac]" = weakref.WeakSet()
+_roles_lock = threading.Lock()
+
+
+def ensure_role() -> None:
+    """Load the agent role's manifest grants into the node's enforcer, once per enforcer
+    (build_agent does this for the LLM agents; the customer side builds none). Idempotent and
+    safe from several threads; the public turn and the approval handlers call it first."""
+    rbac = get_rbac()
+    with _roles_lock:
+        if rbac in _roles_loaded:
+            return
+        roles = MANIFEST.roles
+        rbac.load_agent_role(roles.agent_role, roles.grants, roles.denies)
+        _roles_loaded.add(rbac)
 
 
 def runs() -> bool:
@@ -200,6 +220,7 @@ async def public_turn(
 ) -> None:
     """One customer message: arrive (customer row, hold and throttle, message row), commit,
     decide, act, commit, then send what is queued. The caller marks the inbound row."""
+    ensure_role()
     customer = await asyncio.to_thread(_arrive, session, inbound_id, msg, now)
     await asyncio.to_thread(session.commit)  # nothing holds the write lock across Jev
     if customer is not None:

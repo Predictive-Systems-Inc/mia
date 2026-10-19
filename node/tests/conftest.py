@@ -145,6 +145,17 @@ def customer_service_role() -> None:
 
 
 @pytest.fixture
+def fresh_rbac() -> Iterator[None]:
+    """A new enforcer from the policy files only, as on a node that built no agent: the autouse
+    role loaders above have loaded the old one."""
+    from mia.core.rbac import get_rbac
+
+    get_rbac.cache_clear()
+    yield
+    get_rbac.cache_clear()
+
+
+@pytest.fixture
 def engine() -> Engine:
     eng = db.get_engine()
     create_all(eng)

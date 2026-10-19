@@ -71,3 +71,16 @@ def test_the_customer_principal_is_the_row_id_and_the_key_an_hmac(session: Sessi
 
 def _first(session: Session) -> Customer:
     return session.exec(select(Customer).order_by(col(Customer.id))).first()  # type: ignore[return-value]
+
+
+@pytest.mark.usefixtures("cs", "fresh_rbac")
+def test_ensure_role_loads_the_agent_role_once(session: Session) -> None:
+    hours = Resource(kind="tool", name=f"{MANIFEST.id}.hours")
+    agent = public.customer_actor(_first(session)).model_copy(update={"on_behalf_of": None})
+    assert not get_rbac().check(agent, hours, "execute")
+    public.ensure_role()
+    public.ensure_role()
+    assert get_rbac().check(agent, hours, "execute")
+    assert len(get_rbac().enforcer.get_filtered_policy(0, MANIFEST.roles.agent_role)) == len(
+        MANIFEST.roles.grants
+    ) + len(MANIFEST.roles.denies)
