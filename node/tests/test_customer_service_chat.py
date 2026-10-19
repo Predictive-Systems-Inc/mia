@@ -4,6 +4,7 @@ outside STAFF asked to rephrase."""
 
 import asyncio
 import functools
+import json
 from typing import Any
 
 import pytest
@@ -16,7 +17,7 @@ from mia.chat.access import agents_for
 from mia.chat.blocks import ChatReply, TextBlock
 from mia.chat.service import run_turn
 from mia.core import events, jev, orgconfig
-from mia.core.models import Actor, Branch, Person
+from mia.core.models import Actor, Branch, Event, Person
 from mia.i18n import t
 from mia.settings import get_settings
 from tests.conftest import Shop
@@ -168,3 +169,33 @@ def test_a_tapped_decision_outside_staff_asks_to_rephrase(
     reply = _tap(session, staff.people["Liza"], monkeypatch, action)
     assert _said(reply) == [t("clarify.rephrase", "fil")]
     assert seeded_order(session, "fil").status == "confirmed"
+
+
+def test_staff_text_reaches_jev_without_the_customer_name(
+    staff: Shop, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A customer is not a Person, so the egress pseudonymiser does not know the name; the
+    query scrubs the branch customers' first names (the order is still found by it)."""
+    seen: list[dict[str, Any]] = []
+
+    def answer(body: dict[str, Any]) -> dict[str, Any]:
+        return answers_for(body, "staff_mark_ready")
+
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(answer, seen))
+    reply = _turn(session, staff.people["Liza"], "ready na yung kay Mila")
+    assert _said(reply) == [t("cs.staff.marked_ready", "fil", who="Mila R.")]
+    assert seen and "Mila" not in json.dumps(seen)
+
+
+def test_the_picked_up_reply_is_redacted_on_the_chain(
+    staff: Shop, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _answers(monkeypatch, "staff_mark_picked_up")
+    reply = _turn(session, staff.people["Liza"], "picked up na")
+    assert _said(reply) == [t("cs.staff.marked_picked_up", "fil", who="Mila R.")]
+    created = session.exec(
+        select(Event)
+        .where(Event.entity_id == reply.message_id)
+        .where(Event.action == "chat_messages.created")
+    ).one()
+    assert created.after is not None and created.after["text"] == "<redacted>"

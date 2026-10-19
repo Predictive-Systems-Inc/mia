@@ -97,7 +97,10 @@ migration: `0000_initial` edited in place, rule 14):
   status (open, resolved), resolved_by, resolved_at; `__redact__ = {"text"}`.
 Core touched: none. Template read: `retail_items`, `retail_branch_hours`. Org settings gain
 `delivery_areas: [{name, fee, currency}]` and `customer_service.max_order_quantity` (default
-50) and `customer_service.messages_per_hour` (default 30).
+50), `customer_service.messages_per_hour` (default 30) and `customer_service.public_calls_per_hour`
+(default 600: public turns, each one Jev request, per hour across the node; over it a message
+gets the hold text without a Jev call and `customer_service.budget_held`). A customer has one
+waiting order at a time (a second is refused, `cs.refused.pending`).
 
 ## 6. The agent
 
@@ -131,7 +134,9 @@ extended `outbox.send_direct(channel, address, blocks, language)` (text and quic
 never a sensitive app link, a customer cannot open the app: sensitive replies are not a thing
 on this side, the texts are the customer's own data).
 
-Due work (`run_due`): `opening_digest` (branch marker per business date, to clerks and
+Due work (`run_due`): `close_undecided` (a waiting order whose pickup passed or whose approval
+is past its TTL: the approval expired with reason past or timeout, the order rejected with
+reason other, the customer told; the status change is the guard), `opening_digest` (branch marker per business date, to clerks and
 supervisors through the existing notify), `pickup_reminders` (one hour before `pickup_at`,
 marker per order, only when `last_inbound_at` is within 24 hours, else event
 `customer_service.reminder_skipped`). Events: `customer_service.customer_seen`, `.held`,

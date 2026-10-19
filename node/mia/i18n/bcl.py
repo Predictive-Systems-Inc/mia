@@ -185,6 +185,7 @@ STRINGS: dict[str, str | list[str]] = {
     "cs.refused.area": "Pasensya po, dai kami nagdedeliver sa lugar na iyan.",
     "cs.refused.past": "Nakalihis na an oras na iyan. Pakipili nin mas huri na oras.",
     "cs.refused.order": "Pasensya po, igwa nin problema an saindong order. Pakipadara giraray.",
+    "cs.refused.pending": "Igwa na po kamong order na naghahalat sa kumpirmasyon kan tindahan. Pakihalat po an simbag, o i-cancel muna ini.",
     "cs.status_waiting": "An saindong order naghahalat pa nin kumpirmasyon kan tindahan.",
     "cs.status_confirmed": "Kumpirmado na an saindong order.",
     "cs.status_ready": "Andam na an saindong order para sa pickup.",

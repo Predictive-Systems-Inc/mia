@@ -185,6 +185,7 @@ STRINGS: dict[str, str | list[str]] = {
     "cs.refused.area": "Pasensiakayo, saankami nga agi-deliver iti dayta a lugar.",
     "cs.refused.past": "Limmabasen dayta nga oras. Pangngaasiyo ta agpilikayo iti naud-udi nga oras.",
     "cs.refused.order": "Pasensiakayo, adda problema iti orderyo. Pangngaasiyo ta ipatulodyo manen.",
+    "cs.refused.pending": "Addaankayon ti order nga agur-uray iti kumpirmasion ti tienda. Pangngaasiyo ta urayenyo ti sungbat, wenno i-cancel-yo pay daytoy.",
     "cs.status_waiting": "Ti orderyo ket aguray pay iti kumpirmasion ti tienda.",
     "cs.status_confirmed": "Kumpirmado ti orderyo.",
     "cs.status_ready": "Nakasaganan ti orderyo para iti pickup.",

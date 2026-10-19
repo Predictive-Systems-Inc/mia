@@ -2,11 +2,15 @@
 
 Guarantees: the sender becomes a customer principal (the customer row's ULID, never the
 address) that the agent acts for, and rbac checks both (rule 4); the turn never reaches the
-router, run_turn, a Thread or a staff agent; every customer_service.* event carries the agent
-on behalf of the customer and no name or address (rule 5, `__redact__`); the throttle key is an HMAC of
-`channel:address`; replies are out rows sent by send_pending, leased and committed before the
-network, and never sent outside the 24-hour window (Q68); DB work runs in worker threads and
-nothing holds the write lock across an await (rules 11, 12).
+router, run_turn, a Thread or a staff agent; every event this module writes for a customer
+carries the agent on behalf of the customer, and no customer_service.* event carries a name or
+address (rule 5, `__redact__`); a reply staff cause (mark_ready, an order decision) is queued
+by the staff tool or the approval handler, with that actor; the throttle key is an HMAC of
+`channel:address`; a node-wide budget caps public turns (Jev requests) per hour; replies are
+out rows sent by send_pending, leased and committed before the network, and never sent
+outside the 24-hour window (Q68); DB work runs in worker threads and nothing holds the write
+lock across an await (rules 11, 12). A held message writes no customer event: only its
+inbound row's channel.received, channel.inbound_processing and channel.inbound_done.
 """
 
 import asyncio
@@ -21,7 +25,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import text as sql
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, func, select
 
 from mia.agents.base import Manifest, ToolLogEntry, call_tool
 from mia.agents.customer_service import MANIFEST, actions, calc, decider, replies
@@ -51,6 +55,7 @@ SKIPPED = f"{MANIFEST.id}.reminder_skipped"
 ATTEMPT = f"{MANIFEST.id}.attempt"
 LANGUAGE = f"{MANIFEST.id}.language_set"
 TURN_FAILED = f"{MANIFEST.id}.turn_failed"
+BUDGET_HELD = f"{MANIFEST.id}.budget_held"
 log = logging.getLogger(__name__)
 _BLOCKS: TypeAdapter[list[Block]] = TypeAdapter(list[Block])
 
@@ -180,11 +185,25 @@ def _upsert(
     return store.update(session, row, changes, customer_actor(row), action=SEEN)
 
 
+def _public_calls(session: Session, now: dt.datetime) -> int:
+    """Public turns in the hour before `now`, node-wide: each recorded inbound message is one
+    Jev request (a held or budget-held message records none)."""
+    since = (now - auth.H1).astimezone(dt.UTC)  # stored times are UTC; SQL compares strings
+    stmt = (
+        select(func.count())
+        .select_from(CustomerMessage)
+        .where(CustomerMessage.direction == "in")
+        .where(col(CustomerMessage.at) > since)
+    )
+    return session.exec(stmt).one()
+
+
 def _arrive(
     session: Session, inbound_id: str, msg: InboundMessage, text: str, now: dt.datetime
 ) -> Customer | None:
     """Record the message. None when the turn stops here: the customer is held (ignored, no
-    write and no event at all), or is over the hourly limit (held now, one hold reply queued).
+    customer write or event), is over the hourly limit (held now, one hold reply queued), or
+    the node is over its public budget (cs.held queued, `customer_service.budget_held`).
     The write lock comes first, so two first messages from one number (two webhook posts)
     never both read no row and insert (rule 11, the `_lease` pattern)."""
     session.execute(sql("UPDATE customer_service_customers SET id = id WHERE 0"))
@@ -205,6 +224,10 @@ def _arrive(
         queue(session, customer, [TextBlock(text=t("cs.held", customer.language))], actor)
         return None
     auth.record_attempt(session, THROTTLE, key, False, now, actor=actor, action=ATTEMPT)
+    if _public_calls(session, now) >= orgconfig.load().customer_service.public_calls_per_hour:
+        events.emit(session, BUDGET_HELD, (Customer.__tablename__, customer.id), None, {}, actor)
+        queue(session, customer, [TextBlock(text=t("cs.held", customer.language))], actor)
+        return None
     message = CustomerMessage(
         branch_id=customer.branch_id,
         customer_id=customer.id,

@@ -226,6 +226,23 @@ def withdraw(session: Session, approval: Approval, actor: Actor, reason: str) ->
     )
 
 
+def expire(session: Session, approval: Approval, actor: Actor, reason: str) -> Approval:
+    """Close an open (pending or escalated) request that can no longer be decided, now, with
+    a reason (for example its subject's date passed): status `expired`, event
+    `approval.expired`, no handler runs. A system path: the caller owns the subject and says
+    why; raises ApprovalError when the request is no longer open."""
+    if approval.status not in ("pending", "escalated"):
+        raise ApprovalError(f"approval is {approval.status}")
+    return store.update(
+        session,
+        approval,
+        {"status": "expired", "reason": reason},
+        actor,
+        action="approval.expired",
+        approval_id=approval.id,
+    )
+
+
 def pending(session: Session, branch_id: str) -> list[Approval]:
     """Open approvals for a branch, oldest first."""
     stmt = (

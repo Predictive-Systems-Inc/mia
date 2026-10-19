@@ -19,7 +19,7 @@ CONVERSATION_KEYS = {
     "goodbye": "conversation.goodbye",
 }
 # The precheck's refusal reasons a customer is told; any other refusal is cs.unavailable.
-REFUSALS = ("too_large", "closed", "item", "area", "past", "order")
+REFUSALS = ("too_large", "closed", "item", "area", "past", "order", "pending")
 STATUSES = ("waiting", "confirmed", "ready", "picked_up")
 
 

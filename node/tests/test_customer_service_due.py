@@ -8,13 +8,23 @@ import functools
 import pytest
 from sqlmodel import Session, col, select
 
-from mia.agents.customer_service import due
+from mia.agents.base import call_tool
+from mia.agents.customer_service import due, tools
 from mia.agents.customer_service.models import Order
 from mia.core import orgconfig, store
-from mia.core.models import Actor, Branch, Event, Message, Person, Thread
+from mia.core.ids import new_id
+from mia.core.models import Actor, Approval, Branch, Event, Message, Person, Thread
 from mia.i18n import t
 from tests.conftest import MNL, TODAY, Shop
-from tests.test_customer_service_tools import customer_by_lang, last_out, seeded_order
+from tests.test_customer_service_tools import (
+    BINDING,
+    customer_by_lang,
+    customer_deps,
+    last_out,
+    order_input,
+    order_of,
+    seeded_order,
+)
 
 
 def last_notification(session: Session, person: Person) -> Message:
@@ -150,3 +160,43 @@ def test_nothing_runs_for_an_organisation_without_the_customer_service(
     none = orgconfig.OrgSettings(agents=[])
     monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: none))
     assert due.run_due(session, cs.pin(9, 10)) == 0 and not markers(session, due.DIGEST)
+
+
+# ---- waiting orders nobody decided -----------------------------------------------------------
+
+
+def waiting_on(cs: Shop, session: Session, pickup: dt.datetime) -> Approval:
+    """Mila's order recorded waiting for a pickup at `pickup`; its approval."""
+    deps, args = customer_deps(cs, session), order_input(session, pickup_at=pickup)
+    out = call_tool(deps, BINDING[tools.PLACE_ORDER], args, new_id())
+    tools.record_waiting(deps, args, str(out["approval_id"]))
+    session.commit()
+    approval = session.get(Approval, out["approval_id"])
+    assert approval is not None
+    return approval
+
+
+def test_a_waiting_order_whose_pickup_passed_is_closed_and_the_customer_told(
+    cs: Shop, session: Session
+) -> None:
+    a = waiting_on(cs, session, dt.datetime.combine(TODAY, dt.time(16), MNL))
+    due.run_due(session, cs.pin(16, 5))
+    session.refresh(a)
+    assert (order_of(a).status, a.status, a.reason) == ("rejected", "expired", "past")
+    assert last_out(session).text == t("cs.order_rejected.other", "fil", time="16:00")
+    due.run_due(session, cs.pin(16, 20))  # the status change is the guard: handled once
+    assert len(markers(session, "customer_service.order_rejected")) == 1
+    assert len(markers(session, "approval.expired")) == 1
+
+
+def test_a_waiting_order_past_its_approval_ttl_is_closed(cs: Shop, session: Session) -> None:
+    pickup = dt.datetime.combine(TODAY + dt.timedelta(days=2), dt.time(16), MNL)
+    a = waiting_on(cs, session, pickup)
+    due.run_due(session, cs.pin(9, 55, days=1))  # the approval is good until 10:00 tomorrow
+    assert order_of(a).status == "waiting"
+    due.run_due(session, cs.pin(10, 5, days=1))
+    session.refresh(a)
+    assert (order_of(a).status, a.status, a.reason) == ("rejected", "expired", "timeout")
+    assert last_out(session).text == t("cs.order_rejected.other", "fil", time="16:00")
+    due.run_due(session, cs.pin(10, 30, days=1))
+    assert len(markers(session, "customer_service.order_rejected")) == 1

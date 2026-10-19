@@ -185,7 +185,7 @@ def test_a_held_customer_gets_one_hold_reply_then_nothing(
     assert got == [[t("cs.menu", "fil")]] * 2 + [[t("cs.held", "fil")], []]
 
 
-def test_a_held_customer_writes_no_event_at_all(
+def test_a_held_message_writes_only_its_inbound_row_events(
     shop: Shop,
     client: TestClient,
     sim: SimAdapter,
@@ -193,13 +193,13 @@ def test_a_held_customer_writes_no_event_at_all(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     answer(monkeypatch, "greeting")
-    counts = []
+    actions: list[list[str]] = []
     for i in range(32):
         say(client, sim, f"hi {i}")
-        customer = session.exec(select(Customer).where(Customer.address == ADDR)).one()
-        mine = select(Event).where(Event.on_behalf_of == customer.id)
-        counts.append(len(session.exec(mine).all()))
-    assert counts[31] == counts[30]  # the 32nd message: held, nothing written
+        session.expire_all()
+        actions.append([e.action for e in session.exec(select(Event).order_by(col(Event.id)))])
+    held = actions[31][len(actions[30]) :]  # the 32nd message: held
+    assert held == ["channel.received", "channel.inbound_processing", "channel.inbound_done"]
     held = session.exec(select(Event).where(Event.action == f"{MANIFEST.id}.held")).all()
     attempts = session.exec(select(Event).where(Event.action == f"{MANIFEST.id}.attempt")).all()
     assert len(held) == 1 and len(attempts) == 30
@@ -764,3 +764,37 @@ def test_two_first_messages_at_once_make_one_customer(
     assert len(session.exec(select(Customer).where(Customer.address == ADDR)).all()) == 1
     chain = chain_text(session)
     assert ADDR.lstrip("+") not in chain and "Mila" not in chain and "Santos" not in chain
+
+
+# ---- the flood caps: one waiting order per customer, a node-wide Jev budget (I4) ------------
+
+
+def test_a_second_order_while_one_waits_says_so(
+    shop: Shop, client: TestClient, sim: SimAdapter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    order(client, sim, monkeypatch)
+    got = order(client, sim, monkeypatch, text="pa-order 5 bibingka, pickup bukas 11am")
+    assert got == [t("cs.refused.pending", "fil")]
+
+
+def test_the_public_jev_budget_holds_a_message_without_a_jev_call(
+    shop: Shop,
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[dict[str, Any]] = []
+    answer(monkeypatch, "greeting", seen=seen)
+    tight = orgconfig.load().model_copy(
+        update={"customer_service": orgconfig.CustomerServiceSettings(public_calls_per_hour=1)}
+    )
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: tight)
+    mark = session.exec(select(Customer).where(Customer.address == MARK_ADDR)).one()
+    store.update(session, mark, {"channel": "sim"}, Actor.system(mark.branch_id))
+    session.commit()
+    assert say(client, sim, "hello po") == [t("cs.menu", "fil")]
+    assert say(client, sim, "hello", address=MARK_ADDR) == [t("cs.held", "en")]
+    assert len(seen) == 1  # across addresses: the second message never reached Jev
+    held = session.exec(select(Event).where(Event.action == f"{MANIFEST.id}.budget_held")).one()
+    assert held.on_behalf_of == mark.id

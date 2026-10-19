@@ -8,4 +8,4 @@ delivery_areas:
   - {name: Marikina, fee: 5000, currency: PHP}
   - {name: Quezon City, fee: 8000, currency: PHP}
   - {name: Pasig, fee: 6000, currency: PHP}
-customer_service: {max_order_quantity: 50, messages_per_hour: 30}
+customer_service: {max_order_quantity: 50, messages_per_hour: 30, public_calls_per_hour: 600}

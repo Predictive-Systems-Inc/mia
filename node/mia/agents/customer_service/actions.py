@@ -9,6 +9,7 @@ holds no customer name or address.
 """
 
 import datetime as dt
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -180,6 +181,27 @@ class Query:
     lang: str = "en"
 
 
+def open_orders(
+    session: Session,
+    branch: Branch,
+    statuses: tuple[str, ...] = STAFF_ORDER_STATUSES,
+    day: dt.date | None = None,
+) -> list[tuple[Order, Customer]]:
+    """The branch's orders in `statuses` with their customers, by pickup time; only those picked
+    up on `day` (the branch's local date) when it is given. Reads, unchecked: callers check
+    first (tools) or are the system tick."""
+    tz = ZoneInfo(branch.timezone)
+    rows = session.exec(
+        select(Order, Customer)
+        .where(Order.customer_id == Customer.id)
+        .where(Order.branch_id == branch.id)
+        .where(col(Order.status).in_(statuses))
+    ).all()
+    # pickup_at is an ISO string with its own offset, so the day is compared here, not in SQL
+    kept = [(o, c) for o, c in rows if day is None or o.pickup_at.astimezone(tz).date() == day]
+    return sorted(kept, key=lambda row: row[0].pickup_at)
+
+
 def _items(session: Session, branch: Branch) -> dict[str, tuple[str, ...]]:
     here = or_(col(RetailItem.branch_id) == branch.id, col(RetailItem.branch_id).is_(None))
     rows = session.exec(
@@ -199,12 +221,24 @@ def _named(session: Session, branch: Branch, message: str) -> set[str]:
     return firsts & set(fold(message).split())
 
 
+def _without(message: str, named: set[str]) -> str:
+    """The message with each word whose folded form is one of `named` replaced by "Customer"
+    (whole words, as public._scrubbed does for the customer's own name)."""
+    if not named:
+        return message
+    return re.sub(r"\w+", lambda m: "Customer" if fold(m[0]) in named else m[0], message)
+
+
 def _orders(
-    session: Session, branch: Branch, message: str, today: dt.date, names: dict[str, str]
+    session: Session,
+    branch: Branch,
+    named: set[str],
+    today: dt.date,
+    names: dict[str, str],
 ) -> dict[str, str]:
     """Today's confirmed and ready orders as id -> "pickup time, lines (status)". When the
-    message names a first name, only the orders of customers of that name, none when no such
-    order is today's (matched here so no name reaches the query)."""
+    message names a first name (`named`, from _named), only the orders of customers of that
+    name, none when no such order is today's (matched here so no name reaches the query)."""
     tz = ZoneInfo(branch.timezone)
     open_rows = session.exec(
         select(Order, Customer)
@@ -217,7 +251,6 @@ def _orders(
         ((o, c) for o, c in open_rows if o.pickup_at.astimezone(tz).date() == today),
         key=lambda row: row[0].pickup_at,
     )
-    named = _named(session, branch, message)
     first = {o.id: (fold(c.name or "").split() or [""])[0] for o, c in rows}
     orders = [o for o, _ in rows if not named or first[o.id] in named]
     out = {}
@@ -237,11 +270,17 @@ def build_query(
     lang: str,
 ) -> Query:
     """Read every candidate the request needs. Reads only; the caller holds no write lock.
-    Staff get today's orders; a customer never gets another customer's order."""
+    Staff get today's orders; a customer never gets another customer's order. On the staff
+    side the branch customers' first names are scrubbed from the message after the orders are
+    matched by them: a customer is not a Person, so the egress pseudonymiser does not know
+    them (the customer side scrubs the customer's own name before this, public._scrubbed)."""
     items = _items(session, branch)
+    names = {item_id: name for item_id, (name, *_) in items.items()}
+    named = _named(session, branch, message) if side == "staff" else set()
+    orders = _orders(session, branch, named, today, names) if side == "staff" else {}
+    message = _without(message, named)
     menu = menu_tokens((name, codes) for name, *codes in items.values())
     groups, _ = pre_parse(strip_times(message), menu)
-    names = {item_id: name for item_id, (name, *_) in items.items()}
     return Query(
         message=message,
         previous_mia_message=previous,
@@ -252,7 +291,7 @@ def build_query(
         times={tid: at.strftime("%H:%M") for tid, at in find_times(message)},
         dates={i: d.isoformat() for i, d in find_dates(message, today, lang)},
         areas=list(orgconfig.load().delivery_areas),
-        orders=_orders(session, branch, message, today, names) if side == "staff" else {},
+        orders=orders,
         corrected=was_corrected(message),
         lang=lang,
     )

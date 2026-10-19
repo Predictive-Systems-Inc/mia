@@ -353,3 +353,19 @@ def test_a_withdrawn_request_cannot_be_decided_or_withdrawn_again(
         approvals.decide(session, row.id, Actor.person(people["Sanna"]), "approved")
     with pytest.raises(ApprovalError):
         approvals.withdraw(session, row, requester, "again")
+
+
+def test_expire_closes_an_open_request_with_its_reason_and_runs_no_handler(
+    session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ran: list[str] = []
+    monkeypatch.setitem(approvals._handlers, "demo_change", lambda s, a, d: ran.append(a.id))
+    row = _request(session, Actor.person(people["Juha"]).as_agent("agent.shift_supervisor"))
+    approvals.expire(session, row, Actor.system(row.branch_id), "past")
+    assert (row.status, row.reason, ran) == ("expired", "past", [])
+    event = session.exec(select(Event).where(Event.action == "approval.expired")).one()
+    assert event.approval_id == row.id
+    with pytest.raises(ApprovalError, match="expired"):
+        approvals.decide(session, row.id, Actor.person(people["Sanna"]), "approved")
+    with pytest.raises(ApprovalError):  # no longer open
+        approvals.expire(session, row, Actor.system(row.branch_id), "again")

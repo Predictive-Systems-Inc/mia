@@ -566,3 +566,9 @@ Format for each entry:
 - Question: A customer writing to the node's number is a customer of which branch, when the organisation has several?
 - Assumed answer: the organisation's first branch (by id). One public number per branch (D35) needs a per-branch number setting in the channel configuration; until then the first branch serves them all.
 - Blocking: no.
+
+## Q78: Customer names a staff member types in their own chat
+- Where: node/mia/chat/service.py (the user message row, its chat_messages.created event and chat_threads.created), node/mia/agents/customer_service/actions.py (`build_query`), manifest.yaml (`mark_picked_up`)
+- Question: A clerk writes "ready na yung kay Mila": the customer's first name is in the staff member's own message row and its event. Should it be redacted from the hash chain, as a customer's own identity is?
+- Assumed answer: no, as Q64 says for a user's own words: what the staff member typed stays in their event. The name never leaves the node (build_query scrubs the branch customers' first names before Jev), and Mia's replies that name a customer (orders_today, mark_ready, mark_picked_up) are sensitive, so their text and blocks stay in the row only.
+- Blocking: no.

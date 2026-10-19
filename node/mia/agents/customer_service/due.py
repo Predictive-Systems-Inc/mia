@@ -1,5 +1,7 @@
-"""Customer service work on the tick: the opening digest of the day's pickups to the branch's
-clerks and supervisors, and a reminder to each customer an hour before their pickup.
+"""Customer service work on the tick: waiting orders nobody decided in time closed
+(tools.close_undecided: the pickup passed or the approval's TTL did, the customer told), the
+opening digest of the day's pickups to the branch's clerks and supervisors, and a reminder to
+each customer an hour before their pickup.
 
 What is due is pure code (rule 7). The digest is due in the first hour after an open day's
 opening, only when the business date has confirmed or ready orders; it goes through notify
@@ -17,7 +19,7 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, col, select
 
-from mia.agents.customer_service import MANIFEST, public, replies
+from mia.agents.customer_service import MANIFEST, public, replies, tools
 from mia.agents.customer_service.actions import STAFF_ORDER_STATUSES
 from mia.agents.customer_service.models import Customer, Order
 from mia.agents.shift_supervisor import alerts
@@ -145,7 +147,8 @@ def pickup_reminders(session: Session, branch: Branch, now: dt.datetime) -> int:
 
 
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
-    count = pickup_reminders(session, branch, now)
+    count = tools.close_undecided(session, branch, now)
+    count += pickup_reminders(session, branch, now)
     day = digest_due(branch, retail_hours.load(session, branch.id), now)
     if day is None or alerts._marked(session, DIGEST, branch.id, day):
         return count
@@ -158,9 +161,9 @@ def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
 
 
 def run_due(session: Session, now: dt.datetime | None = None) -> int:
-    """Run the customer service's due work at `now` for every branch; returns how many digests
-    were sent and reminders queued. Nothing runs when the organisation does not use the
-    customer service."""
+    """Run the customer service's due work at `now` for every branch; returns how many waiting
+    orders were closed, digests sent and reminders queued. Nothing runs when the organisation
+    does not use the customer service."""
     if not public.runs():
         return 0
     return alerts._each_branch(session, now or utcnow(), _branch_due)

@@ -270,6 +270,14 @@ def test_an_order_over_the_max_quantity_is_refused(cs: Shop, session: Session) -
     assert not session.exec(select(Approval)).all()
 
 
+def test_a_second_order_while_one_waits_is_refused(cs: Shop, session: Session) -> None:
+    """Each waiting order asks every clerk and supervisor, so a customer has one at a time."""
+    waiting(cs, session)
+    out = place(cs, session, quantity=5)
+    assert (out["status"], out["message"]) == ("invalid", "pending")
+    assert len(session.exec(select(Approval)).all()) == 1
+
+
 def test_record_waiting_refuses_an_approval_for_another_input(cs: Shop, session: Session) -> None:
     deps = customer_deps(cs, session)
     out = call_tool(deps, BINDING[PLACE], order_input(session), new_id())
@@ -392,5 +400,5 @@ def test_staff_list_mark_ready_and_picked_up(cs: Shop, session: Session) -> None
 def test_the_order_tools_are_sensitive_and_the_manifest_matches(cs: Shop, session: Session) -> None:
     assert {b.tool_id for b in tools.BINDINGS} == {t.id for t in MANIFEST.tools}
     sensitive = {t.name for t in MANIFEST.tools if t.sensitive}
-    assert sensitive == {"place_order", "complain", "orders_today", "mark_ready"}
+    assert sensitive == {"place_order", "complain", "orders_today", "mark_ready", "mark_picked_up"}
     assert orgconfig.load().customer_service.max_order_quantity == 50

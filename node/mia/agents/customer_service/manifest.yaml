@@ -38,6 +38,6 @@ tools:
   - {id: customer_service.complain, kind: agent, risk: write_internal, sensitive: true, approval: never, writes: [customer_service_complaints, message]}
   - {id: customer_service.orders_today, kind: agent, risk: read, sensitive: true, approval: never, reads: [customer_service_orders, customer_service_customers, retail_items]}
   - {id: customer_service.mark_ready, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [customer_service_orders], writes: [customer_service_orders, customer_service_messages]}
-  - {id: customer_service.mark_picked_up, kind: agent, risk: write_internal, approval: never, reads: [customer_service_orders], writes: [customer_service_orders]}
+  - {id: customer_service.mark_picked_up, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [customer_service_orders], writes: [customer_service_orders]}
   - {id: customer_service.resolve_complaint, kind: agent, risk: write_internal, approval: never, reads: [customer_service_complaints], writes: [customer_service_complaints]}
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

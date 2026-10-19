@@ -71,10 +71,12 @@ class DeliveryArea(BaseModel):
 
 
 class CustomerServiceSettings(BaseModel):
-    """Limits for the customer service: items per order, inbound messages per hour per address."""
+    """Limits for the customer service: items per order, inbound messages per hour per address,
+    and public turns (each one Jev request) per hour across the whole node."""
 
     max_order_quantity: int = 50
     messages_per_hour: int = 30
+    public_calls_per_hour: int = 600
 
 
 class OrgSettings(BaseModel):

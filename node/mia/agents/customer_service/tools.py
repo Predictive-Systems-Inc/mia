@@ -30,7 +30,7 @@ from sqlmodel import Session, col, or_, select
 
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.customer_service import MANIFEST, calc, public
-from mia.agents.customer_service.actions import STAFF_ORDER_STATUSES
+from mia.agents.customer_service.actions import STAFF_ORDER_STATUSES, open_orders
 from mia.agents.customer_service.models import Complaint, Customer, Order
 from mia.agents.customer_service.public import CustomerDeps
 from mia.chat.blocks import ApprovalCardBlock, Block, CardField, TextBlock
@@ -229,12 +229,15 @@ def _order_branch(deps: CustomerDeps) -> Branch:
 def _order_precheck(deps: CustomerDeps, args: PlaceOrderInput, tool_call_id: str) -> None:
     """The guard's precheck for place_order (after the permission check, before the approval):
     a new order_id, every item active at the customer's branch, at most max_order_quantity
-    items, a pickup still ahead and within the opening hours, a delivery to a configured area.
-    Raises LookupError order, item, too_large, past, closed or area."""
+    items, a pickup still ahead and within the opening hours, a delivery to a configured area,
+    and no other order of the customer's still waiting. Raises LookupError order, pending, item,
+    too_large, past, closed or area."""
     _require(deps.session, deps.actor, ITEMS, "read", tool_call_id)
     _require(deps.session, deps.actor, HOURS, "read", tool_call_id)
     if deps.session.get(Order, args.order_id) is not None:
         raise LookupError("order")
+    if _latest(deps, ("waiting",), "read", tool_call_id) is not None:
+        raise LookupError("pending")  # each waiting order asks every clerk and supervisor
     branch = _order_branch(deps)
     ids = {line.item_id for line in args.lines}
     if len(_active_items(deps.session, branch, list(ids))) != len(ids):
@@ -596,8 +599,10 @@ def apply_order_approval(session: Session, approval: Approval, decider: Actor) -
     if branch is None or len(_active_items(session, branch, list(ids))) != len(ids):
         raise LookupError("item")
     if order.pickup_at <= db.utcnow():  # approved too late: the customer is told, not served
-        _reject(session, approval, decider, order, customer, actor, "other")
-        expired = {"status": "expired", "reason": "past"}  # the pickup passed before anyone acted
+        _reject(session, order, customer, actor, "other", decider.principal.id)
+        # The pickup passed before anyone acted. decide already set the approval approved, so
+        # approvals.expire (open requests only) does not apply; the row is closed here.
+        expired = {"status": "expired", "reason": "past"}
         store.update(
             session, approval, expired, actor, action="approval.expired", approval_id=approval.id
         )
@@ -619,27 +624,49 @@ def apply_order_rejection(session: Session, approval: Approval, decider: Actor) 
     if order.status != "waiting":
         return
     reason = approval.reason if approval.reason in REJECT_REASONS else "other"
-    _reject(session, approval, decider, order, customer, actor, reason)
+    _reject(session, order, customer, actor, reason, decider.principal.id)
 
 
 def _reject(
     session: Session,
-    approval: Approval,
-    decider: Actor,
     order: Order,
     customer: Customer,
     actor: Actor,
     reason: str,
+    decided_by: str | None,
 ) -> None:
-    """The order rejected with decided_by (event customer_service.order_rejected) and the
-    customer's reply with the reason key queued."""
+    """The order rejected (event customer_service.order_rejected), with decided_by when a
+    person decided, and the customer's reply with the reason key queued."""
     branch = session.get(Branch, order.branch_id)
-    changes = {"status": "rejected", "decided_by": decider.principal.id}
+    changes: dict[str, object] = {"status": "rejected"}
+    if decided_by is not None:
+        changes["decided_by"] = decided_by
     action = f"{MANIFEST.id}.order_rejected"
-    store.update(session, order, changes, actor, action=action, approval_id=approval.id)
+    store.update(session, order, changes, actor, action=action, approval_id=order.approval_id)
     time = _local(order.pickup_at, branch) if branch else ""
     text = t(f"cs.order_rejected.{reason}", customer.language, time=time)
     public.queue(session, customer, [TextBlock(text=text)], public.customer_actor(customer))
+
+
+def close_undecided(session: Session, branch: Branch, now: dt.datetime) -> int:
+    """The tick's sweep of the branch's waiting orders nobody decided in time: one whose pickup
+    has passed, or whose approval is past its TTL or no longer open, gets its approval expired
+    (reason past or timeout; not escalated, the customer is waiting) and is rejected with reason
+    other, no decided_by, and the customer is told. A system path (Actor.system). Marker-free:
+    the order leaves `waiting`, so a second sweep finds nothing. Returns how many it closed."""
+    actor, count = Actor.system(branch.id), 0
+    for order, customer in open_orders(session, branch, ("waiting",)):
+        approval = session.get(Approval, order.approval_id) if order.approval_id else None
+        is_open = approval is not None and approval.status in ("pending", "escalated")
+        expires = approval.expires_at if approval is not None else None
+        passed = order.pickup_at <= now
+        if not (passed or not is_open or (expires is not None and expires <= now)):
+            continue
+        if approval is not None and is_open:
+            approvals.expire(session, approval, actor, "past" if passed else "timeout")
+        _reject(session, order, customer, actor, "other", None)
+        count += 1
+    return count
 
 
 approvals.register_handler(PLACE_ORDER, apply_order_approval)
