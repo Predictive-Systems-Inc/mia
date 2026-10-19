@@ -23,8 +23,15 @@ SIX = [
     "hr_officer",
     "branch_manager",
 ]
-# The HR officer serves every employee (staff and up), so it joins each list below.
-SALES_SHIFT_STOCK = ["sales_supervisor", "shift_supervisor", "inventory_manager", "hr_officer"]
+# The HR officer serves every employee (staff and up), so it joins each list below; the branch
+# manager coaches the sales staff, so clerks and supervisors get it too.
+SALES_SHIFT_STOCK = [
+    "sales_supervisor",
+    "shift_supervisor",
+    "inventory_manager",
+    "hr_officer",
+    "branch_manager",
+]
 STAFF_AGENTS = ["shift_supervisor", "hr_officer"]
 
 

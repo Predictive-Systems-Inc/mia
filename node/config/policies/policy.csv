@@ -201,3 +201,6 @@ p, clerk, *, agent:customer_service, use, allow
 p, supervisor, *, agent:customer_service, use, allow
 p, owner, *, agent:customer_service, use, allow
 p, admin, *, agent:customer_service, use, allow
+p, clerk, *, agent:branch_manager, use, allow
+p, supervisor, *, agent:branch_manager, use, allow
+p, admin, *, agent:branch_manager, use, allow

@@ -16,11 +16,6 @@ DESCRIPTIONS = {
         " receipts, bank deposits, GCash and Maya sales and settlements, Grab payouts, VAT and"
         " BIR records; not sales counts, not a morning's or day's sales total and not pay."
     ),
-    "branch_manager": (
-        "Running the shop: branches, the menu and new menu items, prices and item short codes,"
-        " who approves what, shop opening hours, people and their roles, permits, the weekly"
-        " summary, coaching and tips for staff; not a day's counts and not a shift change."
-    ),
 }
 
 

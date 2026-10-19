@@ -104,7 +104,9 @@ def edit_stubs(text: str, agent_id: str) -> str:
         return text
     start = lines.index(key)
     end = lines.index("    ),\n", start)
-    return "".join(lines[:start] + lines[end + 1 :])
+    out = "".join(lines[:start] + lines[end + 1 :])
+    empty = "DESCRIPTIONS: dict[str, str] = {}\n"  # the last stub gone: formatted and typed
+    return out.replace("DESCRIPTIONS = {\n}\n", empty)
 
 
 def _after_label_groups(text: str, entry: Callable[[int], str], marker: str) -> str:

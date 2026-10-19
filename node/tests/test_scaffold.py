@@ -315,6 +315,11 @@ def test_edit_router_pending_skips_an_id_that_has_cases() -> None:
     assert scaffold.edit_router_pending(text, "b_two") == text
 
 
+def test_edit_stubs_removing_the_last_entry_leaves_a_formatted_dict() -> None:
+    text = 'DESCRIPTIONS = {\n    "b_two": (\n        "x"\n    ),\n}\n'
+    assert scaffold.edit_stubs(text, "b_two") == "DESCRIPTIONS: dict[str, str] = {}\n"
+
+
 def test_edit_layout_adds_a_line_before_the_role_skill_line() -> None:
     text = "        sales_supervisor/   manifest.yaml\n        <role>/skill/       role.yaml\n"
     out = scaffold.edit_layout(text, "q_o", "Quality")
