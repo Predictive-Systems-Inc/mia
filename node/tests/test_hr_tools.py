@@ -27,6 +27,7 @@ from mia.agents.hr_officer.tools import (
 )
 from mia.core import approvals, events, orgconfig
 from mia.core.models import Actor, Approval, Branch, Event, Message, Person, Thread
+from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied
 from mia.settings import get_settings
 from tests.conftest import CLOCK_USERS
@@ -401,6 +402,21 @@ def test_a_payslip_is_resent(session: Session, hr: Ferinos) -> None:
     (note,) = notifications(session, ana)
     assert note.id == out.message_id and note.sender_id == "system"
     assert "2026-10-01" in note.text
+
+
+def test_a_resent_payslip_stays_off_the_chain(session: Session, hr: Ferinos) -> None:
+    _, people = hr
+    ana = people["Ana"]
+    out = tools.resend_payslip(deps_for(session, ana), OwnInput(), "r1")
+    net = format_money(out.net, out.currency, ana.language)
+    row = session.get(Message, out.message_id)
+    assert row is not None and net in row.text  # the person reads it in the app
+    sent = session.exec(
+        select(Event)
+        .where(Event.action == "notification.sent")
+        .where(Event.entity_id == out.message_id)
+    ).one()
+    assert net not in str(sent.after) and str(out.net) not in str(sent.after)
 
 
 def test_the_owner_gets_a_certificate_text(session: Session, hr: Ferinos) -> None:
