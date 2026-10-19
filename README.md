@@ -252,8 +252,8 @@ whether the shop is open, prices, delivery areas and fees, drafts pickup and del
 that a clerk or supervisor confirms on a card, gives the status of the customer's own order,
 logs complaints and cancels an order not yet ready. Staff ask it for the day's customer orders
 and mark an order ready or picked up. It answers only with `MIA_DECIDER=jev`. Its decider eval
-(480 synthetic messages in six languages, a customer side and a staff side, gated on the gate
-half at the Q40 bar):
+(synthetic messages in six languages, a customer side and a staff side, gated on the fresh
+gate half at the Q40 bar; `MIA_EVAL_HALVES=tune` runs the tune half only):
 `MIA_DECIDER=jev uv run pytest node/tests/evals/test_customer_service_evals.py -m evals -s`
 (needs `MIA_TYPESAFE_KEY`; writes `docs/research/customer-service-<date>-<HHMM>.raw.json`).
 

@@ -194,13 +194,15 @@ side and the due work (8, 10). 7. Ten languages. 8. Evals, gates, docs.
 
 ## Carried over
 
-- The decider gate (20 Oct, docs/research/2026-10-20-customer-service-gate.md) failed on bcl
-  ask 17.5% (bar 15%); wrong 0% in both halves. A tuning edit (complaint words in the regional
-  languages, pickup questions for staff_orders_today, "a price or a cancel is not an order")
-  and a rerun are the developer's decision; fresh gate seeds avoid rerunning a scored half.
-- A non-order message that Jev reads as place_order is saved only by the missing lines
-  (`items`); a price question with a digit ("pila ang 10 bibingka") would make lines. The
-  prices and cancel_order descriptions need the contrast before that happens.
+- The decider gate (docs/research/2026-10-20-customer-service-gate.md) failed twice. Run 1
+  failed on bcl ask 17.5%; one tuning edit from the tune half followed (the developer's
+  decision), then run 2 on fresh gate seeds failed on war ask 17.5% (ceb and hil on the bar),
+  complaint 36.7% right. Wrong was 0% in every run. Both gate halves are spent: a run 3 needs
+  a third set of gate seeds and the developer's word.
+- The complaint description lists food words; complaints about a price charged, the packaging
+  or a person's manner are asked. A description by kind of complaint is the next edit to weigh.
+- "akong order para ugma, okay na ba?" reads as an order (asked, no lines); order_status has no
+  "my order for tomorrow" example.
 - The ten router seeds for the staff side are unscored until the next router run.
 - The eval usage rows carry no `cost_minor`; the report applies TypeSafe's list price to the
   measured tokens.

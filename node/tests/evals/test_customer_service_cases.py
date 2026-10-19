@@ -2,42 +2,56 @@
 test_customer_service_evals.py)."""
 
 from collections import Counter
+from itertools import combinations
 from pathlib import Path
 
 from mia.agents.customer_service.actions import CUSTOMER, STAFF, Query
 from mia.agents.customer_service.decider import _lines
 from mia.agents.parsing import find_dates, find_times, menu_tokens, pre_parse, strip_times
+from mia.i18n import SUPPORTED
 from mia.templates.retail.seed import ITEMS
 from tests.conftest import TODAY as SEEDED
-from tests.evals.customer_service_cases import CASES, GATED_LANGS, SCENARIOS, TODAY, on
+from tests.evals.customer_service_cases import (
+    CASES,
+    GATED_LANGS,
+    SCENARIOS,
+    TODAY,
+    TUNE_ONLY_SCENARIOS,
+    on,
+)
 
+HALVES = ("tune", "spent", "gate")
 MENU = {name: (name, *codes) for name, codes, _ in ITEMS}  # id is the name here
 
 
-def test_ten_cases_per_language_scenario_and_half() -> None:
-    """Ten messages per language and scenario, five in each half."""
+def test_ten_per_language_and_scenario_five_per_half() -> None:
+    """Scenarios 1 to 8: ten messages per language (five tune, five in the spent gate half) and
+    five fresh gate messages; the cases outside them are in the tune half only."""
     counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
-    assert set(counts) == {
-        (lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in ("tune", "gate")
-    }
-    assert set(counts.values()) == {5}
+    halves = ("tune", "spent", "gate")
+    gated = {(lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in halves}
+    extra = {(lang, s, "tune") for lang in GATED_LANGS for s in TUNE_ONLY_SCENARIOS}
+    assert set(counts) == gated | extra
+    assert {counts[k] for k in gated} == {5}
 
 
-def test_no_text_appears_in_both_halves() -> None:
-    tune = {c.text.casefold().strip() for c in CASES if c.half == "tune"}
-    gate = {c.text.casefold().strip() for c in CASES if c.half == "gate"}
-    assert not tune & gate, tune & gate
+def test_no_text_appears_in_two_sets() -> None:
+    """The tune half, the spent gate half and the fresh gate half share no text (casefolded)."""
+    sets = {h: {c.text.casefold().strip() for c in CASES if c.half == h} for h in HALVES}
+    for a, b in combinations(HALVES, 2):
+        assert not sets[a] & sets[b], (a, b, sets[a] & sets[b])
 
 
 def test_no_tagalog() -> None:
     assert not any("tagalog" in c.text.casefold() for c in CASES)
 
 
-def test_no_pair_repeats_and_every_action_but_the_fallbacks_has_cases() -> None:
+def test_no_pair_repeats_and_every_action_but_clarify_has_cases() -> None:
     pairs = [(c.lang, c.text) for c in CASES]
     assert len(pairs) == len(set(pairs)), Counter(pairs).most_common(3)
-    untested = {"greeting", "clarify", "language_switch"}  # outside scenarios 1 to 8
-    assert {c.expected_action for c in CASES} == (CUSTOMER | STAFF) - untested
+    assert {c.expected_action for c in CASES} == (CUSTOMER | STAFF) - {"clarify"}
+    gate = {c.expected_action for c in CASES if c.half == "gate"}
+    assert gate == (CUSTOMER | STAFF) - {"clarify", "greeting", "language_switch"}
 
 
 def test_each_side_expects_its_own_actions_and_senders() -> None:
@@ -46,6 +60,16 @@ def test_each_side_expects_its_own_actions_and_senders() -> None:
         assert c.expected_action in (STAFF if staff else CUSTOMER), c
         assert (c.role in {"clerk", "supervisor"}) if staff else c.role == "customer", c
         assert bool(c.expected_lines) == (c.expected_action == "place_order"), c
+        assert bool(c.expected_language) == (c.expected_action == "language_switch"), c
+        assert not c.expected_language or c.expected_language in SUPPORTED, c
+
+
+def test_the_spent_gate_half_is_never_run() -> None:
+    from tests.evals.test_customer_service_evals import _selected
+
+    assert not any(c.half == "spent" for c in _selected(CASES, "tune,gate,spent"))
+    assert {c.half for c in _selected(CASES, "tune")} == {"tune"}
+    assert {c.half for c in _selected(CASES, "tune,gate")} == {"tune", "gate"}
 
 
 def test_the_run_day_is_the_seeded_tuesday() -> None:
@@ -88,6 +112,9 @@ def test_scoring() -> None:
     assert _score(good | {"error": "boom"}) == "other"
     hours = {"error": None, "expected_action": "hours", "missing": None, "confidence": 0.7}
     assert _score(hours | {"action": "hours", "args": {}}) == "right"
+    switch = hours | {"expected_action": "language_switch", "expected_language": "en"}
+    assert _score(switch | {"action": "language_switch", "args": {"language": "en"}}) == "right"
+    assert _score(switch | {"action": "language_switch", "args": {"language": "fil"}}) == "wrong"
 
 
 def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:

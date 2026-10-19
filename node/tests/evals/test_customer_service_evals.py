@@ -3,7 +3,8 @@ Run: MIA_DECIDER=jev uv run pytest node/tests/evals/test_customer_service_evals.
 (needs MIA_TYPESAFE_KEY; skips while the case list is empty). Each case runs build_query on its
 side (customer for scenarios 1 to 7, staff for 8) and decider.decide on Ferino's seeded demo
 (the cs fixture, seeded on TODAY) through egress (pseudonymised, rule 6), with today pinned to
-the case set's TODAY. A customer case acts for the seeded customer Mila, a staff case for a
+the case set's TODAY. MIA_EVAL_HALVES picks the halves (default "tune,gate"; "tune" for a tuning
+run); the spent gate half of run 1 is never run. A customer case acts for the seeded customer Mila, a staff case for a
 seeded clerk or supervisor. Each result keeps Jev's own pick (raw_action), the seconds and the
 usage-row tokens. The gate reads the gate half only; the tune half is for tuning the action
 descriptions."""
@@ -11,6 +12,7 @@ descriptions."""
 import asyncio
 import datetime as dt
 import json
+import os
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -46,6 +48,12 @@ def _report_path(now: dt.datetime, folder: Path = RESEARCH) -> Path:
     if path.exists():
         raise FileExistsError(f"refusing to overwrite {path}")
     return path
+
+
+def _selected(cases: list[Case], halves: str) -> list[Case]:
+    """The cases of the named halves (comma-separated); the spent gate half never."""
+    wanted = set(halves.split(",")) - {"spent"}
+    return [c for c in cases if c.half in wanted]
 
 
 def _side(case: Case) -> str:
@@ -92,14 +100,17 @@ async def _one(
 
 
 def _score(r: dict[str, Any]) -> str:
-    """right (the action and, for place_order, the lines, the time and the day), wrong (another
-    line, time or day, or another action at >= the threshold), ask (clarify or a missing input),
+    """right (the action and, for place_order, the lines, the time and the day; for
+    language_switch the language), wrong (another line, time, day or language, or another action
+    at >= the threshold), ask (clarify or a missing input),
     or other (an error, or another action below the threshold)."""
     if r["error"] is not None:
         return "other"
     if r["action"] == "clarify" or r["missing"] is not None:
         return "ask"
     if r["action"] == r["expected_action"]:
+        if r["action"] == "language_switch":
+            return "right" if r["args"].get("language") == r["expected_language"] else "wrong"
         if r["action"] != "place_order":
             return "right"
         lines = [list(line) for line in r["expected_lines"]]
@@ -131,6 +142,7 @@ def test_decider(engine: Engine, session: Session, cs: Shop) -> None:
     if not settings.MIA_TYPESAFE_KEY or settings.MIA_DECIDER != "jev":
         pytest.skip("needs MIA_TYPESAFE_KEY and MIA_DECIDER=jev")
     report = _report_path(dt.datetime.now().astimezone())  # before the run, not after it
+    cases = _selected(CASES, os.environ.get("MIA_EVAL_HALVES", "tune,gate"))
     actors = _actors(session, cs.people)
     names = {i.id: i.name for i in session.exec(select(RetailItem))}
 
@@ -138,7 +150,7 @@ def test_decider(engine: Engine, session: Session, cs: Shop) -> None:
         sem = asyncio.Semaphore(4)
         return list(
             await asyncio.gather(
-                *(_one(i, c, engine, actors[c.role], names, sem) for i, c in enumerate(CASES))
+                *(_one(i, c, engine, actors[c.role], names, sem) for i, c in enumerate(cases))
             )
         )
 
@@ -160,5 +172,6 @@ def test_decider(engine: Engine, session: Session, cs: Shop) -> None:
     print(json.dumps(gated, indent=1))
     text = json.dumps({"gated": gated, "results": results}, ensure_ascii=False, indent=1)
     report.write_text(text + "\n", encoding="utf-8")
-    failed = gate.gate_failures(gated)  # the Q40 bar, as the router's
-    assert not failed, failed
+    if gated_rows:  # a tune-only run has no gate to assert
+        failed = gate.gate_failures(gated)  # the Q40 bar, as the router's
+        assert not failed, failed
