@@ -54,9 +54,13 @@ def _query(
     if tapped is not None:
         return tapped, None
     if classify(html.unescape(text), deps.today, deps.lang).injection:
-        return Decision(action="reply_only", args={"kind": "injection"}, confidence=1), None
+        return Decision(action="greeting", args={"kind": "injection"}, confidence=1), None
     last = _last_question(session, thread)
-    return None, actions.build_query(deps, text, last.text if last else "")
+    previous = last.text if last else ""
+    query = actions.build_query(
+        session, deps.branch, "staff", text, previous, deps.today, deps.lang
+    )
+    return None, query
 
 
 def _did_you_mean(

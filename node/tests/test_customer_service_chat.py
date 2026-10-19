@@ -43,7 +43,7 @@ def _answers(monkeypatch: pytest.MonkeyPatch, action: str, **slots: Any) -> None
 def _texts(
     session: Session, sender: Person, monkeypatch: pytest.MonkeyPatch, kind: str
 ) -> list[str]:
-    _answers(monkeypatch, "reply_only", conversation=kind)
+    _answers(monkeypatch, "greeting", conversation=kind)
     reply = asyncio.run(run_turn(session, None, sender, "hello po", None))
     session.commit()
     return [b.text for b in reply.blocks if isinstance(b, TextBlock)]

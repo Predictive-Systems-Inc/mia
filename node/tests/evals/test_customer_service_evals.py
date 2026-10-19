@@ -64,7 +64,16 @@ async def _one(case: Case, engine: Engine, person_id: str, sem: asyncio.Semaphor
     async with sem:
         with Session(engine, expire_on_commit=False) as session:
             deps = _deps(session, case, person_id)
-            query = await asyncio.to_thread(build_query, deps, case.text, case.previous)
+            query = await asyncio.to_thread(
+                build_query,
+                session,
+                deps.branch,
+                "staff",
+                case.text,
+                case.previous,
+                deps.today,
+                deps.lang,
+            )
             ctx = EgressContext(
                 session=session,
                 actor=deps.actor,
