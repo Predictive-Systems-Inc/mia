@@ -32,7 +32,8 @@ def notify(
     sensitive: bool = False,
 ) -> Message:
     """Store a proactive message in the person's latest thread with the agent (the app copy is
-    always kept), then queue it on every enabled channel the person has linked."""
+    always kept), then queue it on every enabled channel the person has linked. A sensitive
+    message's text and blocks are redacted in its notification.sent event."""
     thread = session.exec(
         select(Thread)
         .where(Thread.person_id == person.id)
@@ -55,7 +56,9 @@ def notify(
         text=text,
         blocks=[b.model_dump(mode="json") for b in blocks],
     )
-    stored = store.insert(session, message, actor, action="notification.sent")
+    # A sensitive body (a payslip, say) stays in the row the person reads, never in the log.
+    hidden = ("text", "blocks") if sensitive else ()
+    stored = store.insert(session, message, actor, action="notification.sent", redact=hidden)
     deliver(
         session,
         person,

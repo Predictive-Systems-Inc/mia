@@ -26,6 +26,7 @@ from mia.core.models import (
     Thread,
     Timesheet,
 )
+from mia.core.money import format_money
 from mia.core.orgconfig import ChannelConfig, OrgSettings, Payroll
 from mia.i18n import t
 from mia.settings import get_settings
@@ -114,7 +115,7 @@ def test_payslips_are_due_from_nine_on_payday() -> None:
     assert due.payslips_due(PAYDAY + dt.timedelta(days=1), "Asia/Manila", payroll, {}) is None
 
 
-def test_a_payday_on_a_sunday_pays_the_friday_before() -> None:
+def test_a_payday_on_a_sunday_pays_the_day_before() -> None:
     """1 to 15 December pays Sunday the 20th: moved back to Saturday the 19th, and to Friday
     the 18th when that Saturday is a holiday (calendar.payday, Q60)."""
     payroll, cutoff = Payroll(pay_lag_days=5), (dt.date(2026, 12, 1), dt.date(2026, 12, 15))
@@ -175,6 +176,25 @@ def test_an_issued_payslip_is_not_recomputed(session: Session, hr: Ferinos, pin:
     assert ana_branch is not None
     assert due.issue_payslips(session, ana_branch, (OCT_16, dt.date(2026, 10, 31)), PAYDAY) == []
     assert _slips(session)[people["Ana"].id].model_dump() == before
+
+
+def test_the_payslip_amounts_stay_off_the_event_log(
+    session: Session, hr: Ferinos, pin: Pin
+) -> None:
+    """The notification row keeps the payslip (the person reads it in the app); its
+    notification.sent event does not."""
+    _, people = hr
+    _tick(session, pin, PAYDAY)
+    ana = _slips(session)[people["Ana"].id]
+    (note,) = _notes(session, people["Ana"])
+    lang = people["Ana"].language
+    amounts = [format_money(ana.net, ana.currency, lang)]
+    amounts += [format_money(int(line["amount"]), ana.currency, lang) for line in ana.lines]
+    assert all(a in note.text for a in amounts)
+    logged = [str(e.after) for e in _markers(session, "notification.sent")]
+    assert logged and not any(a in text for a in amounts for text in logged)
+    (event,) = [e for e in _markers(session, "notification.sent") if e.entity_id == note.id]
+    assert event.after and event.after["text"] == events.REDACTED
 
 
 def test_the_seeded_cutoff_is_not_issued_again(session: Session, hr: Ferinos, pin: Pin) -> None:

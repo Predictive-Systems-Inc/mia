@@ -13,7 +13,7 @@ from mia.channels.simulator import SimAdapter
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.chat.channels import notify
 from mia.core.db import utcnow
-from mia.core.models import Actor, ChannelOutbox, Message, Person
+from mia.core.models import Actor, ChannelOutbox, Event, Message, Person
 from tests.channels.conftest import LinkFn
 
 HKI = ZoneInfo("Europe/Helsinki")
@@ -172,8 +172,10 @@ def test_notify_keeps_the_app_copy_and_delivers(
         "shift_supervisor",
         urgent=True,
     )
-    assert session.exec(select(Message).where(Message.text == "Hei")).one()
+    message = session.exec(select(Message).where(Message.text == "Hei")).one()
     assert len(_rows(session)) == 1
+    event = session.exec(select(Event).where(Event.entity_id == message.id)).one()
+    assert event.action == "notification.sent" and event.after and event.after["text"] == "Hei"
 
 
 def test_deliver_marks_a_sensitive_block_itself(

@@ -127,7 +127,8 @@ def _issue_one(
     )
     if not days:
         # ponytail: no approved time, no payslip (a zero gross would net negative after the
-        # contributions); pay for unworked days joins when a contract needs it.
+        # contributions). Ceiling: no final pay and no payslip for a no-work cutoff; both are
+        # follow-ups.
         return None
     pay = ph.payslip(days, contract.daily_rate, ph.monthly_basic(contract.daily_rate))
     slip = Payslip(
