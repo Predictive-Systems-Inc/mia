@@ -10,7 +10,6 @@ holds no customer name or address.
 
 import datetime as dt
 from dataclasses import dataclass, field
-from itertools import pairwise
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
@@ -179,19 +178,15 @@ def _items(session: Session, branch: Branch) -> dict[str, tuple[str, ...]]:
     return {i.id: (i.name, *i.short_codes) for i in rows}
 
 
-NAME_MARKERS = {"kay", "ni", "si"}  # the word before a person's name (ready na yung kay Ana)
-
-
 def _named(session: Session, branch: Branch, message: str) -> set[str]:
-    """The first names (folded) the message names: any of the branch's customers', and the
-    word after a name marker."""
-    # ponytail: a name without a marker and of no customer ("Ana ready na") is not seen, so every
-    # order stays a candidate and Jev picks; list staff names too if that misleads
-    words = fold(message).split()
-    after = {w for m, w in pairwise(words) if m in NAME_MARKERS and w.isalpha()}
+    """The first names (folded) of the branch's customers that the message holds as a word.
+    A word after kay, ni or si is a name only when it is one of these (Cebuano "kay wala" is
+    not), so the marker adds nothing and is not read."""
+    # ponytail: a name spelled differently from the profile name ("Mhila") is not noticed, so
+    # every order stays a candidate and Jev picks; add a fuzzy match if staff spell names loosely
     rows = session.exec(select(Customer.name).where(Customer.branch_id == branch.id)).all()
-    known = {(fold(n or "").split() or [""])[0] for n in rows} & set(words)
-    return after | known
+    firsts = {(fold(n or "").split() or [""])[0] for n in rows} - {""}
+    return firsts & set(fold(message).split())
 
 
 def _orders(

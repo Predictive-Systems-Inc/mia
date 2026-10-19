@@ -15,6 +15,8 @@ from mia.agents.customer_service.actions import (
 )
 from mia.agents.customer_service.decider import parse
 from mia.agents.customer_service.models import Customer, Order
+from mia.core import store
+from mia.core.models import Actor
 from mia.templates.retail.models import RetailItem
 from tests.conftest import TODAY, Shop
 from tests.jev_fake import answers_for
@@ -139,6 +141,15 @@ def test_the_query_holds_no_customer_name_or_address(cs: Shop, session: Session)
 def test_a_named_customer_with_no_order_today_gives_no_candidate(
     cs: Shop, session: Session
 ) -> None:
+    ana = Customer(
+        branch_id=cs.kiosk.id,
+        channel="whatsapp",
+        address="+639170000155",
+        name="Ana Cruz",
+        language="fil",
+        first_seen_at=cs.pin(10),
+    )
+    store.insert(session, ana, Actor.system(cs.kiosk.id))  # a customer with no order today
     q = build(session, cs, "ready na yung kay Ana", side="staff")  # Mila's order is today's only
     assert q.orders == {}
     d = decide(q, "staff_mark_ready")
@@ -159,3 +170,11 @@ def test_a_box_of_4_is_one_item_with_its_own_quantity(cs: Shop, session: Session
 def test_four_bibingka_alone_is_four_classic(cs: Shop, session: Session) -> None:
     d = decide(build(session, cs, "pa-order 4 bibingka, pickup 3pm"), "place_order", time="t0")
     assert d.args["lines"] == [{"item_id": classic_id(session), "quantity": 4}]
+
+
+def test_a_marker_before_a_word_that_is_no_customer_keeps_the_orders(
+    cs: Shop, session: Session
+) -> None:
+    q = build(session, cs, "kay wala, ready na ba", side="staff")  # Cebuano "because none"
+    assert len(q.orders) == 1
+    assert decide(q, "staff_mark_ready").args == {"order_id": next(iter(q.orders))}
