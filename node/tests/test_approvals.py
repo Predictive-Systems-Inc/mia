@@ -228,6 +228,77 @@ def test_money_tool_without_approval_raises_and_does_not_execute(
     assert executed == [5000]
 
 
+def _internal_deps(
+    session: Session, branch: Branch, people: dict[str, Person], **row: object
+) -> AgentDeps:
+    """The payer with pay as a write_internal tool that is always approved first."""
+    deps = _money_deps(session, branch, people)
+    tool = {"id": "payer.pay", "kind": "agent", "risk": "write_internal", "approval": "always"}
+    deps.manifest = Manifest.model_validate({**MONEY_MANIFEST, "tools": [tool | row]})
+    return deps
+
+
+def _pay_binding(executed: list[int], **kw: object) -> ToolBinding:
+    def pay(d: AgentDeps, args: PayInput, call_id: str) -> PayOutput:
+        executed.append(args.amount_minor)
+        return PayOutput(paid=True)
+
+    return ToolBinding("payer.pay", pay, PayInput, "pay", **kw)  # type: ignore[arg-type]
+
+
+def test_an_always_tool_waits_for_approval_when_not_risky(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    deps = _internal_deps(session, branch, people)
+    executed: list[int] = []
+    out = call_tool(deps, _pay_binding(executed), PayInput(amount_minor=7), "w1")
+    assert out["status"] == "approval_required" and executed == []
+    approval = session.get(Approval, out["approval_id"])
+    assert approval is not None and approval.channel == "any"  # not money: no app-only rule
+    assert approval.evidence["input"] == {"amount_minor": 7}
+    co_owner = store.insert(
+        session,
+        Person(branch_id=branch.id, name="Otto Osakas", roles=["owner"]),
+        Actor.system(branch.id),
+    )
+    approvals.decide(session, approval.id, Actor.person(co_owner), "approved", channel="chat")
+    deps.approved.add(approval.id)
+    assert call_tool(deps, _pay_binding(executed), PayInput(amount_minor=7), "w2") == {"paid": True}
+    assert executed == [7]
+
+
+def test_a_precheck_refuses_before_any_approval(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    deps = _internal_deps(session, branch, people)
+
+    def refuse(d: AgentDeps, args: PayInput, call_id: str) -> None:
+        raise LookupError("too_small")
+
+    executed: list[int] = []
+    out = call_tool(deps, _pay_binding(executed, precheck=refuse), PayInput(amount_minor=1), "p1")
+    assert (out["status"], out["message"]) == ("invalid", "too_small")
+    assert session.exec(select(Approval)).all() == [] and executed == []
+
+
+def test_a_sensitive_tool_logs_ids_only(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    deps = _internal_deps(session, branch, people, sensitive=True)
+    call_tool(deps, _pay_binding([]), PayInput(amount_minor=4242), "s1")
+    plain = _internal_deps(session, branch, people)
+    call_tool(plain, _pay_binding([]), PayInput(amount_minor=1717), "s2")
+    called = {
+        e.tool_call_id: e for e in session.exec(select(Event).where(Event.action == "tool.called"))
+    }
+    assert called["s1"].before == {"input": {"amount_minor": "<redacted>"}}
+    after = called["s1"].after
+    assert after is not None and after["output"]["status"] == "approval_required"
+    assert called["s2"].before == {"input": {"amount_minor": 1717}}  # not sensitive: unchanged
+    requested = session.exec(select(Event).where(Event.action == "approval.requested")).all()
+    assert all("4242" not in str(e.after) for e in requested)  # evidence stays off the chain
+
+
 def test_manifest_rejects_risky_tool_without_approval() -> None:
     bad = {
         **MONEY_MANIFEST,

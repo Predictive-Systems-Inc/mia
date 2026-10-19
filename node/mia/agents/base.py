@@ -6,7 +6,8 @@ Guarantees for every agent built here:
 - every tool call runs rbac.require() on the agent principal and the person it acts for;
 - tools with risk money, external or delete, or with `approval: always`, create an approval
   and stop (ApprovalRequired) unless an approved approval for that tool call is supplied;
-- every call is written to the events log with its inputs and result, and committed;
+- every call is written to the events log with its inputs and result (a sensitive tool's
+  values redacted, its ids kept), and committed;
 - the model comes from settings.MIA_MODEL: `test` uses the agent's deterministic rules model,
   anything else is a gateway route reached only through mia.core.egress.
 """
@@ -68,6 +69,8 @@ class ToolSpec(BaseModel):
     approval: str = "never"
     reads: list[str] = Field(default_factory=list)
     writes: list[str] = Field(default_factory=list)
+    # Pay, hours or leave in the call: its tool.called event keeps only ids (SENSITIVE_KEEP).
+    sensitive: bool = False
 
     @property
     def name(self) -> str:
@@ -209,10 +212,13 @@ def guard(
     tool_call_id: str,
     summary: str = "",
     args: BaseModel | None = None,
+    precheck: "Precheck | None" = None,
 ) -> None:
-    """Permission check, then the approval rule: a risky tool or one with `approval: always`
-    asks for an approval first. Raises before the tool body can run. The approval carries the validated input in its evidence (`input`), so what runs on
-    approve is exactly what the approver saw."""
+    """Permission check, the binding's precheck, then the approval rule: a risky tool or one
+    with `approval: always` asks for an approval first. Raises before the tool body can run;
+    a precheck refusal (LookupError) comes before any approval is requested. The approval
+    carries the validated input in its evidence (`input`), so what runs on approve is exactly
+    what the approver saw."""
     get_rbac().require(
         deps.actor,
         Resource(kind="tool", name=spec.id),
@@ -220,6 +226,8 @@ def guard(
         session=deps.session,
         tool_call_id=tool_call_id,
     )
+    if precheck is not None and args is not None:
+        precheck(deps, args, tool_call_id)
     needs_approval = spec.risk in RISKY or spec.approval == "always"
     if needs_approval and not _approved_for(deps, spec):
         approval = approvals.request(
@@ -238,16 +246,26 @@ def guard(
 
 
 ToolImpl = Callable[[AgentDeps, Any, str], BaseModel]
+Precheck = Callable[[AgentDeps, Any, str], None]  # raises LookupError to refuse a request
+SENSITIVE_KEEP = frozenset({"person_id", "status", "approval_id", "message"})
+REDACTED = "<redacted>"
 
 
 @dataclass
 class ToolBinding:
-    """Links a manifest tool id to its typed implementation."""
+    """Links a manifest tool id to its typed implementation. A precheck runs after the
+    permission check and before the approval rule (validation that needs the database)."""
 
     tool_id: str
     impl: ToolImpl
     input_type: type[BaseModel]
     description: str
+    precheck: Precheck | None = None
+
+
+def _redacted(values: dict[str, Any]) -> dict[str, Any]:
+    """The keys with every value hidden except ids and a refusal's status (SENSITIVE_KEEP)."""
+    return {k: v if k in SENSITIVE_KEEP else REDACTED for k, v in values.items()}
 
 
 def call_tool(
@@ -258,7 +276,7 @@ def call_tool(
     spec = deps.manifest.tool(binding.tool_id)
     out: dict[str, Any]
     try:
-        guard(deps, spec, tool_call_id, summary, args)
+        guard(deps, spec, tool_call_id, summary, args, binding.precheck)
         out = binding.impl(deps, args, tool_call_id).model_dump(mode="json")
     except PermissionDenied as exc:
         out = ToolRefusal(status="denied", message=str(exc)).model_dump(mode="json")
@@ -274,8 +292,8 @@ def call_tool(
         deps.session,
         "tool.called",
         ("tool", spec.id),
-        {"input": inputs},
-        {"output": out},
+        {"input": _redacted(inputs) if spec.sensitive else inputs},
+        {"output": _redacted(out) if spec.sensitive else out},
         deps.actor,
         tool_call_id=tool_call_id,
     )

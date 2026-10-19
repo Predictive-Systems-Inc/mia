@@ -203,6 +203,7 @@ class Incident(BranchScoped, table=True):
 
 
 class Approval(BranchScoped, table=True):
+    __redact__: ClassVar[frozenset[str]] = frozenset({"evidence"})
     type: str
     requester_type: str
     requester_id: str

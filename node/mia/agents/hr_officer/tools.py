@@ -3,12 +3,16 @@ only through mia.core.store. Pay, leave and calendar rules are pure code in ph.p
 calendar.py; calc.py turns approved timesheets into minutes by day.
 
 Own rows: the own-data tools answer for the acting person (read_own on the hr tables and
-core.timesheet). Naming another person needs read_all on every resource read (admin, and the
-owner through the hierarchy), except `hours` for a person of the same branch, which needs the
-plain read (the supervisor). Anyone else gets PermissionDenied.
+core.timesheet); last_contributions and resend_payslip answer for nobody else. Naming another
+person needs read_all on every resource read (admin, and the owner through the hierarchy),
+except `hours` for a person of the same branch, which needs the plain read (the supervisor).
+Anyone else gets PermissionDenied. The manifest marks the pay, hours and leave tools
+sensitive, so their tool.called events keep only ids.
 
-Leave goes through the approvals guard: request_leave has `approval: always`, so the guard in
-agents/base.py creates the approval (evidence: the tool call id and the validated input) and
+Leave goes through the approvals guard: request_leave has `approval: always`. Its precheck
+(check_leave) refuses a leave without a contract, in the past, without a working day or over
+an approved leave before anything is asked; then the guard in agents/base.py creates the
+approval (evidence: the tool call id and the validated input) and
 stops before this body runs. No leave row exists while the request waits. On approve,
 apply_leave_approval re-runs request_leave as the requester with the approval in
 deps.approved and the input the approver saw; the row is written as approved (event
@@ -87,8 +91,10 @@ def _subject(
 ) -> Person:
     """The person a question is about: the acting person (read on each resource as its owner),
     or another person of the organisation after read_all on each resource; with branch_read a
-    person of the acting person's branch needs only the plain read. The check comes before any
-    lookup, so a denied caller learns nothing. Raises LookupError for a person outside it."""
+    person of the acting person's branch needs only the plain read. The person row is read
+    first only to tell whether they share the branch; nothing about them is returned, and no
+    other lookup runs, before the checks pass (a missing person is checked as another
+    branch's). Raises LookupError for a person outside the organisation."""
     if person_id is None or person_id == deps.person.id:
         for resource in resources:
             _check(deps, _owned(resource, deps.person.id), "read", tool_call_id)
@@ -285,7 +291,6 @@ def thirteenth_month(deps: AgentDeps, args: PersonInput, tool_call_id: str) -> T
 
 class ContributionsInput(BaseModel):
     which: Literal["sss", "philhealth", "pagibig", "all"] = "all"
-    person_id: str | None = Field(None, description="Another person (owner, admin)")
 
 
 class ContributionsOutput(BaseModel):
@@ -301,9 +306,9 @@ class ContributionsOutput(BaseModel):
 def last_contributions(
     deps: AgentDeps, args: ContributionsInput, tool_call_id: str
 ) -> ContributionsOutput:
-    """The asked contributions from the last issued payslip's deductions (remittance status is
-    the bookkeeper's). Raises LookupError without a payslip."""
-    person = _subject(deps, args.person_id, [PAYSLIPS], tool_call_id)
+    """The acting person's asked contributions from their last issued payslip's deductions
+    (own only; remittance status is the bookkeeper's). Raises LookupError without a payslip."""
+    person = _subject(deps, None, [PAYSLIPS], tool_call_id)
     slip = _last_payslip(deps.session, person.id)
     paid = {d["kind"]: int(d["amount"]) for d in slip.deductions}
     asked = {"sss", "philhealth", "pagibig"} if args.which == "all" else {args.which}
@@ -351,6 +356,40 @@ def _leave_out(row: Leave) -> LeaveOutput:
         status=row.status,
         approval_id=row.approval_id,
     )
+
+
+class LeaveRefused(LookupError):
+    """A leave request refused before any approval is asked; reason names why (no_contract,
+    in_the_past, no_working_days, overlaps) for the reply to word."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+def check_leave(deps: AgentDeps, args: RequestLeaveInput, tool_call_id: str) -> None:
+    """The guard's precheck for request_leave (after the permission check, before the
+    approval): the requester has a contract, the leave starts today or later, holds at least
+    one working day and overlaps no approved leave of theirs. Raises LeaveRefused."""
+    _check(deps, _owned(CONTRACTS, deps.person.id), "read", tool_call_id)
+    _check(deps, _owned(LEAVE, deps.person.id), "read", tool_call_id)
+    try:
+        contract = _contract(deps.session, deps.person.id, deps.today)
+    except LookupError:
+        raise LeaveRefused("no_contract") from None
+    if args.start < deps.today:
+        raise LeaveRefused("in_the_past")
+    if calendar.leave_days(args.start, args.end, contract.rest_day, _holidays()) == 0:
+        raise LeaveRefused("no_working_days")
+    stmt = (
+        select(Leave)
+        .where(Leave.person_id == deps.person.id)
+        .where(Leave.status == "approved")
+        .where(col(Leave.start_date) <= args.end)
+        .where(col(Leave.end_date) >= args.start)
+    )
+    if deps.session.exec(stmt).first() is not None:
+        raise LeaveRefused("overlaps")
 
 
 def _approved(deps: AgentDeps) -> Approval | None:
@@ -530,11 +569,15 @@ class PayslipOutput(BaseModel):
     message_id: str
 
 
-def resend_payslip(deps: AgentDeps, args: PersonInput, tool_call_id: str) -> PayslipOutput:
-    """The last issued payslip's lines, sent again to its person as a sensitive notification
-    (outside channels get a link to the app) from the system. Raises LookupError without a
-    payslip."""
-    person = _subject(deps, args.person_id, [PAYSLIPS], tool_call_id)
+class OwnInput(BaseModel):
+    pass
+
+
+def resend_payslip(deps: AgentDeps, args: OwnInput, tool_call_id: str) -> PayslipOutput:
+    """The acting person's last issued payslip (own only), sent again to them as a sensitive
+    notification (outside channels get a link to the app) from the system. Raises LookupError
+    without a payslip."""
+    person = _subject(deps, None, [PAYSLIPS], tool_call_id)
     slip = _last_payslip(deps.session, person.id)
     lang = person.language or "en"
 
@@ -654,39 +697,35 @@ class ContractOutput(BaseModel):
 
 
 def set_contract(deps: AgentDeps, args: SetContractInput, tool_call_id: str) -> ContractOutput:
-    """Set the person's terms (event hr.contract_set, the rate redacted): the contract in
-    force today is changed in place, else a new one is written in the person's branch. Needs
-    write_all on contracts (owner, admin). Raises LookupError for a person outside the
-    organisation."""
+    """Write the person's new terms as a dated contract row from start_date (event
+    hr.contract_set, the rate redacted) in the person's branch, and end every contract still
+    open on that date the day before (event hr.contract_ended), so the rate history stays in
+    the rows. Needs write_all on contracts (owner, admin). Raises LookupError for a person
+    outside the organisation."""
     _check(deps, CONTRACTS, "write_all", tool_call_id)
     person = deps.session.get(Person, args.person_id)
     branch = deps.session.get(Branch, person.branch_id) if person is not None else None
     if person is None or branch is None or branch.organisation_id != deps.organisation_id:
         raise LookupError("no such person")
+    ended = args.start_date - dt.timedelta(days=1)
+    for old in deps.session.exec(select(Contract).where(Contract.person_id == person.id)):
+        if old.end_date is None or old.end_date > ended:
+            store.update(
+                deps.session,
+                old,
+                {"end_date": ended},
+                deps.actor,
+                action="hr.contract_ended",
+                tool_call_id=tool_call_id,
+            )
     terms = args.model_dump(exclude={"person_id"}) | {"set_by": deps.person.id}
-    try:
-        current: Contract | None = _contract(deps.session, person.id, deps.today)
-    except LookupError:
-        current = None
-    # ponytail: a change overwrites the terms; the events keep who and when (the rate is
-    # redacted there). Add dated contract rows when pay history must be recomputed.
-    if current is not None:
-        row = store.update(
-            deps.session,
-            current,
-            terms,
-            deps.actor,
-            action="hr.contract_set",
-            tool_call_id=tool_call_id,
-        )
-    else:
-        row = store.insert(
-            deps.session,
-            Contract(branch_id=person.branch_id, person_id=person.id, **terms),
-            deps.actor,
-            action="hr.contract_set",
-            tool_call_id=tool_call_id,
-        )
+    row = store.insert(
+        deps.session,
+        Contract(branch_id=person.branch_id, person_id=person.id, **terms),
+        deps.actor,
+        action="hr.contract_set",
+        tool_call_id=tool_call_id,
+    )
     return ContractOutput(
         contract_id=row.id,
         person_id=row.person_id,
@@ -729,6 +768,7 @@ BINDINGS = [
         request_leave,
         RequestLeaveInput,
         "File a leave. A supervisor, owner or admin approves it first.",
+        precheck=check_leave,
     ),
     ToolBinding(
         f"{MANIFEST.id}.balance",
@@ -745,7 +785,7 @@ BINDINGS = [
     ToolBinding(
         f"{MANIFEST.id}.resend_payslip",
         resend_payslip,
-        PersonInput,
+        OwnInput,
         "Send the last payslip again.",
     ),
     ToolBinding(
