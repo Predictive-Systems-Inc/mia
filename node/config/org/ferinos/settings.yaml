@@ -1,6 +1,11 @@
 # Organisation settings for Ferino's Bibingka (kiosks in the Philippines). Times are local "HH:MM".
 template: retail
-agents: [sales_supervisor, shift_supervisor, inventory_manager, hr_officer]
+agents: [sales_supervisor, shift_supervisor, inventory_manager, hr_officer, customer_service]
 languages: [fil, ceb, en]
 quiet_hours: {start: "21:00", end: "06:00"}
 payroll: {cutoffs: semi_monthly, pay_lag_days: 5}
+delivery_areas:
+  - {name: Marikina, fee: 5000, currency: PHP}
+  - {name: Quezon City, fee: 8000, currency: PHP}
+  - {name: Pasig, fee: 6000, currency: PHP}
+customer_service: {max_order_quantity: 50, messages_per_hour: 30}

@@ -145,6 +145,45 @@ p, admin, *, data:core.timesheet, read_all, allow
 p, admin, *, tool:hr_officer.certificate_text, execute, allow
 p, admin, *, tool:hr_officer.set_contract, execute, allow
 
+# customer (a member of the public on a channel, customer_service only): inherits nothing, no
+# agent:*:use; every grant one by one. read_own and write_own gate by role only; the tools
+# scope rows to the customer's own id.
+p, customer, *, tool:customer_service.hours, execute, allow
+p, customer, *, tool:customer_service.prices, execute, allow
+p, customer, *, tool:customer_service.delivery_area, execute, allow
+p, customer, *, tool:customer_service.order_status, execute, allow
+p, customer, *, tool:customer_service.cancel_order, execute, allow
+p, customer, *, tool:customer_service.complain, execute, allow
+p, customer, *, tool:customer_service.place_order, request, allow
+p, customer, *, data:retail_items, read, allow
+p, customer, *, data:retail_branch_hours, read, allow
+p, customer, *, data:customer_service_orders, read_own, allow
+p, customer, *, data:customer_service_orders, write_own, allow
+p, customer, *, data:customer_service_complaints, write_own, allow
+
+# clerk: the day's customer orders, mark one ready or picked up (own branch)
+p, clerk, *, tool:customer_service.orders_today, execute, allow
+p, clerk, *, tool:customer_service.mark_ready, execute, allow
+p, clerk, *, tool:customer_service.mark_picked_up, execute, allow
+p, clerk, *, data:customer_service_orders, read, allow
+p, clerk, *, data:customer_service_orders, write, allow
+p, clerk, *, data:customer_service_customers, read, allow
+
+# supervisor: the same, plus resolve a complaint (owner and admin inherit)
+p, supervisor, *, tool:customer_service.orders_today, execute, allow
+p, supervisor, *, tool:customer_service.mark_ready, execute, allow
+p, supervisor, *, tool:customer_service.mark_picked_up, execute, allow
+p, supervisor, *, tool:customer_service.resolve_complaint, execute, allow
+p, supervisor, *, data:customer_service_orders, read, allow
+p, supervisor, *, data:customer_service_orders, write, allow
+p, supervisor, *, data:customer_service_customers, read, allow
+p, supervisor, *, data:customer_service_complaints, read, allow
+p, supervisor, *, data:customer_service_complaints, write, allow
+
+# admin: customer orders, customers and complaints of every branch; owner inherits
+p, admin, *, data:customer_service_*, read_all, allow
+p, admin, *, data:customer_service_*, write_all, allow
+
 # agents a role may talk to (chat/access.py); owner inherits admin > supervisor > staff
 p, staff, *, agent:shift_supervisor, use, allow
 p, clerk, *, agent:sales_supervisor, use, allow

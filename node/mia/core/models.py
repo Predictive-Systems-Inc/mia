@@ -32,7 +32,7 @@ ClientType = Literal["business", "residential"]
 VisitStatus = Literal["planned", "in_progress", "completed", "cancelled", "unfilled"]
 ApprovalStatus = Literal["pending", "approved", "rejected", "expired", "escalated"]
 ApprovalChannel = Literal["app_only", "any"]
-ActorType = Literal["person", "agent", "system"]
+ActorType = Literal["person", "agent", "system", "customer"]
 
 
 class Stamped(SQLModel):

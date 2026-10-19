@@ -1,7 +1,8 @@
 """Demo data for Ferino's Bibingka, a Philippine chain of kiosks.
 
 Two branches (a mall kiosk and a street stall), eight items with short codes, opening hours,
-an owner, two supervisors, three clerks, 14 days of sales counts and a month target per branch.
+an owner, two supervisors, three clerks, 14 days of sales counts and a month target per branch,
+HR data and two customer service customers with their orders and a complaint.
 All rows are written through mia.core.store, so seeding appears in the events log.
 """
 
@@ -12,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
+from mia.agents.customer_service.models import Complaint, Customer, Order
 from mia.agents.hr_officer import calc, calendar
 from mia.agents.hr_officer.models import Contract, Leave, Payslip
 from mia.agents.inventory_manager.models import SupplierOrder
@@ -36,7 +38,7 @@ from mia.templates.retail.models import RetailBranchHours, RetailIngredient, Ret
 CURRENCY = "PHP"
 ITEMS: list[tuple[str, list[str], int]] = [
     ("Special", ["sp", "special"], 4500),
-    ("Classic", ["cl", "classic"], 4000),
+    ("Classic", ["cl", "classic", "bibingka"], 4000),
     ("Ube", ["ube", "ub"], 4500),
     ("Salted egg", ["se", "salted"], 5000),
     ("Cheese overload", ["co", "overload"], 5500),
@@ -182,7 +184,64 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
         )
         store.insert(session, target_row, branch_actor)
     _seed_hr(session, branches, staff, today)
+    _seed_customers(session, first, items[1], staff["Marites"].id, today)
     return first
+
+
+# name, language, channel address (made-up numbers)
+CUSTOMERS = [("Mila Reyes", "fil", "+639170000101"), ("Mark Lim", "en", "+639170000102")]
+
+
+def _seed_customers(
+    session: Session, branch: Branch, classic: RetailItem, decider: str, today: dt.date
+) -> None:
+    """Two WhatsApp customers of the first branch: Mila (fil, last message three days ago, so
+    her 24-hour window is closed) with a confirmed pickup of 10 Classic today at 15:00, and Mark
+    (en, last message yesterday) with a picked-up order of 2 Classic yesterday and an open
+    complaint about it. The seed does not go through approvals, so approval_id stays empty."""
+    zone, actor = ZoneInfo(branch.timezone), Actor.system(branch.id)
+
+    def at(days: int, hour: int) -> dt.datetime:
+        return dt.datetime.combine(today + dt.timedelta(days=days), dt.time(hour), zone)
+
+    def customer(index: int, last: int) -> Customer:
+        name, lang, address = CUSTOMERS[index]
+        row = Customer(
+            branch_id=branch.id,
+            channel="whatsapp",
+            address=address,
+            name=name,
+            language=lang,
+            first_seen_at=at(-10, 10),
+            last_inbound_at=at(last, 10),
+        )
+        return store.insert(session, row, actor)
+
+    def order(who: Customer, quantity: int, pickup: dt.datetime, status: str) -> Order:
+        line = {"item_id": classic.id, "quantity": quantity, "unit_price": classic.price}
+        row = Order(
+            branch_id=branch.id,
+            customer_id=who.id,
+            lines=[line],
+            total=quantity * classic.price,
+            currency=CURRENCY,
+            fulfilment="pickup",
+            pickup_at=pickup,
+            status=status,
+            decided_by=decider,
+        )
+        return store.insert(session, row, actor)
+
+    mila, mark = customer(0, -3), customer(1, -1)
+    order(mila, 10, at(0, 15), "confirmed")
+    picked = order(mark, 2, at(-1, 11), "picked_up")
+    complaint = Complaint(
+        branch_id=branch.id,
+        customer_id=mark.id,
+        text="The bibingka was already cold when I picked it up.",
+        order_id=picked.id,
+    )
+    store.insert(session, complaint, actor)
 
 
 def _cutoffs(today: dt.date, count: int) -> list[tuple[dt.date, dt.date]]:

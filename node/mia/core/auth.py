@@ -75,6 +75,7 @@ LIMITS: dict[str, Limit] = {
     "otp": Limit(5, M5, M5),
     "mfa": Limit(5, M5, M5),
     "password_change": Limit(5, M15, M15),  # per person: cannot lock the login itself
+    "customer_message": Limit(30, H1, H1),  # per channel:address HMAC (customer_service)
 }
 # Per subject whatever the IP, so rotating addresses does not multiply the guesses.
 SUBJECT_LIMITS: dict[str, Limit] = {
@@ -149,8 +150,11 @@ def _over(session: Session, now: dt.datetime, limit: Limit, **where: str | None)
     return len(rows) >= limit.count and max(r.created_at for r in rows) > now - limit.block
 
 
-def throttled(session: Session, kind: str, key: str, now: dt.datetime) -> bool:
-    """True when the IP, the login (passwords) or the exact (kind, key) is over its limit."""
+def throttled(
+    session: Session, kind: str, key: str, now: dt.datetime, *, limit: Limit | None = None
+) -> bool:
+    """True when the IP, the login (passwords) or the exact (kind, key) is over its limit;
+    `limit` replaces LIMITS[kind] (a per-organisation setting)."""
     subject, ip = key.rsplit("@", 1)
     if ip != "-" and _over(session, now, LIMITS["ip"], suffix=f"@{ip}"):
         return True
@@ -159,7 +163,7 @@ def throttled(session: Session, kind: str, key: str, now: dt.datetime) -> bool:
         session, now, per_subject, kind=kind, prefix=f"{subject}@"
     ):
         return True
-    limit = LIMITS.get(kind)
+    limit = limit or LIMITS.get(kind)
     return limit is not None and _over(session, now, limit, kind=kind, key=key)
 
 

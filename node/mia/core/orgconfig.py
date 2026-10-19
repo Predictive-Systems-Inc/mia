@@ -62,6 +62,21 @@ class Payroll(BaseModel):
     pay_lag_days: int = 5
 
 
+class DeliveryArea(BaseModel):
+    """One area the shop delivers to, matched by name; fee in minor units."""
+
+    name: str
+    fee: int
+    currency: str
+
+
+class CustomerServiceSettings(BaseModel):
+    """Limits for the customer service: items per order, inbound messages per hour per address."""
+
+    max_order_quantity: int = 50
+    messages_per_hour: int = 30
+
+
 class OrgSettings(BaseModel):
     # Which demo seed and industry tables the organisation uses.
     template: Literal["cleaning", "retail"] = "cleaning"
@@ -73,6 +88,8 @@ class OrgSettings(BaseModel):
     languages: list[str] = Field(default_factory=list)
     holidays: list[Holiday] = Field(default_factory=list)
     payroll: Payroll = Field(default_factory=Payroll)
+    delivery_areas: list[DeliveryArea] = Field(default_factory=list)
+    customer_service: CustomerServiceSettings = Field(default_factory=CustomerServiceSettings)
     # The agents this organisation runs, in routing order.
     agents: list[str] = Field(default_factory=lambda: ["shift_supervisor"])
 

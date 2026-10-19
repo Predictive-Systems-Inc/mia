@@ -1106,6 +1106,133 @@ def upgrade() -> None:
         )
 
     op.create_table(
+        "customer_service_customers",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("channel", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("address", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("language", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("first_seen_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("last_inbound_at", mia.core.db.TZDateTime(length=40), nullable=True),
+        sa.Column("held_until", mia.core.db.TZDateTime(length=40), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("channel", "address"),
+    )
+    with op.batch_alter_table("customer_service_customers", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_customer_service_customers_branch_id"), ["branch_id"], unique=False
+        )
+
+    op.create_table(
+        "customer_service_orders",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("customer_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("lines", sa.JSON(), nullable=False),
+        sa.Column("total", sa.Integer(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("fulfilment", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("pickup_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("delivery_area", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("delivery_note", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("status", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("approval_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("decided_by", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("source_message_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["customer_id"],
+            ["customer_service_customers.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("customer_service_orders", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_customer_service_orders_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_customer_service_orders_customer_id"), ["customer_id"], unique=False
+        )
+
+    op.create_table(
+        "customer_service_messages",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("customer_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("direction", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("text", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("blocks", sa.JSON(), nullable=False),
+        sa.Column("at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("status", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("channel_message_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("decision", sa.JSON(), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["customer_id"],
+            ["customer_service_customers.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("customer_service_messages", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_customer_service_messages_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_customer_service_messages_customer_id"), ["customer_id"], unique=False
+        )
+
+    op.create_table(
+        "customer_service_complaints",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("customer_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("text", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("order_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("status", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("resolved_by", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("resolved_at", mia.core.db.TZDateTime(length=40), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["customer_id"],
+            ["customer_service_customers.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["order_id"],
+            ["customer_service_orders.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("customer_service_complaints", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_customer_service_complaints_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_customer_service_complaints_customer_id"), ["customer_id"], unique=False
+        )
+
+    op.create_table(
         "cover_requests",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -1251,6 +1378,25 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_cover_requests_branch_id"))
 
     op.drop_table("cover_requests")
+    with op.batch_alter_table("customer_service_complaints", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_customer_service_complaints_customer_id"))
+        batch_op.drop_index(batch_op.f("ix_customer_service_complaints_branch_id"))
+
+    op.drop_table("customer_service_complaints")
+    with op.batch_alter_table("customer_service_messages", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_customer_service_messages_customer_id"))
+        batch_op.drop_index(batch_op.f("ix_customer_service_messages_branch_id"))
+
+    op.drop_table("customer_service_messages")
+    with op.batch_alter_table("customer_service_orders", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_customer_service_orders_customer_id"))
+        batch_op.drop_index(batch_op.f("ix_customer_service_orders_branch_id"))
+
+    op.drop_table("customer_service_orders")
+    with op.batch_alter_table("customer_service_customers", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_customer_service_customers_branch_id"))
+
+    op.drop_table("customer_service_customers")
     with op.batch_alter_table("hr_officer_leave", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_hr_officer_leave_person_id"))
         batch_op.drop_index(batch_op.f("ix_hr_officer_leave_branch_id"))
