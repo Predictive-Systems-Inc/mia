@@ -1,7 +1,8 @@
 """Inbound channel messages: link unknown addresses, run chat turns for linked people.
 
-Guarantees: an unlinked address never reaches an agent and gets only the public reply; a
-linked person's message runs the same chat turn as the app (RBAC, approvals, egress); a failed
+Guarantees: an unlinked address never reaches a staff agent: it gets only the public reply, or,
+when the organisation runs the customer service, the customer turn (a customer principal, no
+Person, no router); a linked person's message runs the same chat turn as the app (RBAC, approvals, egress); a failed
 turn is never retried (it could act twice) and the person gets one apology; DB work runs in
 worker threads and nothing holds the write lock across the model call.
 """
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy import text as sql
 from sqlmodel import Session, col, select
 
+from mia.agents.customer_service import public
 from mia.agents.shift_supervisor.agent import get_agent
 from mia.channels import linking, outbox, registry, transport
 from mia.channels.base import InboundMessage
@@ -55,6 +57,7 @@ class _Step(BaseModel):
     text: str | None = None  # run a chat turn with this text
     thread_id: str | None = None
     media: InboundMessage | None = None  # save the attachment as proof of the current visit
+    customer: InboundMessage | None = None  # an unlinked sender: run the customer turn
 
 
 SHOW_LABELS = {t("channel.show", lang).casefold() for lang in SUPPORTED}
@@ -77,6 +80,8 @@ def _begin(session: Session, inbound_id: str, now: dt.datetime) -> _Step | None:
     if identity is None:
         code = linking.parse_link_text(msg.text)
         if code is None:
+            if public.runs():
+                return _Step(customer=msg)
             _finish(session, row, "ignored")
             return _Step(direct=[_both("channel.not_linked")])
         result = linking.redeem(session, row.channel, row.address, code, now)
@@ -331,6 +336,12 @@ def _after_turn(session: Session, inbound_id: str, person: Person, reply: ChatRe
         _finish(session, row, "done")
 
 
+def _done(session: Session, inbound_id: str) -> None:
+    row = session.get(ChannelInbound, inbound_id)
+    if row is not None:
+        _finish(session, row, "done")
+
+
 def _fail(inbound_id: str, error: str) -> tuple[str, str, str | None]:
     """Mark the row failed and queue one apology. Returns (channel, address, direct text)."""
     with session_scope() as session:
@@ -368,18 +379,22 @@ async def handle_inbound(inbound_id: str) -> None:
             reply = await run_turn(session, agent, step.person, step.text, step.thread_id)
             await asyncio.to_thread(_after_turn, session, inbound_id, step.person, reply)
             await asyncio.to_thread(session.commit)
+        if step is not None and step.customer is not None:
+            await public.public_turn(session, inbound_id, step.customer, utcnow())
+            await asyncio.to_thread(_done, session, inbound_id)
+            await asyncio.to_thread(session.commit)
         if step is not None:
             row = await asyncio.to_thread(session.get, ChannelInbound, inbound_id)
             for text in step.direct:
                 if row is not None:
-                    await outbox.send_direct(row.channel, row.address, text)
+                    await outbox.send_direct(row.channel, row.address, [TextBlock(text=text)], "fi")
     except Exception as exc:  # noqa: BLE001 - every failure must reach the person once
         await asyncio.to_thread(session.rollback)
         channel, address, direct = await asyncio.to_thread(
             _fail, inbound_id, f"{type(exc).__name__}: {exc}"
         )
         if direct and channel:
-            await outbox.send_direct(channel, address, direct)
+            await outbox.send_direct(channel, address, [TextBlock(text=direct)], "fi")
     finally:
         await asyncio.to_thread(session.close)
     try:

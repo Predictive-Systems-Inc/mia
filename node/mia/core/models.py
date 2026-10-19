@@ -518,8 +518,9 @@ class ChannelInbound(Stamped, table=True):
 
     __tablename__: ClassVar[str] = "channel_inbound"
     # The body is replayable channel data (text goes to messages, a shared location is dropped
-    # once handled); it never enters the append-only events.
-    __redact__: ClassVar[frozenset[str]] = frozenset({"body"})
+    # once handled) and the address may be a customer's number (customer_service): neither
+    # enters the append-only events.
+    __redact__: ClassVar[frozenset[str]] = frozenset({"body", "address"})
     __table_args__ = (UniqueConstraint("channel", "channel_message_id"),)
 
     channel: str

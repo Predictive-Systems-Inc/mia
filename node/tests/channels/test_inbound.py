@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 
 from mia.api.main import app
 from mia.channels import linking
+from mia.channels.inbound import _both
 from mia.channels.simulator import SimAdapter
 from mia.core.models import (
     Actor,
@@ -83,6 +84,13 @@ def test_unlinked_sender_gets_only_the_public_reply(
     assert session.exec(select(Event).where(Event.action == "tool.called")).all() == []
     row = session.exec(select(ChannelInbound)).one()
     assert row.status == "ignored"
+
+
+def test_an_org_without_customer_service_keeps_the_not_linked_reply(
+    client: TestClient, sim: SimAdapter
+) -> None:
+    assert post(client, sim, msg("magkano ang bibingka", "m9")) == 200
+    assert texts_to(sim) == [_both("channel.not_linked")]
 
 
 def test_link_message_links_and_welcomes(

@@ -6,7 +6,18 @@ job_description: job.md
 instructions: {base: prompts/base.md}
 roles:
   agent_role: agent.customer_service
-  grants: []
+  grants:
+    - tool:customer_service.hours:execute
+    - tool:customer_service.prices:execute
+    - tool:customer_service.delivery_area:execute
+    - tool:customer_service.order_status:execute
+    - tool:customer_service.cancel_order:execute
+    - tool:customer_service.complain:execute
+    - tool:customer_service.place_order:request
+    - tool:customer_service.orders_today:execute
+    - tool:customer_service.mark_ready:execute
+    - tool:customer_service.mark_picked_up:execute
+    - tool:customer_service.resolve_complaint:execute
   denies: [tool:*:approve]
 tools: []
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

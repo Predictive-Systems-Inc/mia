@@ -21,7 +21,7 @@ from mia.channels.base import ChannelPayload, DeliveryResult, TemplateCall
 from mia.channels.render import to_parts
 from mia.channels.service import TEMPLATE_KIND
 from mia.channels.transport import sending
-from mia.chat.blocks import TextBlock
+from mia.chat.blocks import ApprovalCardBlock, Block, FileBlock, FormBlock
 from mia.core import events, store
 from mia.core.db import session_scope, utcnow
 from mia.core.models import Actor, ChannelIdentity, ChannelOutbox, Person, Principal
@@ -204,21 +204,28 @@ def release_held(session: Session, identity: ChannelIdentity) -> int:
     return queued
 
 
-async def send_direct(channel: str, address: str, text: str) -> bool:
-    """Reply to an address that is not linked to anyone (no person, so no outbox row).
+async def send_direct(
+    channel: str, address: str, blocks: list[Block], lang: str
+) -> list[DeliveryResult]:
+    """Reply to an address that is not linked to anyone (no person, so no outbox row): text,
+    cards and quick replies only. Blocks that only open the app (approval cards, forms, files)
+    are dropped, and nothing is rendered sensitive, so the reply never carries an app link.
 
-    Used only for answers to a message the address just sent, so the channel's window is open.
-    Logged as `channel.sent` with a payload hash, like outbox sends.
+    The caller keeps to the channel's window (an answer to a message the address just sent, or
+    a customer reply inside the window). Logged as `channel.sent` with a payload hash, like
+    outbox sends. Returns one result per payload sent.
     """
     adapter = registry.get(channel)
-    parts = to_parts([TextBlock(text=text)], adapter.capabilities, "fi")
-    ok = True
-    for payload in adapter.render(address, parts):
+    shown: list[Block] = [
+        b for b in blocks if not isinstance(b, ApprovalCardBlock | FormBlock | FileBlock)
+    ]
+    results = []
+    for payload in adapter.render(address, to_parts(shown, adapter.capabilities, lang)):
         with sending(f"direct:{address}"):
             result = await adapter.send(payload)
-        ok = ok and result.ok
+        results.append(result)
         await asyncio.to_thread(_log_direct, channel, payload.body, result)
-    return ok
+    return results
 
 
 def _log_direct(channel: str, body: dict[str, object], result: DeliveryResult) -> None:

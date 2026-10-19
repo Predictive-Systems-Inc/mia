@@ -33,6 +33,7 @@ class InboundMessage(BaseModel):
     address: str
     channel_message_id: str
     text: str = ""
+    name: str | None = None  # the profile name the channel gives (kept on a customer row only)
     button: str | None = None  # label of a tapped button or list row
     has_media: bool = False
     media_id: str | None = None  # the channel's id of the attachment, for fetch_media

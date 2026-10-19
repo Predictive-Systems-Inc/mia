@@ -417,6 +417,11 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "agent.hr_officer.label": "HR Officer",
         "agent.branch_manager.label": "Branch Manager",
         "agent.customer_service.label": "Customer Service",
+        "cs.menu": (
+            "Hello! I can tell you our opening hours, prices and delivery areas, take a pickup"
+            " order, check or cancel your order, or pass on a complaint. What would you like?"
+        ),
+        "cs.held": "You have sent many messages in a short time. Please write again in an hour.",
         "chat.switched": "({agent})",
         "route.question": "Is this about:",
         "reply.busy": [
@@ -862,6 +867,11 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "agent.hr_officer.label": "Henkilöstöasiantuntija",
         "agent.branch_manager.label": "Myymäläpäällikkö",
         "agent.customer_service.label": "Asiakaspalvelu",
+        "cs.menu": (
+            "Hei! Kerron aukioloajat, hinnat ja toimitusalueet, otan noutotilauksen, tarkistan tai"
+            " peruutan tilauksesi tai välitän palautteesi. Miten voin auttaa?"
+        ),
+        "cs.held": "Olet lähettänyt monta viestiä lyhyessä ajassa. Kirjoita uudelleen tunnin päästä.",
         "chat.switched": "({agent})",
         "route.question": "Koskeeko tämä:",
         "reply.busy": [

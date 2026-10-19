@@ -87,6 +87,7 @@ class SimAdapter:
                     address=m["from"],
                     channel_message_id=m["id"],
                     text=m.get("text") or "",
+                    name=m.get("name"),
                     button=m.get("button"),
                     has_media=bool(m.get("media")),
                     media_id=m["media"] if isinstance(m.get("media"), str) else None,

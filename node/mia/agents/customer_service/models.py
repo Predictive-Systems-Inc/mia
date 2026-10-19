@@ -52,9 +52,10 @@ class Order(BranchScoped, table=True):
 
 
 class CustomerMessage(BranchScoped, table=True):
-    """One message in (from the customer) or out (to the customer). status queued, sending, sent
-    or skipped (outside the 24-hour window); inbound rows are stored as sent. decision holds the
-    action and confidence only (pseudonymised)."""
+    """One message in (from the customer) or out (to the customer). status queued, sending, sent,
+    failed (the channel refused it; never resent) or skipped (outside the 24-hour window);
+    inbound rows are stored as sent. decision holds the action and confidence only
+    (pseudonymised)."""
 
     __redact__: ClassVar[frozenset[str]] = frozenset({"text", "blocks"})
     __tablename__: ClassVar[str] = "customer_service_messages"

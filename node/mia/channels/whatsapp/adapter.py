@@ -79,11 +79,13 @@ class WhatsAppAdapter:
         for entry in data.get("entry", []):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
-                out.extend(self._message(m) for m in value.get("messages", []))
+                contacts = value.get("contacts") or [{}]
+                name = (contacts[0].get("profile") or {}).get("name")
+                out.extend(self._message(m, name) for m in value.get("messages", []))
                 out.extend(self._status(s) for s in value.get("statuses", []))
         return out
 
-    def _message(self, m: dict[str, Any]) -> InboundMessage:
+    def _message(self, m: dict[str, Any], name: str | None = None) -> InboundMessage:
         kind = m.get("type")
         text, button, media = "", None, False
         media_id = media_kind = lat = lon = None
@@ -110,6 +112,7 @@ class WhatsAppAdapter:
             address=m["from"],
             channel_message_id=m["id"],
             text=text,
+            name=name,
             button=button,
             has_media=media,
             media_id=media_id,

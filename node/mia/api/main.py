@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, col, select
 
 import mia
+from mia.agents.customer_service import public
 from mia.agents.registry import AGENTS
 from mia.api.auth import router as auth_router
 from mia.api.deps import DbSession, PersonAuth, check_mode
@@ -61,7 +62,8 @@ def _generate_visits() -> int:
 
 async def run_due_work() -> tuple[int, int]:
     """One round of due work: visit generation (once a day), cover escalation, the channel
-    outbox, then turns deferred while Jev was unreachable. Returns the cover and outbox counts."""
+    outbox and customer replies, then turns deferred while Jev was unreachable. Returns the
+    cover and outbox counts."""
     generated = await asyncio.to_thread(_generate_visits)
     if generated:
         log.info("generated %d visit(s)", generated)
@@ -70,6 +72,7 @@ async def run_due_work() -> tuple[int, int]:
     for inbound_id in await asyncio.to_thread(channel_service.pending_inbound, stale):
         await channel_service.handle_inbound(inbound_id)  # lost to a restart before handling
     sent = await outbox.send_due(utcnow())  # on-demand channels (the simulator) are left alone
+    await public.send_pending(utcnow())  # customer replies (customer_service)
     resumed = await deferred.retry_due(utcnow())  # turns that waited for Jev
     if resumed:
         log.info("closed %d deferred turn(s)", resumed)

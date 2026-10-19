@@ -132,6 +132,16 @@ def hr_officer_role() -> None:
     get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
 
 
+@pytest.fixture(autouse=True)
+def customer_service_role() -> None:
+    """The customer service's manifest grants are in RBAC for every test (no LLM agent)."""
+    from mia.agents.customer_service import MANIFEST
+    from mia.core.rbac import get_rbac
+
+    roles = MANIFEST.roles
+    get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
+
+
 @pytest.fixture
 def engine() -> Engine:
     eng = db.get_engine()
@@ -222,6 +232,7 @@ CLOCK_USERS = (
     "mia.channels.linking",
     "mia.channels.inbound",
     "mia.channels.simulator",
+    "mia.agents.customer_service.public",
 )
 
 

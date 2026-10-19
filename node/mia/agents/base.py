@@ -18,7 +18,7 @@ import ipaddress
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from urllib.parse import urlsplit
 
 import httpx
@@ -161,6 +161,17 @@ class AgentDeps:
     answer_id: str | None = None  # the message answered when a tap swapped in an earlier one
 
 
+class ToolDeps(Protocol):
+    """What guard and call_tool need from a run's dependencies: AgentDeps (a person's turn) and
+    the customer service's CustomerDeps (a customer's turn, no Person) both provide it."""
+
+    session: Session
+    actor: Actor
+    manifest: Manifest
+    tool_log: list[ToolLogEntry]
+    approved: set[str]
+
+
 @dataclass
 class Turn:
     """One turn handed to an agent: the user message is stored and committed."""
@@ -198,7 +209,7 @@ class ToolRefusal(BaseModel):
     approval_id: str | None = None
 
 
-def _approved_for(deps: AgentDeps, spec: ToolSpec) -> bool:
+def _approved_for(deps: ToolDeps, spec: ToolSpec) -> bool:
     for approval_id in deps.approved:
         row = deps.session.get(Approval, approval_id)
         if row is not None and row.type == spec.id and row.status == "approved":
@@ -207,7 +218,7 @@ def _approved_for(deps: AgentDeps, spec: ToolSpec) -> bool:
 
 
 def guard(
-    deps: AgentDeps,
+    deps: ToolDeps,
     spec: ToolSpec,
     tool_call_id: str,
     summary: str = "",
@@ -245,8 +256,8 @@ def guard(
         raise ApprovalRequired(approval.id)
 
 
-ToolImpl = Callable[[AgentDeps, Any, str], BaseModel]
-Precheck = Callable[[AgentDeps, Any, str], None]  # raises LookupError to refuse a request
+ToolImpl = Callable[[Any, Any, str], BaseModel]  # (AgentDeps or another ToolDeps, input, id)
+Precheck = Callable[[Any, Any, str], None]  # raises LookupError to refuse a request
 SENSITIVE_KEEP = frozenset({"person_id", "status", "approval_id", "message"})
 REDACTED = "<redacted>"
 
@@ -269,7 +280,7 @@ def _redacted(values: dict[str, Any]) -> dict[str, Any]:
 
 
 def call_tool(
-    deps: AgentDeps, binding: ToolBinding, args: BaseModel, tool_call_id: str, summary: str = ""
+    deps: ToolDeps, binding: ToolBinding, args: BaseModel, tool_call_id: str, summary: str = ""
 ) -> dict[str, Any]:
     """Run one tool through the guard and log it (summary words an approval the guard asks
     for). Returns a JSON-safe result for the model."""
