@@ -18,12 +18,13 @@ TODAY = dt.date(2026, 10, 19)  # a Monday
 
 
 def build(session: Session, ferinos: tuple[Branch, dict[str, Person]], who: str, message: str):
-    q = build_query(deps_for(session, ferinos[1][who]), message, "")
+    q = build_query(
+        dataclasses.replace(deps_for(session, ferinos[1][who]), today=TODAY), message, ""
+    )
     from mia.agents.parsing import find_dates
 
     return dataclasses.replace(
         q,
-        today=TODAY,
         dates={i: d.isoformat() for i, d in find_dates(message, TODAY, "en")},
     )
 

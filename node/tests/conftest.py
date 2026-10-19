@@ -214,11 +214,14 @@ CLOCK_USERS = (
     "mia.agents.sales_supervisor.tools",
     "mia.agents.inventory_manager.tools",
     "mia.agents.hr_officer.tools",
+    "mia.agents.shift_supervisor.cover",
+    "mia.chat.service",
     "mia.api.main",
     "mia.channels.outbox",
     "mia.channels.service",
     "mia.channels.linking",
     "mia.channels.inbound",
+    "mia.channels.simulator",
 )
 
 

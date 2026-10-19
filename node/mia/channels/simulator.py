@@ -8,7 +8,6 @@ import hashlib
 import hmac
 import json
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from typing import Any
 
 from mia.channels.base import (
@@ -21,6 +20,7 @@ from mia.channels.base import (
     coordinates,
 )
 from mia.channels.render import ButtonsPart, ListPart, RenderedPart
+from mia.core.db import utcnow
 from mia.core.ids import new_id
 
 
@@ -94,7 +94,7 @@ class SimAdapter:
                     lat=_point(m)[0],
                     lon=_point(m)[1],
                     picked_place=bool(m.get("place")),
-                    received_at=datetime.now(UTC),
+                    received_at=utcnow(),
                 )
             )
         for s in data.get("statuses", []):

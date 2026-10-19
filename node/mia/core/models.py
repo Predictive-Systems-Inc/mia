@@ -13,10 +13,17 @@ from typing import Any, ClassVar, Literal
 from sqlalchemy import JSON, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
-from mia.core.db import TZDateTime, utcnow
+from mia.core import db
+from mia.core.db import TZDateTime
 from mia.core.ids import new_id
 
 STANDARD_VERSION = "1.5"
+
+
+def _now() -> datetime:
+    """db.utcnow looked up per call, so a test that pins mia.core.db.utcnow pins row stamps."""
+    return db.utcnow()
+
 
 # Code lists, versioned with the standard.
 PersonStatus = Literal["active", "inactive"]
@@ -32,8 +39,8 @@ class Stamped(SQLModel):
     """Fields shared by every data standard table except events."""
 
     id: str = Field(default_factory=new_id, primary_key=True, max_length=26)
-    created_at: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
-    updated_at: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
+    created_at: datetime = Field(default_factory=_now, sa_type=TZDateTime)
+    updated_at: datetime = Field(default_factory=_now, sa_type=TZDateTime)
 
 
 class BranchScoped(Stamped):
@@ -312,7 +319,7 @@ class Event(SQLModel, table=True):
     __tablename__: ClassVar[str] = "events"
 
     id: str = Field(default_factory=new_id, primary_key=True, max_length=26)
-    timestamp: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
+    timestamp: datetime = Field(default_factory=_now, sa_type=TZDateTime)
     branch_id: str = Field(index=True, max_length=26)
     actor_type: str
     actor_id: str
@@ -341,7 +348,7 @@ class UsageCloudRequest(BranchScoped, table=True):
     output_tokens: int = 0
     cost_minor: int = 0
     currency: str = "EUR"
-    timestamp: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
+    timestamp: datetime = Field(default_factory=_now, sa_type=TZDateTime)
     result: str = "success"  # success, error, retried
 
 
@@ -360,7 +367,7 @@ class GeocodeCache(BranchScoped, table=True):
 class EgressLog(BranchScoped, table=True):
     __tablename__: ClassVar[str] = "egress_log"
 
-    timestamp: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
+    timestamp: datetime = Field(default_factory=_now, sa_type=TZDateTime)
     agent_id: str
     purpose: str
     level: str
@@ -381,8 +388,8 @@ class ChannelIdentity(BranchScoped, table=True):
     channel: str = Field(index=True)
     address: str = Field(index=True)
     status: str = "active"  # active, revoked
-    verified_at: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
-    consent_at: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
+    verified_at: datetime = Field(default_factory=_now, sa_type=TZDateTime)
+    consent_at: datetime = Field(default_factory=_now, sa_type=TZDateTime)
     last_inbound_at: datetime | None = Field(default=None, sa_type=TZDateTime)
 
 

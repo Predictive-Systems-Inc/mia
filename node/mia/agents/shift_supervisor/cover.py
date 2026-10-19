@@ -22,6 +22,7 @@ from mia.channels.base import TemplateCall
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.chat.channels import call_adapter, notify
 from mia.core import approvals, events, store
+from mia.core.db import utcnow
 from mia.core.models import Actor, Approval, Branch, CoverRequest, Location, Person, Visit
 from mia.core.orgconfig import OrgSettings
 from mia.core.orgconfig import load as load_org
@@ -235,7 +236,7 @@ def on_override_approved(session: Session, approval: Approval, decider: Actor) -
         select(CoverRequest).where(CoverRequest.approval_id == approval.id)
     ).first()
     if request is not None and request.status == "awaiting_approval":
-        start_asking(session, request, decider, dt.datetime.now(dt.UTC))
+        start_asking(session, request, decider, utcnow())
 
 
 approvals.register_handler(OVERRIDE_TYPE, on_override_approved)

@@ -37,6 +37,13 @@ Ferinos = tuple[Branch, dict[str, Person]]
 At = Callable[[int, int], dt.datetime]
 
 
+@pytest.fixture(autouse=True)
+def afternoon(manila_at: At) -> dt.datetime:
+    """Counts reported before a test pins the clock land on today's business date (the wall
+    clock after a late closing would file them under yesterday)."""
+    return manila_at(15, 0)
+
+
 def _notes(session: Session, person: Person | None = None) -> list[Message]:
     stmt = select(Message).where(Message.role == "notification")
     rows = [m for m in session.exec(stmt).all() if m.agent_id == MANIFEST.id]

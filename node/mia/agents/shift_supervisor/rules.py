@@ -119,7 +119,7 @@ def decide(intent: Intent, messages: list[ModelMessage], info: AgentInfo) -> Mod
     """Pick the tool call for an intent, or answer directly."""
     lang = intent.lang
     if intent.name == "report_absence":
-        args: dict[str, Any] = {"date": (intent.date or dt.datetime.now(dt.UTC).date()).isoformat()}
+        args: dict[str, Any] = {"date": (intent.date or _context(info)[0]).isoformat()}
         args["reason"] = intent.reason or "sick"
         if intent.partial_day:
             args["partial_day"] = intent.partial_day

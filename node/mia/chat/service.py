@@ -6,7 +6,6 @@ steps; the agent's handle_turn answers the rest; the caller commits the reply.
 """
 
 import asyncio
-import datetime as dt
 import html
 import time
 from dataclasses import replace
@@ -94,7 +93,7 @@ def _context(
         person=person,
         branch=branch,
         organisation_id=branch.organisation_id,
-        today=dt.datetime.now(ZoneInfo(branch.timezone)).date(),
+        today=utcnow().astimezone(ZoneInfo(branch.timezone)).date(),
         lang=person.language,
         manifest=spec.manifest,
     )
