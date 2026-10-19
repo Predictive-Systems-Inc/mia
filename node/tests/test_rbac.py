@@ -1,5 +1,7 @@
 """Permissions: Casbin roles with branch domains, ownership and agent checks."""
 
+from pathlib import Path
+
 import pytest
 from sqlmodel import Session, select
 
@@ -85,14 +87,59 @@ def test_split_permission() -> None:
         split_permission("nonsense")
 
 
-@pytest.mark.parametrize("table", ["sales_counts", "sales_targets", "sales_notes", "stock_events"])
-def test_shared_sales_and_stock_tables_keep_the_rights_they_had(table: str) -> None:
-    """Data standard 1.5 renamed the tables; admin keeps every branch, nobody new reads them."""
-    rbac = get_rbac()
-    res = Resource(kind="data", name=table)
-    admin = Principal(type="person", id="A", roles=["admin"])
-    for action in ("read", "write", "read_all", "write_all"):
-        assert rbac.principal_allowed(admin, "B", res, action), action
-    for role in ("staff", "viewer", "accountant"):
-        p = Principal(type="person", id="P", roles=[role])
-        assert not rbac.principal_allowed(p, "B", res, "read"), role
+ACTIONS = ("read", "write", "read_own", "write_own", "read_all", "write_all", "request")
+FULL = {"read", "write", "read_all", "write_all"}
+SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
+    "sales_counts": {
+        "clerk": {"read_own", "write_own"},
+        "supervisor": {"read", "write"},
+        "owner": FULL,
+        "admin": FULL,
+        "agent.sales_supervisor": {"read", "write", "read_all"},
+    },
+    "sales_targets": {
+        "clerk": {"read"},
+        "supervisor": {"read", "write"},
+        "owner": FULL,
+        "admin": FULL,
+        "agent.sales_supervisor": {"read", "write", "write_all"},
+    },
+    "sales_notes": {
+        "clerk": {"write_own"},
+        "supervisor": {"read", "write"},
+        "owner": FULL,
+        "admin": FULL,
+        "agent.sales_supervisor": {"write"},
+    },
+    "stock_events": {
+        "clerk": {"read_own", "write_own"},
+        "supervisor": {"read", "write"},
+        "owner": FULL,
+        "admin": FULL,
+        "agent.inventory_manager": FULL,
+    },
+}
+
+
+def test_shared_sales_and_stock_tables_keep_exactly_the_rights_they_had() -> None:
+    """Data standard 1.5 renamed the tables; the role-by-action table equals the one before the
+    rename (no right dropped, none added). A new reader changes this table with its agent."""
+    from mia.agents.base import Manifest
+
+    rbac = Rbac(get_settings().config_dir / "policies")
+    roles = ["staff", "clerk", "supervisor", "owner", "admin", "viewer", "accountant"]
+    agents = Path(__file__).resolve().parent.parent / "mia" / "agents"
+    for path in sorted(agents.glob("*/manifest.yaml")):
+        spec = Manifest.load(path).roles
+        rbac.load_agent_role(spec.agent_role, spec.grants, spec.denies)
+        roles.append(spec.agent_role)
+    assert len(roles) == 11
+    got = {
+        table: {
+            role: {a for a in ACTIONS if rbac.enforcer.enforce(role, "B", f"data:{table}", a)}
+            for role in roles
+        }
+        for table in SHARED_RIGHTS
+    }
+    want = {t: {r: SHARED_RIGHTS[t].get(r, set()) for r in roles} for t in SHARED_RIGHTS}
+    assert got == want

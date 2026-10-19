@@ -28,7 +28,8 @@ def plan(
     dates before it with tomorrow's weekday that have any record: `more` when the item sold out
     before `closes` minus two hours on at least two of them, else `fewer` when it had a leftover
     on at least two, else `same` (also with no record). ponytail: a heuristic on this agent's
-    own records until the sales counts are readable (data standard 1.5, Q54)."""
+    own records (Q54); the sales counts are shared since data standard 1.5, so reading
+    `sales_counts` here is the upgrade path once this agent is granted them."""
     weekday = (today + dt.timedelta(days=1)).weekday()
     dates = {r.business_date for r in records if r.business_date <= today}
     window = set(sorted(d for d in dates if d.weekday() == weekday)[-WEEKS:])

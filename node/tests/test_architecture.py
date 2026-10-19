@@ -205,3 +205,19 @@ def test_agent_tables_carry_the_agent_prefix_and_shared_tables_live_in_core() ->
     assert offenders == []
     for name in ("sales_counts", "sales_targets", "sales_notes", "stock_events"):
         assert homes.get(name) == "mia.core.models", name
+
+
+def test_no_manifest_names_another_agents_table() -> None:
+    """Rule 9: a manifest's tool reads and writes and its data grants never name another
+    agent's prefixed table; a second reader promotes the table to core first."""
+    from mia.agents.base import Manifest
+    from mia.agents.registry import AGENTS
+
+    offenders = []
+    for path in sorted((MIA / "agents").glob("*/manifest.yaml")):
+        manifest = Manifest.load(path)
+        others = tuple(f"{a}_" for a in AGENTS if a != manifest.id)
+        names = [n for t in manifest.tools for n in (*t.reads, *t.writes)]
+        names += [g.split(":")[1] for g in manifest.roles.grants if g.startswith("data:")]
+        offenders += [f"{manifest.id}: {n}" for n in names if n.startswith(others)]
+    assert offenders == []

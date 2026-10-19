@@ -32,9 +32,11 @@ answers, D35). Q59 asked whether the HR tables move in the same promotion.
 - The rbac data resources take the table names (`data:sales_counts` and so on). Every role keeps
   exactly the rights it had: the admin wildcards `data:sales_supervisor_*` became explicit grants
   on the three sales tables, and `data:stock_events` got the admin `read_all` and `write_all`
-  that `data:inventory_manager_*` gave it. The resources are not under `data:core.*`, so the
-  supervisor and admin core wildcards do not widen to them. A new reader gets its grants with
-  its own agent.
+  that `data:inventory_manager_*` gave it. The resources are bare table names because the tools
+  derive them from `__tablename__`; putting them under `data:core.*` would not have widened
+  anything either (the supervisor already reads and the admin already writes all four). The
+  `data:core.<singular>` names (`core.timesheet`, `core.absence`, `core.incident`) are the older
+  convention of the data standard 1.4 tables. A new reader gets its grants with its own agent.
 - Event rows are never renamed (rule 2): events written before the rebuild carry the old
   `entity_type`; new rows carry the core names. No code reads these entity types.
 - The branch_manager and the bookkeeper may now be built on these tables; customer_service may
