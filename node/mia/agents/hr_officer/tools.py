@@ -454,10 +454,31 @@ def _requester(session: Session, approval: Approval) -> tuple[Person, Branch]:
     return person, branch
 
 
+def _refuse_approved(
+    session: Session, approval: Approval, decider: Actor, args: RequestLeaveInput, reason: str
+) -> None:
+    """An approved leave that fails check_leave at decision time: no row, event
+    hr.leave_refused with the reason, and the requester and the approver each told with the
+    reason key hr.leave_refused.<reason> (the approval stays decided)."""
+    person, branch = _requester(session, approval)
+    start, end = args.start.isoformat(), args.end.isoformat()
+    after = {"start": start, "end": end, "reason": reason}
+    events.emit(
+        session, "hr.leave_refused", approval, None, after, decider, approval_id=approval.id
+    )
+    approver = session.get(Person, decider.person_id or "")
+    for told in [person] + ([approver] if approver is not None else []):
+        text = t(f"hr.leave_refused.{reason}", told.language or "en", start=start, end=end)
+        notify(session, told, [TextBlock(text=text)], Actor.system(branch.id), MANIFEST.id)
+
+
 def apply_leave_approval(session: Session, approval: Approval, decider: Actor) -> None:
-    """Approval handler: re-run request_leave as the requester (their permissions, the
-    approval in deps.approved, the evidence input) so the leave is written as approved, then
-    tell the requester. Raises LookupError when the requester or the input cannot be found."""
+    """Approval handler: run check_leave again as the requester (their contract, no overlap
+    with a leave approved meanwhile, not in the past by now); when it fails, write nothing and
+    tell both sides the reason (_refuse_approved). Else re-run request_leave as the requester
+    (their permissions, the approval in deps.approved, the evidence input) so the leave is
+    written as approved, then tell the requester. Raises LookupError when the requester or the
+    input cannot be found."""
     person, branch = _requester(session, approval)
     args = _requested_input(approval)
     lang = person.language or "en"
@@ -472,7 +493,13 @@ def apply_leave_approval(session: Session, approval: Approval, decider: Actor) -
         manifest=MANIFEST,
         approved={approval.id},
     )
-    leave = request_leave(deps, args, str(approval.evidence.get("tool_call_id")))
+    tool_call_id = str(approval.evidence.get("tool_call_id"))
+    try:
+        check_leave(deps, args, tool_call_id)
+    except LeaveRefused as exc:
+        _refuse_approved(session, approval, decider, args, exc.reason)
+        return
+    leave = request_leave(deps, args, tool_call_id)
     text = t("hr.leave_approved", lang, start=leave.start.isoformat(), end=leave.end.isoformat())
     notify(session, person, [TextBlock(text=text)], Actor.system(branch.id), MANIFEST.id)
 

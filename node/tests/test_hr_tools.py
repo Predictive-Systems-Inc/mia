@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import ValidationError
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from mia.agents.base import SENSITIVE_KEEP, AgentDeps, call_tool
 from mia.agents.hr_officer import MANIFEST, tools
@@ -26,7 +26,7 @@ from mia.agents.hr_officer.tools import (
     SetContractInput,
 )
 from mia.core import approvals, events, orgconfig
-from mia.core.models import Actor, Approval, Branch, Event, Message, Person
+from mia.core.models import Actor, Approval, Branch, Event, Message, Person, Thread
 from mia.core.rbac import PermissionDenied
 from mia.settings import get_settings
 from tests.conftest import CLOCK_USERS
@@ -248,6 +248,29 @@ def test_a_leave_over_an_approved_one_is_refused(session: Session, hr: Ferinos) 
     out = file_leave(session, ana, "l2", leave(NEXT_WEDNESDAY, day(12)))
     assert (out["status"], out["message"]) == ("invalid", "overlaps")
     assert file_leave(session, ana, "l3", leave(day(12), day(12)))["status"] == "approval_required"
+
+
+def told(session: Session, person: Person) -> list[str]:
+    """The texts of the hr officer's notifications in the person's own threads."""
+    threads = select(Thread.id).where(Thread.person_id == person.id)
+    stmt = select(Message).where(col(Message.thread_id).in_(threads))
+    return [m.text for m in session.exec(stmt) if m.role == "notification"]
+
+
+def test_an_overlap_found_at_approval_writes_nothing(session: Session, hr: Ferinos) -> None:
+    _, people = hr
+    ana, marites = people["Ana"], people["Marites"]
+    first = file_leave(session, ana, "l1")
+    second = file_leave(session, ana, "l2", leave(NEXT_WEDNESDAY, day(10)))  # both pending
+    assert second["status"] == "approval_required"
+    decide(session, first["approval_id"], marites, "approved")
+    approval = decide(session, second["approval_id"], marites, "approved")
+    assert approval.status == "approved"  # the approval closes
+    assert session.exec(select(Leave).where(Leave.approval_id == approval.id)).all() == []
+    assert len(session.exec(select(Leave).where(Leave.person_id == ana.id)).all()) == 1
+    assert session.exec(select(Event).where(Event.action == "hr.leave_refused")).one()
+    assert [x for x in told(session, ana) if "overlaps" in x]
+    assert [x for x in told(session, marites) if "overlaps" in x]
 
 
 def test_an_approved_leave_tells_the_requester_and_updates_the_balance(
