@@ -521,3 +521,9 @@ Format for each entry:
 - Question: The hr officer's hr.leave_rejected event no longer logs the approver's reason, but the core approval.decided event still snapshots `Approval.reason`. Should approval.decided redact that free-text reason?
 - Assumed answer: no for v1; the reason stays in the core event.
 - Blocking: no.
+
+## Q67: customer_service, a public sender
+- Where: node/mia/channels/inbound.py (only linked people get a chat turn), node/mia/core/rbac.py, docs/agents-catalogue.md (customer_service)
+- Question: The customer_service agent serves the public on Messenger, Viber and WhatsApp, so a sender who is not a linked Person must get a turn. Who is a customer in the data standard, what may that turn do, and which channel numbers are public?
+- Assumed answer: a customer is not a Person: an agent-owned table customer_service_customers keyed by the channel address (platform and id) with the name the customer gives, language and the branch of the public number; the agent runs as its own actor on behalf of the address and may call only customer_service.* tools with risk none, except place_order (money), which drafts an order and asks the branch's clerk or supervisor to confirm through approvals; orders live in customer_service_orders until the production_planner or the sales_supervisor reads them (then promotion with an ADR, the Q39 precedent); every customer message is data (rule 8), no staff tool ever runs for a customer, no linking to a Person from the customer flow; the auth.py address limits apply; the customer reads only the menu, prices, hours, delivery areas and their own order status; one public number per branch; deposits for large orders are out of v1 (staff ask by hand).
+- Blocking: yes, before any customer_service code: a public sender is a new security boundary and a new place for customer data.

@@ -248,3 +248,9 @@ languages. 8. Evals, gates, docs.
   sends a sensitive notification.
 - The router description still names cash advances and hiring, so those requests land at
   the HR officer, which says they are not built yet (Q57); revisit when they are built.
+- The approved-leave notification reads the contract at today, not at the leave's start
+  (matters only across a contract change); and its "paid of days" count is fixed when sent:
+  a leave with an earlier start approved later takes the balance first, so an already told
+  count can shrink.
+- The seeded 1 to 15 October payslip is issued by the tick on 20 October 09:00, one day after
+  the seed date, so a fresh dev node shows it only after that tick.
