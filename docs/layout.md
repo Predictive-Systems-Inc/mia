@@ -47,7 +47,10 @@ mia/
                             tests/scenarios.yaml (chat scenarios); its tables are core (1.5)
         inventory_manager/  Inventory Manager: the mia agent scaffold shape (turn.py, actions.py, ...)
         hr_officer/         HR Officer: the mia agent scaffold shape (turn.py, actions.py, ...)
-        customer_service/   Customer Service: the mia agent scaffold shape (turn.py, actions.py, ...)
+        customer_service/   Customer Service: the scaffold shape plus models.py (four agent-owned
+                            tables), public.py (the customer turn for unlinked senders, the
+                            24-hour window, send_direct), actions.py and decider.py (Jev, a
+                            customer side and a staff side), calc.py, tools.py, replies.py
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
       skills/               classifier runtime and per-turn routing (ADR 013)
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls),
@@ -82,6 +85,10 @@ mia/
                             real-Jev inventory decider eval; hr_officer_cases.py,
                             test_hr_cases.py (offline shape and scoring check) and
                             test_hr_officer_evals.py for the real-Jev hr decider eval;
+                            customer_service_cases.py, test_customer_service_cases.py
+                            (offline shape and scoring check) and
+                            test_customer_service_evals.py for the real-Jev customer service
+                            decider eval;
                             <id>_cases.py and
                             test_<id>_evals.py from the scaffold)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,

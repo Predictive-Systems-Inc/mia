@@ -530,3 +530,39 @@ Format for each entry:
 - Question: The customer_service agent serves the public on Messenger, Viber and WhatsApp, so a sender who is not a linked Person must get a turn. Who is a customer in the data standard, what may that turn do, and which channel numbers are public?
 - Assumed answer: a customer is not a Person: an agent-owned table customer_service_customers keyed by the channel address (platform and id) with the name the customer gives, language and the branch of the public number; the agent runs as its own actor on behalf of the address and may call only customer_service.* tools with risk none, except place_order (money), which drafts an order and asks the branch's clerk or supervisor to confirm through approvals; orders live in customer_service_orders until the production_planner or the sales_supervisor reads them (then promotion with an ADR, the Q39 precedent); every customer message is data (rule 8), no staff tool ever runs for a customer, no linking to a Person from the customer flow; the auth.py address limits apply; the customer reads only the menu, prices, hours, delivery areas and their own order status; one public number per branch; deposits for large orders are out of v1 (staff ask by hand).
 - Blocking: yes, before any customer_service code: a public sender is a new security boundary and a new place for customer data.
+
+## Q68: Customer messages outside WhatsApp's 24-hour window
+- Where: node/mia/agents/customer_service/public.py (`window_open`, `send_pending`)
+- Question: WhatsApp lets a business message a customer freely only within 24 hours of the customer's last message; after that it needs a registered template. Should Mia register templates for the pickup reminder and the order-ready message?
+- Assumed answer: not in v1. A message outside the window is skipped and logged (`customer_service.reminder_skipped`); templates are their own work.
+- Blocking: no.
+
+## Q69: Customer data retention
+- Where: node/mia/agents/customer_service/models.py (the four customer_service_* tables)
+- Question: How long are a customer's rows (the address, name, messages, orders and complaints) kept?
+- Assumed answer: 12 months after the customer's last message; then a `mia customers prune` command deletes the customer, message and complaint rows. The events stay, redacted (the identity never reaches the chain).
+- Blocking: no.
+
+## Q70: Customer channels in v1
+- Where: node/mia/channels/ (whatsapp/, simulator.py), docs/agents-catalogue.md (customer_service)
+- Question: The catalogue names Messenger, Viber and WhatsApp. Which channels does customer_service serve first?
+- Assumed answer: WhatsApp and the simulator in v1; the Messenger and Viber adapters are their own work.
+- Blocking: no.
+
+## Q71: Customer text sent to the decider
+- Where: node/mia/agents/customer_service/actions.py (`build_request`), node/mia/core/egress.py
+- Question: May a customer's message text go to Jev (TypeSafe) to pick the action?
+- Assumed answer: yes, pseudonymised like staff text, as data in the request's state only; the customer's address and stored name never leave the node.
+- Blocking: no.
+
+## Q72: What staff see of a customer
+- Where: node/mia/agents/customer_service/tools.py (the order card, the staff order list), calc.py (`last_four`)
+- Question: How much of a customer's identity do clerks and supervisors see on an order card and in the day's list?
+- Assumed answer: the first name the customer gave and the last four digits of the number, nothing more.
+- Blocking: no.
+
+## Q76: Which branch a node's public number serves
+- Where: node/mia/agents/customer_service/public.py (the customer row's branch)
+- Question: A customer writing to the node's number is a customer of which branch, when the organisation has several?
+- Assumed answer: the organisation's first branch (by id). One public number per branch (D35) needs a per-branch number setting in the channel configuration; until then the first branch serves them all.
+- Blocking: no.

@@ -25,9 +25,10 @@ class Case:
 GATED_LANGS = ("en", "fil", "ceb", "hil", "war", "bcl")
 REPORTED_LANGS = ("fi", "ilo", "pam", "pag")
 # Agents scaffolded but without router cases yet; the gates step of /mia-build-agent empties this.
-PENDING: set[str] = {"customer_service"}
+PENDING: set[str] = set()
 
-# (expected agent, English seed). Ten per agent, two greetings, two thanks.
+# (expected agent, English seed). Ten per agent, two greetings, two thanks; customer_service
+# has five here and five in GATE_SEEDS, staff messages only (customers bypass the router).
 SEEDS: list[tuple[str, str]] = [
     ("sales_supervisor", "3 special 5 classic 2 salted egg"),
     ("sales_supervisor", "sold 12 ube so far"),
@@ -93,6 +94,11 @@ SEEDS: list[tuple[str, str]] = [
     ("any", "hello po"),
     ("any", "thanks!"),
     ("any", "salamat"),
+    ("customer_service", "what customer orders do we have today"),
+    ("customer_service", "Mila's order is ready for pickup"),
+    ("customer_service", "the customer already picked up the 3pm order"),
+    ("customer_service", "any customer complaints today?"),
+    ("customer_service", "who is picking up an order this afternoon"),
 ]
 
 # One list per language, same length and order as SEEDS.
@@ -163,6 +169,11 @@ TEXTS: dict[str, list[str]] = {
         "hello po",
         "maraming salamat!",
         "salamat",
+        "anong mga order ng customer ang meron tayo ngayon",
+        "ready na for pickup ang order ni Mila",
+        "nakuha na ng customer yung order na 3pm",
+        "may reklamo ba ang customer ngayon?",
+        "sino ang kukuha ng order mamayang hapon",
     ],
     "ceb": [
         "3 special 5 classic 2 salted egg",
@@ -229,6 +240,11 @@ TEXTS: dict[str, list[str]] = {
         "hello po",
         "daghang salamat!",
         "salamat",
+        "unsa ang mga order sa customer nato karon",
+        "andam na ang order ni Mila para kuhaon",
+        "nakuha na sa customer ang order nga 3pm",
+        "naa bay reklamo sa customer karon?",
+        "kinsa ang mokuha og order karong hapon",
     ],
     "hil": [
         "3 special 5 classic 2 salted egg",
@@ -295,6 +311,11 @@ TEXTS: dict[str, list[str]] = {
         "hello po",
         "madamo gid nga salamat!",
         "salamat",
+        "ano ang mga order sang customer naton subong",
+        "handa na ang order ni Mila para kuhaon",
+        "nakuha na sang customer ang order nga 3pm",
+        "may reklamo bala ang customer subong?",
+        "sin-o ang makuha sang order sa hapon",
     ],
     "war": [
         "3 special 5 classic 2 salted egg",
@@ -361,6 +382,11 @@ TEXTS: dict[str, list[str]] = {
         "hello po",
         "damu nga salamat!",
         "salamat",
+        "ano an mga order han customer naton yana",
+        "andam na an order ni Mila para kuhaon",
+        "nakuha na han customer an order nga 3pm",
+        "may-ada ba reklamo an customer yana?",
+        "hin-o an makuha hin order yana nga kulop",
     ],
     "bcl": [
         "3 special 5 classic 2 salted egg",
@@ -427,6 +453,11 @@ TEXTS: dict[str, list[str]] = {
         "hello po",
         "dakol na salamat!",
         "salamat",
+        "ano an mga order kan customer ta ngunyan",
+        "lista na an order ni Mila para kuanon",
+        "nakua na kan customer an order na 3pm",
+        "igwa daw reklamo an customer ngunyan?",
+        "siisay an makua nin order ngunyan na hapon",
     ],
     "fi": [
         "3 special 5 classic 2 salted egg",
@@ -493,6 +524,11 @@ TEXTS: dict[str, list[str]] = {
         "moi",
         "kiitti!",
         "kiitos",
+        "mitä asiakastilauksia meillä on tänään",
+        "Milan tilaus on valmis noudettavaksi",
+        "asiakas haki jo kello 15 tilauksen",
+        "onko tänään asiakasvalituksia?",
+        "kuka hakee tilauksen iltapäivällä",
     ],
     "ilo": [
         "3 special 5 classic 2 salted egg",
@@ -559,6 +595,11 @@ TEXTS: dict[str, list[str]] = {
         "hello po",
         "agyamanak unay!",
         "salamat",
+        "ania dagiti order ti customer ita nga aldaw",
+        "nakasagana ti order ni Mila a para alaen",
+        "innalan ti customer ti order a 3pm",
+        "adda kadi reklamo ti customer ita?",
+        "siasino ti mangala ti order ita a malem",
     ],
     "pam": [
         "3 special 5 classic 2 salted egg",
@@ -625,6 +666,11 @@ TEXTS: dict[str, list[str]] = {
         "hello po",
         "dakal a salamat!",
         "salamat",
+        "nanu reng order da reng customer ngeni",
+        "ready ne ing order nang Mila para kuanan",
+        "kinua ne ning customer ing order a 3pm",
+        "atin reklamo ing customer ngeni?",
+        "ninu ing kuang order potang gatpanapun",
     ],
     "pag": [
         "3 special 5 classic 2 salted egg",
@@ -691,6 +737,11 @@ TEXTS: dict[str, list[str]] = {
         "hello po",
         "dakel ya salamat!",
         "salamat",
+        "anto ray order na saray customer natan",
+        "ready la so order nen Mila ya alaen",
+        "inalan la na customer so order ya 3pm",
+        "wala so reklamo na customer natan?",
+        "siopa so manala na order ed ngarem",
     ],
 }
 
@@ -869,6 +920,11 @@ GATE_SEEDS: list[tuple[str, str]] = [
     ("any", "hi Mia"),
     ("any", "thank you po"),
     ("any", "ok thanks"),
+    ("customer_service", "list today's pickup orders"),
+    ("customer_service", "the order for Mila is packed, mark it ready"),
+    ("customer_service", "Mark collected his order"),
+    ("customer_service", "mark the complaint about cold bibingka as resolved"),
+    ("customer_service", "how many customer orders are waiting for confirmation"),
 ]
 
 # One list per language, same length and order as GATE_SEEDS.
@@ -939,6 +995,11 @@ GATE_TEXTS: dict[str, list[str]] = {
         "hi Mia",
         "salamat po",
         "sige, salamat",
+        "ilista ang mga pickup order ngayon",
+        "naka-pack na ang order ni Mila, i-mark na ready",
+        "nakuha na ni Mark ang order niya",
+        "i-resolve na ang reklamo tungkol sa malamig na bibingka",
+        "ilan ang order ng customer na naghihintay ng confirmation",
     ],
     "ceb": [
         "2 special 4 ube 1 cheese overload",
@@ -1005,6 +1066,11 @@ GATE_TEXTS: dict[str, list[str]] = {
         "hi Mia",
         "salamat kaayo",
         "sige, salamat",
+        "ilista ang mga pickup order karon",
+        "naka-pack na ang order ni Mila, i-mark nga andam",
+        "nakuha na ni Mark iyang order",
+        "i-resolve na ang reklamo bahin sa bugnaw nga bibingka",
+        "pila ka order sa customer ang naghulat og confirmation",
     ],
     "hil": [
         "2 special 4 ube 1 cheese overload po",
@@ -1071,6 +1137,11 @@ GATE_TEXTS: dict[str, list[str]] = {
         "hi Mia",
         "salamat gid",
         "sige, salamat",
+        "ilista ang mga pickup order subong",
+        "naka-pack na ang order ni Mila, i-mark nga handa",
+        "nakuha na ni Mark ang iya order",
+        "i-resolve na ang reklamo parte sa matugnaw nga bibingka",
+        "pila ka order sang customer ang nagahulat sang confirmation",
     ],
     "war": [
         "2 special 4 ube 1 cheese overload",
@@ -1137,6 +1208,11 @@ GATE_TEXTS: dict[str, list[str]] = {
         "hi Mia",
         "salamat gud",
         "sige, salamat",
+        "ilista an mga pickup order yana",
+        "naka-pack na an order ni Mila, i-mark nga andam",
+        "nakuha na ni Mark an iya order",
+        "i-resolve na an reklamo mahitungod han mahagkot nga bibingka",
+        "pira ka order han customer an naghuhulat hin confirmation",
     ],
     "bcl": [
         "2 special 4 ube 1 cheese overload po",
@@ -1203,6 +1279,11 @@ GATE_TEXTS: dict[str, list[str]] = {
         "hi Mia",
         "dios mabalos po",
         "sige, salamat",
+        "ilista an mga pickup order ngunyan",
+        "naka-pack na an order ni Mila, i-mark na lista",
+        "nakua na ni Mark an saiyang order",
+        "i-resolve na an reklamo manongod sa malipot na bibingka",
+        "pira an order kan customer na naghahalat nin confirmation",
     ],
     "fi": [
         "2 special 4 ube 1 cheese overload",
@@ -1269,6 +1350,11 @@ GATE_TEXTS: dict[str, list[str]] = {
         "hei Mia",
         "kiitos paljon",
         "ok kiitos",
+        "listaa tämän päivän noutotilaukset",
+        "Milan tilaus on pakattu, merkitse valmiiksi",
+        "Mark haki tilauksensa",
+        "merkitse kylmää bibingkaa koskeva valitus ratkaistuksi",
+        "montako asiakastilausta odottaa vahvistusta",
     ],
     "ilo": [
         "2 special 4 ube 1 cheese overload",
@@ -1335,6 +1421,11 @@ GATE_TEXTS: dict[str, list[str]] = {
         "hi Mia",
         "agyamanak unay",
         "sige, agyamanak",
+        "ilista dagiti pickup order ita",
+        "naka-pack ti order ni Mila, i-mark a nakasagana",
+        "innalan ni Mark ti orderna",
+        "i-resolve ti reklamo maipapan iti nalamiis a bibingka",
+        "mano nga order ti customer ti agur-uray ti confirmation",
     ],
     "pam": [
         "2 special 4 ube 1 cheese overload",
@@ -1401,6 +1492,11 @@ GATE_TEXTS: dict[str, list[str]] = {
         "hi Mia",
         "dakal a salamat",
         "sige, salamat",
+        "ilista me reng pickup order ngeni",
+        "naka-pack ne ing order nang Mila, i-mark meng ready",
+        "kinua ne nang Mark ing order na",
+        "i-resolve ne ing reklamo tungkul king marimla a bibingka",
+        "pilan a order da reng customer ing manenaya confirmation",
     ],
     "pag": [
         "2 special 4 ube 1 cheese overload",
@@ -1467,6 +1563,11 @@ GATE_TEXTS: dict[str, list[str]] = {
         "hi Mia",
         "salamat ed amin",
         "sige, salamat",
+        "ilista so saray pickup order natan",
+        "naka-pack la so order nen Mila, i-mark ya ready",
+        "inalan la nen Mark so order to",
+        "i-resolve so reklamo nipaakar ed mabetbet ya bibingka",
+        "pigara so order na saray customer ya manalagar na confirmation",
     ],
 }
 
