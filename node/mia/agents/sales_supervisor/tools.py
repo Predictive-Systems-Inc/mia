@@ -20,10 +20,9 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.sales_supervisor import MANIFEST, calc
-from mia.agents.sales_supervisor.models import SalesCount, SalesNote, SalesTarget
 from mia.core import store
 from mia.core.db import utcnow
-from mia.core.models import Branch, Event, Message, Person
+from mia.core.models import Branch, Event, Message, Person, SalesCount, SalesNote, SalesTarget
 from mia.core.rbac import Resource, get_rbac
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailBranchHours, RetailItem

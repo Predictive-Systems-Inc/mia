@@ -14,12 +14,21 @@ from sqlmodel import Session, col, select
 from mia.agents.decider import Decision
 from mia.agents.sales_supervisor import MANIFEST, actions, due, tools
 from mia.agents.sales_supervisor.actions import _month
-from mia.agents.sales_supervisor.models import SalesCount, SalesNote, SalesTarget
 from mia.chat import channels
 from mia.chat.blocks import ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.service import run_turn
 from mia.core import events, jev, orgconfig
-from mia.core.models import Actor, Branch, Event, Message, Person, Thread
+from mia.core.models import (
+    Actor,
+    Branch,
+    Event,
+    Message,
+    Person,
+    SalesCount,
+    SalesNote,
+    SalesTarget,
+    Thread,
+)
 from mia.core.money import format_money
 from mia.i18n import t
 from mia.settings import get_settings

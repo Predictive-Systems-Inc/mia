@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from mia.agents.base import AgentDeps, call_tool
 from mia.agents.inventory_manager import MANIFEST, tools
-from mia.agents.inventory_manager.models import StockEvent, SupplierOrder
+from mia.agents.inventory_manager.models import SupplierOrder
 from mia.agents.inventory_manager.tools import (
     DraftOrderInput,
     EventIn,
@@ -19,7 +19,7 @@ from mia.agents.inventory_manager.tools import (
     RecordEventsInput,
 )
 from mia.core import approvals, events, store
-from mia.core.models import Actor, Approval, Branch, Event, Message, Person
+from mia.core.models import Actor, Approval, Branch, Event, Message, Person, StockEvent
 from mia.core.rbac import PermissionDenied
 from mia.templates.retail.models import RetailBranchHours, RetailIngredient, RetailItem
 from mia.templates.retail.seed import ITEMS

@@ -83,3 +83,16 @@ def test_split_permission() -> None:
     )
     with pytest.raises(ValueError):
         split_permission("nonsense")
+
+
+@pytest.mark.parametrize("table", ["sales_counts", "sales_targets", "sales_notes", "stock_events"])
+def test_shared_sales_and_stock_tables_keep_the_rights_they_had(table: str) -> None:
+    """Data standard 1.5 renamed the tables; admin keeps every branch, nobody new reads them."""
+    rbac = get_rbac()
+    res = Resource(kind="data", name=table)
+    admin = Principal(type="person", id="A", roles=["admin"])
+    for action in ("read", "write", "read_all", "write_all"):
+        assert rbac.principal_allowed(admin, "B", res, action), action
+    for role in ("staff", "viewer", "accountant"):
+        p = Principal(type="person", id="P", roles=[role])
+        assert not rbac.principal_allowed(p, "B", res, "read"), role

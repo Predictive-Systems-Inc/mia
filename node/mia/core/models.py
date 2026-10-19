@@ -16,7 +16,7 @@ from sqlmodel import Field, SQLModel
 from mia.core.db import TZDateTime, utcnow
 from mia.core.ids import new_id
 
-STANDARD_VERSION = "1.4"
+STANDARD_VERSION = "1.5"
 
 # Code lists, versioned with the standard.
 PersonStatus = Literal["active", "inactive"]
@@ -200,6 +200,69 @@ class Incident(BranchScoped, table=True):
     status: str = Field(default="open", index=True)  # open, resolved
     resolved_by: str | None = None
     resolved_at: dt.datetime | None = Field(default=None, sa_type=TZDateTime)
+
+
+class SalesCount(BranchScoped, table=True):
+    """One reported count of one item for a business date; a correction supersedes a row
+    (data standard 1.5)."""
+
+    __tablename__: ClassVar[str] = "sales_counts"
+
+    item_id: str = Field(foreign_key="retail_items.id", index=True)
+    quantity: int
+    amount: int  # integer minor units
+    currency: str = Field(max_length=3)
+    reported_at: dt.datetime = Field(sa_type=TZDateTime)
+    reported_by: str = Field(foreign_key="person.id", index=True)
+    business_date: dt.date = Field(index=True)
+    supersedes: str | None = None
+    superseded_by: str | None = None
+    source_message_id: str | None = None
+
+
+class SalesTarget(BranchScoped, table=True):
+    """A day or month target (money, quantity, or both) from a start date (data standard 1.5)."""
+
+    __tablename__: ClassVar[str] = "sales_targets"
+
+    period: str  # day or month
+    starts_on: dt.date = Field(index=True)
+    amount: int | None = None
+    currency: str = Field(max_length=3)
+    quantity: int | None = None
+    item_id: str | None = None
+    set_by: str
+
+
+class SalesNote(BranchScoped, table=True):
+    """A clerk's words about the day (why sales were up or down) (data standard 1.5)."""
+
+    __tablename__: ClassVar[str] = "sales_notes"
+
+    business_date: dt.date = Field(index=True)
+    person_id: str
+    text: str
+    themes: list[str] = Field(default_factory=list, sa_type=JSON)
+    asked_message_id: str | None = None
+
+
+class StockEvent(BranchScoped, table=True):
+    """One thing said about stock: sold_out, count, leftover, waste, low or received
+    (data standard 1.5)."""
+
+    __tablename__: ClassVar[str] = "stock_events"
+
+    kind: str
+    item_id: str | None = Field(default=None, foreign_key="retail_items.id")
+    ingredient_id: str | None = Field(default=None, foreign_key="retail_ingredients.id")
+    quantity: int | None = None
+    unit: str | None = None
+    reason: str | None = None
+    at: dt.datetime = Field(sa_type=TZDateTime)  # the sell-out time or the report time
+    reported_by: str = Field(foreign_key="person.id")
+    business_date: dt.date = Field(index=True)
+    source_message_id: str | None = None
+    order_id: str | None = None
 
 
 class Approval(BranchScoped, table=True):

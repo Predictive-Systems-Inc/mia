@@ -1,19 +1,19 @@
 id: sales_supervisor
 name: Sales Supervisor
 version: 0.1.0
-standard_version: "1.4"
+standard_version: "1.5"
 job_description: job.md
 instructions: {base: prompts/base.md}
 roles:
   agent_role: agent.sales_supervisor
   grants:
-    - data:sales_supervisor_counts:read
-    - data:sales_supervisor_counts:write
-    - data:sales_supervisor_counts:read_all
-    - data:sales_supervisor_targets:read
-    - data:sales_supervisor_targets:write
-    - data:sales_supervisor_targets:write_all
-    - data:sales_supervisor_notes:write
+    - data:sales_counts:read
+    - data:sales_counts:write
+    - data:sales_counts:read_all
+    - data:sales_targets:read
+    - data:sales_targets:write
+    - data:sales_targets:write_all
+    - data:sales_notes:write
     - data:retail_items:read
     - data:retail_branch_hours:read
     - data:core.person:read
@@ -26,10 +26,10 @@ roles:
     - tool:sales_supervisor.record_note:execute
   denies: [tool:*:approve]
 tools:
-  - {id: sales_supervisor.record_counts, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_supervisor_counts, sales_supervisor_targets], writes: [sales_supervisor_counts]}
-  - {id: sales_supervisor.correct_count, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_supervisor_counts], writes: [sales_supervisor_counts]}
-  - {id: sales_supervisor.today, kind: agent, risk: read, approval: never, reads: [retail_items, retail_branch_hours, sales_supervisor_counts, sales_supervisor_targets, person, branch]}
-  - {id: sales_supervisor.period_report, kind: agent, risk: read, approval: never, reads: [retail_items, sales_supervisor_counts, branch]}
-  - {id: sales_supervisor.set_target, kind: agent, risk: write_internal, approval: never, reads: [branch], writes: [sales_supervisor_targets]}
-  - {id: sales_supervisor.record_note, kind: agent, risk: write_internal, approval: never, writes: [sales_supervisor_notes]}
+  - {id: sales_supervisor.record_counts, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_counts, sales_targets], writes: [sales_counts]}
+  - {id: sales_supervisor.correct_count, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_counts], writes: [sales_counts]}
+  - {id: sales_supervisor.today, kind: agent, risk: read, approval: never, reads: [retail_items, retail_branch_hours, sales_counts, sales_targets, person, branch]}
+  - {id: sales_supervisor.period_report, kind: agent, risk: read, approval: never, reads: [retail_items, sales_counts, branch]}
+  - {id: sales_supervisor.set_target, kind: agent, risk: write_internal, approval: never, reads: [branch], writes: [sales_targets]}
+  - {id: sales_supervisor.record_note, kind: agent, risk: write_internal, approval: never, writes: [sales_notes]}
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

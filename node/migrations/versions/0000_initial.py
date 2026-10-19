@@ -826,7 +826,7 @@ def upgrade() -> None:
         )
 
     op.create_table(
-        "sales_supervisor_counts",
+        "sales_counts",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
         sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -855,22 +855,18 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    with op.batch_alter_table("sales_supervisor_counts", schema=None) as batch_op:
+    with op.batch_alter_table("sales_counts", schema=None) as batch_op:
+        batch_op.create_index(batch_op.f("ix_sales_counts_branch_id"), ["branch_id"], unique=False)
+        batch_op.create_index(batch_op.f("ix_sales_counts_item_id"), ["item_id"], unique=False)
         batch_op.create_index(
-            batch_op.f("ix_sales_supervisor_counts_branch_id"), ["branch_id"], unique=False
+            batch_op.f("ix_sales_counts_reported_by"), ["reported_by"], unique=False
         )
         batch_op.create_index(
-            batch_op.f("ix_sales_supervisor_counts_item_id"), ["item_id"], unique=False
-        )
-        batch_op.create_index(
-            batch_op.f("ix_sales_supervisor_counts_reported_by"), ["reported_by"], unique=False
-        )
-        batch_op.create_index(
-            batch_op.f("ix_sales_supervisor_counts_business_date"), ["business_date"], unique=False
+            batch_op.f("ix_sales_counts_business_date"), ["business_date"], unique=False
         )
 
     op.create_table(
-        "sales_supervisor_targets",
+        "sales_targets",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
         sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -888,16 +884,12 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    with op.batch_alter_table("sales_supervisor_targets", schema=None) as batch_op:
-        batch_op.create_index(
-            batch_op.f("ix_sales_supervisor_targets_branch_id"), ["branch_id"], unique=False
-        )
-        batch_op.create_index(
-            batch_op.f("ix_sales_supervisor_targets_starts_on"), ["starts_on"], unique=False
-        )
+    with op.batch_alter_table("sales_targets", schema=None) as batch_op:
+        batch_op.create_index(batch_op.f("ix_sales_targets_branch_id"), ["branch_id"], unique=False)
+        batch_op.create_index(batch_op.f("ix_sales_targets_starts_on"), ["starts_on"], unique=False)
 
     op.create_table(
-        "sales_supervisor_notes",
+        "sales_notes",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
         sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -913,12 +905,10 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    with op.batch_alter_table("sales_supervisor_notes", schema=None) as batch_op:
+    with op.batch_alter_table("sales_notes", schema=None) as batch_op:
+        batch_op.create_index(batch_op.f("ix_sales_notes_branch_id"), ["branch_id"], unique=False)
         batch_op.create_index(
-            batch_op.f("ix_sales_supervisor_notes_branch_id"), ["branch_id"], unique=False
-        )
-        batch_op.create_index(
-            batch_op.f("ix_sales_supervisor_notes_business_date"), ["business_date"], unique=False
+            batch_op.f("ix_sales_notes_business_date"), ["business_date"], unique=False
         )
 
     op.create_table(
@@ -947,7 +937,7 @@ def upgrade() -> None:
         )
 
     op.create_table(
-        "inventory_manager_stock_events",
+        "stock_events",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
         sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -981,12 +971,10 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    with op.batch_alter_table("inventory_manager_stock_events", schema=None) as batch_op:
+    with op.batch_alter_table("stock_events", schema=None) as batch_op:
+        batch_op.create_index(batch_op.f("ix_stock_events_branch_id"), ["branch_id"], unique=False)
         batch_op.create_index(
-            batch_op.f("ix_inventory_manager_stock_events_branch_id"), ["branch_id"], unique=False
-        )
-        batch_op.create_index(
-            batch_op.f("ix_inventory_manager_stock_events_business_date"),
+            batch_op.f("ix_stock_events_business_date"),
             ["business_date"],
             unique=False,
         )
@@ -1282,32 +1270,32 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_inventory_manager_orders_branch_id"))
 
     op.drop_table("inventory_manager_orders")
-    with op.batch_alter_table("inventory_manager_stock_events", schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f("ix_inventory_manager_stock_events_business_date"))
-        batch_op.drop_index(batch_op.f("ix_inventory_manager_stock_events_branch_id"))
+    with op.batch_alter_table("stock_events", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_stock_events_business_date"))
+        batch_op.drop_index(batch_op.f("ix_stock_events_branch_id"))
 
-    op.drop_table("inventory_manager_stock_events")
+    op.drop_table("stock_events")
     with op.batch_alter_table("retail_ingredients", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_retail_ingredients_branch_id"))
 
     op.drop_table("retail_ingredients")
-    with op.batch_alter_table("sales_supervisor_notes", schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f("ix_sales_supervisor_notes_business_date"))
-        batch_op.drop_index(batch_op.f("ix_sales_supervisor_notes_branch_id"))
+    with op.batch_alter_table("sales_notes", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_sales_notes_business_date"))
+        batch_op.drop_index(batch_op.f("ix_sales_notes_branch_id"))
 
-    op.drop_table("sales_supervisor_notes")
-    with op.batch_alter_table("sales_supervisor_targets", schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f("ix_sales_supervisor_targets_starts_on"))
-        batch_op.drop_index(batch_op.f("ix_sales_supervisor_targets_branch_id"))
+    op.drop_table("sales_notes")
+    with op.batch_alter_table("sales_targets", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_sales_targets_starts_on"))
+        batch_op.drop_index(batch_op.f("ix_sales_targets_branch_id"))
 
-    op.drop_table("sales_supervisor_targets")
-    with op.batch_alter_table("sales_supervisor_counts", schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f("ix_sales_supervisor_counts_business_date"))
-        batch_op.drop_index(batch_op.f("ix_sales_supervisor_counts_reported_by"))
-        batch_op.drop_index(batch_op.f("ix_sales_supervisor_counts_item_id"))
-        batch_op.drop_index(batch_op.f("ix_sales_supervisor_counts_branch_id"))
+    op.drop_table("sales_targets")
+    with op.batch_alter_table("sales_counts", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_sales_counts_business_date"))
+        batch_op.drop_index(batch_op.f("ix_sales_counts_reported_by"))
+        batch_op.drop_index(batch_op.f("ix_sales_counts_item_id"))
+        batch_op.drop_index(batch_op.f("ix_sales_counts_branch_id"))
 
-    op.drop_table("sales_supervisor_counts")
+    op.drop_table("sales_counts")
     with op.batch_alter_table("retail_branch_hours", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_retail_branch_hours_branch_id"))
 

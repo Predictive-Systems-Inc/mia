@@ -1,16 +1,16 @@
 id: inventory_manager
 name: "Inventory Manager"
 version: 0.1.0
-standard_version: "1.4"
+standard_version: "1.5"
 job_description: job.md
 instructions: {base: prompts/base.md}
 roles:
   agent_role: agent.inventory_manager
   grants:
-    - data:inventory_manager_stock_events:read
-    - data:inventory_manager_stock_events:write
-    - data:inventory_manager_stock_events:read_all
-    - data:inventory_manager_stock_events:write_all
+    - data:stock_events:read
+    - data:stock_events:write
+    - data:stock_events:read_all
+    - data:stock_events:write_all
     - data:inventory_manager_orders:read
     - data:inventory_manager_orders:write
     - data:inventory_manager_orders:read_all
@@ -29,9 +29,9 @@ roles:
   # A supplier order spends money: the guard asks the owner or an admin (approvals.request).
   approvers: {inventory_manager.draft_order: [owner, admin]}
 tools:
-  - {id: inventory_manager.record_events, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_ingredients, retail_branch_hours], writes: [inventory_manager_stock_events]}
-  - {id: inventory_manager.low_stock, kind: agent, risk: read, approval: never, reads: [retail_ingredients, retail_branch_hours, inventory_manager_stock_events, branch]}
-  - {id: inventory_manager.plan_tomorrow, kind: agent, risk: read, approval: never, reads: [retail_items, retail_branch_hours, inventory_manager_stock_events, branch]}
+  - {id: inventory_manager.record_events, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_ingredients, retail_branch_hours], writes: [stock_events]}
+  - {id: inventory_manager.low_stock, kind: agent, risk: read, approval: never, reads: [retail_ingredients, retail_branch_hours, stock_events, branch]}
+  - {id: inventory_manager.plan_tomorrow, kind: agent, risk: read, approval: never, reads: [retail_items, retail_branch_hours, stock_events, branch]}
   - {id: inventory_manager.draft_order, kind: agent, risk: money, approval: always, reads: [retail_ingredients, retail_branch_hours, branch], writes: [inventory_manager_orders, approval]}
-  - {id: inventory_manager.receive_delivery, kind: agent, risk: write_internal, approval: never, reads: [retail_ingredients, retail_branch_hours, inventory_manager_orders], writes: [inventory_manager_stock_events, inventory_manager_orders]}
+  - {id: inventory_manager.receive_delivery, kind: agent, risk: write_internal, approval: never, reads: [retail_ingredients, retail_branch_hours, inventory_manager_orders], writes: [stock_events, inventory_manager_orders]}
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

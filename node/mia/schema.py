@@ -5,7 +5,6 @@ from sqlmodel import SQLModel
 
 import mia.agents.hr_officer.models
 import mia.agents.inventory_manager.models
-import mia.agents.sales_supervisor.models
 import mia.core.events
 import mia.core.models
 import mia.templates.cleaning.models

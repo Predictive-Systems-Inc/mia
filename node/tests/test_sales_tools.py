@@ -7,7 +7,6 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, call_tool
 from mia.agents.sales_supervisor import MANIFEST, tools
-from mia.agents.sales_supervisor.models import SalesCount, SalesNote, SalesTarget
 from mia.agents.sales_supervisor.tools import (
     CorrectCountInput,
     CountIn,
@@ -19,7 +18,17 @@ from mia.agents.sales_supervisor.tools import (
 )
 from mia.agents.shift_supervisor import alerts
 from mia.core import store
-from mia.core.models import Actor, Branch, Event, Message, Person, Thread
+from mia.core.models import (
+    Actor,
+    Branch,
+    Event,
+    Message,
+    Person,
+    SalesCount,
+    SalesNote,
+    SalesTarget,
+    Thread,
+)
 from mia.core.rbac import PermissionDenied
 from mia.templates.retail.models import RetailBranchHours, RetailItem
 

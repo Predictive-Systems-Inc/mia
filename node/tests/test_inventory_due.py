@@ -8,7 +8,6 @@ import pytest
 from sqlmodel import Session, select
 
 from mia.agents.inventory_manager import MANIFEST, due, tools
-from mia.agents.inventory_manager.models import StockEvent
 from mia.agents.inventory_manager.tools import EventIn, RecordEventsInput
 from mia.channels import registry
 from mia.channels.simulator import SimAdapter
@@ -21,6 +20,7 @@ from mia.core.models import (
     Event,
     Message,
     Person,
+    StockEvent,
     Thread,
 )
 from mia.core.orgconfig import ChannelConfig, OrgSettings, QuietHours

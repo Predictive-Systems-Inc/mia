@@ -25,12 +25,12 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.inventory_manager import MANIFEST, calc
-from mia.agents.inventory_manager.models import StockEvent, SupplierOrder
+from mia.agents.inventory_manager.models import SupplierOrder
 from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
 from mia.core import approvals, events, store
 from mia.core.db import utcnow
-from mia.core.models import Actor, Approval, Branch, Person
+from mia.core.models import Actor, Approval, Branch, Person, StockEvent
 from mia.core.rbac import Resource, get_rbac
 from mia.i18n import t
 from mia.templates.retail import hours as retail_hours

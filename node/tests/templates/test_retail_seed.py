@@ -21,8 +21,8 @@ def ferinos(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def test_org_template_selects_the_retail_seed(ferinos: None, session: Session) -> None:
-    from mia.agents.inventory_manager.models import StockEvent, SupplierOrder
-    from mia.agents.sales_supervisor.models import SalesCount, SalesTarget
+    from mia.agents.inventory_manager.models import SupplierOrder
+    from mia.core.models import SalesCount, SalesTarget, StockEvent
     from mia.templates.retail import seed
     from mia.templates.retail.models import RetailBranchHours, RetailIngredient, RetailItem
 

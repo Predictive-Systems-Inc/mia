@@ -187,3 +187,21 @@ def test_no_module_spells_an_agent_id() -> None:
         if p not in allowed and pattern.search(p.read_text(encoding="utf-8"))
     ]
     assert offenders == []
+
+
+def test_agent_tables_carry_the_agent_prefix_and_shared_tables_live_in_core() -> None:
+    """Rule 9: a table defined in mia/agents/<id>/ is prefixed <id>_; the shared sales and
+    stock tables (data standard 1.5) are defined in mia/core/models.py."""
+    from sqlmodel import SQLModel
+
+    import mia.schema  # noqa: F401  (every table module)
+
+    homes = {m.local_table.name: m.class_.__module__ for m in SQLModel._sa_registry.mappers}
+    offenders = [
+        name
+        for name, module in homes.items()
+        if module.startswith("mia.agents.") and not name.startswith(module.split(".")[2] + "_")
+    ]
+    assert offenders == []
+    for name in ("sales_counts", "sales_targets", "sales_notes", "stock_events"):
+        assert homes.get(name) == "mia.core.models", name

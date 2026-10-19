@@ -14,8 +14,7 @@ from sqlmodel import Session, select
 
 from mia.agents.hr_officer import calc, calendar
 from mia.agents.hr_officer.models import Contract, Leave, Payslip
-from mia.agents.inventory_manager.models import StockEvent, SupplierOrder
-from mia.agents.sales_supervisor.models import SalesCount, SalesTarget
+from mia.agents.inventory_manager.models import SupplierOrder
 from mia.core import events, orgconfig, store
 from mia.core.models import (
     Actor,
@@ -25,6 +24,9 @@ from mia.core.models import (
     Location,
     Organisation,
     Person,
+    SalesCount,
+    SalesTarget,
+    StockEvent,
     Timesheet,
     Visit,
 )

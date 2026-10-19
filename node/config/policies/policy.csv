@@ -56,12 +56,12 @@ p, clerk, *, tool:sales_supervisor.record_counts, execute, allow
 p, clerk, *, tool:sales_supervisor.correct_count, execute, allow
 p, clerk, *, tool:sales_supervisor.today, execute, allow
 p, clerk, *, tool:sales_supervisor.record_note, execute, allow
-p, clerk, *, data:sales_supervisor_counts, write_own, allow
-p, clerk, *, data:sales_supervisor_counts, read_own, allow
-p, clerk, *, data:sales_supervisor_notes, write_own, allow
+p, clerk, *, data:sales_counts, write_own, allow
+p, clerk, *, data:sales_counts, read_own, allow
+p, clerk, *, data:sales_notes, write_own, allow
 p, clerk, *, data:retail_items, read, allow
 p, clerk, *, data:retail_branch_hours, read, allow
-p, clerk, *, data:sales_supervisor_targets, read, allow
+p, clerk, *, data:sales_targets, read, allow
 
 # supervisor: sales reports and targets for their branch (owner and admin inherit)
 p, supervisor, *, tool:sales_supervisor.record_counts, execute, allow
@@ -70,27 +70,35 @@ p, supervisor, *, tool:sales_supervisor.today, execute, allow
 p, supervisor, *, tool:sales_supervisor.period_report, execute, allow
 p, supervisor, *, tool:sales_supervisor.set_target, execute, allow
 p, supervisor, *, tool:sales_supervisor.record_note, execute, allow
-p, supervisor, *, data:sales_supervisor_counts, read, allow
-p, supervisor, *, data:sales_supervisor_counts, write, allow
-p, supervisor, *, data:sales_supervisor_targets, write, allow
-p, supervisor, *, data:sales_supervisor_notes, read, allow
-p, supervisor, *, data:sales_supervisor_notes, write, allow
+p, supervisor, *, data:sales_counts, read, allow
+p, supervisor, *, data:sales_counts, write, allow
+p, supervisor, *, data:sales_targets, write, allow
+p, supervisor, *, data:sales_notes, read, allow
+p, supervisor, *, data:sales_notes, write, allow
 p, supervisor, *, data:retail_items, read, allow
 p, supervisor, *, data:retail_branch_hours, read, allow
-p, supervisor, *, data:sales_supervisor_targets, read, allow
+p, supervisor, *, data:sales_targets, read, allow
 
 # admin: every sales table, and other branches (read_all, write_all); owner inherits
-p, admin, *, data:sales_supervisor_*, read, allow
-p, admin, *, data:sales_supervisor_*, write, allow
-p, admin, *, data:sales_supervisor_*, read_all, allow
-p, admin, *, data:sales_supervisor_*, write_all, allow
+p, admin, *, data:sales_counts, read, allow
+p, admin, *, data:sales_counts, write, allow
+p, admin, *, data:sales_counts, read_all, allow
+p, admin, *, data:sales_counts, write_all, allow
+p, admin, *, data:sales_targets, read, allow
+p, admin, *, data:sales_targets, write, allow
+p, admin, *, data:sales_targets, read_all, allow
+p, admin, *, data:sales_targets, write_all, allow
+p, admin, *, data:sales_notes, read, allow
+p, admin, *, data:sales_notes, write, allow
+p, admin, *, data:sales_notes, read_all, allow
+p, admin, *, data:sales_notes, write_all, allow
 
 # clerk: report stock, ask what is low and the bake plan (own branch; no orders)
 p, clerk, *, tool:inventory_manager.record_events, execute, allow
 p, clerk, *, tool:inventory_manager.low_stock, execute, allow
 p, clerk, *, tool:inventory_manager.plan_tomorrow, execute, allow
-p, clerk, *, data:inventory_manager_stock_events, write_own, allow
-p, clerk, *, data:inventory_manager_stock_events, read_own, allow
+p, clerk, *, data:stock_events, write_own, allow
+p, clerk, *, data:stock_events, read_own, allow
 p, clerk, *, data:retail_ingredients, read, allow
 
 # supervisor: the same, plus request a supplier order (it waits for the owner) and receive it
@@ -99,8 +107,8 @@ p, supervisor, *, tool:inventory_manager.low_stock, execute, allow
 p, supervisor, *, tool:inventory_manager.plan_tomorrow, execute, allow
 p, supervisor, *, tool:inventory_manager.draft_order, request, allow
 p, supervisor, *, tool:inventory_manager.receive_delivery, execute, allow
-p, supervisor, *, data:inventory_manager_stock_events, read, allow
-p, supervisor, *, data:inventory_manager_stock_events, write, allow
+p, supervisor, *, data:stock_events, read, allow
+p, supervisor, *, data:stock_events, write, allow
 p, supervisor, *, data:inventory_manager_orders, read, allow
 p, supervisor, *, data:inventory_manager_orders, write, allow
 p, supervisor, *, data:retail_ingredients, read, allow
@@ -108,6 +116,8 @@ p, supervisor, *, data:retail_ingredients, read, allow
 # admin: stock and orders of every branch; owner inherits
 p, admin, *, data:inventory_manager_*, read_all, allow
 p, admin, *, data:inventory_manager_*, write_all, allow
+p, admin, *, data:stock_events, read_all, allow
+p, admin, *, data:stock_events, write_all, allow
 
 # staff (clerk inherits): their own hours, payday, 13th month, contributions, leave balance,
 # holiday pay and payslip; request leave (it waits for head staff)
