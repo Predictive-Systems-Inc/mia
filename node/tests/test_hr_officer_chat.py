@@ -13,13 +13,12 @@ from sqlmodel import Session, select
 
 from mia.agents.decider import Decision
 from mia.agents.hr_officer import MANIFEST, decider, replies, tools
-from mia.agents.hr_officer.models import Leave, Payslip
 from mia.agents.hr_officer.tools import PersonInput
 from mia.chat.access import agents_for
 from mia.chat.blocks import ApprovalCardBlock, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.service import run_turn
 from mia.core import approvals, jev, orgconfig
-from mia.core.models import Actor, Approval, Branch, Event, Message, Person
+from mia.core.models import Actor, Approval, Branch, Event, Leave, Message, Payslip, Person
 from mia.core.money import format_money
 from mia.core.people import set_language
 from mia.i18n import t

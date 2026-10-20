@@ -22,7 +22,16 @@ from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.sales_supervisor import MANIFEST, calc
 from mia.core import store
 from mia.core.db import utcnow
-from mia.core.models import Branch, Event, Message, Person, SalesCount, SalesNote, SalesTarget
+from mia.core.models import (
+    Branch,
+    Event,
+    Message,
+    Person,
+    SalesCount,
+    SalesNote,
+    SalesTarget,
+    Tender,
+)
 from mia.core.rbac import Resource, get_rbac
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail import items as retail_items
@@ -178,6 +187,7 @@ class CountOut(BaseModel):
     item: str
     quantity: int
     amount: int
+    tender: str
 
 
 def _count_out(row: SalesCount, item: RetailItem) -> CountOut:
@@ -187,6 +197,7 @@ def _count_out(row: SalesCount, item: RetailItem) -> CountOut:
         item=item.name,
         quantity=row.quantity,
         amount=row.amount,
+        tender=row.tender,
     )
 
 
@@ -198,6 +209,7 @@ def _new_count(
     *,
     supersedes: str | None = None,
     source_message_id: str | None = None,
+    tender: str = "cash",
 ) -> SalesCount:
     return SalesCount(
         branch_id=deps.branch.id,
@@ -210,6 +222,7 @@ def _new_count(
         business_date=day,
         supersedes=supersedes,
         source_message_id=source_message_id,
+        tender=tender,
     )
 
 
@@ -226,6 +239,7 @@ class RecordCountsInput(BaseModel):
     total: int | None = Field(None, ge=0, description="The total the user stated, minor units")
     business_date: dt.date | None = Field(None, description="Only when the user names the day")
     source_message_id: str | None = None
+    tender: Tender = Field("cash", description="How it was paid; cash unless the user says")
 
 
 class RecordCountsOutput(BaseModel):
@@ -293,6 +307,7 @@ def record_counts(
                 c.quantity,
                 day,
                 source_message_id=args.source_message_id,
+                tender=args.tender,
             ),
             deps.actor,
             action="sales.counted",
@@ -352,7 +367,14 @@ def correct_count(
         raise LookupError("count")
     row = store.insert(
         deps.session,
-        _new_count(deps, item, args.quantity, latest.business_date, supersedes=latest.id),
+        _new_count(
+            deps,
+            item,
+            args.quantity,
+            latest.business_date,
+            supersedes=latest.id,
+            tender=latest.tender,
+        ),
         deps.actor,
         action="sales.corrected",
         tool_call_id=tool_call_id,

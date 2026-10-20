@@ -109,13 +109,13 @@ p, supervisor, *, tool:inventory_manager.draft_order, request, allow
 p, supervisor, *, tool:inventory_manager.receive_delivery, execute, allow
 p, supervisor, *, data:stock_events, read, allow
 p, supervisor, *, data:stock_events, write, allow
-p, supervisor, *, data:inventory_manager_orders, read, allow
-p, supervisor, *, data:inventory_manager_orders, write, allow
+p, supervisor, *, data:supplier_orders, read, allow
+p, supervisor, *, data:supplier_orders, write, allow
 p, supervisor, *, data:retail_ingredients, read, allow
 
 # admin: stock and orders of every branch; owner inherits
-p, admin, *, data:inventory_manager_*, read_all, allow
-p, admin, *, data:inventory_manager_*, write_all, allow
+p, admin, *, data:supplier_orders, read_all, allow
+p, admin, *, data:supplier_orders, write_all, allow
 p, admin, *, data:stock_events, read_all, allow
 p, admin, *, data:stock_events, write_all, allow
 
@@ -129,18 +129,22 @@ p, staff, *, tool:hr_officer.balance, execute, allow
 p, staff, *, tool:hr_officer.holiday, execute, allow
 p, staff, *, tool:hr_officer.resend_payslip, execute, allow
 p, staff, *, tool:hr_officer.request_leave, request, allow
-p, staff, *, data:hr_officer_contracts, read_own, allow
-p, staff, *, data:hr_officer_payslips, read_own, allow
-p, staff, *, data:hr_officer_leave, read_own, allow
-p, staff, *, data:hr_officer_leave, write_own, allow
+p, staff, *, data:contracts, read_own, allow
+p, staff, *, data:payslips, read_own, allow
+p, staff, *, data:leave, read_own, allow
+p, staff, *, data:leave, write_own, allow
 
 # supervisor: the branch's hours (core.timesheet read comes with data:core.*); leave approvals
 # come from the manifest's approvers list
-p, supervisor, *, data:hr_officer_contracts, read, allow
+p, supervisor, *, data:contracts, read, allow
 
 # admin: every person of every branch, the certificate text and contracts; owner inherits
-p, admin, *, data:hr_officer_*, read_all, allow
-p, admin, *, data:hr_officer_*, write_all, allow
+p, admin, *, data:contracts, read_all, allow
+p, admin, *, data:contracts, write_all, allow
+p, admin, *, data:payslips, read_all, allow
+p, admin, *, data:payslips, write_all, allow
+p, admin, *, data:leave, read_all, allow
+p, admin, *, data:leave, write_all, allow
 p, admin, *, data:core.timesheet, read_all, allow
 p, admin, *, tool:hr_officer.certificate_text, execute, allow
 p, admin, *, tool:hr_officer.set_contract, execute, allow

@@ -84,6 +84,7 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
             "total": None if q.total is None else _minor(q.total),
             "business_date": None,
             "source_message_id": q.message_id,
+            "tender": q.tender or "cash",
         }
         return args, unknown or (None if items or q.total is not None else "items")
     if action == "correct_sales":

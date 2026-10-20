@@ -9,7 +9,6 @@ from pydantic import Field
 
 from mia.agents.decider import Decision
 from mia.agents.hr_officer.actions import WHICH
-from mia.agents.hr_officer.models import Payslip
 from mia.agents.hr_officer.tools import (
     BalanceOutput,
     CertificateOutput,
@@ -24,6 +23,7 @@ from mia.agents.hr_officer.tools import (
 )
 from mia.agents.parsing import DAY_NAMES, EN_WEEKDAYS
 from mia.chat.blocks import ApprovalCardBlock, Block, CardField, QuickRepliesBlock, TextBlock
+from mia.core.models import Payslip
 from mia.core.money import format_money
 from mia.i18n import t
 

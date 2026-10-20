@@ -8,7 +8,7 @@ carries id, branch_id, created_at and updated_at, except organisation (no branch
 
 import datetime as dt
 from datetime import datetime
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, get_args
 
 from sqlalchemy import JSON, UniqueConstraint
 from sqlmodel import Field, SQLModel
@@ -17,7 +17,7 @@ from mia.core import db
 from mia.core.db import TZDateTime
 from mia.core.ids import new_id
 
-STANDARD_VERSION = "1.5"
+STANDARD_VERSION = "1.6"
 
 
 def _now() -> datetime:
@@ -33,6 +33,8 @@ VisitStatus = Literal["planned", "in_progress", "completed", "cancelled", "unfil
 ApprovalStatus = Literal["pending", "approved", "rejected", "expired", "escalated"]
 ApprovalChannel = Literal["app_only", "any"]
 ActorType = Literal["person", "agent", "system", "customer"]
+Tender = Literal["cash", "gcash", "maya", "grab", "foodpanda"]  # how a sale was paid (1.6)
+TENDERS: tuple[str, ...] = get_args(Tender)
 
 
 class Stamped(SQLModel):
@@ -211,7 +213,7 @@ class Incident(BranchScoped, table=True):
 
 class SalesCount(BranchScoped, table=True):
     """One reported count of one item for a business date; a correction supersedes a row
-    (data standard 1.5)."""
+    (data standard 1.5). tender is how it was paid, one of TENDERS (data standard 1.6)."""
 
     __tablename__: ClassVar[str] = "sales_counts"
 
@@ -225,6 +227,7 @@ class SalesCount(BranchScoped, table=True):
     supersedes: str | None = None
     superseded_by: str | None = None
     source_message_id: str | None = None
+    tender: str = Field(default="cash", max_length=16, index=True)
 
 
 class SalesTarget(BranchScoped, table=True):
@@ -270,6 +273,84 @@ class StockEvent(BranchScoped, table=True):
     business_date: dt.date = Field(index=True)
     source_message_id: str | None = None
     order_id: str | None = None
+
+
+class SupplierOrder(BranchScoped, table=True):
+    """A supplier order: draft, approved, rejected or received. Lines carry ingredient_id,
+    quantity, unit and unit_price (minor units); total is in minor units (data standard 1.6)."""
+
+    __tablename__: ClassVar[str] = "supplier_orders"
+
+    supplier: str
+    lines: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    currency: str = Field(max_length=3)
+    total: int | None = None
+    status: str
+    approval_id: str | None = None
+    requested_by: str
+    business_date: dt.date
+
+
+class Contract(BranchScoped, table=True):
+    """One person's terms: employment type (regular, probationary, part_time), daily rate in
+    minor units, rest day (weekday number), start and optional end date (data standard 1.6)."""
+
+    __redact__: ClassVar[frozenset[str]] = frozenset(
+        {"daily_rate"}
+    )  # pay and leave stay off the chain
+    __tablename__: ClassVar[str] = "contracts"
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    employment_type: str
+    daily_rate: int
+    currency: str = Field(max_length=3)
+    rest_day: int
+    start_date: dt.date
+    end_date: dt.date | None = None
+    position: str
+    set_by: str
+
+
+class Payslip(BranchScoped, table=True):
+    """One issued payslip per person and cutoff. lines carry kind, minutes or days, rate and
+    amount; deductions carry kind and amount; money is in minor units (data standard 1.6)."""
+
+    __redact__: ClassVar[frozenset[str]] = frozenset(
+        {"lines", "gross", "deductions", "net"}
+    )  # pay and leave stay off the chain
+    __tablename__: ClassVar[str] = "payslips"
+    __table_args__ = (UniqueConstraint("person_id", "cutoff_start"),)
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    cutoff_start: dt.date
+    cutoff_end: dt.date
+    pay_date: dt.date
+    lines: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    gross: int
+    deductions: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    net: int
+    currency: str = Field(max_length=3)
+    issued_at: dt.datetime = Field(sa_type=TZDateTime)
+    message_id: str | None = None
+
+
+class Leave(BranchScoped, table=True):
+    """A leave request or grant: kind vacation, sick or unpaid; status requested, approved or
+    rejected. reason is free text and is stored as data (data standard 1.6)."""
+
+    __redact__: ClassVar[frozenset[str]] = frozenset(
+        {"kind", "reason"}
+    )  # pay and leave stay off the chain
+    __tablename__: ClassVar[str] = "leave"
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    kind: str
+    start_date: dt.date
+    end_date: dt.date
+    days: int
+    status: str
+    approval_id: str | None = None
+    reason: str = ""
 
 
 class Approval(BranchScoped, table=True):

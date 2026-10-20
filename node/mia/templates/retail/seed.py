@@ -18,20 +18,22 @@ from mia.agents.branch_manager import tips as bm_tips
 from mia.agents.branch_manager.models import Experiment, Strategy, Tip
 from mia.agents.customer_service.models import Complaint, Customer, Order
 from mia.agents.hr_officer import calc, calendar
-from mia.agents.hr_officer.models import Contract, Leave, Payslip
-from mia.agents.inventory_manager.models import SupplierOrder
 from mia.core import events, orgconfig, store
 from mia.core.models import (
     Actor,
     Branch,
     Client,
+    Contract,
     Job,
+    Leave,
     Location,
     Organisation,
+    Payslip,
     Person,
     SalesCount,
     SalesTarget,
     StockEvent,
+    SupplierOrder,
     Timesheet,
     Visit,
 )
@@ -102,6 +104,16 @@ LATE_SHIFT = (
     "13:00",
     "23:30",
 )  # the clerk's most recent working day runs late (night minutes)
+
+
+def _tender(n: int) -> str:
+    """The seeded tender of the n-th count (deterministic): one in ten maya, every seventh grab,
+    every fourth gcash, else cash."""
+    if n % 10 == 0:
+        return "maya"
+    if n % 7 == 0:
+        return "grab"
+    return "gcash" if n % 4 == 0 else "cash"
 
 
 def is_seeded(session: Session) -> bool:
@@ -191,7 +203,7 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
             planned = _plan_experiments(session, branch, items, strategies, today, units)
         for day, sold in units.items():
             reported_at = dt.datetime.combine(day, dt.time(20, 0), ZoneInfo(branch.timezone))
-            for item in items:
+            for item_index, item in enumerate(items):
                 quantity = sold[item.id]
                 amount = quantity * retail_items.price_on(session, item, branch.id, day)
                 if index == 0:
@@ -205,6 +217,7 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
                     reported_at=reported_at,
                     reported_by=clerks[index].id,
                     business_date=day,
+                    tender=_tender((today - day).days * len(items) + item_index),
                 )
                 store.insert(session, count, branch_actor)
         if index == 0:

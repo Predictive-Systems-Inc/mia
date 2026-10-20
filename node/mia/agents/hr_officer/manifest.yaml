@@ -1,21 +1,21 @@
 id: hr_officer
 name: "HR Officer"
 version: 0.1.0
-standard_version: "1.4"
+standard_version: "1.6"
 job_description: job.md
 instructions: {base: prompts/base.md}
 roles:
   agent_role: agent.hr_officer
   grants:
-    - data:hr_officer_contracts:read
-    - data:hr_officer_contracts:write
-    - data:hr_officer_contracts:read_all
-    - data:hr_officer_contracts:write_all
-    - data:hr_officer_payslips:read
-    - data:hr_officer_payslips:read_all
-    - data:hr_officer_leave:read
-    - data:hr_officer_leave:write
-    - data:hr_officer_leave:read_all
+    - data:contracts:read
+    - data:contracts:write
+    - data:contracts:read_all
+    - data:contracts:write_all
+    - data:payslips:read
+    - data:payslips:read_all
+    - data:leave:read
+    - data:leave:write
+    - data:leave:read_all
     - data:core.timesheet:read
     - data:core.timesheet:read_all
     - data:core.person:read
@@ -34,14 +34,14 @@ roles:
   # Leave waits for head staff: the guard asks a supervisor, the owner or an admin.
   approvers: {hr_officer.request_leave: [supervisor, owner, admin]}
 tools:
-  - {id: hr_officer.hours, kind: agent, risk: read, sensitive: true, approval: never, reads: [hr_officer_contracts, timesheets]}
+  - {id: hr_officer.hours, kind: agent, risk: read, sensitive: true, approval: never, reads: [contracts, timesheets]}
   - {id: hr_officer.next_payday, kind: agent, risk: read, approval: never, reads: []}
-  - {id: hr_officer.thirteenth_month, kind: agent, risk: read, sensitive: true, approval: never, reads: [hr_officer_contracts, hr_officer_payslips]}
-  - {id: hr_officer.last_contributions, kind: agent, risk: read, sensitive: true, approval: never, reads: [hr_officer_payslips]}
-  - {id: hr_officer.request_leave, kind: agent, risk: write_internal, sensitive: true, approval: always, reads: [hr_officer_contracts], writes: [hr_officer_leave, approval]}
-  - {id: hr_officer.balance, kind: agent, risk: read, sensitive: true, approval: never, reads: [hr_officer_contracts, hr_officer_leave]}
+  - {id: hr_officer.thirteenth_month, kind: agent, risk: read, sensitive: true, approval: never, reads: [contracts, payslips]}
+  - {id: hr_officer.last_contributions, kind: agent, risk: read, sensitive: true, approval: never, reads: [payslips]}
+  - {id: hr_officer.request_leave, kind: agent, risk: write_internal, sensitive: true, approval: always, reads: [contracts], writes: [leave, approval]}
+  - {id: hr_officer.balance, kind: agent, risk: read, sensitive: true, approval: never, reads: [contracts, leave]}
   - {id: hr_officer.holiday, kind: agent, risk: read, approval: never, reads: []}
-  - {id: hr_officer.resend_payslip, kind: agent, risk: read, sensitive: true, approval: never, reads: [hr_officer_payslips], writes: [message]}
-  - {id: hr_officer.certificate_text, kind: agent, risk: read, sensitive: true, approval: never, reads: [hr_officer_contracts, person, branch]}
-  - {id: hr_officer.set_contract, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [person, branch], writes: [hr_officer_contracts]}
+  - {id: hr_officer.resend_payslip, kind: agent, risk: read, sensitive: true, approval: never, reads: [payslips], writes: [message]}
+  - {id: hr_officer.certificate_text, kind: agent, risk: read, sensitive: true, approval: never, reads: [contracts, person, branch]}
+  - {id: hr_officer.set_contract, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [person, branch], writes: [contracts]}
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

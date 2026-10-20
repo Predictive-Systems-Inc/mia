@@ -89,6 +89,9 @@ def test_split_permission() -> None:
 
 ACTIONS = ("read", "write", "read_own", "write_own", "read_all", "write_all", "request")
 FULL = {"read", "write", "read_all", "write_all"}
+OWN = {"read_own", "write_own"}
+ADMIN_PAY = {"read_all", "read_own", "write_all"}
+ADMIN_HR = ADMIN_PAY | {"read"}
 SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
     "sales_counts": {
         "clerk": {"read_own", "write_own"},
@@ -122,12 +125,43 @@ SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
         "agent.inventory_manager": FULL,
         "agent.branch_manager": {"read", "read_all"},
     },
+    "supplier_orders": {
+        "supervisor": {"read", "write"},
+        "owner": FULL,
+        "admin": FULL,
+        "agent.inventory_manager": FULL,
+    },
+    "contracts": {
+        "staff": {"read_own"},
+        "clerk": {"read_own"},
+        "supervisor": {"read", "read_own"},
+        "owner": ADMIN_HR,
+        "admin": ADMIN_HR,
+        "agent.hr_officer": FULL,
+    },
+    "payslips": {
+        "staff": {"read_own"},
+        "clerk": {"read_own"},
+        "supervisor": {"read_own"},
+        "owner": ADMIN_PAY,
+        "admin": ADMIN_PAY,
+        "agent.hr_officer": {"read", "read_all"},
+    },
+    "leave": {
+        "staff": OWN,
+        "clerk": OWN,
+        "supervisor": OWN,
+        "owner": ADMIN_PAY | OWN,
+        "admin": ADMIN_PAY | OWN,
+        "agent.hr_officer": {"read", "read_all", "write"},
+    },
 }
 
 
-def test_shared_sales_and_stock_tables_keep_exactly_the_rights_they_had() -> None:
-    """Data standard 1.5 renamed the tables; the role-by-action table equals the one before the
-    rename (no right dropped, none added). A new reader changes this table with its agent."""
+def test_shared_tables_keep_exactly_the_rights_they_had() -> None:
+    """Data standard 1.5 (the sales and stock tables) and 1.6 (supplier orders and the HR
+    tables) renamed the tables; the role-by-action table equals the one before each rename (no
+    right dropped, none added). A new reader changes this table with its agent."""
     from mia.agents.base import Manifest
 
     rbac = Rbac(get_settings().config_dir / "policies")

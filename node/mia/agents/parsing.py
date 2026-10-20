@@ -16,6 +16,11 @@ FILLER = {
     "po", "na", "pcs", "pc", "pieces", "piece", "kpl", "ng", "nga", "sa", "ang", "yung", "ka",
     "pa", "lang",
 }  # fmt: skip
+# A tender word names how a sale was paid (mia.core.models.TENDERS); it is never an item word.
+TENDER_WORDS = {
+    "cash": "cash", "gcash": "gcash", "g-cash": "gcash", "maya": "maya", "paymaya": "maya",
+    "grab": "grab", "grabfood": "grab", "foodpanda": "foodpanda", "panda": "foodpanda",
+}  # fmt: skip
 # A negation word marks the number after it as the old value (sorry 4 special not 3): both go.
 NEGATIONS = {
     "not", "hindi", "dili", "diri", "indi", "bako", "ali", "aliwa", "ei", "instead", "saan",
@@ -82,6 +87,17 @@ def _tokens(text: str) -> list[str]:
     return re.sub(r"(?<=\d),(?=\d)", "", text).replace(",", " ").split()
 
 
+def _tender(tok: str) -> str | None:
+    return TENDER_WORDS.get(tok.strip(".!?;:\"'()"))
+
+
+def find_tender(text: str) -> str | None:
+    """The one tender the text names (TENDER_WORDS folded to its tender), None when it names
+    none or two different ones. Pure."""
+    named = {t for tok in _tokens(text) if (t := _tender(tok)) is not None}
+    return named.pop() if len(named) == 1 else None
+
+
 def was_corrected(text: str) -> bool:
     """True when a negation word dropped a number (the old value of a correction), the same
     rule pre_parse applies. Pure."""
@@ -115,7 +131,7 @@ def pre_parse(text: str, menu_tokens: Collection[str]) -> tuple[list[Group], int
     words-then-number, and the one whose words hold more `menu_tokens` (casefolded item name
     words and short codes) wins; on a tie, words-then-number only when the message ends with a
     number and every number follows words. A menu token with spaces (an item name with a
-    digit, from menu_tokens) is kept whole."""
+    digit, from menu_tokens) is kept whole. A tender word (TENDER_WORDS) is dropped."""
     tokens = _join_names(_tokens(text), menu_tokens)
     numbers = [i for i, tok in enumerate(tokens) if tok.isdigit()]
     drop = _negated(tokens, numbers)
@@ -134,7 +150,11 @@ def pre_parse(text: str, menu_tokens: Collection[str]) -> tuple[list[Group], int
             if last >= 10 * max(rest):
                 total = last
                 drop.add(numbers[-1])
-    kept = [tok for i, tok in enumerate(tokens) if i not in drop and tok not in FILLER]
+    kept = [
+        tok
+        for i, tok in enumerate(tokens)
+        if i not in drop and tok not in FILLER and _tender(tok) is None
+    ]
     menu = {m.casefold() for m in menu_tokens}
     after, before = _orient(kept, False), _orient(kept, True)
 

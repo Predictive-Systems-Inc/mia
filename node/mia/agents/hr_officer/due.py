@@ -22,13 +22,12 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, col, func, select
 
 from mia.agents.hr_officer import MANIFEST, calc, calendar
-from mia.agents.hr_officer.models import Contract, Payslip
 from mia.agents.hr_officer.replies import payslip_blocks
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
 from mia.core import orgconfig, store
-from mia.core.models import Actor, Branch, Message, Person, Timesheet
+from mia.core.models import Actor, Branch, Contract, Message, Payslip, Person, Timesheet
 from mia.core.orgconfig import Payroll
 from mia.i18n import t
 

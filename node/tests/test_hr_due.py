@@ -10,7 +10,6 @@ import pytest
 from sqlmodel import Session, select
 
 from mia.agents.hr_officer import MANIFEST, calc, due, ph, replies, tools
-from mia.agents.hr_officer.models import Contract, Payslip
 from mia.agents.shift_supervisor import timesheets
 from mia.channels import registry
 from mia.channels.simulator import SimAdapter
@@ -21,8 +20,10 @@ from mia.core.models import (
     Branch,
     ChannelIdentity,
     ChannelOutbox,
+    Contract,
     Event,
     Message,
+    Payslip,
     Person,
     Thread,
     Timesheet,

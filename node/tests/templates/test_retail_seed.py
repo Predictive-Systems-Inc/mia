@@ -21,8 +21,7 @@ def ferinos(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def test_org_template_selects_the_retail_seed(ferinos: None, session: Session) -> None:
-    from mia.agents.inventory_manager.models import SupplierOrder
-    from mia.core.models import SalesCount, SalesTarget, StockEvent
+    from mia.core.models import SalesCount, SalesTarget, StockEvent, SupplierOrder
     from mia.templates.retail import seed
     from mia.templates.retail.models import RetailBranchHours, RetailIngredient, RetailItem
 
@@ -72,8 +71,7 @@ def test_unknown_template_is_refused() -> None:
 def test_seed_hr_data(ferinos: None, session: Session) -> None:
     import datetime as dt
 
-    from mia.agents.hr_officer.models import Contract, Leave, Payslip
-    from mia.core.models import Timesheet, Visit
+    from mia.core.models import Contract, Leave, Payslip, Timesheet, Visit
     from mia.templates.retail import seed
 
     seed.seed(session)
@@ -107,8 +105,7 @@ def test_late_shift_exists_on_any_weekday_and_skips_rest_and_leave_days(
 ) -> None:
     import datetime as dt
 
-    from mia.agents.hr_officer.models import Contract, Leave
-    from mia.core.models import Timesheet, Visit
+    from mia.core.models import Contract, Leave, Timesheet, Visit
     from mia.templates.retail import seed
 
     today = dt.date(2026, 10, 19) + dt.timedelta(days=offset)  # each weekday once
@@ -142,9 +139,9 @@ def test_hr_events_hide_rates_amounts_and_leave_reasons(ferinos: None, session: 
 
     seed.seed(session)
     hidden = {
-        "hr_officer_contracts": {"daily_rate"},
-        "hr_officer_payslips": {"lines", "gross", "deductions", "net"},
-        "hr_officer_leave": {"kind", "reason"},
+        "contracts": {"daily_rate"},
+        "payslips": {"lines", "gross", "deductions", "net"},
+        "leave": {"kind", "reason"},
     }
     events = session.exec(select(Event)).all()
     for table, fields in hidden.items():

@@ -885,6 +885,7 @@ def upgrade() -> None:
         sa.Column("supersedes", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.Column("superseded_by", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.Column("source_message_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("tender", sqlmodel.sql.sqltypes.AutoString(length=16), nullable=False),
         sa.ForeignKeyConstraint(
             ["branch_id"],
             ["branch.id"],
@@ -908,6 +909,7 @@ def upgrade() -> None:
         batch_op.create_index(
             batch_op.f("ix_sales_counts_business_date"), ["business_date"], unique=False
         )
+        batch_op.create_index(batch_op.f("ix_sales_counts_tender"), ["tender"], unique=False)
 
     op.create_table(
         "sales_targets",
@@ -1024,7 +1026,7 @@ def upgrade() -> None:
         )
 
     op.create_table(
-        "inventory_manager_orders",
+        "supplier_orders",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
         sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -1043,13 +1045,13 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    with op.batch_alter_table("inventory_manager_orders", schema=None) as batch_op:
+    with op.batch_alter_table("supplier_orders", schema=None) as batch_op:
         batch_op.create_index(
-            batch_op.f("ix_inventory_manager_orders_branch_id"), ["branch_id"], unique=False
+            batch_op.f("ix_supplier_orders_branch_id"), ["branch_id"], unique=False
         )
 
     op.create_table(
-        "hr_officer_contracts",
+        "contracts",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
         sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -1073,16 +1075,12 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    with op.batch_alter_table("hr_officer_contracts", schema=None) as batch_op:
-        batch_op.create_index(
-            batch_op.f("ix_hr_officer_contracts_branch_id"), ["branch_id"], unique=False
-        )
-        batch_op.create_index(
-            batch_op.f("ix_hr_officer_contracts_person_id"), ["person_id"], unique=False
-        )
+    with op.batch_alter_table("contracts", schema=None) as batch_op:
+        batch_op.create_index(batch_op.f("ix_contracts_branch_id"), ["branch_id"], unique=False)
+        batch_op.create_index(batch_op.f("ix_contracts_person_id"), ["person_id"], unique=False)
 
     op.create_table(
-        "hr_officer_payslips",
+        "payslips",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
         sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -1109,16 +1107,12 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("person_id", "cutoff_start"),
     )
-    with op.batch_alter_table("hr_officer_payslips", schema=None) as batch_op:
-        batch_op.create_index(
-            batch_op.f("ix_hr_officer_payslips_branch_id"), ["branch_id"], unique=False
-        )
-        batch_op.create_index(
-            batch_op.f("ix_hr_officer_payslips_person_id"), ["person_id"], unique=False
-        )
+    with op.batch_alter_table("payslips", schema=None) as batch_op:
+        batch_op.create_index(batch_op.f("ix_payslips_branch_id"), ["branch_id"], unique=False)
+        batch_op.create_index(batch_op.f("ix_payslips_person_id"), ["person_id"], unique=False)
 
     op.create_table(
-        "hr_officer_leave",
+        "leave",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
         sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -1141,13 +1135,9 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    with op.batch_alter_table("hr_officer_leave", schema=None) as batch_op:
-        batch_op.create_index(
-            batch_op.f("ix_hr_officer_leave_branch_id"), ["branch_id"], unique=False
-        )
-        batch_op.create_index(
-            batch_op.f("ix_hr_officer_leave_person_id"), ["person_id"], unique=False
-        )
+    with op.batch_alter_table("leave", schema=None) as batch_op:
+        batch_op.create_index(batch_op.f("ix_leave_branch_id"), ["branch_id"], unique=False)
+        batch_op.create_index(batch_op.f("ix_leave_person_id"), ["person_id"], unique=False)
 
     op.create_table(
         "branch_manager_strategies",
@@ -1586,25 +1576,25 @@ def downgrade() -> None:
 
     op.drop_table("branch_manager_experiments")
     op.drop_table("branch_manager_strategies")
-    with op.batch_alter_table("hr_officer_leave", schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f("ix_hr_officer_leave_person_id"))
-        batch_op.drop_index(batch_op.f("ix_hr_officer_leave_branch_id"))
+    with op.batch_alter_table("leave", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_leave_person_id"))
+        batch_op.drop_index(batch_op.f("ix_leave_branch_id"))
 
-    op.drop_table("hr_officer_leave")
-    with op.batch_alter_table("hr_officer_payslips", schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f("ix_hr_officer_payslips_person_id"))
-        batch_op.drop_index(batch_op.f("ix_hr_officer_payslips_branch_id"))
+    op.drop_table("leave")
+    with op.batch_alter_table("payslips", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_payslips_person_id"))
+        batch_op.drop_index(batch_op.f("ix_payslips_branch_id"))
 
-    op.drop_table("hr_officer_payslips")
-    with op.batch_alter_table("hr_officer_contracts", schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f("ix_hr_officer_contracts_person_id"))
-        batch_op.drop_index(batch_op.f("ix_hr_officer_contracts_branch_id"))
+    op.drop_table("payslips")
+    with op.batch_alter_table("contracts", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_contracts_person_id"))
+        batch_op.drop_index(batch_op.f("ix_contracts_branch_id"))
 
-    op.drop_table("hr_officer_contracts")
-    with op.batch_alter_table("inventory_manager_orders", schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f("ix_inventory_manager_orders_branch_id"))
+    op.drop_table("contracts")
+    with op.batch_alter_table("supplier_orders", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_supplier_orders_branch_id"))
 
-    op.drop_table("inventory_manager_orders")
+    op.drop_table("supplier_orders")
     with op.batch_alter_table("stock_events", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_stock_events_business_date"))
         batch_op.drop_index(batch_op.f("ix_stock_events_branch_id"))
@@ -1625,6 +1615,7 @@ def downgrade() -> None:
 
     op.drop_table("sales_targets")
     with op.batch_alter_table("sales_counts", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_sales_counts_tender"))
         batch_op.drop_index(batch_op.f("ix_sales_counts_business_date"))
         batch_op.drop_index(batch_op.f("ix_sales_counts_reported_by"))
         batch_op.drop_index(batch_op.f("ix_sales_counts_item_id"))

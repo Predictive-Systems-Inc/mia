@@ -20,6 +20,7 @@ from mia.agents.parsing import (
     EN_WEEKDAYS,
     FI_WEEKDAYS_ESSIVE,
     Group,
+    find_tender,
     menu_tokens,
     pre_parse,
     was_corrected,
@@ -148,6 +149,7 @@ class Query:
     lang: str = "en"
     message_id: str | None = None  # the user message, kept as a count's source
     previous_id: str | None = None  # Mia's previous message, kept when it is the why question
+    tender: str | None = None  # the one tender the message names (parsing.find_tender)
 
 
 def _periods(lang: str) -> dict[str, str]:
@@ -265,6 +267,7 @@ def build_query(
         lang=deps.lang,
         message_id=message_id,
         previous_id=previous_id if why_asked else None,
+        tender=find_tender(message),
     )
 
 

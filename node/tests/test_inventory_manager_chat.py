@@ -13,14 +13,23 @@ import pytest
 from sqlmodel import Session, col, select
 
 from mia.agents.inventory_manager import MANIFEST, tools
-from mia.agents.inventory_manager.models import SupplierOrder
 from mia.agents.inventory_manager.tools import EventIn, RecordEventsInput
 from mia.chat.access import agents_for
 from mia.chat.blocks import ApprovalCardBlock, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.channels import notify
 from mia.chat.service import run_turn
 from mia.core import approvals, jev, orgconfig, store
-from mia.core.models import Actor, Approval, Branch, Event, Message, Person, StockEvent, Thread
+from mia.core.models import (
+    Actor,
+    Approval,
+    Branch,
+    Event,
+    Message,
+    Person,
+    StockEvent,
+    SupplierOrder,
+    Thread,
+)
 from mia.core.money import format_money
 from mia.i18n import t
 from mia.settings import get_settings

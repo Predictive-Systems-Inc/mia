@@ -22,6 +22,7 @@ mia/
       core/                 models, db, ids, events, store, rbac, approvals, egress, usage, people,
                             absences, cover requests, timesheets, incidents (data standard 1.4),
                             sales counts, targets and notes, stock events (data standard 1.5),
+                            sales tenders, supplier orders, contracts, payslips and leave (1.6),
                             geocoding (pluggable providers), orgconfig (organisation settings),
                             keys (master key, HKDF, scrypt, TOTP), auth (sessions, codes,
                             credentials, devices, clients; ADR 011), scheduling (recurrence,
@@ -47,8 +48,10 @@ mia/
         sales_supervisor/   manifest.yaml, job.md, prompts/, actions.py and decider.py (Jev),
                             tools.py, calc.py, due.py, replies.py, turn.py,
                             tests/scenarios.yaml (chat scenarios); its tables are core (1.5)
-        inventory_manager/  Inventory Manager: the mia agent scaffold shape (turn.py, actions.py, ...)
-        hr_officer/         HR Officer: the mia agent scaffold shape (turn.py, actions.py, ...)
+        inventory_manager/  Inventory Manager: the mia agent scaffold shape (turn.py, actions.py, ...);
+                            its tables are core (1.5, 1.6)
+        hr_officer/         HR Officer: the mia agent scaffold shape (turn.py, actions.py, ...);
+                            its tables are core (1.6)
         customer_service/   Customer Service: the scaffold shape plus models.py (four agent-owned
                             tables), public.py (the customer turn for unlinked senders, the
                             24-hour window, send_direct), actions.py and decider.py (Jev, a

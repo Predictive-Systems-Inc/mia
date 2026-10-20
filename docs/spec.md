@@ -183,10 +183,14 @@ The shared data every agent and template relies on; industry-specific fields liv
 | approval | see Approvals |  |
 | thread, message | see Chat interface |  |
 | event | see below |  |
-| sales\_count (data standard 1.5) | id, branch\_id, item\_id, quantity, amount, currency, reported\_at, reported\_by, business\_date | A correction supersedes a row (supersedes, superseded\_by) |
+| sales\_count (data standard 1.5) | id, branch\_id, item\_id, quantity, amount, currency, reported\_at, reported\_by, business\_date, tender (1.6: cash, gcash, maya, grab, foodpanda) | A correction supersedes a row (supersedes, superseded\_by) |
 | sales\_target (data standard 1.5) | id, branch\_id, period (day, month), starts\_on, currency, set\_by | Amount, quantity, or both; item\_id optional |
 | sales\_note (data standard 1.5) | id, branch\_id, business\_date, person\_id, text, themes | A clerk's words about the day: data, never instructions |
 | stock\_event (data standard 1.5) | id, branch\_id, kind (sold\_out, count, leftover, waste, low, received), at, reported\_by, business\_date | Item or ingredient, quantity and unit, reason, order\_id |
+| supplier\_order (data standard 1.6) | id, branch\_id, supplier, lines, currency, status, requested\_by, business\_date | Total, approval\_id |
+| contract (data standard 1.6) | id, branch\_id, person\_id, employment\_type, daily\_rate, currency, rest\_day, start\_date, position, set\_by | End date; daily\_rate stays off the chain |
+| payslip (data standard 1.6) | id, branch\_id, person\_id, cutoff\_start, cutoff\_end, pay\_date, lines, gross, deductions, net, currency, issued\_at | One per person and cutoff; the amounts stay off the chain |
+| leave (data standard 1.6) | id, branch\_id, person\_id, kind, start\_date, end\_date, days, status | approval\_id, reason; kind and reason stay off the chain |
 
 Formats: IDs are ULIDs; dates and times are ISO 8601 with time zone; money is an integer in minor units with a currency code; phone numbers are E.164; languages are BCP 47 codes. Code lists (engagement\_type, visit status, day type) are versioned with the standard.
 

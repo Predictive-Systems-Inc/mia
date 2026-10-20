@@ -9,10 +9,9 @@ from dataclasses import fields, replace
 from sqlmodel import Session, col, select
 
 from mia.agents.hr_officer import calendar, ph
-from mia.agents.hr_officer.models import Contract, Leave
 from mia.agents.hr_officer.ph import REGULAR_MINUTES, Minutes, split_minutes
 from mia.core import orgconfig
-from mia.core.models import Timesheet
+from mia.core.models import Contract, Leave, Timesheet
 
 # How far before a cutoff the working day before a regular holiday is looked for (a rest day
 # and a run of holidays, as in Holy Week, stay well inside a week).

@@ -29,12 +29,11 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.hr_officer import MANIFEST, calc, calendar, ph
-from mia.agents.hr_officer.models import Contract, Leave, Payslip
 from mia.chat.blocks import Block, TextBlock
 from mia.chat.channels import notify
 from mia.core import approvals, events, orgconfig, store
 from mia.core.db import utcnow
-from mia.core.models import Actor, Approval, Branch, Organisation, Person
+from mia.core.models import Actor, Approval, Branch, Contract, Leave, Organisation, Payslip, Person
 from mia.core.rbac import Resource, get_rbac
 from mia.i18n import t
 

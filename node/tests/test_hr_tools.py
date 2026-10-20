@@ -12,7 +12,6 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import SENSITIVE_KEEP, AgentDeps, call_tool
 from mia.agents.hr_officer import MANIFEST, tools
-from mia.agents.hr_officer.models import Contract, Leave, Payslip
 from mia.agents.hr_officer.tools import (
     CertificateInput,
     ContributionsInput,
@@ -26,7 +25,18 @@ from mia.agents.hr_officer.tools import (
     SetContractInput,
 )
 from mia.core import approvals, events, orgconfig, people, store
-from mia.core.models import Actor, Approval, Branch, Event, Message, Person, Thread
+from mia.core.models import (
+    Actor,
+    Approval,
+    Branch,
+    Contract,
+    Event,
+    Leave,
+    Message,
+    Payslip,
+    Person,
+    Thread,
+)
 from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied
 from mia.i18n import t

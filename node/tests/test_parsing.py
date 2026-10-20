@@ -4,6 +4,7 @@ from mia.agents.parsing import (
     DAY_NAMES,
     find_dates,
     find_prices,
+    find_tender,
     find_times,
     has_buy_word,
     has_negation,
@@ -264,3 +265,18 @@ def test_a_negation_word_marks_the_message() -> None:
     for text in ("huwag na", "wag na lang", "ayaw ko", "no, go back", "stop it", "hindi"):
         assert has_negation(text), text
     assert not has_negation("ituloy na natin, keep it")
+
+
+def test_the_count_parser_reads_a_tender_word() -> None:
+    found = (
+        find_tender("gcash 3 classic"),
+        find_tender("3 classic"),
+        find_tender("gcash 2 grab 1"),
+    )
+    assert found == ("gcash", None, None)
+    assert (find_tender("G-Cash 3"), find_tender("paymaya 2"), find_tender("panda 4")) == (
+        "gcash",
+        "maya",
+        "foodpanda",
+    )
+    assert [g.words for g in pre_parse("g-cash 3 classic", {"classic"})[0]] == ["classic"]

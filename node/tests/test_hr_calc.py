@@ -4,10 +4,9 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, select
 
 from mia.agents.hr_officer import calc
-from mia.agents.hr_officer.models import Contract
 from mia.agents.hr_officer.ph import Minutes
 from mia.core import store
-from mia.core.models import Actor, Branch, Person, Timesheet
+from mia.core.models import Actor, Branch, Contract, Person, Timesheet
 from tests import test_hr_tools
 
 Ferinos = tuple[Branch, dict[str, Person]]
