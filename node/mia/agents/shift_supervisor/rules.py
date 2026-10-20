@@ -93,7 +93,8 @@ def _last_return(messages: list[ModelMessage], tool: str) -> dict[str, Any] | No
     return None
 
 
-def _fmt_date(value: str, lang: str) -> str:
+def fmt_date(value: str, lang: str) -> str:
+    """An ISO date as a reply shows it: "3.11." in Finnish, "Tue 3 Nov" otherwise."""
     d = dt.date.fromisoformat(value)
     return f"{d.day}.{d.month}." if lang == "fi" else d.strftime("%a %-d %b")
 
@@ -101,7 +102,7 @@ def _fmt_date(value: str, lang: str) -> str:
 def _visit_card(visits: list[dict[str, Any]], title: str, lang: str) -> CardBlock:
     fields = [
         CardField(
-            label=f"{_fmt_date(v['date'], lang)} {v['start']}-{v['end']}",
+            label=f"{fmt_date(v['date'], lang)} {v['start']}-{v['end']}",
             value=f"{v['location']} ({v['job']})",
         )
         for v in visits
@@ -216,7 +217,7 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
     if status == "invalid":
         return [TextBlock(text=out.get("message", ""))]
     if part.tool_name == "record_absence":
-        date = _fmt_date(out["date"], lang)
+        date = fmt_date(out["date"], lang)
         visits = out["affected_visits"]
         if out["updated"]:
             key = {None: "absence.updated_all", "morning": "absence.updated_morning"}.get(
@@ -249,7 +250,7 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
         ]
     if part.tool_name == "find_replacements":
         v = out["visit"]
-        params = {"location": v["location"], "date": _fmt_date(v["date"], lang), "time": v["start"]}
+        params = {"location": v["location"], "date": fmt_date(v["date"], lang), "time": v["start"]}
         if not out["candidates"]:
             return [TextBlock(text=t(word_key("cover.none"), lang, **params))]
         fields = [
@@ -268,7 +269,7 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
         params = {
             "name": out["candidate"],
             "location": v["location"],
-            "date": _fmt_date(v["date"], lang),
+            "date": fmt_date(v["date"], lang),
             "time": v["start"],
         }
         if out["status"] == "awaiting_approval":
@@ -290,7 +291,7 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
         if not out["accepted"]:
             return [TextBlock(text=t(word_key("respond.declined"), lang))]
         v = out["visit"]
-        params = {"location": v["location"], "date": _fmt_date(v["date"], lang), "time": v["start"]}
+        params = {"location": v["location"], "date": fmt_date(v["date"], lang), "time": v["start"]}
         return [TextBlock(text=t(word_key("respond.accepted"), lang, **params))]
     return [TextBlock(text=t(word_key("fallback.help"), lang))]
 

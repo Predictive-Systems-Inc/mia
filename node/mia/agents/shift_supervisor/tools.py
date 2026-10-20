@@ -14,7 +14,7 @@ from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.shift_supervisor import cover, scoring
 from mia.agents.shift_supervisor import roster as patterns
 from mia.agents.shift_supervisor import timesheets as sheets
-from mia.agents.shift_supervisor.rules import is_retail
+from mia.agents.shift_supervisor.rules import fmt_date, is_retail
 from mia.core import scheduling, store
 from mia.core.db import utcnow
 from mia.core.models import (
@@ -190,15 +190,26 @@ def _affected(visits: list[Visit], partial_day: str | None, tz: str) -> list[Vis
     return morning if partial_day == "morning" else [v for v in visits if v not in morning]
 
 
+class PastDay(BaseModel):
+    """A refusal for a day gone by (retail offers past days for a time correction only)."""
+
+    status: Literal["invalid"] = "invalid"
+    reason: Literal["past"] = "past"
+    date: dt.date
+
+
 def record_absence(
     deps: AgentDeps, args: RecordAbsenceInput, tool_call_id: str
-) -> RecordAbsenceOutput:
-    """Record (or update) an absence and return the visits it affects. Visits are not changed."""
+) -> RecordAbsenceOutput | PastDay:
+    """Record (or update) an absence and return the visits it affects. Visits are not changed.
+    In retail a day before today is refused (`past`): Jev may pick past days, for corrections."""
     person = deps.person
     if args.person_name:
         person = find_person(deps.session, [deps.branch.id], args.person_name)
     resource = Resource(kind="data", name="core.absence", owner_id=person.id)
     _check(deps, resource, "write", tool_call_id)
+    if is_retail() and args.date < deps.today:
+        return PastDay(date=args.date)
     existing = deps.session.exec(
         select(Absence).where(Absence.person_id == person.id).where(Absence.date == args.date)
     ).first()
@@ -702,7 +713,12 @@ def _report_at_kiosk(
         extra: dict[str, object] = {}
         if args.kind == "no_delivery":
             extra["order"] = (
-                t("retail.alert.order", p.language, supplier=order[0], date=order[1])
+                t(
+                    "retail.alert.order",
+                    p.language,
+                    supplier=order[0],
+                    date=fmt_date(order[1].isoformat(), p.language),
+                )
                 if order
                 else t("retail.alert.no_order", p.language)
             )
@@ -1347,7 +1363,8 @@ def close_day(deps: AgentDeps, args: CloseDayInput, tool_call_id: str) -> CloseD
             if pid in told or (p := session.get(Person, pid)) is None:
                 continue
             told.add(pid)
-            text = t("shift.closed.told", p.language, location=branch.name, date=args.date)
+            day = fmt_date(args.date.isoformat(), p.language)
+            text = t("shift.closed.told", p.language, location=branch.name, date=day)
             notify(session, p, [TextBlock(text=text)], deps.actor, deps.manifest.id)
     return CloseDayOut(status="ok", branch=branch.name, date=args.date, cancelled=len(cancelled))
 

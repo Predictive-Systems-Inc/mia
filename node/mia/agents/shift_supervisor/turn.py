@@ -340,15 +340,24 @@ def _negated_yes(decision: decider.Decision, text: str) -> bool:
 def _ask_yes_or_no(
     session: Session, deps: AgentDeps, thread: Thread, decision: decider.Decision
 ) -> ChatReply:
-    """Log Jev's decision, then ask with the accept and decline buttons instead of acting."""
+    """Log Jev's decision, then ask with the accept and decline buttons instead of acting. The
+    buttons are stored decisions (decision.clarify_asked), so a tap runs without a Jev call."""
     after = decision.model_dump(mode="json")
     events.emit(session, "decision.made", ("thread", thread.id), None, after, deps.actor)
-    options = [t("cover.reply_accept", deps.lang), t("cover.reply_decline", deps.lang)]
+    options = {
+        t(key, deps.lang): decider.Decision(
+            action=decision.action, args={"accept": accept}, confidence=1.0
+        ).model_dump(mode="json")
+        for key, accept in (("cover.reply_accept", True), ("cover.reply_decline", False))
+    }
     blocks: list[Block] = [
         TextBlock(text=t("shift.answer.ask", deps.lang)),
-        QuickRepliesBlock(options=options),
+        QuickRepliesBlock(options=list(options)),
     ]
-    return store_reply(session, deps, thread, blocks)
+    reply = store_reply(session, deps, thread, blocks)
+    stored = {"options": options, "message_id": reply.message_id}
+    events.emit(session, "decision.clarify_asked", ("thread", thread.id), None, stored, deps.actor)
+    return reply
 
 
 def _template_text(decided: Route, lang: str) -> str | None:

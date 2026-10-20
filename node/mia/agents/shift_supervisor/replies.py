@@ -9,7 +9,7 @@ from typing import Any
 from pydantic_ai.messages import ToolReturnPart
 
 from mia.agents.shift_supervisor.roster import REASON_KEYS
-from mia.agents.shift_supervisor.rules import _fmt_date, compose, is_retail, word_key
+from mia.agents.shift_supervisor.rules import compose, fmt_date, is_retail, word_key
 from mia.chat.blocks import Block, CardBlock, CardField, TextBlock
 from mia.i18n import t
 from mia.i18n.strings import STRINGS
@@ -39,6 +39,8 @@ def tool_reply(tool: str, out: dict[str, Any], lang: str) -> list[Block]:
     if is_retail():
         if tool in RETAIL_TOOLS:
             return retail_reply(tool, out, lang)
+        if out.get("reason") == "past":  # record_absence for a day gone by
+            return _text("shift.swap.past", lang)
         if out.get("status") == "invalid" and tool in _RAW_INVALID:
             return _text("retail.not_found", lang)
         if tool == "find_replacements" and out.get("candidates"):
@@ -60,7 +62,7 @@ def _first(name: str | None) -> str:
 
 
 def _date(value: str | None, lang: str) -> str:
-    return _fmt_date(value, lang) if value else ""
+    return fmt_date(value, lang) if value else ""
 
 
 def _cover_card(out: dict[str, Any], lang: str) -> list[Block]:
@@ -130,13 +132,13 @@ def _week(out: dict[str, Any], lang: str) -> list[Block]:
         CardField(
             label=name,
             value="; ".join(
-                f"{_fmt_date(v['date'], lang)} {v['start']}-{v['end']} {v['location']}"
+                f"{fmt_date(v['date'], lang)} {v['start']}-{v['end']} {v['location']}"
                 for v in visits
             ),
         )
         for name, visits in out["people"].items()
     ]
-    title = t("shift.roster.week_title", lang, date=_fmt_date(out["start"], lang))
+    title = t("shift.roster.week_title", lang, date=fmt_date(out["start"], lang))
     return [CardBlock(title=title, fields=fields)]
 
 

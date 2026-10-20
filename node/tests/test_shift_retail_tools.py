@@ -12,6 +12,7 @@ from mia.agents.base import AgentDeps, call_tool
 from mia.agents.inventory_manager import MANIFEST as INVENTORY
 from mia.agents.inventory_manager import tools as inventory
 from mia.agents.shift_supervisor import MANIFEST, cover, tools
+from mia.agents.shift_supervisor.rules import fmt_date
 from mia.agents.shift_supervisor.tools import (
     AssignCoverInput,
     CheckInInput,
@@ -392,7 +393,7 @@ def test_a_closed_day_cancels_the_shifts_and_tells_the_clerks(
     assert session.exec(select(RetailClosure).where(RetailClosure.date == SATURDAY)).one()
     lang = rs[1]["Ana"].language
     assert told(session, rs[1]["Ana"])[-1] == t(
-        "shift.closed.told", lang, location="Mall kiosk", date=SATURDAY
+        "shift.closed.told", lang, location="Mall kiosk", date=fmt_date(SATURDAY.isoformat(), lang)
     )
     again = tools.close_day(marites, CloseDayInput(date=SATURDAY), "c2")
     assert again.reason == "already"
@@ -452,7 +453,12 @@ def test_a_missed_delivery_names_the_open_order(session: Session, rs: Ferinos) -
     report = ReportProblemInput(kind="no_delivery", text="walang dumating na itlog")
     tools.report_site_problem(deps_for(session, ana), report, "p")
     lang = rosa.language
-    named = t("retail.alert.order", lang, supplier="Aling Nena", date=order.business_date)
+    named = t(
+        "retail.alert.order",
+        lang,
+        supplier="Aling Nena",
+        date=fmt_date(order.business_date.isoformat(), lang),
+    )
     assert told(session, rosa)[-1] == t(
         "retail.alert.no_delivery",
         lang,

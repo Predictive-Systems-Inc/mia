@@ -12,9 +12,17 @@ from typing import Any
 import pytest
 from sqlmodel import Session, col, select
 
-from mia.agents.shift_supervisor import MANIFEST, cover, decider, timesheets, tools
+from mia.agents.shift_supervisor import (
+    MANIFEST,
+    cover,
+    decider,
+    replies,
+    scoring,
+    timesheets,
+    tools,
+)
 from mia.agents.shift_supervisor.tools import CheckInInput
-from mia.chat.blocks import ChatReply, QuickRepliesBlock
+from mia.chat.blocks import CardBlock, ChatReply, QuickRepliesBlock
 from mia.chat.service import run_turn
 from mia.core import approvals, events, jev, orgconfig, store
 from mia.core.models import (
@@ -51,6 +59,7 @@ from tests.test_shift_retail_tools import decide, deps_for
 
 Ferinos = tuple[Branch, dict[str, Person]]
 EN = "en"
+DAY, TUE = (d.strftime("%a %-d %b") for d in (SATURDAY, TUESDAY))
 PATTERN = (
     "Ana opening Martes hanggang Linggo 9 to 5, Liza closing 1 to 9, Sabado at Linggo dagdag si"
     " Liza 9 to 1 sa umaga"
@@ -129,6 +138,10 @@ def test_a_negated_swap_answer_asks_instead(
     assert _quick(reply).options == [t("cover.reply_accept", EN), t("cover.reply_decline", EN)]
     assert cover.open_swap(session, liza) is not None
     assert not session.exec(select(Approval).where(Approval.type == cover.SWAP_TYPE)).all()
+    seen: list[dict[str, Any]] = []
+    _answers(monkeypatch, "swap_reply", seen, accept=0.0)  # a tap never reaches Jev
+    tapped = _turn(session, liza, t("cover.reply_accept", EN), reply.thread_id)
+    assert not seen and tapped.text() == t("shift.swap.confirming", EN, name="Ana", date=DAY)
 
 
 def test_a_kiosk_injection_is_data(
@@ -223,7 +236,7 @@ def test_a_no_show_gets_cover_from_the_other_kiosk(
     _turn(session, ana, "may sakit ako bukas")
     _answers(monkeypatch, "find_replacements", site=visit.location_id, date=TUESDAY.isoformat())
     card = _turn(session, marites, "sino pwede sa Mall kiosk bukas?")
-    assert "km" not in json.dumps(card.model_dump(mode="json"))  # no travel at a kiosk
+    assert card.text() == t("retail.cover.none", EN, location="Mall kiosk", date=TUE, time="09:00")
     _answers(monkeypatch, "assign_cover", person=pao.id)
     _turn(session, marites, "si Pao")
     override = session.exec(select(Approval).where(Approval.type == cover.OVERRIDE_TYPE)).one()
@@ -338,3 +351,51 @@ def test_greeting_is_answered_in_filipino_at_the_kiosk(
     assert ana.language == "fil"
     _answers(monkeypatch, "reply_only", conversation="greeting")
     assert _turn(session, ana, "magandang umaga").text() == t("conversation.greeting", "fil")
+
+
+def test_a_retail_absence_for_a_past_day_is_refused(
+    session: Session, rs_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    """Past days are offered for a time correction only: an absence for yesterday is refused in
+    the tool, today's is recorded."""
+    ana = rs_en[1]["Ana"]
+    rs_pin(at(SATURDAY, 8))
+    yesterday = SATURDAY - dt.timedelta(days=1)
+    _answers(monkeypatch, "record_absence", date=yesterday.isoformat(), reason="sick")
+    assert _turn(session, ana, "may sakit ako kahapon").text() == t("shift.swap.past", EN)
+    assert not session.exec(select(Absence).where(Absence.person_id == ana.id)).all()
+    _answers(monkeypatch, "record_absence", date=SATURDAY.isoformat(), reason="sick")
+    _turn(session, ana, "may sakit ako ngayon")
+    (row,) = session.exec(select(Absence).where(Absence.person_id == ana.id)).all()
+    assert row.date == SATURDAY
+
+
+def test_the_kiosk_cover_card_words_scorings_reasons_by_key(
+    session: Session, rs_en: Ferinos
+) -> None:
+    """The card's reasons come from scoring's own literals (no skills, no travel): a drift in
+    those literals fails here."""
+    start = at(TUESDAY, 9)
+    slot = scoring.Slot(start, start + dt.timedelta(hours=8))
+    week = [scoring.Slot(start - dt.timedelta(days=1), start - dt.timedelta(days=1, hours=-9))]
+    data = [
+        scoring.CandidateData(
+            "p1", "Liza", [], {1: (dt.time(9), dt.time(21))}, 600, 3240, week, site_visits=4
+        ),
+        scoring.CandidateData("p2", "Pao", [], {1: (dt.time(6), dt.time(21))}, 600, 3240),
+    ]
+    ranked = scoring.rank_candidates(data, slot, [])
+    out = {
+        "status": "ok",
+        "visit": {"location": "Mall kiosk", "date": TUESDAY.isoformat(), "start": "09:00"},
+        "candidates": [
+            {"person_id": r.person_id, "name": r.name, "reasons": r.reasons} for r in ranked
+        ],
+    }
+    (box,) = [
+        b for b in replies.tool_reply("find_replacements", out, EN) if isinstance(b, CardBlock)
+    ]
+    assert [(f.label, f.value) for f in box.fields] == [
+        ("Liza", t("retail.cover.reason", EN, visits="4", hours="9.0")),
+        ("Pao", t("retail.cover.new", EN, visits=0, hours="0.0")),
+    ]
