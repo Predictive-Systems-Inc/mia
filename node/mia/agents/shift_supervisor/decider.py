@@ -12,7 +12,13 @@ from typing import Any
 
 from mia.agents import decider as shared
 from mia.agents.decider import Alternative, DecideError, Decision, Reader
-from mia.agents.shift_supervisor.actions import ACTIONS, ANOTHER_DAY, Query, build_request
+from mia.agents.shift_supervisor.actions import (
+    ANOTHER_DAY,
+    Query,
+    actions_for,
+    build_request,
+    problem_kinds,
+)
 
 __all__ = ["Alternative", "DecideError", "Decision", "decide", "parse"]
 
@@ -93,7 +99,7 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         site = r.pick("site", q.sites)
         return {"location_name": q.sites.get(site or "")}, None
     if action == "report_site_problem":
-        kind = r.pick("problem_kind", {"cannot_access", "site_problem"})
+        kind = r.pick("problem_kind", set(problem_kinds()))
         site = r.pick("site", q.sites)
         location = q.sites.get(site or "")
         return {"kind": kind, "text": q.message[:500], "location_name": location}, None
@@ -104,15 +110,54 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
             "item": q.checklist_items.get(item or ""),
             "location_name": q.sites.get(site or ""),
         }, None
+    if action in ("set_roster", "swap", "swap_reply", "correct_time", "close_day", "week_roster"):
+        return _retail_args(action, r)
     if action == "reply_only":
         kinds = {"greeting", "thanks", "goodbye", "capabilities", "send_photos", "other"}
         return {"kind": r.pick("conversation", kinds) or "other"}, None
     return {}, None  # clarify
 
 
+def _retail_args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
+    """The tool input for the kiosk actions (D39). The roster pattern and the times are read by
+    code in build_query; Jev only picks which of them the message means."""
+    q: Query = r.q
+    if action == "set_roster":
+        return {"shifts": q.roster}, "pattern" if not q.roster or q.roster_unclear else None
+    if action == "swap_reply":
+        return {"accept": r.yes("accept")}, None
+    if action == "week_roster":
+        period = r.pick("period", {"today", "tomorrow", "this_week", "next_week"})
+        start = _period(period, q.today)[0] if period in ("this_week", "next_week") else None
+        person = r.pick("person", q.people)
+        if _ambiguous(person, q):
+            return {}, "person"
+        return {"start": start, "person_name": q.people.get(person or "")}, None
+    day = r.pick("date", {*q.dates, ANOTHER_DAY})
+    if day == ANOTHER_DAY:
+        return {}, "date"
+    if action == "close_day":
+        site = r.pick("site", q.sites)
+        args = {"location_name": q.sites.get(site or ""), "date": day, "reason": q.message[:200]}
+        return args, "date" if day is None else None
+    person = r.pick("person", q.people)
+    if _ambiguous(person, q):
+        return {}, "person"
+    name = q.people.get(person or "")
+    if action == "swap":
+        missing = "person" if name is None else "date" if day is None else None
+        return {"person_name": name, "date": day}, missing
+    time = r.pick("time", q.times)  # correct_time
+    date = day or q.today.isoformat()
+    end = q.times.get(time or "")
+    return {"date": date, "end": end, "start": None, "person_name": name}, (
+        "time" if end is None else None
+    )
+
+
 def parse(answers: dict[str, Any], q: Query) -> Decision:
-    """The shared parse over the shift supervisor's ACTIONS and argument mapping."""
-    return shared.parse(answers, q, actions=ACTIONS, args=_args)
+    """The shared parse over the template's actions (actions_for) and argument mapping."""
+    return shared.parse(answers, q, actions=actions_for(), args=_args)
 
 
 async def decide(q: Query) -> Decision:
@@ -121,5 +166,5 @@ async def decide(q: Query) -> Decision:
     return await shared.decide(
         q,
         build_request=build_request,
-        parse=partial(shared.parse, q=q, actions=ACTIONS, args=_args),
+        parse=partial(shared.parse, q=q, actions=actions_for(), args=_args),
     )

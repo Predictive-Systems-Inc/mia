@@ -19,6 +19,7 @@ from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
 from mia.agents.shift_supervisor import MANIFEST, actions, alerts, cover, decider, replies
 from mia.agents.shift_supervisor.agent import get_agent
 from mia.agents.shift_supervisor.classifier import classify
+from mia.agents.shift_supervisor.rules import is_retail
 from mia.agents.shift_supervisor.tools import BINDINGS
 from mia.chat.blocks import ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import (
@@ -215,7 +216,9 @@ def _jev_tapped(
     if _local_day(asked.timestamp, deps.branch.timezone) != deps.today:
         return None
     chosen = ((asked.after or {}).get("options") or {}).get(text.strip())
-    return decider.Decision.model_validate(chosen) if chosen else None
+    decision = decider.Decision.model_validate(chosen) if chosen else None
+    offered = {*actions.actions_for(), "clarify"}  # a stored action the template no longer offers
+    return decision if decision is not None and decision.action in offered else None
 
 
 def _jev_query(
@@ -239,7 +242,7 @@ def _jev_clarify(
     runs it without a new request) plus Something else; with none, ask to rephrase."""
     options: dict[str, dict[str, Any]] = {}
     for alt in decision.alternatives:
-        spec = actions.ACTIONS.get(alt.action)
+        spec = actions.actions_for().get(alt.action)
         if spec is None or spec.label_key is None or alt.missing is not None:
             continue
         label = t(spec.label_key, deps.lang)
@@ -284,7 +287,7 @@ def _jev_act(
     )
     if decision.action == "clarify":
         return _jev_clarify(session, deps, thread, decision)
-    tool = actions.ACTIONS[decision.action].tool
+    tool = actions.actions_for()[decision.action].tool
     if tool is None:  # reply_only
         kind = str(decision.args.get("kind", "other"))
         return store_reply(session, deps, thread, replies.conversation_reply(kind, deps.lang))
@@ -356,6 +359,10 @@ async def handle_turn(turn: Turn) -> ChatReply:
     question, Jev (MIA_DECIDER=jev) or the Pydantic AI agent. The caller commits."""
     session, deps, thread, text = turn.session, turn.deps, turn.thread, turn.text
     jev = get_settings().MIA_DECIDER == "jev"
+    if not jev and is_retail():  # the kiosk words and actions live only on the Jev path (D39)
+        return await asyncio.to_thread(
+            reply_text, session, deps, thread, t("reply.unavailable", deps.lang)
+        )
     reply, agent_text = await asyncio.to_thread(resolve_turn, session, deps, thread, text, jev)
     if reply is not None:
         return reply
@@ -387,10 +394,11 @@ SPEC = AgentSpec(
     manifest=MANIFEST,
     label_key=f"agent.{MANIFEST.id}.label",
     router_description=(
-        "Shifts and attendance: rosters and who works when, being sick, late or absent,"
-        " finding and answering cover, checking in and out, the day's plan, problems at a"
-        " site or the shop (a broken oven, a power cut), cleaning checklists; not what was"
-        " sold, not a correction of a sales count, not the best sales day and not pay."
+        "Shifts and attendance: the roster and who works when, being sick, late or absent,"
+        " finding and answering cover, swapping shifts, a forgotten or wrong check-out time,"
+        " checking in and out, the day's plan and the week's roster, a kiosk closed for a day,"
+        " problems at a site or a kiosk (a broken stove, a delivery that never came, a"
+        " customer making trouble); not sales counts, stock, cash or pay."
     ),
     handle_turn=handle_turn,
     run_due=_run_due,

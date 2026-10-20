@@ -33,9 +33,23 @@ from mia.chat.blocks import (
     QuickRepliesBlock,
     TextBlock,
 )
+from mia.core import orgconfig
 from mia.i18n import t
+from mia.i18n.strings import STRINGS
 
 USER_MESSAGE = re.compile(r"<user_message[^>]*>\n?(.*?)\n?</user_message>", re.DOTALL)
+
+
+def is_retail() -> bool:
+    """True when the organisation runs the retail template (D39): the kiosk words and actions."""
+    return orgconfig.load().template == "retail"
+
+
+def word_key(key: str) -> str:
+    """The retail wording of a key (retail.<key>) when the organisation is retail and English
+    has it; else the key itself, so cleaning keeps its words byte for byte."""
+    retail = f"retail.{key}"
+    return retail if is_retail() and retail in STRINGS["en"] else key
 
 
 def _context(info: AgentInfo) -> tuple[dt.date, str]:
@@ -184,19 +198,21 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
     status = out.get("status")
     if status == "denied":
         key = "denied.visits" if part.tool_name == "get_my_visits" else "denied.generic"
-        return [TextBlock(text=t(key, lang))]
+        return [TextBlock(text=t(word_key(key), lang))]
     if status == "invalid" and part.tool_name == "find_replacements":
-        return [TextBlock(text=t("cover.visit_not_found", lang))]
+        return [TextBlock(text=t(word_key("cover.visit_not_found"), lang))]
     if status == "invalid" and part.tool_name == "respond_to_cover":
-        return [TextBlock(text=t("respond.none", lang))]
+        return [TextBlock(text=t(word_key("respond.none"), lang))]
     if part.tool_name in ("check_in", "check_out", "visit_details"):
         return _field_work(part.tool_name, out, lang)
     if part.tool_name == "checklist":
         return _checklist(out, lang)
     if part.tool_name == "report_site_problem":
         if out.get("status") != "ok":
-            return [TextBlock(text=t("problem.no_visit", lang))]
-        return [TextBlock(text=t("problem.reported", lang, location=out["visit"]["location"]))]
+            return [TextBlock(text=t(word_key("problem.no_visit"), lang))]
+        return [
+            TextBlock(text=t(word_key("problem.reported"), lang, location=out["visit"]["location"]))
+        ]
     if status == "invalid":
         return [TextBlock(text=out.get("message", ""))]
     if part.tool_name == "record_absence":
@@ -206,40 +222,45 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
             key = {None: "absence.updated_all", "morning": "absence.updated_morning"}.get(
                 out["partial_day"], "absence.updated_afternoon"
             )
-            blocks: list[Block] = [TextBlock(text=t(key, lang, date=date))]
+            blocks: list[Block] = [TextBlock(text=t(word_key(key), lang, date=date))]
             if out["partial_day"] and visits:
-                blocks.append(_visit_card(visits, t("visits.title", lang), lang))
+                blocks.append(_visit_card(visits, t(word_key("visits.title"), lang), lang))
             return blocks
         if not visits:
-            return [TextBlock(text=t("absence.recorded_none", lang, date=date))]
+            return [TextBlock(text=t(word_key("absence.recorded_none"), lang, date=date))]
         return [
-            TextBlock(text=t("absence.recorded", lang, date=date)),
-            _visit_card(visits, t("visits.title", lang), lang),
-            TextBlock(text=t("absence.scope_question", lang)),
+            TextBlock(text=t(word_key("absence.recorded"), lang, date=date)),
+            _visit_card(visits, t(word_key("visits.title"), lang), lang),
+            TextBlock(text=t(word_key("absence.scope_question"), lang)),
             QuickRepliesBlock(
-                options=[t("absence.scope_all", lang), t("absence.scope_morning", lang)]
+                options=[
+                    t(word_key("absence.scope_all"), lang),
+                    t(word_key("absence.scope_morning"), lang),
+                ]
             ),
         ]
     if part.tool_name == "get_my_visits":
         if not out["visits"]:
-            return [TextBlock(text=t("visits.none", lang))]
-        title = t("visits.title", lang)
+            return [TextBlock(text=t(word_key("visits.none"), lang))]
+        title = t(word_key("visits.title"), lang)
         return [
-            TextBlock(text=t("visits.of", lang, name=out["person"])),
+            TextBlock(text=t(word_key("visits.of"), lang, name=out["person"])),
             _visit_card(out["visits"], title, lang),
         ]
     if part.tool_name == "find_replacements":
         v = out["visit"]
         params = {"location": v["location"], "date": _fmt_date(v["date"], lang), "time": v["start"]}
         if not out["candidates"]:
-            return [TextBlock(text=t("cover.none", lang, **params))]
+            return [TextBlock(text=t(word_key("cover.none"), lang, **params))]
         fields = [
             CardField(label=c["name"], value="; ".join(c["reasons"])) for c in out["candidates"]
         ]
-        options = [t("cover.assign", lang, name=c["name"].split()[0]) for c in out["candidates"]]
+        options = [
+            t(word_key("cover.assign"), lang, name=c["name"].split()[0]) for c in out["candidates"]
+        ]
         return [
-            TextBlock(text=t("cover.intro", lang, **params)),
-            CardBlock(title=t("cover.title", lang, **params), fields=fields),
+            TextBlock(text=t(word_key("cover.intro"), lang, **params)),
+            CardBlock(title=t(word_key("cover.title"), lang, **params), fields=fields),
             QuickRepliesBlock(options=options),
         ]
     if part.tool_name == "assign_cover":
@@ -252,49 +273,57 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
         }
         if out["status"] == "awaiting_approval":
             return [
-                TextBlock(text=t("assign.override", lang, **params)),
+                TextBlock(text=t(word_key("assign.override"), lang, **params)),
                 ApprovalCardBlock(
                     approval_id=out["approval_id"],
-                    title=t("approval.card_title", lang),
-                    summary=t("assign.override", lang, **params),
-                    fields=[CardField(label=t("field.person", lang), value=out["candidate"])],
+                    title=t(word_key("approval.card_title"), lang),
+                    summary=t(word_key("assign.override"), lang, **params),
+                    fields=[
+                        CardField(label=t(word_key("field.person"), lang), value=out["candidate"])
+                    ],
                     status="pending",
                 ),
             ]
         key = "assign.waiting_quiet" if out["stage"] == "waiting_quiet" else "assign.asking"
-        return [TextBlock(text=t(key, lang, **params))]
+        return [TextBlock(text=t(word_key(key), lang, **params))]
     if part.tool_name == "respond_to_cover":
         if not out["accepted"]:
-            return [TextBlock(text=t("respond.declined", lang))]
+            return [TextBlock(text=t(word_key("respond.declined"), lang))]
         v = out["visit"]
         params = {"location": v["location"], "date": _fmt_date(v["date"], lang), "time": v["start"]}
-        return [TextBlock(text=t("respond.accepted", lang, **params))]
-    return [TextBlock(text=t("fallback.help", lang))]
+        return [TextBlock(text=t(word_key("respond.accepted"), lang, **params))]
+    return [TextBlock(text=t(word_key("fallback.help"), lang))]
 
 
 def _checklist(out: dict[str, Any], lang: str) -> list[Block]:
     """The checklist card (done items marked) and a quick reply per open item."""
     if out.get("status") != "ok":
-        return [TextBlock(text=t(f"checklist.{out.get('reason', 'no_visit')}", lang))]
+        return [TextBlock(text=t(word_key(f"checklist.{out.get('reason', 'no_visit')}"), lang))]
     blocks: list[Block] = []
     if out.get("unknown"):
-        blocks.append(TextBlock(text=t("checklist.unknown", lang, item=out["unknown"])))
+        blocks.append(TextBlock(text=t(word_key("checklist.unknown"), lang, item=out["unknown"])))
     elif out.get("ticked"):
-        blocks.append(TextBlock(text=t("checklist.ticked", lang, item=out["ticked"])))
-    done_mark, open_mark = t("checklist.done_mark", lang), t("checklist.open_mark", lang)
+        blocks.append(TextBlock(text=t(word_key("checklist.ticked"), lang, item=out["ticked"])))
+    done_mark, open_mark = (
+        t(word_key("checklist.done_mark"), lang),
+        t(word_key("checklist.open_mark"), lang),
+    )
     fields = [
         CardField(label=i["text"], value=done_mark if i["done"] else open_mark)
         for i in out["items"]
     ]
     blocks.append(
-        CardBlock(title=f"{out['visit']['location']}: {t('checklist.title', lang)}", fields=fields)
+        CardBlock(
+            title=f"{out['visit']['location']}: {t(word_key('checklist.title'), lang)}",
+            fields=fields,
+        )
     )
     open_items = [i["text"] for i in out["items"] if not i["done"]]
     if open_items:
-        prefix = t("checklist.tick_prefix", lang)
+        prefix = t(word_key("checklist.tick_prefix"), lang)
         blocks.append(QuickRepliesBlock(options=[f"{prefix}{i}" for i in open_items[:6]]))
     else:
-        blocks.append(TextBlock(text=t("checklist.all_done", lang)))
+        blocks.append(TextBlock(text=t(word_key("checklist.all_done"), lang)))
     return blocks
 
 
@@ -302,21 +331,29 @@ def _field_work(tool: str, out: dict[str, Any], lang: str) -> list[Block]:
     """Replies for check-in, check-out and visit details."""
     if out.get("status") != "ok":
         reason = out.get("reason") or ("not_checked_in" if tool == "check_out" else "no_visit")
-        return [TextBlock(text=t(f"{tool}.{reason}", lang))]
+        return [TextBlock(text=t(word_key(f"{tool}.{reason}"), lang))]
     v = out["visit"]
     if tool == "visit_details":
-        fields = [CardField(label=t("field.address", lang), value=out["address"] or "-")]
+        fields = [CardField(label=t(word_key("field.address"), lang), value=out["address"] or "-")]
         if out["instructions"]:
-            fields.append(CardField(label=t("field.instructions", lang), value=out["instructions"]))
+            fields.append(
+                CardField(label=t(word_key("field.instructions"), lang), value=out["instructions"])
+            )
         if out["access_notes"]:
-            fields.append(CardField(label=t("field.access", lang), value=out["access_notes"]))
+            fields.append(
+                CardField(label=t(word_key("field.access"), lang), value=out["access_notes"])
+            )
         if out["checklist"]:
             fields.append(
-                CardField(label=t("field.checklist", lang), value="; ".join(out["checklist"]))
+                CardField(
+                    label=t(word_key("field.checklist"), lang), value="; ".join(out["checklist"])
+                )
             )
         title = f"{v['location']} {v['start']}"
         return [CardBlock(title=title, fields=fields, sensitive=bool(out["access_notes"]))]
-    return [TextBlock(text=t(f"{tool}.done", lang, location=v["location"], time=out["time"]))]
+    return [
+        TextBlock(text=t(word_key(f"{tool}.done"), lang, location=v["location"], time=out["time"]))
+    ]
 
 
 def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
