@@ -17,13 +17,13 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, col, select
 
-from mia.agents.shift_supervisor import MANIFEST, scoring
+from mia.agents.shift_supervisor import MANIFEST, roster, scoring
 from mia.channels.base import TemplateCall
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.chat.channels import call_adapter, notify
-from mia.core import approvals, events, store
+from mia.core import approvals, events, scheduling, store
 from mia.core.db import utcnow
-from mia.core.models import Actor, Approval, Branch, CoverRequest, Location, Person, Visit
+from mia.core.models import Actor, Approval, Branch, CoverRequest, Event, Location, Person, Visit
 from mia.core.orgconfig import OrgSettings
 from mia.core.orgconfig import load as load_org
 from mia.i18n import t
@@ -32,6 +32,9 @@ AGENT_ID = MANIFEST.id
 OVERRIDE_TYPE = "shift_supervisor.cover_override"
 OVERRIDE_APPROVERS = ["admin", "owner"]
 OPEN = ("awaiting_approval", "asking")
+SWAP_TYPE = f"{AGENT_ID}.swap"
+SWAP_OVERRIDE_TYPE = f"{AGENT_ID}.swap_override"
+SWAP_ASKED, SWAP_ANSWERED = "swap.asked", "swap.answered"
 
 
 # ---- timing rules (pure) ------------------------------------------------------------------
@@ -443,6 +446,177 @@ def respond(
     params = _visit_text(session, visit, tz, instructor.language)
     _tell(session, instructor.id, "cover.sup_accepted", actor, {**params, "name": person.name})
     return request
+
+
+# ---- swaps (retail, D39): the other clerk's yes, then head staff's confirmation ------------
+
+
+def ask_swap(
+    session: Session,
+    actor: Actor,
+    mine: Visit,
+    theirs: Visit,
+    asker: Person,
+    other: Person,
+    *,
+    tool_call_id: str | None = None,
+) -> Event:
+    """Record the ask (`swap.asked` on the asker's visit, the other visit and both ids after) and
+    tell the other clerk, with yes and no quick replies. Nothing changes until it is approved."""
+    ask = events.emit(
+        session,
+        SWAP_ASKED,
+        mine,
+        None,
+        {"theirs": theirs.id, "asker_id": asker.id, "other_id": other.id},
+        actor,
+        tool_call_id=tool_call_id,
+    )
+    lang = other.language
+    params = _visit_text(session, mine, _branch(session, mine.branch_id).timezone, lang)
+    quick = QuickRepliesBlock(
+        options=[t("cover.reply_accept", lang), t("cover.reply_decline", lang)]
+    )
+    _tell(session, other.id, "shift.swap.ask", actor, {**params, "name": asker.name}, [quick])
+    return ask
+
+
+def open_swap(session: Session, person: Person) -> Event | None:
+    """The newest swap ask waiting for this person's answer (asked of them, not answered)."""
+    answered = {
+        (e.after or {}).get("ask")
+        for e in session.exec(select(Event).where(Event.action == SWAP_ANSWERED)).all()
+    }
+    asks = session.exec(
+        select(Event).where(Event.action == SWAP_ASKED).order_by(col(Event.id).desc())
+    ).all()
+    return next(
+        (e for e in asks if (e.after or {}).get("other_id") == person.id and e.id not in answered),
+        None,
+    )
+
+
+def answer_swap(
+    session: Session,
+    person: Person,
+    accept: bool,
+    actor: Actor,
+    now: dt.datetime,
+    *,
+    tool_call_id: str | None = None,
+) -> Approval | None:
+    """The other clerk's answer to the newest open ask. No tells the asker and returns None. Yes
+    requests head staff's confirmation (`shift_supervisor.swap`), or the owner's
+    (`shift_supervisor.swap_override`, app only) when roster.swap_breaks finds reasons; both
+    clerks are recorded as triggering it, so neither decides it, and it expires at the earlier
+    shift's planned start. Raises CoverError when there is no open ask or a shift is gone."""
+    ask = open_swap(session, person)
+    if ask is None:
+        raise CoverError("no open swap ask for you")
+    after = ask.after or {}
+    mine, theirs = session.get(Visit, ask.entity_id), session.get(Visit, str(after["theirs"]))
+    asker = _person(session, str(after["asker_id"]))
+    events.emit(
+        session,
+        SWAP_ANSWERED,
+        ("visit", ask.entity_id),
+        None,
+        {"ask": ask.id, "accept": accept},
+        actor,
+        tool_call_id=tool_call_id,
+    )
+    if mine is None or theirs is None or (mine.status, theirs.status) != ("planned", "planned"):
+        raise CoverError("shift not found")
+    tz = _branch(session, mine.branch_id).timezone
+    if not accept:
+        params = {**_visit_text(session, mine, tz, asker.language), "name": person.name}
+        _tell(session, asker.id, "shift.swap.declined", actor, params)
+        return None
+    start = min(mine.planned_start, theirs.planned_start)
+    if start <= now:
+        raise CoverError("the shift has started")
+    branch = _branch(session, mine.branch_id)
+    data = {
+        c.person_id: c
+        for c in scheduling.candidate_data(
+            session, branch, mine, include_assigned=True, only={asker.id, person.id}
+        )
+    }
+    if {asker.id, person.id} - set(data):
+        raise CoverError("only two clerks swap shifts")
+    reasons = roster.swap_breaks(
+        data[asker.id],
+        scheduling.slot_of(session, mine, tz),
+        data[person.id],
+        scheduling.slot_of(session, theirs, tz),
+    )
+    kind = SWAP_OVERRIDE_TYPE if reasons else SWAP_TYPE
+    params = _visit_text(session, mine, tz, "en")
+    approval = approvals.request(
+        session,
+        kind,
+        ("visit", mine.id),
+        f"Swap {asker.name} and {person.name} on {params['date']}"
+        + (f" although: {', '.join(reasons)}" if reasons else ""),
+        actor,
+        MANIFEST.roles.approvers[kind],
+        "app_only" if reasons else "any",
+        evidence={
+            "mine": mine.id,
+            "theirs": theirs.id,
+            "asker_id": asker.id,
+            "other_id": person.id,
+            "mine_assigned": list(mine.assigned_person_ids),
+            "theirs_assigned": list(theirs.assigned_person_ids),
+            "reasons": reasons,
+            "triggered_by": [asker.id, person.id],
+        },
+        ttl=start - now,
+        tool_call_id=tool_call_id,
+    )
+    # request counts its ttl from its own clock read: pin the end to the shift start exactly
+    return store.update(
+        session, approval, {"expires_at": start}, actor, action="approval.expiry_set"
+    )
+
+
+def on_swap_approved(session: Session, approval: Approval, decider: Actor) -> None:
+    """Approval handler: under the write lock, reread both visits; refuse (CoverError, the
+    caller rolls back and closes the request) when either changed since the ask, else swap the
+    two clerks on both visits (`visit.swapped`) and tell both."""
+    ev = approval.evidence
+    events.write_lock(session)
+    mine, theirs = session.get(Visit, str(ev["mine"])), session.get(Visit, str(ev["theirs"]))
+    for row in (mine, theirs):
+        if row is not None:
+            session.refresh(row)
+    if (
+        mine is None
+        or theirs is None
+        or (mine.status, theirs.status) != ("planned", "planned")
+        or mine.assigned_person_ids != ev["mine_assigned"]
+        or theirs.assigned_person_ids != ev["theirs_assigned"]
+    ):
+        raise CoverError("a shift changed since the swap was asked")
+    a, b = str(ev["asker_id"]), str(ev["other_id"])
+    for row, out, into in ((mine, a, b), (theirs, b, a)):
+        ids = [into if p == out else p for p in row.assigned_person_ids]
+        store.update(
+            session,
+            row,
+            {"assigned_person_ids": ids},
+            decider,
+            action="visit.swapped",
+            approval_id=approval.id,
+        )
+    tz = _branch(session, mine.branch_id).timezone
+    for pid in (a, b):
+        lang = _person(session, pid).language
+        _tell(session, pid, "shift.swap.done", decider, _visit_text(session, mine, tz, lang))
+
+
+approvals.register_handler(SWAP_TYPE, on_swap_approved)
+approvals.register_handler(SWAP_OVERRIDE_TYPE, on_swap_approved)
 
 
 def process_due(session: Session, now: dt.datetime) -> int:

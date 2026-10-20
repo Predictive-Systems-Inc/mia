@@ -3,6 +3,7 @@ through mia.core services. Scheduling decisions live in scoring.py, not in the m
 
 import datetime as dt
 import re
+from collections.abc import Sequence
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -11,10 +12,25 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.shift_supervisor import cover, scoring
+from mia.agents.shift_supervisor import roster as patterns
+from mia.agents.shift_supervisor import timesheets as sheets
+from mia.agents.shift_supervisor.rules import is_retail
 from mia.core import scheduling, store
 from mia.core.db import utcnow
-from mia.core.models import Absence, IncidentKind, Job, Location, Person, Visit
+from mia.core.models import (
+    Absence,
+    Branch,
+    IncidentKind,
+    Job,
+    Location,
+    Person,
+    SupplierOrder,
+    Timesheet,
+    Visit,
+)
 from mia.core.rbac import Resource, get_rbac
+from mia.templates.retail import hours as retail_hours
+from mia.templates.retail.models import RetailBranchHours, RetailClosure
 
 MORNING_ENDS = dt.time(12, 0)
 
@@ -61,12 +77,13 @@ def visit_info(session: Session, visit: Visit, tz: str) -> VisitInfo:
 
 
 def visits_for(
-    session: Session, branch_id: str, person_id: str, start: dt.date, end: dt.date
+    session: Session, branch_ids: Sequence[str], person_id: str, start: dt.date, end: dt.date
 ) -> list[Visit]:
-    """Visits in the branch between start and end (inclusive) assigned to the person, by start time."""
+    """Visits in the branches between start and end (inclusive) assigned to the person, by
+    start time."""
     stmt = (
         select(Visit)
-        .where(Visit.branch_id == branch_id)
+        .where(col(Visit.branch_id).in_(branch_ids))
         .where(col(Visit.date) >= start)
         .where(col(Visit.date) <= end)
         .order_by(col(Visit.planned_start))
@@ -74,10 +91,10 @@ def visits_for(
     return [v for v in session.exec(stmt) if person_id in v.assigned_person_ids]
 
 
-def find_person(session: Session, branch_id: str, hint: str) -> Person:
-    """Match a (possibly inflected) first name or full name. Raises LookupError."""
+def find_person(session: Session, branch_ids: Sequence[str], hint: str) -> Person:
+    """Match a (possibly inflected) first name or full name in the branches. Raises LookupError."""
     hint_low = hint.lower().strip()
-    persons = session.exec(select(Person).where(Person.branch_id == branch_id)).all()
+    persons = session.exec(select(Person).where(col(Person.branch_id).in_(branch_ids))).all()
     for p in persons:
         if p.name.lower() == hint_low:
             return p
@@ -95,6 +112,15 @@ def _check(deps: AgentDeps, resource: Resource, action: str, tool_call_id: str) 
     get_rbac().require(
         deps.actor, resource, action, session=deps.session, tool_call_id=tool_call_id
     )
+
+
+def _branch_ids(deps: AgentDeps) -> list[str]:
+    """Where the acting person's own shifts are looked up: every branch of the organisation in
+    retail (a covering clerk's shift at the other kiosk, D39), else the person's branch."""
+    if not is_retail():
+        return [deps.branch.id]
+    stmt = select(Branch.id).where(Branch.organisation_id == deps.branch.organisation_id)
+    return list(deps.session.exec(stmt).all())
 
 
 # ---- get_my_visits ------------------------------------------------------------------------
@@ -117,12 +143,13 @@ def get_my_visits(deps: AgentDeps, args: GetMyVisitsInput, tool_call_id: str) ->
     """List visits for the acting person (or, with permission, for another person)."""
     target = deps.person
     if args.person_name:
-        target = find_person(deps.session, deps.branch.id, args.person_name)
+        target = find_person(deps.session, [deps.branch.id], args.person_name)
     resource = Resource(kind="data", name="core.visit", owner_id=target.id)
     _check(deps, resource, "read", tool_call_id)
     start = args.start or deps.today
     end = args.end or start + dt.timedelta(days=6)
-    visits = visits_for(deps.session, deps.branch.id, target.id, start, end)
+    where = _branch_ids(deps) if target.id == deps.person.id else [deps.branch.id]
+    visits = visits_for(deps.session, where, target.id, start, end)
     infos = [visit_info(deps.session, v, deps.branch.timezone) for v in visits]
     return VisitList(person=target.name, visits=infos)
 
@@ -169,7 +196,7 @@ def record_absence(
     """Record (or update) an absence and return the visits it affects. Visits are not changed."""
     person = deps.person
     if args.person_name:
-        person = find_person(deps.session, deps.branch.id, args.person_name)
+        person = find_person(deps.session, [deps.branch.id], args.person_name)
     resource = Resource(kind="data", name="core.absence", owner_id=person.id)
     _check(deps, resource, "write", tool_call_id)
     existing = deps.session.exec(
@@ -194,7 +221,7 @@ def record_absence(
             deps.actor,
             tool_call_id=tool_call_id,
         )
-    day_visits = visits_for(deps.session, deps.branch.id, person.id, args.date, args.date)
+    day_visits = visits_for(deps.session, [deps.branch.id], person.id, args.date, args.date)
     affected = _affected(day_visits, args.partial_day, deps.branch.timezone)
     return RecordAbsenceOutput(
         absence_id=absence.id,
@@ -268,8 +295,11 @@ def resolve_visit(session: Session, deps: AgentDeps, args: FindReplacementsInput
 def candidate_data(
     session: Session, deps: AgentDeps, visit: Visit, *, include_assigned: bool = False
 ) -> list[scoring.CandidateData]:
-    """Gather everything scoring needs, for every active staff member not on the visit."""
-    return scheduling.candidate_data(session, deps.branch, visit, include_assigned=include_assigned)
+    """Gather everything scoring needs, for every active staff member not on the visit: the
+    organisation's in retail (the cover across kiosks, D39), else the branch's."""
+    return scheduling.candidate_data(
+        session, deps.branch, visit, include_assigned=include_assigned, org_wide=is_retail()
+    )
 
 
 def _ranked(deps: AgentDeps, visit: Visit) -> list[scoring.Ranked]:
@@ -331,10 +361,10 @@ def assign_cover(deps: AgentDeps, args: AssignCoverInput, tool_call_id: str) -> 
         raise LookupError("visit not found")
     if args.candidate_id:
         person = session.get(Person, args.candidate_id)
-        if person is None or person.branch_id != deps.branch.id:
+        if person is None or person.branch_id not in _branch_ids(deps):
             raise LookupError("candidate not found")
     elif args.candidate_name:
-        person = find_person(session, deps.branch.id, args.candidate_name)
+        person = find_person(session, _branch_ids(deps), args.candidate_name)
     else:
         raise LookupError("name the person to assign")
     pool = {c.person_id: c for c in candidate_data(session, deps, visit, include_assigned=True)}
@@ -439,7 +469,7 @@ def _own_visits_today(deps: AgentDeps, location_name: str | None) -> list[Visit]
     midnight is still found), by start; narrowed to a named site."""
     day = dt.timedelta(days=1)
     rows = visits_for(
-        deps.session, deps.branch.id, deps.person.id, deps.today - day, deps.today + day
+        deps.session, _branch_ids(deps), deps.person.id, deps.today - day, deps.today + day
     )
     if location_name:
         rows = [
@@ -537,6 +567,8 @@ def visit_details(
         "read",
         tool_call_id,
     )
+    if is_retail():  # a kiosk has no site details or checklist (Q109)
+        return VisitDetailsOutput(status="invalid", reason="not_offered")
     now = utcnow()
     rows = [v for v in _own_visits_today(deps, args.location_name) if v.status != "cancelled"]
     if not rows:
@@ -589,9 +621,99 @@ def _current_visit(deps: AgentDeps, location_name: str | None, now: dt.datetime)
         if not rows:
             return None
         location_id = rows[0].location_id
-    return scheduling.current_visit(
-        deps.session, deps.branch, deps.person, now, location_id=location_id
-    )
+    found = [
+        v
+        for bid in _branch_ids(deps)
+        if (branch := deps.session.get(Branch, bid)) is not None
+        and (
+            v := scheduling.current_visit(
+                deps.session, branch, deps.person, now, location_id=location_id
+            )
+        )
+    ]
+    running = [v for v in found if v.status == "in_progress"]
+    if running or not found:
+        return running[0] if running else None
+    return min(found, key=lambda v: abs((v.planned_start - now).total_seconds()))
+
+
+CLEANING_KINDS = ("cannot_access", "site_problem")  # ADR 019: cleaning keeps its two kinds
+RETAIL_KINDS = ("equipment", "no_delivery", "customer", "site_problem")
+
+
+def open_order(session: Session, branch_id: str) -> tuple[str, dt.date] | None:
+    """The branch's newest approved supplier order as (supplier, business date), else None. A
+    system read like alerts.supervisors: it words head staff's alert, never the clerk's reply."""
+    row = session.exec(
+        select(SupplierOrder)
+        .where(SupplierOrder.branch_id == branch_id)
+        .where(SupplierOrder.status == "approved")
+        .order_by(col(SupplierOrder.id).desc())
+    ).first()
+    return (row.supplier, row.business_date) if row else None
+
+
+def _report_at_kiosk(
+    deps: AgentDeps, args: ReportProblemInput, visit: Visit | None, tool_call_id: str
+) -> ProblemOutput:
+    """The retail report: the incident on the person's shift, else (head staff without one,
+    Q107) on the kiosk's first open shift today; on a day with none (closed) no row is written
+    and the message still goes. Head staff of the shift's kiosk and the owners and admins are
+    told at once with retail.alert.<kind>; a missed delivery names the open order."""
+    from mia.agents.shift_supervisor.alerts import leads, supervisors
+    from mia.chat.blocks import TextBlock
+    from mia.chat.channels import notify
+    from mia.core.models import Incident
+    from mia.i18n import t
+
+    session = deps.session
+    if visit is None:
+        visit = session.exec(
+            select(Visit)
+            .where(Visit.branch_id == deps.branch.id)
+            .where(Visit.date == deps.today)
+            .where(col(Visit.status).in_(("planned", "in_progress")))
+            .order_by(col(Visit.planned_start))
+        ).first()
+    branch_id = visit.branch_id if visit else deps.branch.id
+    row = None
+    info = None
+    if visit is not None:
+        incident = Incident(
+            branch_id=visit.branch_id,
+            visit_id=visit.id,
+            person_id=deps.person.id,
+            kind=args.kind,
+            text=args.text,
+        )
+        row = store.insert(
+            session, incident, deps.actor, action="site_problem.reported", tool_call_id=tool_call_id
+        )
+        info = visit_info(session, visit, deps.branch.timezone)
+    location = info.location if info else deps.branch.name
+    order = open_order(session, branch_id) if args.kind == "no_delivery" else None
+    seen = {deps.person.id}  # the reporter is never paged about their own report
+    for p in [*supervisors(session, branch_id), *leads(session, deps.branch.organisation_id)]:
+        if p.id in seen:
+            continue
+        seen.add(p.id)
+        extra: dict[str, object] = {}
+        if args.kind == "no_delivery":
+            extra["order"] = (
+                t("retail.alert.order", p.language, supplier=order[0], date=order[1])
+                if order
+                else t("retail.alert.no_order", p.language)
+            )
+        text = t(
+            f"retail.alert.{args.kind}",
+            p.language,
+            name=deps.person.name,
+            location=location,
+            text=args.text,
+            **extra,
+        )
+        notify(session, p, [TextBlock(text=text)], deps.actor, deps.manifest.id, urgent=True)
+    return ProblemOutput(status="ok", visit=info, problem_id=row.id if row else None)
 
 
 def report_site_problem(
@@ -611,8 +733,12 @@ def report_site_problem(
         "write",
         tool_call_id,
     )
+    if args.kind not in (RETAIL_KINDS if is_retail() else CLEANING_KINDS):
+        return ProblemOutput(status="invalid", reason="kind")
     now = utcnow()
     visit = _current_visit(deps, args.location_name, now)  # today only: never tomorrow's
+    if is_retail():
+        return _report_at_kiosk(deps, args, visit, tool_call_id)
     if visit is None:
         return ProblemOutput(status="invalid", reason="no_visit")
     row = store.insert(
@@ -674,6 +800,8 @@ def checklist(deps: AgentDeps, args: ChecklistInput, tool_call_id: str) -> Check
 
     owner = Resource(kind="data", name="core.visit", owner_id=deps.person.id)
     _check(deps, owner, "read", tool_call_id)
+    if is_retail():  # a kiosk has no checklist (Q109)
+        return ChecklistOutput(status="invalid", reason="not_offered")
     now = utcnow()
     visit = _current_visit(deps, args.location_name, now)
     if visit is None:
@@ -738,6 +866,483 @@ def checklist(deps: AgentDeps, args: ChecklistInput, tool_call_id: str) -> Check
         ticked=ticked,
         unknown=unknown,
     )
+
+
+# ---- retail: the roster, swaps, the time correction, closed days (D39) -------------------
+
+JOBS = Resource(kind="data", name="core.job")
+VISITS = Resource(kind="data", name="core.visit")
+CLOSURES = Resource(kind="data", name=RetailClosure.__tablename__)
+HOURS = Resource(kind="data", name=RetailBranchHours.__tablename__)
+Weekday = Literal["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+
+
+def _first(person: Person) -> str:
+    return person.name.split()[0]
+
+
+def _kiosk(
+    deps: AgentDeps, location_name: str | None, resource: Resource, tool_call_id: str
+) -> tuple[Branch, Location]:
+    """The named kiosk (a location of the organisation's branches, matched as resolve_visit
+    does) else the person's own, with its location; checks write on the resource, and
+    write_all for another branch (owner and admin). Raises LookupError, PermissionDenied."""
+    rows = deps.session.exec(
+        select(Location, Branch)
+        .join(Branch, col(Location.branch_id) == col(Branch.id))
+        .where(Branch.organisation_id == deps.branch.organisation_id)
+        .order_by(col(Location.id))
+    ).all()
+    if location_name:
+        found = [(b, loc) for loc, b in rows if _location_matches(loc, location_name)]
+    else:
+        found = [(b, loc) for loc, b in rows if b.id == deps.branch.id]
+    if len({b.id for b, _ in found}) != 1:
+        raise LookupError(f"no single kiosk matches {location_name or deps.branch.name!r}")
+    _check(deps, resource, "write", tool_call_id)
+    branch, loc = found[0]
+    if branch.id != deps.branch.id:
+        _check(deps, resource, "write_all", tool_call_id)
+    return branch, loc
+
+
+# ---- set_roster ----------------------------------------------------------------------------
+
+
+class ShiftIn(BaseModel):
+    person_id: str
+    byday: list[Weekday] = Field(min_length=1)
+    start: dt.time
+    end: dt.time
+
+    @model_validator(mode="after")
+    def ends_after_start(self) -> "ShiftIn":
+        """A kiosk shift ends on the day it starts."""
+        if self.end <= self.start:
+            raise ValueError("the end must be after the start")
+        return self
+
+
+class SetRosterInput(BaseModel):
+    shifts: list[ShiftIn] = Field(min_length=1, max_length=20)
+    location_name: str | None = Field(None, description="The kiosk, when not the user's own")
+
+
+class Clash(BaseModel):
+    person: str
+    dates: list[dt.date]
+    reason: str
+
+
+class RosterOut(BaseModel):
+    status: Literal["ok", "invalid"]
+    reason: str | None = None  # outside_hours
+    jobs: list[str] = Field(default_factory=list)
+    planned: int = 0
+    clashes: list[Clash] = Field(default_factory=list)
+    outside: list[str] = Field(default_factory=list)  # "Pao MO": a shift outside the hours
+
+
+def _jobs_of(session: Session, location_id: str, person_id: str) -> list[Job]:
+    """The person's running jobs at the location: no UNTIL, and their newest visit that is not
+    cancelled has the person on it (what generation copies; a job name may repeat)."""
+    out = []
+    for job in session.exec(select(Job).where(Job.location_id == location_id)).all():
+        if "UNTIL=" in job.recurrence:  # ponytail: set_roster only ever ends a job yesterday
+            continue
+        newest = session.exec(
+            select(Visit)
+            .where(Visit.job_id == job.id)
+            .where(Visit.status != "cancelled")
+            .order_by(col(Visit.date).desc())
+        ).first()
+        if newest is not None and person_id in newest.assigned_person_ids:
+            out.append(job)
+    return out
+
+
+def _open_visits(session: Session, job: Job, since: dt.date) -> list[Visit]:
+    return list(
+        session.exec(
+            select(Visit)
+            .where(Visit.job_id == job.id)
+            .where(col(Visit.date) >= since)
+            .where(col(Visit.status).in_(scheduling.OPEN))
+            .order_by(col(Visit.date))
+        ).all()
+    )
+
+
+def _end_job(deps: AgentDeps, job: Job, tool_call_id: str) -> None:
+    """End the job yesterday (;UNTIL=) and cancel its open visits from today."""
+    until = (deps.today - dt.timedelta(days=1)).strftime("%Y%m%d")
+    store.update(
+        deps.session,
+        job,
+        {"recurrence": f"{job.recurrence};UNTIL={until}"},
+        deps.actor,
+        action="job.ended",
+        tool_call_id=tool_call_id,
+    )
+    for v in _open_visits(deps.session, job, deps.today):
+        store.update(deps.session, v, {"status": "cancelled"}, deps.actor, action="visit.cancelled")
+        cover.cancel_open(deps.session, v.id, deps.actor)
+
+
+def _upsert_jobs(
+    deps: AgentDeps,
+    branch: Branch,
+    loc: Location,
+    person: Person,
+    shifts: list[ShiftIn],
+    hours: retail_hours.Hours,
+    tool_call_id: str,
+) -> list[Job]:
+    """The person's jobs for the shifts: an equal running job (days, start, length) is kept,
+    a running job no shift asks for is ended, a missing one inserted (created today, local)."""
+    wanted: dict[tuple[str, str, int], str] = {}
+    for s in shifts:
+        wd = scheduling.WEEKDAYS.index(s.byday[0])
+        opens, closes = retail_hours.opens(hours, wd), retail_hours.closes(hours, wd)
+        minutes = (s.end.hour * 60 + s.end.minute) - (s.start.hour * 60 + s.start.minute)
+        key = (patterns.rrule(s.byday), s.start.strftime("%H:%M"), minutes)
+        wanted[key] = patterns.job_name(s.start, s.end, s.byday, opens, closes, _first(person))
+    out = []
+    for job in _jobs_of(deps.session, loc.id, person.id):
+        if wanted.pop((job.recurrence, job.start_time, job.duration_minutes), None) is not None:
+            out.append(job)
+        else:
+            _end_job(deps, job, tool_call_id)
+    zone = ZoneInfo(branch.timezone)
+    for (rule, start, minutes), name in wanted.items():
+        job = Job(
+            branch_id=branch.id,
+            location_id=loc.id,
+            name=name,
+            recurrence=rule,
+            start_time=start,
+            duration_minutes=minutes,
+            created_at=dt.datetime.combine(deps.today, dt.time(0, 0), zone),
+        )
+        out.append(store.insert(deps.session, job, deps.actor, tool_call_id=tool_call_id))
+    return out
+
+
+def set_roster(deps: AgentDeps, args: SetRosterInput, tool_call_id: str) -> RosterOut:
+    """The kiosk's weekly pattern from head staff. A shift outside the branch's hours refuses
+    the whole input (`outside_hours`, nothing written). Else each person's jobs are kept, ended
+    or inserted, visits generated, and each open visit of those jobs from today gets its person
+    when scheduling finds no reason against it; a reason is a Clash and the visit stays
+    unfilled (never an approval). Another kiosk needs write_all on jobs."""
+    session = deps.session
+    branch, loc = _kiosk(deps, args.location_name, JOBS, tool_call_id)
+    _check(deps, VISITS, "write", tool_call_id)
+    _check(deps, HOURS, "read", tool_call_id)
+    hours = retail_hours.load(session, branch.id)
+    people: dict[str, Person] = {}
+    for s in args.shifts:
+        p = session.get(Person, s.person_id)
+        if p is None or p.branch_id != branch.id or not scheduling.is_staff(p):
+            raise LookupError("only the kiosk's clerks take shifts")
+        people[p.id] = p
+    outside = [
+        f"{_first(people[s.person_id])} {code}"
+        for s in args.shifts
+        for code in patterns.outside_hours(
+            patterns.Clause(s.person_id, list(s.byday), s.start, s.end), hours
+        )
+    ]
+    if outside:
+        return RosterOut(status="invalid", reason="outside_hours", outside=outside)
+    jobs = {
+        pid: _upsert_jobs(
+            deps,
+            branch,
+            loc,
+            p,
+            [s for s in args.shifts if s.person_id == pid],
+            hours,
+            tool_call_id,
+        )
+        for pid, p in people.items()
+    }
+    scheduling.generate(session, deps.actor, branch, today=deps.today)
+    planned, clashes, wide = 0, dict[tuple[str, str], list[dt.date]](), is_retail()
+    for pid, rows in jobs.items():
+        person = people[pid]
+        for v in (v for job in rows for v in _open_visits(session, job, deps.today)):
+            if pid in v.assigned_person_ids:
+                continue
+            reasons = scheduling.ineligibility(session, branch, v, person, org_wide=wide)
+            for r in reasons:
+                clashes.setdefault((person.name, r), []).append(v.date)
+            if not reasons:
+                scheduling.assign(session, deps.actor, v, person, org_wide=wide)
+                planned += 1
+    return RosterOut(
+        status="ok",
+        jobs=[j.name for rows in jobs.values() for j in rows],
+        planned=planned,
+        clashes=[Clash(person=n, dates=d, reason=r) for (n, r), d in clashes.items()],
+    )
+
+
+# ---- roster (the week) ---------------------------------------------------------------------
+
+
+class RosterInput(BaseModel):
+    start: dt.date | None = Field(None, description="A day of the week asked about, default today")
+    person_name: str | None = Field(None, description="Only when head staff ask about one person")
+
+
+class WeekOut(BaseModel):
+    start: dt.date
+    people: dict[str, list[VisitInfo]]
+
+
+def roster(deps: AgentDeps, args: RosterInput, tool_call_id: str) -> WeekOut:
+    """Monday to Sunday of the week holding `start` (default today, the branch's local date) by
+    first name: head staff the branch's shifts (or one person's), a clerk only her own (at
+    either kiosk, so a covering clerk sees that one shift, never the other kiosk's roster).
+    Cancelled shifts are left out."""
+    session = deps.session
+    day = args.start or deps.today
+    monday = day - dt.timedelta(days=day.weekday())
+    sunday = monday + dt.timedelta(days=6)
+    only: set[str] | None
+    if args.person_name:
+        target = find_person(session, [deps.branch.id], args.person_name)
+        _check(
+            deps, Resource(kind="data", name="core.visit", owner_id=target.id), "read", tool_call_id
+        )
+        where = _branch_ids(deps) if target.id == deps.person.id else [deps.branch.id]
+        rows, only = visits_for(session, where, target.id, monday, sunday), {target.id}
+    elif get_rbac().check(deps.actor, VISITS, "read", session=session, tool_call_id=tool_call_id):
+        rows, only = scheduling.week(session, deps.branch.id, monday), None
+    else:
+        own = Resource(kind="data", name="core.visit", owner_id=deps.person.id)
+        _check(deps, own, "read", tool_call_id)
+        rows = visits_for(session, _branch_ids(deps), deps.person.id, monday, sunday)
+        only = {deps.person.id}
+    people: dict[str, list[VisitInfo]] = {}
+    for v in rows:
+        if v.status == "cancelled":
+            continue
+        for pid in v.assigned_person_ids:
+            if (only is None or pid in only) and (p := session.get(Person, pid)) is not None:
+                people.setdefault(_first(p), []).append(
+                    visit_info(session, v, deps.branch.timezone)
+                )
+    return WeekOut(start=monday, people=people)
+
+
+# ---- swap_shifts ---------------------------------------------------------------------------
+
+
+class SwapShiftsInput(BaseModel):
+    person_name: str | None = Field(None, description="The co-worker to swap with")
+    date: dt.date | None = Field(None, description="The day of both shifts")
+    accept: bool | None = Field(None, description="The user's yes or no to a swap asked of them")
+
+
+class SwapOut(BaseModel):
+    status: Literal["asked", "confirming", "override", "declined", "invalid"]
+    reason: str | None = None
+    approval_id: str | None = None
+    date: dt.date | None = None
+    other: str | None = None
+
+
+def _planned_shift(deps: AgentDeps, person: Person, day: dt.date) -> Visit | None:
+    rows = visits_for(deps.session, [deps.branch.id], person.id, day, day)
+    return next((v for v in rows if v.status == "planned"), None)
+
+
+def swap_shifts(deps: AgentDeps, args: SwapShiftsInput, tool_call_id: str) -> SwapOut:
+    """A swap of two clerks' planned shifts on one day of the branch. With person_name and
+    date: the ask (cover.ask_swap); the co-worker's shift is read by the swap itself and only
+    its day and name come back. With accept: the answer to the newest ask of the user
+    (cover.answer_swap): no tells the asker, yes asks head staff to confirm (`confirming`), or
+    the owner when a rule breaks (`override`). Nothing changes until it is approved."""
+    session = deps.session
+    _check(
+        deps,
+        Resource(kind="data", name="core.visit", owner_id=deps.person.id),
+        "write",
+        tool_call_id,
+    )
+    if args.accept is not None:
+        try:
+            approval = cover.answer_swap(
+                session, deps.person, args.accept, deps.actor, utcnow(), tool_call_id=tool_call_id
+            )
+        except cover.CoverError as exc:
+            return SwapOut(status="invalid", reason=str(exc))
+        if approval is None:
+            return SwapOut(status="declined")
+        mine = session.get(Visit, str(approval.evidence["mine"]))
+        asker = session.get(Person, str(approval.evidence["asker_id"]))
+        return SwapOut(
+            status="override" if approval.type == cover.SWAP_OVERRIDE_TYPE else "confirming",
+            approval_id=approval.id,
+            date=mine.date if mine else None,
+            other=asker.name if asker else None,
+        )
+    if not args.person_name or args.date is None:
+        return SwapOut(status="invalid", reason="need_person_and_date")
+    if args.date < deps.today:
+        return SwapOut(status="invalid", reason="past", date=args.date)
+    other = find_person(session, [deps.branch.id], args.person_name)
+    if other.id == deps.person.id or not scheduling.is_staff(other):
+        return SwapOut(status="invalid", reason="not_a_clerk", other=other.name)
+    mine, theirs = (
+        _planned_shift(deps, deps.person, args.date),
+        _planned_shift(deps, other, args.date),
+    )
+    if mine is None or theirs is None or mine.id == theirs.id:
+        reason = (
+            "no_shift" if mine is None else "no_their_shift" if theirs is None else "same_shift"
+        )
+        return SwapOut(status="invalid", reason=reason, date=args.date, other=other.name)
+    cover.ask_swap(session, deps.actor, mine, theirs, deps.person, other, tool_call_id=tool_call_id)
+    return SwapOut(status="asked", date=args.date, other=other.name)
+
+
+# ---- correct_timesheet ---------------------------------------------------------------------
+
+
+class CorrectTimesheetInput(BaseModel):
+    date: dt.date | None = Field(None, description="The day worked, default today")
+    start: dt.time | None = Field(None, description="The real start, when it changes")
+    end: dt.time | None = Field(None, description="The real end, when it changes")
+    person_name: str | None = Field(None, description="Only when head staff correct someone else")
+    note: str = Field("", max_length=500)
+
+
+class TimesheetOut(BaseModel):
+    status: Literal["ok", "invalid"]
+    reason: str | None = None  # no_time, no_timesheet, approved, end_before_start
+    date: dt.date | None = None
+    start: str | None = None
+    end: str | None = None
+    minutes: int | None = None
+
+
+def _sheet(
+    deps: AgentDeps, person: Person, day: dt.date, end: dt.time | None, tool_call_id: str
+) -> Timesheet | None:
+    """The person's timesheet of the day; a shift still in progress is checked out at `end`
+    (else now) and drafted first, a finished one without a draft drafted."""
+    session = deps.session
+    stmt = select(Timesheet).where(Timesheet.person_id == person.id).where(Timesheet.date == day)
+    if (row := session.exec(stmt).first()) is not None:
+        return row
+    where = _branch_ids(deps) if person.id == deps.person.id else [deps.branch.id]
+    for v in visits_for(session, where, person.id, day, day):
+        if v.status == "in_progress":
+            _check(
+                deps,
+                Resource(kind="data", name="core.visit", owner_id=person.id),
+                "write",
+                tool_call_id,
+            )
+            zone = ZoneInfo(deps.branch.timezone)
+            when = dt.datetime.combine(day, end, zone) if end else utcnow()
+            scheduling.check_out(session, deps.actor, v, person, when)
+        if v.status == "completed":
+            sheets.draft(session, v)
+    return session.exec(stmt).first()  # ponytail: one kiosk shift per clerk and day
+
+
+def correct_timesheet(
+    deps: AgentDeps, args: CorrectTimesheetInput, tool_call_id: str
+) -> TimesheetOut:
+    """Set the start or end of a day's time (timesheets.correct): the row goes back to draft
+    with the correcting person as its enterer, so they never approve it. A clerk corrects only
+    her own draft; an approved row needs head staff (`approved`)."""
+    session = deps.session
+    person = deps.person
+    if args.person_name:
+        person = find_person(session, [deps.branch.id], args.person_name)
+    _check(
+        deps,
+        Resource(kind="data", name="core.timesheet", owner_id=person.id),
+        "write",
+        tool_call_id,
+    )
+    day = args.date or deps.today
+    if args.start is None and args.end is None:
+        return TimesheetOut(status="invalid", reason="no_time", date=day)
+    row = _sheet(deps, person, day, args.end, tool_call_id)
+    if row is None:
+        return TimesheetOut(status="invalid", reason="no_timesheet", date=day)
+    zone = ZoneInfo(deps.branch.timezone)
+    start = dt.datetime.combine(day, args.start, zone) if args.start else row.start
+    end = dt.datetime.combine(day, args.end, zone) if args.end else row.end
+    try:
+        row = sheets.correct(session, deps.actor, row, start, end, args.note)
+    except sheets.TimesheetError as exc:
+        reason = "approved" if "approved" in str(exc) else "end_before_start"
+        return TimesheetOut(status="invalid", reason=reason, date=day)
+    tz = deps.branch.timezone
+    return TimesheetOut(
+        status="ok",
+        date=day,
+        start=_local_time(row.start, tz),
+        end=_local_time(row.end, tz),
+        minutes=row.minutes,
+    )
+
+
+# ---- close_day -----------------------------------------------------------------------------
+
+
+class CloseDayInput(BaseModel):
+    date: dt.date
+    location_name: str | None = Field(None, description="The kiosk, when not the user's own")
+    reason: str = Field("", max_length=200)
+
+
+class CloseDayOut(BaseModel):
+    status: Literal["ok", "invalid"]
+    reason: str | None = None  # past, already
+    branch: str = ""
+    date: dt.date | None = None
+    cancelled: int = 0
+
+
+def close_day(deps: AgentDeps, args: CloseDayInput, tool_call_id: str) -> CloseDayOut:
+    """Close the kiosk on a date from today on: the closure row (`retail.closure_set`), the
+    day's open shifts cancelled with their open cover asks, each clerk on them told. Another
+    kiosk needs write_all on closures; a past or already closed date is invalid."""
+    from mia.chat.blocks import TextBlock
+    from mia.chat.channels import notify
+    from mia.i18n import t
+
+    session = deps.session
+    branch, _ = _kiosk(deps, args.location_name, CLOSURES, tool_call_id)
+    _check(deps, VISITS, "write", tool_call_id)
+    if args.date < deps.today:
+        return CloseDayOut(status="invalid", reason="past", branch=branch.name, date=args.date)
+    if args.date in retail_hours.closed(session, branch.id):
+        return CloseDayOut(status="invalid", reason="already", branch=branch.name, date=args.date)
+    closure = RetailClosure(
+        branch_id=branch.id, date=args.date, reason=args.reason, set_by=deps.person.id
+    )
+    store.insert(
+        session, closure, deps.actor, action="retail.closure_set", tool_call_id=tool_call_id
+    )
+    cancelled = scheduling.cancel_day(session, deps.actor, branch.id, args.date)
+    told: set[str] = set()
+    for v in cancelled:
+        cover.cancel_open(session, v.id, deps.actor)
+        for pid in v.assigned_person_ids:
+            if pid in told or (p := session.get(Person, pid)) is None:
+                continue
+            told.add(pid)
+            text = t("shift.closed.told", p.language, location=branch.name, date=args.date)
+            notify(session, p, [TextBlock(text=text)], deps.actor, deps.manifest.id)
+    return CloseDayOut(status="ok", branch=branch.name, date=args.date, cancelled=len(cancelled))
 
 
 BINDINGS = [
@@ -806,5 +1411,37 @@ BINDINGS = [
         checklist,
         ChecklistInput,
         "The checklist of the user's current visit; give item when the user says one is done.",
+    ),
+    ToolBinding(
+        "shift_supervisor.set_roster",
+        set_roster,
+        SetRosterInput,
+        "Head staff set the kiosk's weekly pattern: one shift per person, days and times.",
+    ),
+    ToolBinding(
+        "shift_supervisor.roster",
+        roster,
+        RosterInput,
+        "The week's shifts: the user's own, or the branch's for head staff.",
+    ),
+    ToolBinding(
+        "shift_supervisor.swap_shifts",
+        swap_shifts,
+        SwapShiftsInput,
+        "Ask a co-worker to swap shifts on a day (person_name and date), or answer a swap "
+        "asked of the user (accept). Head staff confirm before anything changes.",
+    ),
+    ToolBinding(
+        "shift_supervisor.correct_timesheet",
+        correct_timesheet,
+        CorrectTimesheetInput,
+        "Correct the start or end time the user (or, for head staff, a clerk) worked on a day.",
+    ),
+    ToolBinding(
+        "shift_supervisor.close_day",
+        close_day,
+        CloseDayInput,
+        "Head staff close the kiosk on a date (a holiday): its shifts are cancelled and the "
+        "clerks told.",
     ),
 ]

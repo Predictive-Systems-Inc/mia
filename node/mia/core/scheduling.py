@@ -217,15 +217,20 @@ def candidate_data(
     return result
 
 
-def ineligibility(session: Session, branch: Branch, visit: Visit, person: Person) -> list[str]:
+def ineligibility(
+    session: Session, branch: Branch, visit: Visit, person: Person, *, org_wide: bool = False
+) -> list[str]:
     """Why the person may not take the visit (empty when they may): the shift supervisor's reasons
-    plus missing skills. An inactive or non-staff person gets one reason."""
+    plus missing skills. An inactive or non-staff person gets one reason. `org_wide` as in
+    candidate_data (the retail cover, D39)."""
     if person.status != "active":
         return ["person is not active"]
     if not is_staff(person):
         return ["not a staff member"]
     job = session.get(Job, visit.job_id)
-    data = candidate_data(session, branch, visit, include_assigned=True, only={person.id})
+    data = candidate_data(
+        session, branch, visit, include_assigned=True, only={person.id}, org_wide=org_wide
+    )
     if not data:
         return ["person is not active"]
     reasons = list(scoring.ineligibility(data[0], slot_of(session, visit, branch.timezone)))
@@ -375,6 +380,7 @@ def assign(
     person: Person,
     *,
     add: bool = False,
+    org_wide: bool = False,
 ) -> Assignment:
     """Put the person on the visit (replacing the assignees unless `add`). Eligible: done and
     `visit.assigned`. Not eligible: an override approval is created and the visit is unchanged
@@ -389,7 +395,7 @@ def assign(
         return Assignment(visit, None, [])
     branch = session.get(Branch, visit.branch_id)
     assert branch is not None
-    reasons = ineligibility(session, branch, visit, person)
+    reasons = ineligibility(session, branch, visit, person, org_wide=org_wide)
     if reasons:
         for open_one in approvals.pending(session, visit.branch_id):  # one card per ask
             if (

@@ -47,6 +47,39 @@ def _checked_out_by(session: Session, visit: Visit) -> str | None:
     return row.actor_id if row is not None and row.actor_type == "person" else None
 
 
+def draft(session: Session, visit: Visit) -> list[Timesheet]:
+    """The visit's missing drafts, one per assigned person, once: its actual times when it was
+    checked in and out, its planned times otherwise. Returns the rows it wrote."""
+    have = {
+        t.person_id
+        for t in session.exec(select(Timesheet).where(Timesheet.visit_id == visit.id)).all()
+    }
+    timed = visit.actual_start is not None and visit.actual_end is not None
+    enterer = _checked_out_by(session, visit) if timed else None
+    start = visit.actual_start if timed and visit.actual_start else visit.planned_start
+    end = visit.actual_end if timed and visit.actual_end else visit.planned_end
+    out = []
+    for pid in visit.assigned_person_ids:
+        if pid in have:
+            continue
+        row = Timesheet(
+            branch_id=visit.branch_id,
+            visit_id=visit.id,
+            person_id=pid,
+            date=visit.date,
+            start=start,
+            end=end,
+            minutes=_minutes(start, end),
+            source="check_out" if timed else "planned",
+            entered_by=enterer or pid,  # whoever recorded the check-out set the time
+        )
+        out.append(
+            store.insert(session, row, Actor.system(visit.branch_id), action="timesheet.created")
+        )
+        have.add(pid)
+    return out
+
+
 def _build_in(session: Session, branch: Branch, now: dt.datetime) -> int:
     since = (now - LOOKBACK).date()
     visits = session.exec(
@@ -56,38 +89,7 @@ def _build_in(session: Session, branch: Branch, now: dt.datetime) -> int:
         .where(col(Visit.date) >= since)
         .order_by(col(Visit.id))
     ).all()
-    have = {
-        (t.visit_id, t.person_id)
-        for t in session.exec(
-            select(Timesheet)
-            .where(Timesheet.branch_id == branch.id)
-            .where(col(Timesheet.date) >= since)
-        ).all()
-    }
-    count = 0
-    for v in visits:
-        timed = v.actual_start is not None and v.actual_end is not None
-        enterer = _checked_out_by(session, v) if timed else None
-        start = v.actual_start if timed and v.actual_start else v.planned_start
-        end = v.actual_end if timed and v.actual_end else v.planned_end
-        for pid in v.assigned_person_ids:
-            if (v.id, pid) in have:
-                continue
-            row = Timesheet(
-                branch_id=branch.id,
-                visit_id=v.id,
-                person_id=pid,
-                date=v.date,
-                start=start,
-                end=end,
-                minutes=_minutes(start, end),
-                source="check_out" if timed else "planned",
-                entered_by=enterer or pid,  # whoever recorded the check-out set the time
-            )
-            store.insert(session, row, Actor.system(branch.id), action="timesheet.created")
-            have.add((v.id, pid))
-            count += 1
-    return count
+    return sum(len(draft(session, v)) for v in visits)
 
 
 def build_due(session: Session, now: dt.datetime) -> int:
@@ -137,7 +139,7 @@ def correct(
         "minutes": _minutes(start, end),
         "source": "correction",
         "status": "draft",
-        "entered_by": actor.principal.id,
+        "entered_by": actor.person_id or actor.principal.id,  # the person, never the agent
         "note": note[:500],
         "approved_by": None,
         "approved_at": None,

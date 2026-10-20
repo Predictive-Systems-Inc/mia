@@ -1,0 +1,395 @@
+"""The shift supervisor's kiosk tools (D39): the roster from the owner's pattern, swaps, the time
+correction, closed days, the retail incidents and the cover across kiosks. Negative tests first."""
+
+import datetime as dt
+from typing import Any
+
+import pytest
+from pydantic import BaseModel
+from sqlmodel import Session, col, select
+
+from mia.agents.base import AgentDeps, call_tool
+from mia.agents.inventory_manager import MANIFEST as INVENTORY
+from mia.agents.inventory_manager import tools as inventory
+from mia.agents.shift_supervisor import MANIFEST, cover, tools
+from mia.agents.shift_supervisor.tools import (
+    AssignCoverInput,
+    CheckInInput,
+    CloseDayInput,
+    CorrectTimesheetInput,
+    FindReplacementsInput,
+    GetMyVisitsInput,
+    ReportProblemInput,
+    RespondToCoverInput,
+    RosterInput,
+    SetRosterInput,
+    ShiftIn,
+    SwapShiftsInput,
+)
+from mia.core import approvals, orgconfig, scheduling
+from mia.core.models import (
+    Actor,
+    Approval,
+    Branch,
+    Incident,
+    Job,
+    Message,
+    Person,
+    SupplierOrder,
+    Thread,
+    Timesheet,
+)
+from mia.core.rbac import PermissionDenied
+from mia.i18n import t
+from mia.templates.retail.models import RetailClosure, RetailIngredient
+from tests.conftest import RS_TODAY, Pin
+from tests.test_data_standard_1_7 import (
+    MONDAY,
+    NOV_1,
+    SATURDAY,
+    TUESDAY,
+    Ferinos,
+    at,
+    names_on,
+    visit_of,
+)
+
+BINDING = {b.tool_id: b for b in tools.BINDINGS}
+NINE, FIVE_PM = dt.time(9), dt.time(17)
+
+
+def deps_for(session: Session, person: Person, day: dt.date = RS_TODAY) -> AgentDeps:
+    branch = session.get(Branch, person.branch_id)
+    assert branch is not None
+    return AgentDeps(
+        session=session,
+        actor=Actor.person(person).as_agent(MANIFEST.roles.agent_role),
+        person=person,
+        branch=branch,
+        organisation_id=branch.organisation_id,
+        today=day,
+        lang=person.language or "en",
+        manifest=MANIFEST,
+    )
+
+
+def call(
+    session: Session, who: Person, tool: str, args: BaseModel, day: dt.date = RS_TODAY
+) -> dict[str, Any]:
+    return call_tool(deps_for(session, who, day), BINDING[f"{MANIFEST.id}.{tool}"], args, "t1")
+
+
+def decide(session: Session, approval_id: str, who: Person, outcome: str) -> Approval:
+    return approvals.decide(
+        session, approval_id, Actor.person(who), outcome, stepped_up_at=approvals.utcnow()
+    )
+
+
+def agree_swap(session: Session, rs: Ferinos) -> Approval:
+    """Ana asks Liza for Saturday, Liza says yes (both through tools.swap_shifts)."""
+    ask = SwapShiftsInput(person_name="Liza", date=SATURDAY)
+    assert tools.swap_shifts(deps_for(session, rs[1]["Ana"]), ask, "s1").status == "asked"
+    out = tools.swap_shifts(deps_for(session, rs[1]["Liza"]), SwapShiftsInput(accept=True), "s2")
+    assert out.status == "confirming"
+    approval = session.get(Approval, out.approval_id)
+    assert approval is not None
+    return approval
+
+
+def told(session: Session, who: Person) -> list[str]:
+    """The shift supervisor's notifications to the person, oldest first."""
+    rows = session.exec(
+        select(Message)
+        .join(Thread, col(Message.thread_id) == col(Thread.id))
+        .where(Thread.person_id == who.id)
+        .where(Message.agent_id == MANIFEST.id)
+        .where(Message.role == "notification")
+        .order_by(col(Message.id))
+    ).all()
+    return [m.text for m in rows]
+
+
+# ---- negative tests ------------------------------------------------------------------------
+
+
+def test_a_clerk_cannot_set_the_roster(session: Session, rs: Ferinos) -> None:
+    shift = ShiftIn(person_id=rs[1]["Ana"].id, byday=["TU"], start=NINE, end=FIVE_PM)
+    out = call(session, rs[1]["Ana"], "set_roster", SetRosterInput(shifts=[shift]))
+    assert out["status"] == "denied"
+
+
+def test_a_clerk_cannot_close_a_day(session: Session, rs: Ferinos) -> None:
+    assert (
+        call(session, rs[1]["Ana"], "close_day", CloseDayInput(date=MONDAY))["status"] == "denied"
+    )
+
+
+def test_a_supervisor_cannot_close_the_other_kiosk(session: Session, rs: Ferinos) -> None:
+    with pytest.raises(PermissionDenied):
+        tools.close_day(
+            deps_for(session, rs[1]["Marites"]),
+            CloseDayInput(date=MONDAY, location_name="Street stall"),
+            "c",
+        )
+
+
+def test_a_supervisor_cannot_find_cover_for_the_other_kiosk(session: Session, rs: Ferinos) -> None:
+    with pytest.raises(LookupError):
+        tools.find_replacements(
+            deps_for(session, rs[1]["Jun"]),
+            FindReplacementsInput(visit_id=visit_of(session, rs[1]["Ana"], SATURDAY).id),
+            "f",
+        )
+
+
+def test_the_cleaning_template_keeps_cover_in_the_branch(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings())
+    visit = visit_of(session, rs[1]["Ana"], TUESDAY)
+    data = tools.candidate_data(session, deps_for(session, rs[1]["Marites"]), visit)
+    assert [c.name for c in data] == ["Liza"]
+
+
+def test_a_clerk_reads_only_her_shifts(session: Session, rs: Ferinos) -> None:
+    ana = deps_for(session, rs[1]["Ana"])
+    assert set(tools.roster(ana, RosterInput(), "r").people) == {"Ana"}
+    with pytest.raises(PermissionDenied):
+        tools.get_my_visits(ana, GetMyVisitsInput(person_name="Liza"), "g")
+    marites = deps_for(session, rs[1]["Marites"])
+    assert set(tools.roster(marites, RosterInput(), "r2").people) == {"Ana", "Liza"}
+
+
+def test_the_incident_kinds_follow_the_template(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ana = deps_for(session, rs[1]["Ana"])
+    locked = ReportProblemInput(kind="cannot_access", text="sarado")
+    assert tools.report_site_problem(ana, locked, "p1").reason == "kind"
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings())
+    stove = ReportProblemInput(kind="equipment", text="the stove")
+    assert tools.report_site_problem(ana, stove, "p2").reason == "kind"
+    assert session.exec(select(Incident).where(Incident.text == "sarado")).first() is None
+
+
+def test_a_cover_override_needs_the_owner(session: Session, rs: Ferinos) -> None:
+    visit = visit_of(session, rs[1]["Ana"], TUESDAY)
+    out = tools.assign_cover(
+        deps_for(session, rs[1]["Marites"], MONDAY),
+        AssignCoverInput(visit_id=visit.id, candidate_id=rs[1]["Pao"].id),
+        "a",
+    )
+    approval = session.get(Approval, out.approval_id)
+    assert approval is not None
+    assert (approval.approver_roles, approval.channel, approval.evidence["reasons"]) == (
+        ["admin", "owner"],
+        "app_only",
+        ["outside availability", "over the weekly hour limit"],
+    )
+    with pytest.raises(approvals.ApprovalError):
+        decide(session, approval.id, rs[1]["Marites"], "approved")
+    decide(session, approval.id, rs[1]["Rosa"], "approved")
+    request = cover.open_request(session, rs[1]["Pao"])
+    assert request is not None and request.visit_id == visit.id
+
+
+def test_a_covering_clerk_sees_only_his_shift_at_the_other_kiosk(
+    session: Session, rs: Ferinos, rs_pin: Pin
+) -> None:
+    visit = visit_of(session, rs[1]["Ana"], TUESDAY)
+    approval = tools.assign_cover(
+        deps_for(session, rs[1]["Marites"], MONDAY),
+        AssignCoverInput(visit_id=visit.id, candidate_id=rs[1]["Pao"].id),
+        "a",
+    ).approval_id
+    assert approval is not None
+    decide(session, approval, rs[1]["Rosa"], "approved")
+    rs_pin(at(MONDAY, 12))
+    pao_monday = deps_for(session, rs[1]["Pao"], MONDAY)
+    tools.respond_to_cover(pao_monday, RespondToCoverInput(accept=True), "y")
+    rs_pin(at(TUESDAY, 8, 50))
+    checked = tools.check_in(deps_for(session, rs[1]["Pao"], TUESDAY), CheckInInput(), "c")
+    assert checked.visit is not None and checked.visit.visit_id == visit.id
+    week = tools.roster(deps_for(session, rs[1]["Pao"], MONDAY), RosterInput(), "r").people
+    assert set(week) == {"Pao"}
+    assert [i.location for i in week["Pao"] if i.date == TUESDAY] == ["Mall kiosk"]
+
+
+def test_a_pattern_outside_opening_hours_is_refused(session: Session, rs: Ferinos) -> None:
+    n = len(session.exec(select(Job)).all())
+    shift = ShiftIn(person_id=rs[1]["Pao"].id, byday=["MO"], start=dt.time(5), end=dt.time(14))
+    out = tools.set_roster(
+        deps_for(session, rs[1]["Rosa"]),
+        SetRosterInput(shifts=[shift], location_name="Street stall"),
+        "s",
+    )
+    assert (out.status, out.reason, out.outside, len(session.exec(select(Job)).all())) == (
+        "invalid",
+        "outside_hours",
+        ["Pao MO"],
+        n,
+    )
+
+
+def test_an_approved_timesheet_needs_head_staff(session: Session, rs: Ferinos) -> None:
+    row = session.exec(
+        select(Timesheet)
+        .where(Timesheet.person_id == rs[1]["Ana"].id)
+        .where(Timesheet.date == RS_TODAY - dt.timedelta(days=1))
+    ).one()
+    late = CorrectTimesheetInput(date=row.date, end=dt.time(17, 30))
+    assert tools.correct_timesheet(deps_for(session, rs[1]["Ana"]), late, "t").reason == "approved"
+    head = late.model_copy(update={"person_name": "Ana"})
+    tools.correct_timesheet(deps_for(session, rs[1]["Marites"]), head, "t2")
+    session.refresh(row)
+    assert (row.status, row.source, row.minutes, row.entered_by) == (
+        "draft",
+        "correction",
+        510,
+        rs[1]["Marites"].id,
+    )
+
+
+def test_the_approved_swap_is_the_one_asked(session: Session, rs: Ferinos) -> None:
+    mine = visit_of(session, rs[1]["Ana"], SATURDAY)
+    theirs = visit_of(session, rs[1]["Liza"], SATURDAY)
+    approval = agree_swap(session, rs)
+    assert (approval.evidence["mine"], approval.evidence["theirs"], approval.expires_at) == (
+        mine.id,
+        theirs.id,
+        mine.planned_start,
+    )
+    for clerk in ("Ana", "Liza"):  # the requester never decides
+        with pytest.raises(approvals.ApprovalError):
+            approvals.decide(session, approval.id, Actor.person(rs[1][clerk]), "approved")
+    approvals.decide(session, approval.id, Actor.person(rs[1]["Marites"]), "approved")
+    session.refresh(mine)
+    session.refresh(theirs)
+    assert (names_on(session, mine), names_on(session, theirs)) == (["Liza"], ["Ana"])
+
+
+def test_a_swap_whose_shift_changed_is_refused(session: Session, rs: Ferinos) -> None:
+    approval = agree_swap(session, rs)
+    theirs = visit_of(session, rs[1]["Liza"], SATURDAY)
+    scheduling.unassign(session, Actor.person(rs[1]["Marites"]), theirs, rs[1]["Liza"])
+    with pytest.raises(LookupError):
+        approvals.decide(session, approval.id, Actor.person(rs[1]["Marites"]), "approved")
+
+
+def test_a_closed_day_refuses_a_past_date(session: Session, rs: Ferinos) -> None:
+    out = tools.close_day(
+        deps_for(session, rs[1]["Marites"]),
+        CloseDayInput(date=RS_TODAY - dt.timedelta(days=1)),
+        "c",
+    )
+    assert (out.status, out.reason) == ("invalid", "past")
+
+
+# ---- the flows -----------------------------------------------------------------------------
+
+
+def test_a_closed_day_cancels_the_shifts_and_tells_the_clerks(
+    session: Session, rs: Ferinos
+) -> None:
+    ana, liza = (
+        visit_of(session, rs[1]["Ana"], SATURDAY),
+        visit_of(session, rs[1]["Liza"], SATURDAY),
+    )
+    marites = deps_for(session, rs[1]["Marites"])
+    out = tools.close_day(marites, CloseDayInput(date=SATURDAY, reason="fiesta"), "c")
+    session.refresh(ana)
+    session.refresh(liza)
+    assert (out.status, out.cancelled, ana.status, liza.status) == (
+        "ok",
+        2,
+        "cancelled",
+        "cancelled",
+    )
+    assert session.exec(select(RetailClosure).where(RetailClosure.date == SATURDAY)).one()
+    lang = rs[1]["Ana"].language
+    assert told(session, rs[1]["Ana"])[-1] == t(
+        "shift.closed.told", lang, location="Mall kiosk", date=SATURDAY
+    )
+    again = tools.close_day(marites, CloseDayInput(date=SATURDAY), "c2")
+    assert again.reason == "already"
+
+
+def test_a_new_pattern_replaces_the_clerks_job(session: Session, rs: Ferinos) -> None:
+    shift = ShiftIn(
+        person_id=rs[1]["Ana"].id,
+        byday=["TU", "WE", "TH", "FR", "SA", "SU"],
+        start=dt.time(10),
+        end=dt.time(18),
+    )
+    out = tools.set_roster(deps_for(session, rs[1]["Rosa"]), SetRosterInput(shifts=[shift]), "s")
+    assert (out.status, out.jobs, out.clashes) == ("ok", ["Mid Ana"], [])
+    assert out.planned > 0
+    week = scheduling.week(session, rs[0].id, SATURDAY, person_id=rs[1]["Ana"].id)
+    starts = [(v.planned_start, v.status) for v in week if v.date == SATURDAY]
+    assert starts == [(at(SATURDAY, 9), "cancelled"), (at(SATURDAY, 10), "planned")]
+    old = session.exec(select(Job).where(Job.name == "Opening Ana")).one()
+    assert old.recurrence.endswith(";UNTIL=" + (RS_TODAY - dt.timedelta(days=1)).strftime("%Y%m%d"))
+    again = tools.set_roster(deps_for(session, rs[1]["Rosa"]), SetRosterInput(shifts=[shift]), "s2")
+    assert (again.jobs, again.planned) == (["Mid Ana"], 0)  # an equal job is kept
+
+
+def test_an_incident_without_a_shift_attaches_to_the_kiosks_open_shift(
+    session: Session, rs: Ferinos
+) -> None:
+    report = ReportProblemInput(kind="customer", text="a customer is shouting")
+    out = tools.report_site_problem(deps_for(session, rs[1]["Marites"]), report, "p")
+    row = session.get(Incident, out.problem_id)
+    assert row is not None and row.visit_id == visit_of(session, rs[1]["Ana"], RS_TODAY).id
+
+
+def test_a_missed_delivery_names_the_open_order(session: Session, rs: Ferinos) -> None:
+    marites, rosa, ana = rs[1]["Marites"], rs[1]["Rosa"], rs[1]["Ana"]
+    eggs = session.exec(select(RetailIngredient).where(RetailIngredient.name == "Eggs")).one()
+    branch = session.get(Branch, marites.branch_id)
+    assert branch is not None
+    order_deps = AgentDeps(
+        session=session,
+        actor=Actor.person(marites).as_agent(INVENTORY.roles.agent_role),
+        person=marites,
+        branch=branch,
+        organisation_id=branch.organisation_id,
+        today=RS_TODAY,
+        lang="en",
+        manifest=INVENTORY,
+    )
+    args = inventory.DraftOrderInput(
+        supplier="Aling Nena", lines=[inventory.LineIn(ingredient_id=eggs.id, quantity=10)]
+    )
+    binding = next(b for b in inventory.BINDINGS if b.tool_id == inventory.DRAFT_ORDER)
+    asked = call_tool(order_deps, binding, args, "o1")
+    decide(session, str(asked["approval_id"]), rosa, "approved")
+    order = session.exec(select(SupplierOrder).where(SupplierOrder.status == "approved")).one()
+    assert tools.open_order(session, branch.id) == ("Aling Nena", order.business_date)
+    report = ReportProblemInput(kind="no_delivery", text="walang dumating na itlog")
+    tools.report_site_problem(deps_for(session, ana), report, "p")
+    lang = rosa.language
+    named = t("retail.alert.order", lang, supplier="Aling Nena", date=order.business_date)
+    assert told(session, rosa)[-1] == t(
+        "retail.alert.no_delivery",
+        lang,
+        name=ana.name,
+        location="Mall kiosk",
+        text="walang dumating na itlog",
+        order=named,
+    )
+    assert told(session, ana) == []  # the reporter is never paged about her own report
+
+
+def test_an_incident_on_a_closed_day_is_told_and_not_written(
+    session: Session, rs: Ferinos, rs_pin: Pin
+) -> None:
+    rs_pin(at(NOV_1, 10))  # the seed closes the Street stall on All Saints' Day
+    n = len(session.exec(select(Incident)).all())
+    report = ReportProblemInput(kind="equipment", text="the freezer")
+    out = tools.report_site_problem(deps_for(session, rs[1]["Jun"], NOV_1), report, "p")
+    assert (out.status, out.problem_id, len(session.exec(select(Incident)).all())) == (
+        "ok",
+        None,
+        n,
+    )
+    assert told(session, rs[1]["Rosa"])
