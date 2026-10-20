@@ -834,6 +834,111 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         # production planner (Task 6): the short receipt flagged on the match tick
         "pp.short.head": "Short deliveries on {date}:",
         "pp.short.line": "{kiosk}: {item} sent {sent}, received {received}",
+        # production planner (Task 5): chat replies, cards and buttons
+        "pp.capabilities": (
+            "I plan the commissary's production: tomorrow's plan and its batches, changes to "
+            "it, batch sheets and recipes, each batch's yield and waste, the dispatch to each "
+            "kiosk and its delivery, and oven capacity for a date."
+        ),
+        "pp.plan.head": "Plan for {date} ({status}), {minutes} oven minutes free:",
+        "pp.plan.status.draft": "draft",
+        "pp.plan.status.confirmed": "confirmed",
+        "pp.plan.line": "{item}: {batches} batches, {pieces} pieces",
+        "pp.plan.line_more": (
+            "{item}: {batches} batches, {pieces} pieces (one batch more, stock runs low)"
+        ),
+        "pp.plan.kiosk": (
+            "{kiosk}: {pieces} pieces (forecast {forecast}, orders {orders}, leftover {leftover})"
+        ),
+        "pp.plan.kiosk_no_forecast": (
+            "{kiosk}: {pieces} pieces (not enough sales for a forecast, orders {orders}, "
+            "leftover {leftover})"
+        ),
+        "pp.plan.confirm": "Confirm",
+        "pp.plan.confirmed": "The plan for {date} is confirmed.",
+        "pp.plan.none": "There is no plan for that day yet.",
+        "pp.change.done": (
+            "{item} is now {batches} batches ({pieces} pieces) on {date}. {minutes} oven "
+            "minutes free."
+        ),
+        "pp.change.no_room": (
+            "The ovens have no room for that: {minutes} oven minutes are free. {item} stays "
+            "as planned."
+        ),
+        "pp.change.past": "That day is past; its plan cannot change.",
+        "pp.change.not_planned": "{item} is not in that plan.",
+        "pp.change.kept": "OK, the plan stays as it is.",
+        "pp.ingredient.line": "  {ingredient}: {amount} {unit}",
+        "pp.ingredient.cost": "{line} ({cost})",
+        "pp.sheet.head": "Batch sheet for {item}: {batches} batches of {pieces} pieces",
+        "pp.sheet.cost": "Cost per batch {batch}, per piece {piece}.",
+        "pp.sheet.cost_unknown": "An ingredient has no pack price, so the cost is not known.",
+        "pp.sheet.no_recipe": "{item} has no recipe yet. The owner must enter one first.",
+        "pp.recipe.card": (
+            "Recipe for {item}: {pieces} pieces per batch, {minutes} oven minutes per batch."
+        ),
+        "pp.recipe.save": "Save",
+        "pp.recipe.saved": (
+            "Saved the recipe for {item}: {pieces} pieces per batch, {minutes} oven minutes."
+        ),
+        "pp.recipe.unclear": (
+            "I could not read the recipe. Write the pieces per batch, each ingredient with "
+            "its amount and unit, and the oven minutes."
+        ),
+        "pp.recipe.bundle": "{item} is a bundle. A recipe is for a single item.",
+        "pp.batch.done": (
+            "{item} batch {batch}: {good} of {planned} good, {waste} waste ({reason}). The "
+            "day's yield so far: {percent}%."
+        ),
+        "pp.batch.done_clean": (
+            "{item} batch {batch}: {good} of {planned} good. The day's yield so far: {percent}%."
+        ),
+        "pp.batch.last": "That was the last batch. The dispatch lists are out.",
+        "pp.batch.unclear": (
+            "Tell me the batch number, the good pieces and any waste with its reason."
+        ),
+        "pp.batch.too_many": "That is more than twice a batch's yield. Please check the numbers.",
+        "pp.reason.burnt": "burnt",
+        "pp.reason.undercooked": "undercooked",
+        "pp.reason.dropped": "dropped",
+        "pp.reason.other": "other",
+        "pp.dispatch.head": "Dispatch to {kiosk} for {date} ({status}):",
+        "pp.dispatch.line": "  {item}: {quantity}",
+        "pp.dispatch.status.packed": "packed",
+        "pp.dispatch.status.delivered": "delivered",
+        "pp.dispatch.status.matched": "received in full",
+        "pp.dispatch.status.short": "received short",
+        "pp.dispatch.none": "There is no dispatch yet.",
+        "pp.dispatch.delivered": "Delivered: {kiosk}",
+        "pp.delivered.done": "Delivered to {kiosk}. Thank you.",
+        "pp.delivered.not_driver": "Only the driver or the commissary head confirms a delivery.",
+        "pp.ask.item": "Which item?",
+        "pp.ask.kiosk": "Which kiosk?",
+        "pp.ask.number": "How many?",
+        "pp.ask.plan": (
+            "That item has no line in the plan of that day. Tell me the exact number of batches."
+        ),
+        "pp.ask.recipe": (
+            "That item has no recipe yet, so I cannot count pieces in batches. Tell me the batches."
+        ),
+        "pp.capacity.free": "{date}: {minutes} oven minutes free.",
+        "pp.capacity.fits": "Yes, it fits on {date}. {minutes} oven minutes free.",
+        "pp.capacity.no_fit": "No, it does not fit on {date}. {minutes} oven minutes free.",
+        "pp.capacity.item": "  {item}: room for {pieces} more pieces",
+        "pp.yield.head": "Yield for {date}:",
+        "pp.yield.line": "  {item}: {good} of {planned} good, {waste} waste, {percent}%",
+        "pp.not_allowed": "You do not have the rights for that.",
+        "pp.no_commissary": "No commissary is set up.",
+        "pp.refused": "I could not do that. Please check and try again.",
+        "intent.production_planner.plan": "The production plan",
+        "intent.production_planner.change_plan": "Change the plan",
+        "intent.production_planner.confirm_plan": "Confirm the plan",
+        "intent.production_planner.batch_sheet": "A batch sheet",
+        "intent.production_planner.set_recipe": "Set a recipe",
+        "intent.production_planner.record_batch": "Record a batch",
+        "intent.production_planner.dispatch": "The dispatch list",
+        "intent.production_planner.delivered": "Confirm a delivery",
+        "intent.production_planner.capacity": "Oven capacity",
     },
     "fi": {
         "absence.recorded": [
@@ -1658,5 +1763,108 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "pp.dispatch.packed": "Pakattu kohteeseen {kiosk}: {lines}",
         "pp.short.head": "Vajaat toimitukset {date}:",
         "pp.short.line": "{kiosk}: {item} lähetetty {sent}, vastaanotettu {received}",
+        # production planner (Task 5): chat replies, cards and buttons
+        "pp.capabilities": (
+            "Suunnittelen keskuskeittiön tuotannon: huomisen suunnitelman ja sen erät, "
+            "muutokset siihen, eräkortit ja reseptit, kunkin erän saannon ja hävikin, "
+            "lähetykset kioskeille ja niiden toimituksen sekä uunien kapasiteetin päivälle."
+        ),
+        "pp.plan.head": "Suunnitelma {date} ({status}), uuniaikaa vapaana {minutes} min:",
+        "pp.plan.status.draft": "luonnos",
+        "pp.plan.status.confirmed": "vahvistettu",
+        "pp.plan.line": "{item}: {batches} erää, {pieces} kpl",
+        "pp.plan.line_more": (
+            "{item}: {batches} erää, {pieces} kpl (yksi erä lisää, varasto vähissä)"
+        ),
+        "pp.plan.kiosk": (
+            "{kiosk}: {pieces} kpl (ennuste {forecast}, tilaukset {orders}, jäämä {leftover})"
+        ),
+        "pp.plan.kiosk_no_forecast": (
+            "{kiosk}: {pieces} kpl (myyntiä liian vähän ennusteeseen, tilaukset {orders}, "
+            "jäämä {leftover})"
+        ),
+        "pp.plan.confirm": "Vahvista",
+        "pp.plan.confirmed": "Suunnitelma {date} on vahvistettu.",
+        "pp.plan.none": "Sille päivälle ei ole vielä suunnitelmaa.",
+        "pp.change.done": (
+            "{item}: nyt {batches} erää ({pieces} kpl) {date}. Uuniaikaa vapaana {minutes} min."
+        ),
+        "pp.change.no_room": (
+            "Uuneissa ei ole tilaa: vapaana {minutes} min. {item} pysyy ennallaan."
+        ),
+        "pp.change.past": "Päivä on mennyt, sen suunnitelmaa ei voi muuttaa.",
+        "pp.change.not_planned": "{item} ei ole siinä suunnitelmassa.",
+        "pp.change.kept": "Selvä, suunnitelma pysyy ennallaan.",
+        "pp.ingredient.line": "  {ingredient}: {amount} {unit}",
+        "pp.ingredient.cost": "{line} ({cost})",
+        "pp.sheet.head": "Eräkortti {item}: {batches} erää, {pieces} kpl erässä",
+        "pp.sheet.cost": "Hinta erältä {batch}, kappaleelta {piece}.",
+        "pp.sheet.cost_unknown": (
+            "Jollakin raaka-aineella ei ole pakkaushintaa, joten hintaa ei tiedetä."
+        ),
+        "pp.sheet.no_recipe": (
+            "Tuotteella {item} ei ole vielä reseptiä. Omistajan on syötettävä se ensin."
+        ),
+        "pp.recipe.card": "Resepti {item}: {pieces} kpl erässä, uuniaikaa {minutes} min erältä.",
+        "pp.recipe.save": "Tallenna",
+        "pp.recipe.saved": (
+            "Tallensin reseptin {item}: {pieces} kpl erässä, uuniaikaa {minutes} min."
+        ),
+        "pp.recipe.unclear": (
+            "En saanut reseptistä selvää. Kirjoita kappaleet erässä, kukin raaka-aine "
+            "määrineen ja yksikköineen sekä uuniaika."
+        ),
+        "pp.recipe.bundle": "{item} on paketti. Resepti tehdään yksittäiselle tuotteelle.",
+        "pp.batch.done": (
+            "{item} erä {batch}: {good}/{planned} hyviä, hävikki {waste} ({reason}). Päivän "
+            "saanto tähän asti {percent} %."
+        ),
+        "pp.batch.done_clean": (
+            "{item} erä {batch}: {good}/{planned} hyviä. Päivän saanto tähän asti {percent} %."
+        ),
+        "pp.batch.last": "Se oli viimeinen erä. Lähetyslistat on lähetetty.",
+        "pp.batch.unclear": "Kerro erän numero, hyvät kappaleet ja mahdollinen hävikki syineen.",
+        "pp.batch.too_many": "Se on yli kaksi kertaa erän saanto. Tarkista luvut.",
+        "pp.reason.burnt": "palanut",
+        "pp.reason.undercooked": "raaka",
+        "pp.reason.dropped": "pudonnut",
+        "pp.reason.other": "muu",
+        "pp.dispatch.head": "Lähetys kohteeseen {kiosk} {date} ({status}):",
+        "pp.dispatch.line": "  {item}: {quantity}",
+        "pp.dispatch.status.packed": "pakattu",
+        "pp.dispatch.status.delivered": "toimitettu",
+        "pp.dispatch.status.matched": "vastaanotettu kokonaan",
+        "pp.dispatch.status.short": "vastaanotettu vajaana",
+        "pp.dispatch.none": "Lähetystä ei ole vielä.",
+        "pp.dispatch.delivered": "Toimitettu: {kiosk}",
+        "pp.delivered.done": "Toimitettu kohteeseen {kiosk}. Kiitos.",
+        "pp.delivered.not_driver": (
+            "Vain kuljettaja tai keskuskeittiön esimies vahvistaa toimituksen."
+        ),
+        "pp.ask.item": "Mikä tuote?",
+        "pp.ask.kiosk": "Mikä kioski?",
+        "pp.ask.number": "Kuinka monta?",
+        "pp.ask.plan": "Tuotteella ei ole riviä sen päivän suunnitelmassa. Kerro tarkka erämäärä.",
+        "pp.ask.recipe": (
+            "Tuotteella ei ole vielä reseptiä, joten en osaa laskea kappaleita eriksi. Kerro erät."
+        ),
+        "pp.capacity.free": "{date}: uuniaikaa vapaana {minutes} min.",
+        "pp.capacity.fits": "Kyllä, se mahtuu päivälle {date}. Uuniaikaa vapaana {minutes} min.",
+        "pp.capacity.no_fit": "Ei, se ei mahdu päivälle {date}. Uuniaikaa vapaana {minutes} min.",
+        "pp.capacity.item": "  {item}: tilaa vielä {pieces} kpl",
+        "pp.yield.head": "Saanto {date}:",
+        "pp.yield.line": "  {item}: {good}/{planned} hyviä, hävikki {waste}, {percent} %",
+        "pp.not_allowed": "Sinulla ei ole siihen oikeuksia.",
+        "pp.no_commissary": "Keskuskeittiötä ei ole määritetty.",
+        "pp.refused": "En voinut tehdä sitä. Tarkista ja yritä uudelleen.",
+        "intent.production_planner.plan": "Tuotantosuunnitelma",
+        "intent.production_planner.change_plan": "Muuta suunnitelmaa",
+        "intent.production_planner.confirm_plan": "Vahvista suunnitelma",
+        "intent.production_planner.batch_sheet": "Eräkortti",
+        "intent.production_planner.set_recipe": "Aseta resepti",
+        "intent.production_planner.record_batch": "Kirjaa erä",
+        "intent.production_planner.dispatch": "Lähetyslista",
+        "intent.production_planner.delivered": "Vahvista toimitus",
+        "intent.production_planner.capacity": "Uunien kapasiteetti",
     },
 }
