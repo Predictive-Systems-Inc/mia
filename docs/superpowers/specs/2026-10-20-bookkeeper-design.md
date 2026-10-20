@@ -38,8 +38,8 @@ figures). No utang table in v1.
 ## 3. Who talks to it
 
 Head staff (supervisor): the closing count, settlements, expenses with a receipt amount, petty
-cash, deposits made, utang entries and repayments, their branch only. Owner and admin: all
-branches, thresholds, categories, the tax figures, monthly profit, utang approval above a limit.
+cash, deposits made, their branch only. Owner and admin: all branches, thresholds, categories,
+the tax figures, monthly profit, the large expense approval.
 Clerk: not offered (cashiering is head staff's). Languages: ten, Filipino first.
 
 ## 4. Scenarios (the acceptance list)
@@ -123,7 +123,7 @@ amounts, a deposit.
 ## 10. Testing and gates
 
 Pure-code tests for every computation (tax, matching, profit, balances); chat tests through
-run_turn; approval tests (large expense, staff advance); due tests at fixed clocks; the decider
+run_turn; approval tests (the large expense); due tests at fixed clocks; the decider
 gate at the Q40 bar on fresh halves; router seeds with the contrast "cash, expenses, deposits,
 settlements and tax; not sales counts and not pay".
 
@@ -151,6 +151,14 @@ languages. 8. Evals, gates, docs.
   capabilities reply naming them as not built (Q86); a later utang version replaces it.
 - Profit is on a cash basis (Q90 assumed): supplier spend is subtracted; cost of goods and waste
   at cost are shown as lines only.
+- Corrections: only a cash count is replaced (a new count of the date, the latest wins, and the
+  owner is told an earlier short or over alert is withdrawn); a correction of any other entry
+  asks again and writes nothing. A void tool for settlements, payouts, expenses, petty and
+  deposits is a follow-up (Q98).
+- The due work runs each branch in a single transaction; each sender inside it (the count
+  reminder, the balance reminders, the profit, the quarter's figure, the undecided expenses) is
+  isolated, so one sender's error is logged as `bookkeeper.due_failed` and the others' sends and
+  markers are kept.
 - The petty cash floor (500 pesos) and the undeposited cash limit (20,000 pesos for two
   business dates) are assumptions (Q90); the tax table is checked with the accountant (Q97).
 - Decider gate of 21 Oct failed (docs/research/2026-10-21-bookkeeper-gate.md): ceb and hil

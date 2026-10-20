@@ -682,3 +682,15 @@ Format for each entry:
 - Question: Are the dated rates (VAT 12 percent from February 2006; percentage tax 1 percent from July 2020 and 3 percent from July 2023), VAT as 12/112 of VAT-inclusive gross, and the deadline as the quarter's end plus 25 days (2550Q, 2551Q) right for Ferino's?
 - Assumed answer: yes, as written from memory; an accountant checks it before a real filing.
 - Blocking: no.
+
+## Q98: Voiding a settlement, payout, expense, petty entry or deposit
+- Where: node/mia/agents/bookkeeper (the correction path in turn.py)
+- Question: Only a cash count can be replaced (a new count of the date wins). A settlement, payout, expense, petty entry or deposit typed wrong cannot be undone in chat; a correction of one asks again and writes nothing. Should there be a void tool (a reversing entry with its own event, never an edit or a delete of the row)?
+- Assumed answer: yes, as a follow-up; until then the owner fixes a wrong entry with the admin.
+- Blocking: no.
+
+## Q99: Do staff pay bills from the cash drawer?
+- Where: node/mia/agents/bookkeeper/tools.py (drawer_out, record_cash_count, balance_days)
+- Question: Do head staff pay bills and refill petty cash from the drawer before the closing count, or only from the petty box and the bank?
+- Assumed answer: yes, from the drawer. A closing count's expected cash is the date's cash sales less the date's cash spends and petty refills (drawer_out), and the undeposited balance takes them out only on a date without a count (a count already holds what is left). Something taken from the drawer after that date's count is missed by the balance.
+- Blocking: no.
