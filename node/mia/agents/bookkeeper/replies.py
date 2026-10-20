@@ -70,7 +70,7 @@ def count_text(out: CashCountOut, lang: str) -> str:
     )
 
 
-def match_text(m: calc.Match, provider: str, lang: str, currency: str = "PHP") -> str:
+def match_text(m: calc.Match, provider: str, lang: str, currency: str) -> str:
     """A settlement (GCash, Maya: the fee) or payout (Grab, Foodpanda: the commission) against
     the period's sales by that tender less the cut, within the threshold or short or over."""
     kind = "settlement" if provider in words.SETTLERS else "payout"

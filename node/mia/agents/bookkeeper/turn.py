@@ -16,18 +16,18 @@ from dataclasses import replace
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
 from mia.agents.bookkeeper import MANIFEST, actions, calc, decider, due, replies, tools
 from mia.agents.bookkeeper.models import CashCount
 from mia.agents.decider import Decision
-from mia.agents.sales_supervisor.tools import _currency
+from mia.agents.sales_supervisor.tools import _currency, _reported_at
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import reply_text, store_reply
-from mia.core import db, events, orgconfig
+from mia.core import events, orgconfig
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
@@ -77,7 +77,13 @@ def _query(
     if classify(html.unescape(text), deps.today, deps.lang).injection:
         return Decision(action="reply_only", args={"kind": "injection"}, confidence=1), None
     last = _last_question(session, thread)
-    return None, actions.build_query(deps, text, last.text if last else "")
+    said = session.exec(
+        select(Message.id)
+        .where(Message.thread_id == thread.id)
+        .where(Message.role == "user")
+        .order_by(col(Message.id).desc())
+    ).first()
+    return None, actions.build_query(deps, text, last.text if last else "", message_id=said)
 
 
 def _ask(
@@ -140,7 +146,7 @@ def _names(session: Session, deps: AgentDeps) -> replies.Names:
     return {b.id: b.name for b in session.exec(stmt)}
 
 
-def _result(deps: AgentDeps, tool: str, args: dict[str, Any], out: dict[str, Any]) -> str:
+def _result(deps: AgentDeps, tool: str, inp: BaseModel, out: dict[str, Any]) -> str:
     """The reply text of one successful tool result (tool is the name without the agent
     prefix)."""
     lang, settings = deps.lang, orgconfig.load().bookkeeper
@@ -154,8 +160,8 @@ def _result(deps: AgentDeps, tool: str, args: dict[str, Any], out: dict[str, Any
         text = replies.expense_text(tools.ExpenseOut.model_validate(out), lang)
     elif tool == "record_petty":
         petty = tools.PettyOut.model_validate(out)
-        category = str(args.get("category") or "supplies")
-        text = replies.petty_text(petty, settings.petty_floor, category, lang)
+        assert isinstance(inp, tools.PettyInput)
+        text = replies.petty_text(petty, settings.petty_floor, inp.category, lang)
     elif tool == "record_deposit":
         text = replies.deposit_text(tools.DepositOut.model_validate(out), lang)
     elif tool == "balances":
@@ -203,7 +209,7 @@ def _run(
         limit = replies.money(orgconfig.load().bookkeeper.expense_limit, currency, deps.lang)
         key = replies.refusal_key(str(out["message"]))
         return reply_text(session, deps, thread, t(key, deps.lang, limit=limit))
-    text = _result(deps, binding.tool_id.removeprefix(f"{MANIFEST.id}."), args, out)
+    text = _result(deps, binding.tool_id.removeprefix(f"{MANIFEST.id}."), inp, out)
     return reply_text(session, deps, thread, "\n".join(filter(None, [lead, text])))
 
 
@@ -232,11 +238,13 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
 
 def _todays_count(session: Session, deps: AgentDeps, args: dict[str, Any]) -> CashCount | None:
     """The latest count of the decision's day (the stated day, else the branch's business
-    date now) when the sender may read counts, else None."""
+    date when the message was said, as record_cash_count dates it) when the sender may read
+    counts, else None."""
     if not get_rbac().check(deps.actor, tools.CASH, "read"):
         return None
+    said = _reported_at(deps, args.get("source_message_id"))
     day = args.get("business_date") or retail_hours.business_date_at(
-        deps.branch, retail_hours.load(session, deps.branch.id), db.utcnow()
+        deps.branch, retail_hours.load(session, deps.branch.id), said
     )
     stmt = (
         select(CashCount)

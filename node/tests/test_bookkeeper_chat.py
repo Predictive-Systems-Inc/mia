@@ -15,10 +15,11 @@ from sqlmodel import Session, col, select
 
 from mia.agents.bookkeeper import MANIFEST, calc, replies, tools, words
 from mia.agents.bookkeeper.models import CashCount, Deposit, Expense, Settlement
-from mia.agents.bookkeeper.tools import BalancesInput, ProfitInput, TaxInput
+from mia.agents.bookkeeper.tools import BalancesInput, JournalInput, ProfitInput, TaxInput
 from mia.agents.decider import Decision
 from mia.agents.sales_supervisor import tools as sales_tools
 from mia.agents.sales_supervisor.tools import CountIn, RecordCountsInput
+from mia.chat import service
 from mia.chat.access import agents_for
 from mia.chat.blocks import ApprovalCardBlock, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.service import run_turn
@@ -167,6 +168,31 @@ def test_a_corrected_count_replaces_the_days_count(
     )  # the latest count of the date wins
 
 
+def test_a_deferred_count_keeps_the_business_date_it_was_typed_on(
+    session: Session, bk_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, bk_pin: Pin
+) -> None:
+    """Typed at 21:20 and answered after midnight (a Jev outage, resumed): the count and the
+    correction lookup are dated by the message, not by the run."""
+    bk_pin(at(BK_TODAY, 21, 20))
+    expected = counted_today(session, bk_en)
+    marites = bk_en[1]["Marites"]
+    _answers(monkeypatch, "cash_count", amount="p0")
+    first = _turn(session, marites, f"cash count {expected // 100 + 1}")
+    thread, said = service._store(
+        session, marites, f"hindi {expected // 100 + 1}, {expected // 100}", first.thread_id
+    )
+    bk_pin(at(BK_TODAY + dt.timedelta(days=1), 0, 30))
+    reply = asyncio.run(
+        service.respond(
+            session, marites, thread, said, resumed=True, stage="agent", agent_id=MANIFEST.id
+        )
+    )
+    session.commit()
+    assert reply.text().startswith(t("bk.count.replaced", EN, old=money(expected + 100)))
+    rows = session.exec(select(CashCount).order_by(col(CashCount.created_at).desc())).all()
+    assert (rows[0].business_date, rows[0].counted) == (BK_TODAY, expected)
+
+
 def test_a_correction_without_an_entry_to_replace_asks(
     session: Session, bk_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, bk_pin: Pin
 ) -> None:
@@ -191,7 +217,7 @@ def test_a_gcash_settlement_is_matched(
     sales = tools.tender_sales(session, bk_en[0].id, "gcash", YESTERDAY, YESTERDAY)
     m = calc.match(321_000, sales, 2, 10_000)
     reply = _turn(session, bk_en[1]["Marites"], "GCash settlement 3,210 for yesterday")
-    assert reply.text() == replies.match_text(m, "gcash", EN)
+    assert reply.text() == replies.match_text(m, "gcash", EN, "PHP")
     row = session.exec(select(Settlement).where(Settlement.amount == 321_000)).one()
     assert row.expected == m.expected
 
@@ -204,7 +230,7 @@ def test_a_grab_payout_shows_the_commission(
     m = calc.match(890_000, tools.tender_sales(session, bk_en[0].id, "grab", *week), 25, 10_000)
     assert m.cut > 0
     reply = _turn(session, bk_en[1]["Marites"], "Grab payout 8,900 for the week")
-    assert money(m.cut) in reply.text() and reply.text() == replies.match_text(m, "grab", EN)
+    assert money(m.cut) in reply.text() and reply.text() == replies.match_text(m, "grab", EN, "PHP")
 
 
 # ---- scenarios 4 to 6: expenses, petty cash, deposits --------------------------------------
@@ -299,6 +325,22 @@ def test_the_owner_gets_the_quarter_figure(
     assert reply.text() == replies.tax_text(out, names(session), EN)
 
 
+def test_the_journal_is_worded_by_day_and_tender(
+    session: Session, bk_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = tools.sales_journal(deps_for(session, bk_en[1]["Rosa"]), JournalInput(month=OCTOBER), "j")
+    _answers(monkeypatch, "journal", period="last_month")
+    text = _turn(session, bk_en[1]["Rosa"], "sales book ng Oktubre").text()
+    assert text == replies.journal_text(out, EN)
+    day = min(out.days)
+    tenders = ", ".join(
+        t("bk.journal.tender", EN, tender=t(f"bk.tender.{k}", EN), amount=money(v))
+        for k, v in out.days[day].items()
+    )
+    assert text.splitlines()[0] == t("bk.journal.head", EN, month="2026-10", total=money(out.total))
+    assert text.splitlines()[1] == t("bk.journal.day", EN, date=day.isoformat(), tenders=tenders)
+
+
 def test_payroll_totals_stay_off_the_chain_through_chat(
     session: Session, bk_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -353,6 +395,10 @@ def test_an_owners_own_large_expense_is_decided_by_the_owner(
     _answers(monkeypatch, "expense", amount="p0", category="repairs")
     reply = _turn(session, bk_en[1]["Rosa"], "paid 7,500 to fix the oven")
     (card,) = [b for b in reply.blocks if isinstance(b, ApprovalCardBlock)]
+    rosa = Actor.person(bk_en[1]["Rosa"])
+    with pytest.raises(approvals.ApprovalError):  # no fresh step-up
+        approvals.decide(session, card.approval_id, rosa, "approved")
+    assert not session.exec(select(Expense).where(Expense.amount == 750_000)).all()
     decide(session, card.approval_id, bk_en[1]["Rosa"], "approved")
     stmt = select(Expense).where(Expense.approval_id == card.approval_id)
     assert session.exec(stmt).one().amount == 750_000
