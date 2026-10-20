@@ -572,3 +572,27 @@ Format for each entry:
 - Question: A clerk writes "ready na yung kay Mila": the customer's first name is in the staff member's own message row and its event. Should it be redacted from the hash chain, as a customer's own identity is?
 - Assumed answer: no, as Q64 says for a user's own words: what the staff member typed stays in their event. The name never leaves the node (build_query scrubs the branch customers' first names before Jev), and Mia's replies that name a customer (orders_today, mark_ready, mark_picked_up) are sensitive, so their text and blocks stay in the row only.
 - Blocking: no.
+
+## Q73: Price history and bundles in the retail template
+- Where: node/mia/templates/retail/models.py, node/migrations/versions/0000_initial.py, node/mia/agents/sales_supervisor/tools.py (counts priced on their business date)
+- Question: Experiments and dated price changes need a price history; may the template gain `retail_item_prices` (per branch) and `retail_items.components`?
+- Answer (20 Oct 2026, D37): yes, dated prices per branch; `retail_items.price` stays the default; counts keep the price of their day.
+- Blocking: no (answered).
+
+## Q74: Who may propose an experiment
+- Where: node/mia/agents/branch_manager (propose_experiment)
+- Question: May a supervisor propose a price or promo experiment, and how often may the agent propose one itself?
+- Assumed answer: a supervisor proposes and the owner decides; the agent proposes at most one a month per branch, always from the strategy catalogue (D37).
+- Blocking: no.
+
+## Q75: Sources of the quotes and tips
+- Where: node/mia/agents/branch_manager/tips.py (seed data)
+- Question: Where do the motivational quotes and sales tips come from?
+- Assumed answer: public-domain quotes and the owner's own lines, each row with its source; no scraping, no model-invented quote.
+- Blocking: no.
+
+## Q77: The owner's own price change
+- Where: node/mia/core/approvals.py (decide)
+- Question: The approvals core never lets a requester decide their own request. When the owner types a price change, who approves it?
+- Answer (20 Oct 2026, D37): the owner's own typed request is the decision: the approval row exists, the owner decides it themselves with the PIN step-up, only for the owner role in their own branch; everyone else waits for another approver.
+- Blocking: no (answered).

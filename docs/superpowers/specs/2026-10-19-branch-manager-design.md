@@ -160,6 +160,52 @@ score) and the tip and nudge rules as pure code. 3. Actions and the decider. 4. 
 two approvals with their handlers. 5. Chat turn, scenarios 3 to 7 and 10. 6. Due work (1, 2, 8,
 9). 7. Ten languages. 8. Evals, gates, docs.
 
+## 13. Pricing strategies (added 20 October, owner's instruction)
+
+Price and promo experiments rest on proven pricing strategies, never on a guess. The strategies
+are data rows (`branch_manager_strategies`: id, name key, kind, rule parameters as JSON, source,
+active), seeded with their sources the way tips are, and the proposal engine in
+`experiments.py` is code: it reads the branch's own numbers (counts, targets, waste from
+`stock_events`, baskets, last year's month) and picks the strategies whose conditions hold for an
+item. The model never invents a price or a strategy. Every proposal names its strategy, the
+rationale in the branch's numbers, the expected effect, the guard rails, and the 14-day test.
+
+The v1 catalogue (sources are the published works the rows cite; the owner may add their own):
+1. Charm pricing (left-digit effect): a price ending in 0 or 5 tested one peso under the next
+   ten (50 to 49). Source: Thomas and Morwitz, "Penny Wise and Pound Foolish" (2005).
+2. Anchoring with a premium option: when a line has one size, test a larger or premium variant
+   priced high so the regular looks fair. Source: Kahneman and Tversky on anchoring; Nagle and
+   Muller, "The Strategy and Tactics of Pricing".
+3. Bundling: items often bought together (the pairing rule) tested as a bundle priced below
+   the sum. Source: Stremersch and Tellis, "Strategic Bundling of Products and Prices" (2002).
+4. Volume tiers: a per-piece price that drops at a quantity when multi-piece orders are common.
+   Source: Nagle and Muller (nonlinear pricing).
+5. Time-of-day markdown against waste: a late-day price cut on an item with recurring
+   leftovers in `stock_events`, sized to clear the average leftover, never below cost. Source:
+   revenue management for perishables (Talluri and van Ryzin, "The Theory and Practice of
+   Revenue Management").
+6. Price increase test on a sell-out item: an item that sells out before closing on most days
+   tested at a higher price (5 to 10 percent), the baseline and score as for any experiment.
+   Source: elasticity testing, Simon and Fassnacht, "Price Management".
+7. Seasonal pricing from last year: the best seller of the same month last year priced or
+   promoted ahead of its season. Source: the shop's own history (data standard 1.5).
+8. Decoy or good-better-best: three variants where the middle is the one to sell. Source:
+   Ariely, "Predictably Irrational"; Nagle and Muller.
+
+Guard rails, in code with unit tests: never below the item's cost (`retail_items.cost`, nullable,
+minor units; without a cost no cut deeper than 20 percent); never more than 20 percent from the
+price in force; one open experiment per branch; no second experiment on the same item within 28
+days; 14 days and revert unless the owner keeps it; the baseline rule of section 7 (same
+weekdays of the previous 28 days, at least 7 days) or "not enough data". The owner's card shows
+strategy, rationale, numbers, guard rails and the baseline, and the result after 14 days names
+the strategy and whether the numbers supported it. Strategies and the decision are recorded on
+the experiment row (strategy_id, rationale JSON).
+
+Data changes: `branch_manager_strategies` (agent-owned), `branch_manager_experiments` gains
+`strategy_id` and `rationale`, `retail_items.cost` (template, nullable; Q79 asks the owner for
+the costs). Out of v1: cost of goods computed from ingredients (production_planner), dynamic
+pricing, competitor prices.
+
 ## Carried over
 
 (filled by the reviews)

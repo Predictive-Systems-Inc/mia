@@ -339,3 +339,22 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   right (the admin wildcards on the old prefixes became explicit grants); old event rows keep
   the old entity types (rule 2). The branch_manager and the bookkeeper may now be built, and
   customer_service may read `stock_events` for sell-out answers (D35).
+
+## D37: Dated prices per branch, and the owner decides their own money request (Q73, Q77)
+- Context: the branch manager's price and promo experiments need a price history, and the
+  approvals core never lets a requester decide their own request, which blocks a one-owner
+  shop when the owner types a price change. Asked on 20 October 2026; the owner answered both.
+- Decision: the retail template gains `retail_item_prices` (a dated price per branch and item;
+  `retail_items.price` stays the default) and `retail_items.components` (a bundle's item ids);
+  sales counts are priced at the price in force on their business date. The owner's own typed
+  money request is the decision: an approval row is still created, and the requester may decide
+  it only when they hold the owner role in that branch and complete the PIN step-up; every
+  other requester still waits for another approver. Price experiments are proposed only from a
+  curated catalogue of proven pricing strategies (data rows with sources, like the tips), each
+  proposal naming its strategy, its rationale and its guard rails; the model never invents a
+  price or a strategy.
+- Consequences: a template migration (0000_initial edited in place), one new rule in
+  core/approvals.decide with negative tests (a supervisor still cannot self-approve; an owner
+  of another branch cannot), the strategy catalogue as `branch_manager_strategies` rows seeded
+  with sources, and a cost floor per item (`retail_items.cost`, nullable) so no strategy prices
+  below cost. Recorded in the branch manager spec (section 13) and plan.
