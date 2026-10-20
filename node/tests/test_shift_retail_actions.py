@@ -1,8 +1,11 @@
 """The shift supervisor's kiosk actions, Jev request and argument mapping (D39; pure, the fake
 Jev's answers)."""
 
+import asyncio
 import datetime as dt
+import functools
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,8 +13,11 @@ from sqlmodel import Session
 
 from mia.agents.base import AgentDeps
 from mia.agents.shift_supervisor import MANIFEST, actions, decider
+from mia.chat.service import run_turn
 from mia.core import orgconfig
 from mia.core.models import Actor, Branch, Person
+from mia.i18n import t
+from mia.settings import get_settings
 from tests.conftest import RS_TODAY
 from tests.jev_fake import answers_for
 
@@ -107,3 +113,35 @@ def test_a_closing_names_the_kiosk_and_the_day(session: Session, rs: Ferinos) ->
         "Mall kiosk",
         "2026-11-01",
     )
+
+
+def test_the_cleaning_request_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The cleaning request for a fixed query equals the one built at 5528d69, before D39."""
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings())
+    q = actions.Query(
+        message="Olen kipeä huomenna, can't come 9pm",
+        previous_mia_message="Hei!",
+        role="cleaner",
+        today=dt.date(2026, 10, 17),
+        open_cover_request="",
+        dates={"2026-10-17": "today", "2026-10-18": "tomorrow"},
+        visits={"v1": "Kalasatama, Saturday 2026-10-17 08:00-10:00, Office, cleaners: Mikael"},
+        sites={"s1": "Kalasatama"},
+        people={"p1": "Mikael Virtanen"},
+        checklist_items={"i0": "Vacuum"},
+        last_cover_visit=None,
+    )
+    frozen = Path(__file__).parent / "fixtures" / "shift_cleaning_request.json"
+    built = json.dumps(actions.build_request(q, "jev-1.13.0"), indent=1, ensure_ascii=False)
+    assert built + "\n" == frozen.read_text(encoding="utf-8")
+
+
+def test_retail_without_jev_is_unavailable(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    only = orgconfig.OrgSettings(template="retail", agents=[MANIFEST.id])
+    monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: only))
+    monkeypatch.setenv("MIA_DECIDER", "agent")
+    get_settings.cache_clear()
+    reply = asyncio.run(run_turn(session, None, rs[1]["Ana"], "may sakit ako bukas", None))
+    assert reply.text() == t("reply.unavailable", rs[1]["Ana"].language or "en")

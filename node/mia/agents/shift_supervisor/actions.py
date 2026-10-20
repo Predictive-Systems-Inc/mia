@@ -1,10 +1,10 @@
 """What the Jev decider chooses from (spec docs/superpowers/specs/2026-10-17-jev-decider-design.md).
 
 One Jev request per message: the `action` question over actions_for() (ACTIONS, or
-RETAIL_ACTIONS for a retail organisation, D39) plus one question per slot. Slots are shared by
-the actions (one date question serves every action that needs a date), so a request asks 13
-questions whatever the number of tools. Every value Jev may pick is a
-candidate code listed first; free text is copied by the decider, never generated.
+RETAIL_ACTIONS for a retail organisation, D39) plus one question per slot of slots_for().
+Slots are shared by the actions (one date question serves every action that needs a date), so
+a request asks 12 questions whatever the number of tools (13 in retail, which adds `time`).
+Every value Jev may pick is a candidate code listed first; free text is copied by the decider, never generated.
 """
 
 import datetime as dt
@@ -259,9 +259,15 @@ SLOTS = (
     "accept",
     "problem_kind",
     "checklist_item",
-    "time",
     "conversation",
 )
+RETAIL_SLOTS = (*SLOTS, "time")
+
+
+def slots_for() -> tuple[str, ...]:
+    """The slots the template asks: RETAIL_SLOTS for retail, else SLOTS (the cleaning request
+    stays as it was before D39)."""
+    return RETAIL_SLOTS if is_retail() else SLOTS
 
 
 @dataclass
@@ -498,11 +504,6 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
             "Which checklist task does the sender say is done?",
             {**_capped(q.checklist_items), **none},
         ),
-        "time": _choice(
-            "Which clock time does `message` give as the time the sender (or the named person)"
-            " really left?",
-            {**q.times, **none},
-        ),
         "conversation": _choice(
             "What kind of message is it?",
             {
@@ -515,4 +516,10 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
             },
         ),
     }
+    if "time" in slots_for():
+        questions["time"] = _choice(
+            "Which clock time does `message` give as the time the sender (or the named person)"
+            " really left?",
+            {**q.times, **none},
+        )
     return {"model": model, "state": state, "questions": questions}
