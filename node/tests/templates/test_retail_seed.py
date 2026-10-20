@@ -153,3 +153,18 @@ def test_hr_events_hide_rates_amounts_and_leave_reasons(ferinos: None, session: 
         for e in rows:
             assert e.after is not None
             assert all(e.after[f] == "<redacted>" for f in fields)
+
+
+def test_the_box_holds_four_classics_and_two_items_have_a_cost(
+    ferinos: None, session: Session
+) -> None:
+    from mia.templates.retail import seed
+    from mia.templates.retail.models import RetailItem
+
+    seed.seed(session)
+    rows = {i.name: i for i in session.exec(select(RetailItem)).all()}
+    assert rows["Box of 4"].components == [rows["Classic"].id] * 4
+    assert {n for n, i in rows.items() if i.components} == {"Box of 4"}
+    costs = {n: i.cost for n, i in rows.items() if i.cost is not None}
+    assert costs.keys() == {"Classic", "Special"}
+    assert all(0 < cost < rows[n].price for n, cost in costs.items())

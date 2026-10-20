@@ -46,6 +46,10 @@ ITEMS: list[tuple[str, list[str], int]] = [
     ("Box of 4", ["b4", "box"], 16000),
     ("Kape", ["kape", "coffee"], 2500),
 ]
+# Plausible unit costs (centavos) for two items only, made up for the demo until the owner gives
+# hers (Q79); the other items have no cost.
+COSTS = {"Classic": 2400, "Special": 2800}
+BUNDLES = {"Box of 4": ["Classic"] * 4}  # a bundle's pieces by item name
 # name, codes, unit, reorder point, supplier, pack price (centavos). No item and ingredient
 # share a name or a code, and a code is one word (menu_tokens does not split codes).
 INGREDIENTS: list[tuple[str, list[str], str, int, str | None, int | None]] = [
@@ -107,10 +111,17 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
         store.insert(session, branch, Actor.system(branch.id))
     today = today or dt.datetime.now(ZoneInfo(first.timezone)).date()
 
-    items = []
+    items: list[RetailItem] = []
     for order, (name, codes, price) in enumerate(ITEMS):
+        by_name = {i.name: i.id for i in items}
         item = RetailItem(
-            name=name, short_codes=codes, price=price, currency=CURRENCY, sort_order=order
+            name=name,
+            short_codes=codes,
+            price=price,
+            currency=CURRENCY,
+            sort_order=order,
+            components=[by_name[piece] for piece in BUNDLES.get(name, [])],
+            cost=COSTS.get(name),
         )
         store.insert(session, item, actor)
         events.emit(

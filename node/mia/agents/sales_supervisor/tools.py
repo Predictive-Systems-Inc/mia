@@ -25,6 +25,7 @@ from mia.core.db import utcnow
 from mia.core.models import Branch, Event, Message, Person, SalesCount, SalesNote, SalesTarget
 from mia.core.rbac import Resource, get_rbac
 from mia.templates.retail import hours as retail_hours
+from mia.templates.retail import items as retail_items
 from mia.templates.retail.models import RetailBranchHours, RetailItem
 
 LEADS = {"owner", "admin"}  # whose target wins and who sees every branch by default (not access)
@@ -202,7 +203,7 @@ def _new_count(
         branch_id=deps.branch.id,
         item_id=item.id,
         quantity=quantity,
-        amount=quantity * item.price,
+        amount=quantity * retail_items.price_on(deps.session, item, deps.branch.id, day),
         currency=item.currency,
         reported_at=utcnow(),
         reported_by=deps.person.id,

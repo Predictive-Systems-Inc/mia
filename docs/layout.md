@@ -28,8 +28,10 @@ mia/
                             visit generation, assignment rules, check-in, inbox), billing
                             (the monthly summary export), jev.py (one TypeSafe Jev request)
       templates/cleaning/   models (sites, checklists, checklist ticks), seed, importer (master data from YAML)
-      templates/retail/     models (items with short codes and prices, branch hours), hours (opening
-                            hours helpers and the business date), seed (Ferino's demo)
+      templates/retail/     models (items with short codes, prices, bundle components and cost, dated
+                            branch prices, branch hours), items (dated prices per branch, short
+                            codes), hours (opening hours helpers and the business date), seed
+                            (Ferino's demo)
       learning/             role skill data: generate, translate (the eval set by language), train, bakeoff
       agents/               base.py (manifest, guard, model factory, AgentSpec), registry.py
                             (every agent by id), stubs.py (roster agents not built yet),

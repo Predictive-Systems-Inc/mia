@@ -795,6 +795,8 @@ def upgrade() -> None:
         sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
         sa.Column("active", sa.Boolean(), nullable=False),
         sa.Column("sort_order", sa.Integer(), nullable=False),
+        sa.Column("components", sa.JSON(), nullable=False),
+        sa.Column("cost", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(
             ["branch_id"],
             ["branch.id"],
@@ -803,6 +805,40 @@ def upgrade() -> None:
     )
     with op.batch_alter_table("retail_items", schema=None) as batch_op:
         batch_op.create_index(batch_op.f("ix_retail_items_branch_id"), ["branch_id"], unique=False)
+
+    op.create_table(
+        "retail_item_prices",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("item_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("price", sa.Integer(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("effective_on", sa.Date(), nullable=False),
+        sa.Column("approval_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("set_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("applied_at", mia.core.db.TZDateTime(length=40), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["item_id"],
+            ["retail_items.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("retail_item_prices", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_retail_item_prices_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_retail_item_prices_effective_on"), ["effective_on"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_retail_item_prices_item_id"), ["item_id"], unique=False
+        )
 
     op.create_table(
         "retail_branch_hours",
@@ -1446,6 +1482,12 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_retail_branch_hours_branch_id"))
 
     op.drop_table("retail_branch_hours")
+    with op.batch_alter_table("retail_item_prices", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_retail_item_prices_item_id"))
+        batch_op.drop_index(batch_op.f("ix_retail_item_prices_effective_on"))
+        batch_op.drop_index(batch_op.f("ix_retail_item_prices_branch_id"))
+
+    op.drop_table("retail_item_prices")
     with op.batch_alter_table("retail_items", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_retail_items_branch_id"))
 

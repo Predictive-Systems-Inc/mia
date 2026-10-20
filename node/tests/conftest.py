@@ -247,6 +247,7 @@ CLOCK_USERS = (
     "mia.channels.simulator",
     "mia.agents.customer_service.public",
     "mia.agents.customer_service.due",
+    "mia.templates.retail.items",
 )
 
 
@@ -330,16 +331,18 @@ class Shop:
     pin: Callable[..., dt.datetime]
 
 
-@pytest.fixture
-def cs(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Shop]:
-    """The Ferino's seed on TODAY (MIA_ORG=ferinos) with the clock at 10:00 Manila; pin(hour,
-    minute, days) moves the clock on every CLOCK_USERS module (it keeps running from there)."""
+def _ferinos_on(
+    monkeypatch: pytest.MonkeyPatch, session: Session, today: dt.date
+) -> Iterator[Shop]:
+    """The Ferino's seed on today (MIA_ORG=ferinos, both caches cleared) with the clock at 10:00
+    Manila; pin(hour, minute, days) moves the clock on every CLOCK_USERS module (it keeps
+    running from there)."""
     from mia.templates.retail import seed as retail_seed
 
     start = dt.datetime.now(dt.UTC)  # only the elapsed time is read, never the date
 
     def pin(hour: int, minute: int = 0, days: int = 0) -> dt.datetime:
-        local = dt.datetime.combine(TODAY + dt.timedelta(days=days), dt.time(hour, minute), MNL)
+        local = dt.datetime.combine(today + dt.timedelta(days=days), dt.time(hour, minute), MNL)
 
         def now() -> dt.datetime:
             return local.astimezone(dt.UTC) + (dt.datetime.now(dt.UTC) - start)
@@ -354,9 +357,30 @@ def cs(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Shop]:
         m.setenv("MIA_ORG", "ferinos")
         get_settings.cache_clear()
         load.cache_clear()
-        kiosk = retail_seed.seed(session, today=TODAY)
+        kiosk = retail_seed.seed(session, today=today)
         session.commit()
         people = {p.name.split()[0]: p for p in session.exec(select(Person)).all()}
         yield Shop(kiosk, people, pin)
     get_settings.cache_clear()
     load.cache_clear()
+
+
+@pytest.fixture
+def cs(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Shop]:
+    """The customer service's shop: _ferinos_on TODAY (a Tuesday)."""
+    yield from _ferinos_on(monkeypatch, session, TODAY)
+
+
+BM_TODAY = dt.date(2026, 10, 26)  # a Monday; the seed's counts are 12 to 25 October
+
+
+@pytest.fixture
+def bm_shop(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Shop]:
+    """The branch manager's shop: _ferinos_on BM_TODAY, the seed's languages kept."""
+    yield from _ferinos_on(monkeypatch, session, BM_TODAY)
+
+
+@pytest.fixture
+def bm(bm_shop: Shop) -> tuple[Branch, dict[str, Person]]:
+    """bm_shop as (the Mall kiosk, people by first name); bm_shop.pin moves the clock."""
+    return bm_shop.kiosk, bm_shop.people
