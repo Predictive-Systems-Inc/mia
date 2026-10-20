@@ -432,6 +432,21 @@ def test_a_rejected_swap_tells_both_clerks(session: Session, rs: Ferinos) -> Non
     assert (len(said["Ana"]), len(said["Liza"])) == (1, 1)
 
 
+def test_a_swap_tapped_after_its_deadline_is_expired_and_told_once(
+    session: Session, rs: Ferinos, rs_pin: Pin
+) -> None:
+    approval = agree_swap(session, rs)
+    session.commit()
+    now = rs_pin(at(SATURDAY, 9, 5))
+    with pytest.raises(approvals.ApprovalError, match="expired"):
+        decide(session, approval.id, rs[1]["Marites"], "approved")
+    assert alerts.close_undecided_swaps(session, now) == 0
+    mine = visit_of(session, rs[1]["Ana"], SATURDAY)
+    assert names_on(session, mine) == ["Ana"]  # no swap written
+    said = _swap_said(session, rs, "shift.swap.expired")
+    assert (len(said["Ana"]), len(said["Liza"])) == (1, 1)
+
+
 def test_a_swap_expired_by_the_due_work_tells_both_once(
     session: Session, rs: Ferinos, rs_pin: Pin
 ) -> None:

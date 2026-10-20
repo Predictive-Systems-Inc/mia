@@ -48,11 +48,13 @@ from tests.jev_fake import answers_for, fake_jev
 from tests.test_data_standard_1_7 import (
     MNL,
     MONDAY,
+    NOV_1,
     SATURDAY,
     TU_SU,
     TUESDAY,
     at,
     names_on,
+    stall,
     visit_of,
 )
 from tests.test_shift_retail_tools import decide, deps_for
@@ -383,6 +385,27 @@ def test_a_broken_stove_is_an_equipment_incident(
     assert line in texts(session, rs[1]["Marites"]) and line in texts(session, rs[1]["Rosa"])
     assert line not in texts(session, rs[1]["Ana"])
     assert reply.text() == t("retail.problem.reported", "fil", location="Mall kiosk")
+
+
+def test_a_broken_stove_on_a_closed_day_is_told_with_the_branch_name(
+    session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    rs_pin(at(NOV_1, 10))  # the seed closes the Street stall on All Saints' Day
+    jun, branch = rs[1]["Jun"], stall(session).name
+    n = len(session.exec(select(Incident)).all())
+    _answers(monkeypatch, "report_site_problem", problem_kind="equipment")
+    reply = _turn(session, jun, "sira ang kalan")
+    assert reply.text() == t("retail.problem.reported", jun.language, location=branch)
+    rosa = rs[1]["Rosa"]
+    line = t(
+        "retail.alert.equipment",
+        rosa.language,
+        name=jun.name,
+        location=branch,
+        text="sira ang kalan",
+    )
+    assert line in texts(session, rosa)
+    assert len(session.exec(select(Incident)).all()) == n  # no shift that day: nothing written
 
 
 def test_greeting_is_answered_in_filipino_at_the_kiosk(

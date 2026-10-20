@@ -196,6 +196,17 @@ def test_timeout_escalates_once_then_expires(session: Session, people: dict[str,
     assert approvals.pending(session, sanna.branch_id) == []
 
 
+def test_no_escalation_expires_at_the_deadline(session: Session, people: dict[str, Person]) -> None:
+    sanna = Actor.person(people["Sanna"])
+    late = dt.timedelta(seconds=-1)
+    row = approvals.expire_if_due(
+        session, _request(session, sanna, ttl=late, escalate_to=[]), sanna
+    )
+    assert row.status == "expired"
+    default = approvals.expire_if_due(session, _request(session, sanna, ttl=late), sanna)
+    assert (default.status, default.escalate_to) == ("escalated", ["owner"])
+
+
 def test_bad_outcome_and_unknown_approval(session: Session, people: dict[str, Person]) -> None:
     helena = Actor.person(people["Helena"])
     with pytest.raises(ValueError):
