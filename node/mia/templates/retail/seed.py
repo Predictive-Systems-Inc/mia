@@ -2,8 +2,9 @@
 
 Two branches (a mall kiosk and a street stall), eight items with short codes, opening hours,
 an owner, two supervisors, three clerks, a commissary branch (no hours) with its head and
-driver and the production planner's recipes, 14 days of sales counts and a month target per branch,
-HR data, a shift Job per clerk with availability, hour limits and shifts planned from today (the
+driver, the production planner's recipes and yesterday's production day (a confirmed plan, its
+batches, one dispatch per kiosk, one matched and one short), 14 days of sales counts and a
+month target per branch, HR data, a shift Job per clerk with availability, hour limits and shifts planned from today (the
 stall closed on the next holiday), two customer service customers with their orders and a
 complaint, and the branch manager's tips, quotes and pricing strategies. All rows are written through mia.core.store, so seeding appears in the events log.
 """
@@ -23,6 +24,8 @@ from mia.agents.branch_manager import tips as bm_tips
 from mia.agents.branch_manager.models import Experiment, Strategy, Tip
 from mia.agents.customer_service.models import Complaint, Customer
 from mia.agents.hr_officer import calc, calendar
+from mia.agents.production_planner import MANIFEST
+from mia.agents.production_planner import tools as pp_tools
 from mia.agents.production_planner.models import Recipe
 from mia.agents.shift_supervisor import roster
 from mia.core import events, orgconfig, scheduling, store
@@ -49,6 +52,7 @@ from mia.core.models import (
     WorkLimit,
 )
 from mia.core.people import add_person
+from mia.core.rbac import get_rbac
 from mia.templates.retail import items as retail_items
 from mia.templates.retail.models import (
     RetailBranchHours,
@@ -286,7 +290,74 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
     _seed_experiments(session, first, planned, kiosk_daily, staff)
     _seed_customers(session, first, items[1], staff["Marites"].id, today)
     _seed_recipes(session, commissary, items, ingredients, staff["Rosa"].id)
+    _seed_production(session, commissary, branches, items, staff, today)
     return first
+
+
+def _seed_production(
+    session: Session,
+    commissary: Branch,
+    kiosks: list[Branch],
+    items: list[RetailItem],
+    staff: dict[str, Person],
+    today: dt.date,
+) -> None:
+    """Yesterday's production day through the planner's own helpers: the draft (one same
+    weekday in the counts, so every forecast is None), Nonoy's batches (Classic 3, every other
+    recipe item 1) and his confirmation, every batch at full yield but Classic batch 3 (good 40,
+    waste 8, burnt), two to an oven round from the start of production, the dispatches packed,
+    the Mall kiosk's receipt equal to its lines and the Street stall's one Classic short by 4,
+    each matched an hour after the receipt. Nothing when the planner is off for the org."""
+    s = orgconfig.load().production_planner
+    if s.commissary != commissary.name:
+        return
+    roles = MANIFEST.roles  # the CLI seed runs without the app's registry.load_roles
+    get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
+    day = today - dt.timedelta(days=1)
+    zone = ZoneInfo(commissary.timezone)
+    head = staff["Nonoy"]
+    by_head = Actor.person(head).as_agent(roles.agent_role)
+    plan = pp_tools.draft_plan(session, commissary, day)
+    classic = items[1].id
+    for line in list(plan.lines):
+        batches = 3 if line["item_id"] == classic else 1
+        plan = pp_tools.set_batches(session, plan, line["item_id"], batches, by_head)
+    plan = pp_tools.confirm(session, plan, head, by_head)
+    start = dt.datetime.combine(day, s.hours.start, zone)
+    n = 0
+    for line in plan.lines:
+        per = line["pieces"] // line["batches"]
+        for batch_no in range(1, line["batches"] + 1):
+            short = line["item_id"] == classic and batch_no == 3
+            args = pp_tools.BatchInput(
+                item_id=line["item_id"],
+                batch_no=batch_no,
+                good=40 if short else per,
+                waste=per - 40 if short else 0,
+                reason="burnt" if short else None,
+            )
+            at = start + dt.timedelta(minutes=OVEN_MINUTES * (n // s.ovens + 1))
+            pp_tools.save_batch(session, plan, args, head, by_head, at=at)
+            n += 1
+    agent = pp_tools.agent_actor(commissary.id)
+    receivers = {kiosks[0].id: staff["Marites"].id, kiosks[1].id: staff["Jun"].id}
+    received_at = dt.datetime.combine(day, dt.time(9, 0), zone)
+    for dispatch in pp_tools.pack(session, plan, agent):
+        for x in dispatch.lines:
+            gap = 4 if dispatch.branch_id == kiosks[1].id and x["item_id"] == classic else 0
+            row = StockEvent(
+                branch_id=dispatch.branch_id,
+                kind="received",
+                item_id=x["item_id"],
+                quantity=x["quantity"] - gap,
+                unit="pcs",
+                at=received_at,
+                reported_by=receivers[dispatch.branch_id],
+                business_date=day,
+            )
+            store.insert(session, row, Actor.system(dispatch.branch_id))
+        now = received_at + dt.timedelta(hours=1)
+        pp_tools.match(session, dispatch, now, pp_tools.agent_actor(dispatch.branch_id))
 
 
 def _seed_recipes(
