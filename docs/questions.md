@@ -634,3 +634,45 @@ Format for each entry:
 - Question: The volume tier strategy (spec section 13, 4) reads how many pieces each customer order line holds, but order lines live in the customer service's own table (rule 9: no other agent reads it). Should order lines become shared data (a data standard change), or should the volume strategy read the sales counts some other way?
 - Assumed answer: neither in v1; `order_pieces` stays empty, so the volume strategy proposes nothing until the owner decides.
 - Blocking: no.
+
+## Q84: Data standard 1.6, a tender on counts and supplier orders in core
+- Where: node/mia/core/models.py (SalesCount, SupplierOrder), node/migrations/versions/0000_initial.py, node/mia/agents/sales_supervisor (the count parser)
+- Question: May `sales_counts` gain a `tender` column and `inventory_manager_orders` move to core as `supplier_orders`, so the bookkeeper matches settlements to sales by tender and reads supplier spend?
+- Answer (20 Oct 2026, D38): yes to both.
+- Blocking: no (answered).
+
+## Q85: Payroll cost in monthly profit
+- Where: node/mia/agents/hr_officer/models.py, node/mia/core/models.py
+- Question: Promote the HR tables to core so the bookkeeper's profit per branch includes payroll?
+- Answer (20 Oct 2026, D38): yes; the bookkeeper reads payslip totals per branch and month only, owner and admin.
+- Blocking: no (answered); closes Q59.
+
+## Q86: Staff advances and suki credit (utang)
+- Where: docs/superpowers/specs/2026-10-20-bookkeeper-design.md
+- Question: Build staff cash advances (a money tool behind the owner's approval, deducted by the HR officer) and suki credit in the bookkeeper's v1?
+- Answer (20 Oct 2026, D38): no utang at all in v1; a message about it gets the not-built reply.
+- Blocking: no (answered).
+
+## Q87: Ferino's tax regime
+- Where: node/mia/agents/bookkeeper (the dated tax table)
+- Question: Percentage tax at 3 percent or VAT at 12 percent?
+- Answer (20 Oct 2026, D38): VAT at 12 percent (output on VAT-inclusive gross as 12/112, less input VAT from receipts with a VAT amount); the table keeps both regimes, the setting picks.
+- Blocking: no (answered).
+
+## Q88: VAT-exempt sales at Ferino's
+- Where: node/mia/agents/bookkeeper (the journal)
+- Question: Are any of Ferino's sales VAT-exempt or zero-rated?
+- Assumed answer: none; every sale is VAT-able.
+- Blocking: no.
+
+## Q89: Input VAT on a receipt without a VAT amount
+- Where: node/mia/agents/bookkeeper (record_expense)
+- Question: When head staff record an expense without a VAT amount, does any input VAT count?
+- Assumed answer: no input VAT without an amount typed from the receipt.
+- Blocking: no.
+
+## Q90: Petty cash floor, undeposited cash limit, the profit basis
+- Where: node/config/org/ferinos/settings.yaml, node/mia/agents/bookkeeper (monthly_profit)
+- Question: What petty cash balance triggers a refill reminder, how much undeposited cash for how long triggers a deposit reminder, and is profit on a cash basis (supplier spend) or on cost of goods?
+- Assumed answer: floor 500 pesos; 20,000 pesos undeposited for two days; profit subtracts fees, expenses, supplier spend and payroll, with cost of goods and waste at cost shown as lines (no double count).
+- Blocking: no.

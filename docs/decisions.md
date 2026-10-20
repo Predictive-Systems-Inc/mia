@@ -364,3 +364,21 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   another approver. `mia decide` passes no step-up for the requester's own request, so from the
   shell an owner's own request is refused (the shell was trusted for it before this branch; it
   still decides other people's requests, ADR 011).
+
+## D38: The bookkeeper, data standard 1.6, no utang, VAT (Q84 to Q87)
+- Context: the bookkeeper matches settlements and payouts to sales, needs supplier spend and
+  payroll for profit, and the catalogue lists utang. Asked on 20 October 2026; the owner
+  answered all four.
+- Decision: data standard 1.6: `sales_counts` gains `tender` (cash, gcash, maya, grab,
+  foodpanda; default cash, the clerk says it when it is not cash); `inventory_manager_orders`
+  moves to core as `supplier_orders`; the HR officer's `hr_officer_contracts`, `_payslips` and
+  `_leave` move to core as `contracts`, `payslips`, `leave` with their redactions and own-row
+  rules kept, the bookkeeper reading payslip totals per branch and month only (owner and admin,
+  never a supervisor, never per person). No utang in v1 (neither staff advances nor suki credit;
+  Q57 stays closed for now). Ferino's tax regime is VAT at 12 percent, computed in code from
+  the sales journal and receipts with a VAT amount; the dated table keeps the 3 percent
+  percentage tax for other shops.
+- Consequences: one migration edit (0000_initial), ADR 018, the rights-equality test extended
+  to the promoted tables, the sales supervisor's count parser reads a tender word, the inventory
+  and HR agents' imports move; the bookkeeper spec (docs/superpowers/specs/2026-10-20-bookkeeper-design.md)
+  and plan follow.
