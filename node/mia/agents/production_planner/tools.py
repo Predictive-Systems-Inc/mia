@@ -374,6 +374,44 @@ def match(session: Session, dispatch: Dispatch, now: dt.datetime, actor: Actor) 
     return status
 
 
+class ItemYield(BaseModel):
+    item_id: str
+    good: int
+    planned: int
+    waste: int
+    percent: int | None
+
+
+class YieldOut(BaseModel):
+    day: dt.date
+    items: list[ItemYield]
+
+
+def day_yield(session: Session, commissary: Branch, day: dt.date) -> YieldOut:
+    """The yield of the commissary's plan of production date day, read by the agent alone:
+    per item with a recorded batch (plan line order) the good pieces, the planned yield of
+    those batches, the waste and forecast.yield_percent. No plan or no batch: no items."""
+    get_rbac().require(agent_actor(commissary.id), BATCHES, "read", session=session)
+    plan = plan_for(session, commissary.id, day)
+    rows = [] if plan is None else session.exec(select(Batch).where(Batch.plan_id == plan.id)).all()
+    items = []
+    for line in plan.lines if plan is not None else []:
+        mine = [b for b in rows if b.item_id == line["item_id"]]
+        if not mine:
+            continue
+        good, planned = sum(b.good for b in mine), sum(b.planned_yield for b in mine)
+        items.append(
+            ItemYield(
+                item_id=line["item_id"],
+                good=good,
+                planned=planned,
+                waste=sum(b.waste for b in mine),
+                percent=forecast.yield_percent(good, planned),
+            )
+        )
+    return YieldOut(day=day, items=items)
+
+
 # ---- shared helpers of the tools ----------------------------------------------------------
 
 
