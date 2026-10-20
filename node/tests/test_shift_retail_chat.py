@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 from sqlmodel import Session, col, select
 
+from mia.agents.decider import THRESHOLD
 from mia.agents.shift_supervisor import (
     MANIFEST,
     cover,
@@ -251,7 +252,7 @@ def test_a_check_out_with_a_past_time_runs_as_the_offered_correction(
 ) -> None:
     ana = rs_en[1]["Ana"]
     _on_shift_at_six(session, ana, rs_pin)
-    odds = {"check_out": 0.7, "correct_time": 0.3}
+    odds = {"check_out": 0.4, "correct_time": THRESHOLD}
     _answers(monkeypatch, "check_out", probabilities=odds, time="t0")
     _turn(session, ana, "nag-out ako 5pm")
     visit = visit_of(session, ana, RS_TODAY)
@@ -260,6 +261,19 @@ def test_a_check_out_with_a_past_time_runs_as_the_offered_correction(
         "completed",
         "17:00",
     )  # her stated time, never 18:00
+
+
+def test_a_check_out_with_an_unlikely_correction_asks(
+    session: Session, rs_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    ana = rs_en[1]["Ana"]
+    _on_shift_at_six(session, ana, rs_pin)
+    odds = {"check_out": 0.7, "correct_time": 0.3}
+    _answers(monkeypatch, "check_out", probabilities=odds, time="t0")
+    reply = _turn(session, ana, "nag-out ako 5pm")
+    assert _quick(reply).options  # asks, with the alternatives as buttons
+    assert visit_of(session, ana, RS_TODAY).status == "in_progress"
+    assert not session.exec(select(Timesheet).where(Timesheet.date == RS_TODAY)).all()
 
 
 def test_a_cover_ask_with_an_unread_date_asks(

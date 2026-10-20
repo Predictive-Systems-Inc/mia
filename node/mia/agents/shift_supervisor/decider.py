@@ -201,11 +201,12 @@ def _retail_args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
 
 def _as_correction(d: Decision) -> Decision:
     """A check-out held back for its time (missing "time") runs as correct_time when Jev offered
-    that with every input; else it stays a clarify that asks."""
+    that with every input and a probability at or above the decider's THRESHOLD; else it stays
+    a clarify that asks."""
     if d.action != "clarify" or d.raw_action != "check_out" or d.missing != "time":
         return d
     fix = next((a for a in d.alternatives if a.action == "correct_time"), None)
-    if fix is None or fix.missing is not None:
+    if fix is None or fix.missing is not None or fix.probability < shared.THRESHOLD:
         return d
     return Decision(
         action="correct_time", args=fix.args, confidence=d.confidence, raw_action=d.raw_action
