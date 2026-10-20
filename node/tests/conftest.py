@@ -261,6 +261,10 @@ CLOCK_USERS = (
     "mia.agents.branch_manager.tools",
     "mia.agents.branch_manager.due",
 )
+for _name in CLOCK_USERS:
+    # Import every clock user up front: one first imported while mia.core.db.utcnow is patched
+    # binds the fake, and monkeypatch then "restores" that fake, leaking it to later tests.
+    importlib.import_module(_name)
 
 
 @pytest.fixture

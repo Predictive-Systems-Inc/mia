@@ -109,6 +109,16 @@ def test_agents_never_decide(session: Session, people: dict[str, Person]) -> Non
         approvals.decide(session, row.id, agent, "approved")
 
 
+def test_a_caller_cannot_dress_a_plain_request_as_money(
+    session: Session, people: dict[str, Person]
+) -> None:
+    helena = Actor.person(people["Helena"])
+    row = _request(session, helena.as_agent("agent.shift_supervisor"), evidence={"risk": "money"})
+    assert "risk" not in row.evidence and row.channel == "any"
+    with pytest.raises(ApprovalError, match="made or triggered"):
+        approvals.decide(session, row.id, helena, "approved", stepped_up_at=utcnow())
+
+
 def test_money_approvals_are_app_only(session: Session, people: dict[str, Person]) -> None:
     row = _request(session, Actor.person(people["Sanna"]), risk="money")
     assert row.channel == "app_only"

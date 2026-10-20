@@ -87,6 +87,8 @@ def request(
     if risk in RISKY:
         channel = "app_only"
         evidence = {**(evidence or {}), "risk": risk}
+    else:
+        evidence = {k: v for k, v in (evidence or {}).items() if k != "risk"}  # never caller-set
     approval = Approval(
         branch_id=requester.branch_id,
         type=type,
