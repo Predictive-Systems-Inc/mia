@@ -4,6 +4,7 @@ kiosk opens and the closing yield, each once and nothing with nothing to say."""
 
 import datetime as dt
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from sqlmodel import Session, col, select
@@ -13,9 +14,10 @@ from mia.agents.production_planner.models import Dispatch, Plan
 from mia.agents.production_planner.tools import ChangePlanInput, ConfirmPlanInput, DeliveredInput
 from mia.agents.sales_supervisor import MANIFEST as SALES
 from mia.agents.shift_supervisor import alerts
+from mia.chat.blocks import TextBlock
 from mia.core import orgconfig, store
-from mia.core.models import Actor, Branch, Message, Person, StockEvent, Thread
-from mia.core.orgconfig import OrgSettings
+from mia.core.models import Actor, Branch, Event, Message, Person, StockEvent, Thread
+from mia.core.orgconfig import OrgSettings, ProductionHours, ProductionPlannerSettings
 from mia.i18n import t
 from tests.conftest import PP_TODAY, PP_TOMORROW, Pin
 from tests.test_production_planner_tools import (
@@ -27,6 +29,7 @@ from tests.test_production_planner_tools import (
     packed,
     plan_row,
     run,
+    stall,
 )
 
 Ferinos = tuple[Branch, dict[str, Person]]
@@ -51,7 +54,31 @@ def texts(session: Session, person: Person) -> list[str]:
 
 
 def names(session: Session) -> dict[str, str]:
-    return due.names(session, comm(session).organisation_id)
+    return due.names(session, comm(session))
+
+
+def remembered(session: Session, message: Message) -> dict[str, Any]:
+    """The options turn.remember stored for the message's buttons."""
+    stmt = select(Event).where(Event.action == "decision.clarify_asked")
+    (row,) = [e for e in session.exec(stmt) if (e.after or {}).get("message_id") == message.id]
+    return dict((row.after or {})["options"])
+
+
+@pytest.fixture
+def urgency(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, bool]]:
+    """Each planner notification's text and urgent flag (notify spied in due and tools, the
+    real one still runs)."""
+    seen: list[tuple[str, bool]] = []
+    real = due.notify
+
+    def spy(session: Session, person: Person, *args: Any, **kwargs: Any) -> Message:
+        text = "\n".join(b.text for b in args[0] if isinstance(b, TextBlock))
+        seen.append((text, bool(kwargs.get("urgent"))))
+        return real(session, person, *args, **kwargs)
+
+    monkeypatch.setattr(due, "notify", spy)
+    monkeypatch.setattr(tools, "notify", spy)
+    return seen
 
 
 def confirmed(session: Session, people: dict[str, Person], pin: Pin) -> Plan:
@@ -117,7 +144,7 @@ def without_planner(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def test_the_draft_plan_reaches_the_head_once(
-    session: Session, pp_en: Ferinos, pp_pin: Pin
+    session: Session, pp_en: Ferinos, pp_pin: Pin, urgency: list[tuple[str, bool]]
 ) -> None:
     _tick(session, pp_pin, at(PP_TODAY, 13, 55))
     assert notifications(session, pp_en[1]["Nonoy"]) == []
@@ -127,6 +154,9 @@ def test_the_draft_plan_reaches_the_head_once(
     plan = session.exec(select(Plan).where(Plan.production_date == PP_TOMORROW)).one()
     want = replies.plan_text(tools.plan_out(session, plan), names(session), EN)
     assert (note.text, plan.status) == (want, "draft")
+    assert (want, False) in urgency and not any(u for _, u in urgency)
+    out = tools.plan_out(session, plan)
+    assert remembered(session, note) == replies.plan_card(out, names(session), EN)[1]
 
 
 def test_a_draft_after_midnight_is_for_that_mornings_production(
@@ -140,7 +170,9 @@ def test_a_draft_after_midnight_is_for_that_mornings_production(
     assert session.exec(later).all() == []
 
 
-def test_the_dispatch_list_splits_by_kiosk(session: Session, pp_en: Ferinos, pp_pin: Pin) -> None:
+def test_the_dispatch_list_splits_by_kiosk(
+    session: Session, pp_en: Ferinos, pp_pin: Pin, urgency: list[tuple[str, bool]]
+) -> None:
     plan = confirmed(session, pp_en[1], pp_pin)
     classic = item(session, "Classic").id
     _tick(session, pp_pin, at(PP_TOMORROW, 8, 25))
@@ -158,10 +190,14 @@ def test_the_dispatch_list_splits_by_kiosk(session: Session, pp_en: Ferinos, pp_
     assert {d.status for d in by.values()} == {"packed"}
     text = replies.dispatch_text(tools.dispatch_out(by[pp_en[0].id]), names(session), EN)
     sent = [m for m in notifications(session, pp_en[1]["Berto"]) if m.text == text]
-    assert len(sent) == 1
+    assert len(sent) == 1 and (text, True) in urgency
+    card = replies.dispatch_card(tools.dispatch_out(by[pp_en[0].id]), names(session), EN)
+    assert remembered(session, sent[0]) == card[1] and card[1]
 
 
-def test_a_short_receipt_is_flagged(session: Session, pp_en: Ferinos, pp_pin: Pin) -> None:
+def test_a_short_receipt_is_flagged(
+    session: Session, pp_en: Ferinos, pp_pin: Pin, urgency: list[tuple[str, bool]]
+) -> None:
     mall = delivered(session, pp_en[1], pp_pin)
     classic = item(session, "Classic").id
     sent = lines_of(mall)[classic]
@@ -172,6 +208,21 @@ def test_a_short_receipt_is_flagged(session: Session, pp_en: Ferinos, pp_pin: Pi
     line = t("pp.short.line", EN, kiosk="Mall kiosk", item="Classic", sent=sent, received=sent - 5)
     assert session.get(Dispatch, mall.id).status == "short"
     assert all(line in "\n".join(texts(session, pp_en[1][w])) for w in ("Nonoy", "Rosa"))
+    assert [u for text, u in urgency if line in text] == [False] * 2
+
+
+def test_a_dispatch_is_matched_an_hour_after_it_arrived(
+    session: Session, pp_en: Ferinos, pp_pin: Pin
+) -> None:
+    confirmed(session, pp_en[1], pp_pin)
+    _tick(session, pp_pin, at(PP_TOMORROW, 8, 35))  # packed now, after dispatch_at
+    (row,) = [d for d in dispatches(session) if d.branch_id == stall(session).id]
+    _tick(session, pp_pin, at(PP_TOMORROW, 8, 50))  # the stall is open, the hour is not up
+    assert session.get(Dispatch, row.id).status == "packed"
+    _tick(session, pp_pin, at(PP_TOMORROW, 9, 30))  # an hour past dispatch_at, not past packing
+    assert session.get(Dispatch, row.id).status == "packed"
+    _tick(session, pp_pin, at(PP_TOMORROW, 9, 40))
+    assert session.get(Dispatch, row.id).status == "short"  # no receipt at all is a gap
 
 
 def test_a_full_receipt_is_quiet(session: Session, pp_en: Ferinos, pp_pin: Pin) -> None:
@@ -185,7 +236,7 @@ def test_a_full_receipt_is_quiet(session: Session, pp_en: Ferinos, pp_pin: Pin) 
 
 
 def test_the_closing_yield_reaches_the_head_once(
-    session: Session, pp_en: Ferinos, pp_pin: Pin
+    session: Session, pp_en: Ferinos, pp_pin: Pin, urgency: list[tuple[str, bool]]
 ) -> None:
     packed(session, pp_en[1], pp_pin)
     for hm in ((9, 55), (10, 5), (10, 40)):
@@ -194,6 +245,16 @@ def test_the_closing_yield_reaches_the_head_once(
     assert [x.percent for x in out.items] == [100] * len(out.items) and out.items
     want = replies.yield_text(out, names(session), EN)
     assert texts(session, pp_en[1]["Nonoy"]).count(want) == 1
+    assert [u for text, u in urgency if text == want] == [False]
+
+
+def test_a_late_end_of_production_keeps_its_yield_window(session: Session, pp: Ferinos) -> None:
+    late = ProductionPlannerSettings(hours=ProductionHours(start=dt.time(15), end=dt.time(23, 30)))
+    commissary = comm(session)
+    assert due.yield_due(commissary, late, at(PP_TOMORROW, 0, 15)) is None
+    assert due.yield_due(commissary, late, at(PP_TOMORROW, 0, 45)) == PP_TODAY
+    assert due.yield_due(commissary, late, at(PP_TOMORROW, 13, 55)) == PP_TODAY
+    assert due.yield_due(commissary, late, at(PP_TOMORROW, 14, 0)) is None
 
 
 def test_no_batch_no_closing_yield(session: Session, pp_en: Ferinos, pp_pin: Pin) -> None:

@@ -16,6 +16,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.production_planner import MANIFEST, replies, tools, turn
 from mia.agents.production_planner.models import Dispatch
+from mia.agents.sales_supervisor.tools import ITEMS
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import Block, TextBlock
 from mia.chat.channels import notify
@@ -68,19 +69,28 @@ def match_due(kiosk: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
 
 
 def yield_due(commissary: Branch, s: ProductionPlannerSettings, now: dt.datetime) -> dt.date | None:
-    """The production date from an hour after the end of production to plan_at, else None."""
+    """The production date from an hour after the end of production to the next plan_at (the
+    same date's, or the day after's when the hour runs past it, a late end), else None."""
     local = _local(commissary, now)
-    end = (dt.datetime.combine(local.date(), s.hours.end) + HOUR).time()
-    return local.date() if end <= local.time() < s.plan_at else None
+    zone = ZoneInfo(commissary.timezone)
+    for day in (local.date(), local.date() - ONE_DAY):
+        start = dt.datetime.combine(day, s.hours.end, zone) + HOUR
+        stop = dt.datetime.combine(day, s.plan_at, zone)
+        if stop <= start:
+            stop += ONE_DAY
+        if start <= local < stop:
+            return day
+    return None
 
 
 def arrived(commissary: Branch, s: ProductionPlannerSettings, row: Dispatch) -> dt.datetime:
-    """When the dispatch reached the kiosk: its delivered_at, else dispatch_at of its date at
-    the commissary. A match waits an hour past it too, so a kiosk that opens early is not
-    told of a gap before its delivery."""
+    """When the dispatch reached the kiosk: its delivered_at, else the later of dispatch_at of
+    its date at the commissary and its packing (created_at). A match waits an hour past it
+    too, so a kiosk that opens early is not told of a gap before its delivery."""
     if row.delivered_at is not None:
         return row.delivered_at
-    return dt.datetime.combine(row.business_date, s.dispatch_at, ZoneInfo(commissary.timezone))
+    due = dt.datetime.combine(row.business_date, s.dispatch_at, ZoneInfo(commissary.timezone))
+    return max(due, row.created_at)
 
 
 # ---- helpers ------------------------------------------------------------------------------
@@ -90,10 +100,16 @@ def _lang(person: Person) -> str:
     return person.language or "en"
 
 
-def names(session: Session, organisation_id: str) -> dict[str, str]:
+def _items(session: Session, branch_id: str) -> dict[str, str]:
+    """Item names by id, read by the agent alone after its read check."""
+    get_rbac().require(tools.agent_actor(branch_id), ITEMS, "read", session=session)
+    return {i.id: i.name for i in session.exec(select(RetailItem))}
+
+
+def names(session: Session, commissary: Branch) -> dict[str, str]:
     """Item and branch names by id (the replies' names)."""
-    items = {i.id: i.name for i in session.exec(select(RetailItem))}
-    stmt = select(Branch).where(Branch.organisation_id == organisation_id)
+    items = _items(session, commissary.id)
+    stmt = select(Branch).where(Branch.organisation_id == commissary.organisation_id)
     return items | {b.id: b.name for b in session.exec(stmt)}
 
 
@@ -101,10 +117,13 @@ def _send(session: Session, branch: Branch, person: Person, blocks: list[Block])
     return notify(session, person, blocks, Actor.system(branch.id), MANIFEST.id)
 
 
-def _commissary(session: Session, s: ProductionPlannerSettings) -> Branch | None:
+def _commissary(session: Session, s: ProductionPlannerSettings, branch: Branch) -> Branch | None:
+    """The settings' commissary in the branch's organisation, if any. ponytail: tools has its
+    own lookup; one shared helper waits for the wave."""
     if not s.commissary:
         return None
-    return session.exec(select(Branch).where(Branch.name == s.commissary)).first()
+    stmt = select(Branch).where(Branch.name == s.commissary)
+    return session.exec(stmt.where(Branch.organisation_id == branch.organisation_id)).first()
 
 
 # ---- senders ------------------------------------------------------------------------------
@@ -112,11 +131,14 @@ def _commissary(session: Session, s: ProductionPlannerSettings) -> Branch | None
 
 def _draft(session: Session, commissary: Branch, day: dt.date) -> int:
     """The draft plan of day (tools.draft_plan) to the commissary's supervisors as the plan
-    card with its Confirm button, not urgent. Nothing when the plan row exists."""
+    card with its Confirm button, not urgent. Nothing when the plan row exists or the plan has
+    no lines. A draft nobody confirms is still packed at dispatch_at (_dispatch)."""
     if tools.plan_for(session, commissary.id, day) is not None:
         return 0
     out = tools.plan_out(session, tools.draft_plan(session, commissary, day))
-    by_id, actor = names(session, commissary.organisation_id), Actor.system(commissary.id)
+    if not out.lines:
+        return 0
+    by_id, actor = names(session, commissary), Actor.system(commissary.id)
     people = alerts.supervisors(session, commissary.id)
     for person in people:
         blocks, options = replies.plan_card(out, by_id, _lang(person))
@@ -126,8 +148,8 @@ def _draft(session: Session, commissary: Branch, day: dt.date) -> int:
 
 def _dispatch(session: Session, commissary: Branch, day: dt.date) -> int:
     """The plan of day packed by the agent alone (tools.pack: the planned yield for batches not
-    recorded) and each kiosk's list sent (tools.send_dispatch). Nothing without a plan or when
-    it is packed."""
+    recorded) and each kiosk's list sent (tools.send_dispatch), confirmed or still a draft.
+    Nothing without a plan or when it is packed."""
     plan = tools.plan_for(session, commissary.id, day)
     if plan is None:
         return 0
@@ -138,8 +160,7 @@ def _dispatch(session: Session, commissary: Branch, day: dt.date) -> int:
     return len(tools.send_dispatch(session, commissary, tools.pack(session, plan, agent)))
 
 
-def _short_text(session: Session, kiosk: Branch, row: Dispatch, lang: str) -> str:
-    items = {i.id: i.name for i in session.exec(select(RetailItem))}
+def _short_text(kiosk: Branch, row: Dispatch, items: dict[str, str], lang: str) -> str:
     got = {x["item_id"]: x["quantity"] for x in row.received or []}
     lines = [
         t(
@@ -157,11 +178,17 @@ def _short_text(session: Session, kiosk: Branch, row: Dispatch, lang: str) -> st
 
 
 def _match(
-    session: Session, commissary: Branch, kiosk: Branch, day: dt.date, now: dt.datetime
+    session: Session,
+    s: ProductionPlannerSettings,
+    commissary: Branch,
+    kiosk: Branch,
+    day: dt.date,
+    now: dt.datetime,
 ) -> int:
     """The kiosk's packed or delivered dispatches of day matched with its receipts (tools.match
-    by the agent alone) once an hour has passed since they arrived; a short one (no receipt at all included) goes to the
-    commissary's supervisors and the leads, not urgent. A full receipt is quiet."""
+    by the agent alone) once an hour has passed since they arrived; a short one (no receipt
+    at all included) goes to the commissary's supervisors and the leads, not urgent. A full
+    receipt is quiet."""
     stmt = (
         select(Dispatch)
         .where(Dispatch.branch_id == kiosk.id)
@@ -177,15 +204,15 @@ def _match(
         session, commissary.organisation_id
     )
     to = list({p.id: p for p in people}.values())
-    settings = orgconfig.load().production_planner
     count = 0
     for row in rows:
-        if now < arrived(commissary, settings, row) + HOUR:
+        if now < arrived(commissary, s, row) + HOUR:
             continue
         if tools.match(session, row, now, agent) != "short":
             continue
+        items = _items(session, kiosk.id)
         for person in to:
-            text = _short_text(session, kiosk, row, _lang(person))
+            text = _short_text(kiosk, row, items, _lang(person))
             _send(session, commissary, person, [TextBlock(text=text)])
             count += 1
     return count
@@ -199,7 +226,7 @@ def _yield(session: Session, commissary: Branch, day: dt.date) -> int:
     out = tools.day_yield(session, commissary, day)
     if not out.items:
         return 0
-    by_id = names(session, commissary.organisation_id)
+    by_id = names(session, commissary)
     sent = [
         _send(session, commissary, p, [TextBlock(text=replies.yield_text(out, by_id, _lang(p)))])
         for p in alerts.supervisors(session, commissary.id)
@@ -215,8 +242,8 @@ def _yield(session: Session, commissary: Branch, day: dt.date) -> int:
 
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
     s = orgconfig.load().production_planner
-    commissary = _commissary(session, s)
-    if commissary is None or commissary.organisation_id != branch.organisation_id:
+    commissary = _commissary(session, s, branch)
+    if commissary is None:
         return 0
     if branch.id == commissary.id:
         count = 0
@@ -230,7 +257,7 @@ def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
     if branch.id not in {k.id for k in tools.served(session, commissary)}:
         return 0
     day = match_due(branch, retail_hours.load(session, branch.id), now)
-    return 0 if day is None else _match(session, commissary, branch, day, now)
+    return 0 if day is None else _match(session, s, commissary, branch, day, now)
 
 
 def run_due(session: Session, now: dt.datetime | None = None) -> int:
