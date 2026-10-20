@@ -79,6 +79,14 @@ class CustomerServiceSettings(BaseModel):
     public_calls_per_hour: int = 600
 
 
+class BranchManagerSettings(BaseModel):
+    """The branch manager's limits: an experiment's length in days, and how many missed day
+    targets in a row earn a clerk one kind nudge."""
+
+    experiment_days: int = 14
+    nudge_after_misses: int = 3
+
+
 class OrgSettings(BaseModel):
     # Which demo seed and industry tables the organisation uses.
     template: Literal["cleaning", "retail"] = "cleaning"
@@ -92,6 +100,7 @@ class OrgSettings(BaseModel):
     payroll: Payroll = Field(default_factory=Payroll)
     delivery_areas: list[DeliveryArea] = Field(default_factory=list)
     customer_service: CustomerServiceSettings = Field(default_factory=CustomerServiceSettings)
+    branch_manager: BranchManagerSettings = Field(default_factory=BranchManagerSettings)
     # The agents this organisation runs, in routing order.
     agents: list[str] = Field(default_factory=lambda: ["shift_supervisor"])
 

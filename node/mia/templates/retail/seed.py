@@ -2,8 +2,8 @@
 
 Two branches (a mall kiosk and a street stall), eight items with short codes, opening hours,
 an owner, two supervisors, three clerks, 14 days of sales counts and a month target per branch,
-HR data and two customer service customers with their orders and a complaint.
-All rows are written through mia.core.store, so seeding appears in the events log.
+HR data, two customer service customers with their orders and a complaint, and the branch
+manager's tips, quotes and pricing strategies. All rows are written through mia.core.store, so seeding appears in the events log.
 """
 
 import datetime as dt
@@ -13,6 +13,8 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
+from mia.agents.branch_manager import tips as bm_tips
+from mia.agents.branch_manager.models import Strategy, Tip
 from mia.agents.customer_service.models import Complaint, Customer, Order
 from mia.agents.hr_officer import calc, calendar
 from mia.agents.hr_officer.models import Contract, Leave, Payslip
@@ -195,8 +197,33 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
         )
         store.insert(session, target_row, branch_actor)
     _seed_hr(session, branches, staff, today)
+    _seed_branch_manager(session, items, actor)
     _seed_customers(session, first, items[1], staff["Marites"].id, today)
     return first
+
+
+def _seed_branch_manager(session: Session, items: list[RetailItem], actor: Actor) -> None:
+    """The branch manager's curated rows: tips and quotes in Filipino and English, and the
+    pricing strategies, each with its source (mia/agents/branch_manager/tips.py)."""
+    ids = {i.name: i.id for i in items}
+    for name, fil, en, source in bm_tips.TIPS:
+        for language, text in (("fil", fil), ("en", en)):
+            tip = Tip(
+                language=language,
+                kind="tip",
+                item_id=ids[name] if name else None,
+                text=text,
+                source=source,
+            )
+            store.insert(session, tip, actor)
+    for fil, en, source in bm_tips.QUOTES:
+        for language, text in (("fil", fil), ("en", en)):
+            store.insert(
+                session, Tip(language=language, kind="quote", text=text, source=source), actor
+            )
+    for name_key, kind, params, source in bm_tips.STRATEGIES:
+        row = Strategy(name_key=name_key, kind=kind, params=params, source=source)
+        store.insert(session, row, actor)
 
 
 # name, language, channel address (made-up numbers)

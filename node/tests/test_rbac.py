@@ -105,7 +105,7 @@ SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
         "agent.sales_supervisor": {"read", "write", "write_all"},
     },
     "sales_notes": {
-        "clerk": {"write_own"},
+        "clerk": {"read_own", "write_own"},  # read_own: the branch manager reads themes
         "supervisor": {"read", "write"},
         "owner": FULL,
         "admin": FULL,

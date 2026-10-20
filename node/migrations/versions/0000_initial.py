@@ -1142,6 +1142,120 @@ def upgrade() -> None:
         )
 
     op.create_table(
+        "branch_manager_strategies",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("name_key", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("kind", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("params", sa.JSON(), nullable=False),
+        sa.Column("source", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("active", sa.Boolean(), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("name_key"),
+    )
+    op.create_table(
+        "branch_manager_experiments",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("kind", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("strategy_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("item_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("from_price", sa.Integer(), nullable=False),
+        sa.Column("to_price", sa.Integer(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("starts_on", sa.Date(), nullable=False),
+        sa.Column("ends_on", sa.Date(), nullable=False),
+        sa.Column("baseline", sa.JSON(), nullable=True),
+        sa.Column("result", sa.JSON(), nullable=True),
+        sa.Column("rationale", sa.JSON(), nullable=False),
+        sa.Column("status", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("approval_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("proposed_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("decided_by", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["item_id"],
+            ["retail_items.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["strategy_id"],
+            ["branch_manager_strategies.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("branch_manager_experiments", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_branch_manager_experiments_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_branch_manager_experiments_item_id"), ["item_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_branch_manager_experiments_strategy_id"), ["strategy_id"], unique=False
+        )
+
+    op.create_table(
+        "branch_manager_tips",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("language", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("kind", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("item_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("text", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("source", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("active", sa.Boolean(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["item_id"],
+            ["retail_items.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("branch_manager_tips", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_branch_manager_tips_language"), ["language"], unique=False
+        )
+
+    op.create_table(
+        "branch_manager_coaching",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("person_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("kind", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("sent_on", sa.Date(), nullable=False),
+        sa.Column("tip_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("message_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["person_id"],
+            ["person.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["tip_id"],
+            ["branch_manager_tips.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("branch_manager_coaching", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_branch_manager_coaching_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_branch_manager_coaching_person_id"), ["person_id"], unique=False
+        )
+
+    op.create_table(
         "customer_service_customers",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -1433,6 +1547,22 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_customer_service_customers_branch_id"))
 
     op.drop_table("customer_service_customers")
+    with op.batch_alter_table("branch_manager_coaching", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_branch_manager_coaching_person_id"))
+        batch_op.drop_index(batch_op.f("ix_branch_manager_coaching_branch_id"))
+
+    op.drop_table("branch_manager_coaching")
+    with op.batch_alter_table("branch_manager_tips", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_branch_manager_tips_language"))
+
+    op.drop_table("branch_manager_tips")
+    with op.batch_alter_table("branch_manager_experiments", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_branch_manager_experiments_strategy_id"))
+        batch_op.drop_index(batch_op.f("ix_branch_manager_experiments_item_id"))
+        batch_op.drop_index(batch_op.f("ix_branch_manager_experiments_branch_id"))
+
+    op.drop_table("branch_manager_experiments")
+    op.drop_table("branch_manager_strategies")
     with op.batch_alter_table("hr_officer_leave", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_hr_officer_leave_person_id"))
         batch_op.drop_index(batch_op.f("ix_hr_officer_leave_branch_id"))

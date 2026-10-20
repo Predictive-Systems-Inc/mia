@@ -1,12 +1,15 @@
 """The branch manager's data: dated prices per branch, the tips and strategies seed."""
 
 import datetime as dt
+from collections import Counter
 
 from sqlmodel import Session, select
 
+from mia.agents.branch_manager.models import Strategy, Tip
 from mia.agents.sales_supervisor import tools as sales_tools
 from mia.agents.sales_supervisor.tools import CountIn, RecordCountsInput
 from mia.core.models import Actor, Branch, Event, Person
+from mia.core.rbac import get_rbac
 from mia.templates.retail import items
 from mia.templates.retail.models import RetailItem, RetailItemPrice
 from tests.conftest import BM_TODAY as TODAY
@@ -68,3 +71,44 @@ def test_set_short_codes_logs_the_change(session: Session, bm: Ferinos) -> None:
     assert classic.short_codes == ["cl", "bib"]
     event = session.exec(select(Event).where(Event.tool_call_id == "t1")).one()
     assert event.after and event.after["short_codes"] == ["cl", "bib"]
+
+
+def test_seed_has_tips_and_quotes_with_sources(session: Session, bm: Ferinos) -> None:
+    rows = session.exec(select(Tip)).all()
+    assert all(
+        Counter(r.kind for r in rows if r.language == lang) == {"tip": 20, "quote": 20}
+        for lang in ("fil", "en")
+    )
+    assert all(r.source.strip() for r in rows)
+    general = [r for r in rows if r.kind == "tip" and r.language == "en" and r.item_id is None]
+    assert len(general) == 10
+    named = {item(session, n).id for n in ("Classic", "Puto bumbong", "Salted egg")}
+    assert {r.item_id for r in rows if r.item_id} == named
+    assert not [r.text for r in rows if r.kind == "tip" and any(c.isdigit() for c in r.text)]
+
+
+def test_seed_has_the_eight_strategies_with_sources(session: Session, bm: Ferinos) -> None:
+    rows = session.exec(select(Strategy)).all()
+    assert len(rows) == 8 and all(r.source.strip() and r.active for r in rows)
+    assert {r.kind for r in rows} == {"price", "promo", "bundle"}
+    assert len({r.name_key for r in rows}) == 8
+
+
+def test_policy_grants_the_branch_manager_rights_by_role() -> None:
+    def can(role: str, resource: str, action: str) -> bool:
+        return bool(get_rbac().enforcer.enforce(role, "B", resource, action))
+
+    tool = "tool:branch_manager."
+    assert can("clerk", f"{tool}coaching", "execute")
+    assert can("clerk", "data:branch_manager_coaching", "read_own")
+    assert not can("clerk", "data:branch_manager_coaching", "read")
+    assert not can("clerk", "data:branch_manager_experiments", "read")
+    assert not can("clerk", f"{tool}propose_experiment", "request")
+    assert not can("clerk", "data:retail_items", "write")
+    assert can("supervisor", f"{tool}propose_experiment", "request")
+    assert can("supervisor", f"{tool}change_price", "request")
+    assert not can("supervisor", f"{tool}change_price", "execute")
+    assert not can("supervisor", f"{tool}decide_experiment", "execute")
+    assert not can("supervisor", "data:branch_manager_experiments", "read_all")
+    assert can("owner", f"{tool}decide_experiment", "execute")
+    assert can("owner", "data:branch_manager_experiments", "write_all")

@@ -187,6 +187,33 @@ p, supervisor, *, data:customer_service_complaints, write, allow
 p, admin, *, data:customer_service_*, read_all, allow
 p, admin, *, data:customer_service_*, write_all, allow
 
+# clerk: their own coaching and how to sell (own branch). sales_notes read_own gives the note
+# themes only; read_own gates by role, the tools pass the clerk's own id as owner_id
+p, clerk, *, tool:branch_manager.coaching, execute, allow
+p, clerk, *, tool:branch_manager.how_to_sell, execute, allow
+p, clerk, *, data:branch_manager_coaching, read_own, allow
+p, clerk, *, data:branch_manager_tips, read, allow
+p, clerk, *, data:sales_notes, read_own, allow
+
+# supervisor: the same, plus score experiments, short codes and the weekly summary; propose an
+# experiment or a price change (each waits for the owner); owner and admin inherit
+p, supervisor, *, tool:branch_manager.coaching, execute, allow
+p, supervisor, *, tool:branch_manager.how_to_sell, execute, allow
+p, supervisor, *, tool:branch_manager.score_experiment, execute, allow
+p, supervisor, *, tool:branch_manager.set_short_code, execute, allow
+p, supervisor, *, tool:branch_manager.weekly_summary, execute, allow
+p, supervisor, *, tool:branch_manager.propose_experiment, request, allow
+p, supervisor, *, tool:branch_manager.change_price, request, allow
+p, supervisor, *, data:branch_manager_*, read, allow
+p, supervisor, *, data:retail_items, write, allow
+
+# admin: the branch manager's tables of every branch, deciding an experiment and the monthly
+# letter; the owner inherits
+p, admin, *, tool:branch_manager.decide_experiment, execute, allow
+p, admin, *, tool:branch_manager.monthly_letter, execute, allow
+p, admin, *, data:branch_manager_*, read_all, allow
+p, admin, *, data:branch_manager_*, write_all, allow
+
 # agents a role may talk to (chat/access.py); owner inherits admin > supervisor > staff
 p, staff, *, agent:shift_supervisor, use, allow
 p, clerk, *, agent:sales_supervisor, use, allow

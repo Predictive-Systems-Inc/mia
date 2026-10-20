@@ -50,3 +50,10 @@ def test_holidays_file_and_inline_list_merge(
     finally:
         orgconfig.load.cache_clear()
     assert names == ["New Year", "CNY"]
+
+
+def test_branch_manager_settings_load() -> None:
+    assert orgconfig.load("ferinos").branch_manager == orgconfig.BranchManagerSettings(
+        experiment_days=14, nudge_after_misses=3
+    )
+    assert "branch_manager" in orgconfig.load("ferinos").agents
