@@ -1,7 +1,8 @@
 """Approvals: a record, not a chat message.
 
 Guarantees: nobody decides a request they made or triggered (checked on principal,
-on_behalf_of and evidence["triggered_by"]); agents never decide; the decider must hold one of
+on_behalf_of and evidence["triggered_by"]), except an owner of the approval's branch deciding
+their own request with a fresh PIN step-up (D37); agents never decide; the decider must hold one of
 the approver roles; app_only approvals are decided only in the authenticated app; every
 request and decision is written to the events log; approved requests run their handler and
 rejected ones their reject handler, in the decision's transaction.
@@ -15,7 +16,7 @@ from sqlmodel import Session, col, select
 
 from mia.core import events, store
 from mia.core.db import utcnow
-from mia.core.models import Actor, Approval
+from mia.core.models import Actor, Approval, Person
 from mia.core.rbac import get_rbac
 
 RISKY = {"money", "external", "delete"}
@@ -100,9 +101,29 @@ def requester_ids(approval: Approval) -> set[str]:
     ids = {approval.requester_id}
     if approval.requester_on_behalf_of:
         ids.add(approval.requester_on_behalf_of)
+    return ids | _triggered(approval)
+
+
+def _triggered(approval: Approval) -> set[str]:
     triggered = approval.evidence.get("triggered_by", [])
-    ids.update(triggered if isinstance(triggered, list) else [triggered])
-    return ids
+    return set(triggered if isinstance(triggered, list) else [triggered])
+
+
+def _owner_deciding_own(
+    session: Session, approval: Approval, decider: Actor, stepped_up_at: datetime | None
+) -> bool:
+    """D37: the decider made (not triggered) the request, holds the owner role in the
+    approval's branch (their person row's branch) and stepped up in the last five minutes."""
+    if decider.ids & _triggered(approval):
+        return False
+    person = session.get(Person, decider.person_id or "")
+    fresh = stepped_up_at is not None and utcnow() - stepped_up_at <= STEP_UP_TTL
+    return (
+        fresh
+        and person is not None
+        and person.branch_id == approval.branch_id
+        and "owner" in person.roles
+    )
 
 
 def _holds_role(decider: Actor, roles: list[str]) -> bool:
@@ -162,7 +183,8 @@ def decide(
     aal: str = "aal2",
     stepped_up_at: datetime | None = None,
 ) -> Approval:
-    """Record a decision. Raises ApprovalError when any approval rule is broken; an app_only
+    """Record a decision. Raises ApprovalError when any approval rule is broken (a requester
+    decides their own request only as an owner of its branch with a fresh step-up); an app_only
     approval also needs the app channel, aal2 and a PIN step-up in the last five minutes
     (StepUpRequired), each refusal written as `approval.refused`."""
     if outcome not in ("approved", "rejected"):
@@ -175,7 +197,8 @@ def decide(
         raise ApprovalError(f"approval is {approval.status}")
     if decider.principal.type != "person":
         raise ApprovalError("only people decide approvals")
-    if decider.ids & requester_ids(approval):
+    own = decider.ids & requester_ids(approval)
+    if own and not _owner_deciding_own(session, approval, decider, stepped_up_at):
         raise ApprovalError("nobody approves a request they made or triggered")
     if not _holds_role(decider, approval.approver_roles):
         raise ApprovalError("decider does not hold an approver role")

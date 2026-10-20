@@ -40,6 +40,43 @@ def test_requester_cannot_approve_own_request(session: Session, people: dict[str
         approvals.decide(session, row.id, sanna, "approved")
 
 
+def test_an_owners_own_price_change_is_decided_by_the_owner_with_step_up(
+    session: Session, people: dict[str, Person]
+) -> None:
+    helena = Actor.person(people["Helena"])  # the owner (D37)
+    row = _request(session, helena.as_agent("agent.shift_supervisor"), risk="money")
+    with pytest.raises(ApprovalError, match="made or triggered"):
+        approvals.decide(session, row.id, helena, "approved")  # no step-up
+    ok = approvals.decide(session, row.id, helena, "approved", stepped_up_at=utcnow())
+    assert ok.status == "approved" and ok.decided_by == people["Helena"].id
+
+
+def test_a_supervisor_still_cannot_decide_their_own_request(
+    session: Session, people: dict[str, Person]
+) -> None:
+    sanna = Actor.person(people["Sanna"])
+    row = _request(session, sanna.as_agent("agent.shift_supervisor"), risk="money")
+    with pytest.raises(ApprovalError, match="made or triggered"):
+        approvals.decide(session, row.id, sanna, "approved", stepped_up_at=utcnow())
+
+
+def test_an_owner_of_another_branch_cannot_decide_it(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    helena = Actor.person(people["Helena"])
+    other = store.insert(
+        session, Branch(organisation_id=branch.organisation_id, name="Other"), helena
+    )
+    owner = store.insert(
+        session, Person(branch_id=other.id, name="Olli Owner", roles=["owner"]), helena
+    )
+    here = Actor.person(owner).model_copy(update={"branch_id": branch.id})  # acting here
+    row = _request(session, here.as_agent("agent.shift_supervisor"), risk="money")
+    assert row.branch_id == branch.id
+    with pytest.raises(ApprovalError, match="made or triggered"):
+        approvals.decide(session, row.id, here, "approved", stepped_up_at=utcnow())
+
+
 def test_person_who_triggered_cannot_approve(session: Session, people: dict[str, Person]) -> None:
     helena = Actor.person(people["Helena"])
     row = _request(

@@ -227,13 +227,13 @@ def test_an_order_waits_for_the_owners_approval(session: Session, ferinos: Ferin
 
 
 def test_a_requester_cannot_approve_their_own_order(session: Session, ferinos: Ferinos) -> None:
-    _, people = ferinos
-    out = order_eggs(session, people["Rosa"])
+    _, people = ferinos  # a supervisor; the owner decides their own with step-up (D37)
+    out = order_eggs(session, people["Marites"])
     with pytest.raises(approvals.ApprovalError):
         approvals.decide(
             session,
             str(out["approval_id"]),
-            Actor.person(people["Rosa"]),
+            Actor.person(people["Marites"]),
             "approved",
             stepped_up_at=approvals.utcnow(),
         )
