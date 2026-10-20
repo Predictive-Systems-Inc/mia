@@ -466,3 +466,18 @@ def test_a_request_expiring_at_the_decision_runs_the_opted_in_reject_handler(
     with pytest.raises(ApprovalError, match="expired"):
         approvals.decide(session, quiet.id, helena, "approved")
     assert told == ["expired"]
+
+
+def test_an_expiry_at_the_decision_survives_a_raising_reject_handler(
+    session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuses(s: Session, a: Approval, d: Actor) -> None:
+        raise LookupError("the requester")
+
+    monkeypatch.setitem(approvals._reject_handlers, "demo_late", refuses)
+    monkeypatch.setattr(approvals, "_on_refused", {"demo_late"})
+    late = _timed_out(session, Actor.person(people["Sanna"]), "V3")
+    with pytest.raises(LookupError):
+        approvals.decide(session, late.id, Actor.person(people["Helena"]), "approved")
+    session.rollback()  # the caller rolls the handler back
+    assert session.get(Approval, late.id).status == "expired"

@@ -205,8 +205,9 @@ def decide(
     decides their own request only as an owner of its branch with a fresh step-up); an app_only
     approval also needs the app channel, aal2 and a PIN step-up in the last five minutes
     (StepUpRequired), each refusal written as `approval.refused`. A request that times out
-    at the decision expires, runs its type's opted-in reject handler (on_refused, so the
-    requester is told) and is committed before the ApprovalError."""
+    at the decision expires and is committed, then runs its type's opted-in reject handler
+    (on_refused, so the requester is told; its writes are committed before the ApprovalError,
+    and its own error propagates with the expiry kept)."""
     if outcome not in ("approved", "rejected"):
         raise ValueError("outcome must be approved or rejected")
     approval = session.get(Approval, approval_id)
@@ -215,9 +216,10 @@ def decide(
     was_open = approval.status in ("pending", "escalated")
     approval = expire_if_due(session, approval, decider)
     if was_open and approval.status == "expired":
+        session.commit()  # first: neither a raising handler nor the caller's rollback loses it
         if approval.type in _on_refused:  # it handles status expired and tells the requester
             _reject_handlers[approval.type](session, approval, decider)
-        session.commit()  # raised inside a request: a rollback must not lose the expiry
+            session.commit()  # the requester's message, before the ApprovalError
     if approval.status not in ("pending", "escalated"):
         raise ApprovalError(f"approval is {approval.status}")
     if decider.principal.type != "person":

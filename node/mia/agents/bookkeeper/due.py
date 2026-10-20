@@ -282,12 +282,14 @@ def close_undecided(session: Session, branch: Branch, now: dt.datetime) -> int:
 
 
 def _isolated(session: Session, branch: Branch, sender: str, send: Callable[[], int]) -> int:
-    """send()'s count; an error is logged (event {id}.due_failed with the sender and the error)
-    and counts 0, so one sender's error keeps the other senders' sends and markers in the
-    branch's transaction. A sender that failed after a send leaves no marker and is tried
-    again on the next tick."""
+    """send()'s count, inside a savepoint of the branch's transaction. An error rolls back that
+    sender's own writes (a partial send with no marker never stays, so the next tick sends it
+    once), is logged (event {id}.due_failed with the sender and the error) and counts 0; the
+    other senders' sends and markers are kept, and the session stays usable after a database
+    error."""
     try:
-        return send()
+        with session.begin_nested():
+            return send()
     except Exception as exc:
         log.exception("%s failed for branch %s", sender, branch.id)
         after = {"sender": sender, "error": repr(exc)}

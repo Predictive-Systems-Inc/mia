@@ -11,8 +11,8 @@ import pytest
 from sqlmodel import Session, col, select
 
 from mia.agents.base import call_tool
-from mia.agents.bookkeeper import MANIFEST, due, replies, tools
-from mia.agents.bookkeeper.models import TaxFigure
+from mia.agents.bookkeeper import MANIFEST, due, replies, tax, tools
+from mia.agents.bookkeeper.models import Expense, TaxFigure
 from mia.agents.bookkeeper.tools import (
     BalancesInput,
     CashCountInput,
@@ -308,3 +308,45 @@ def test_one_senders_error_keeps_the_other_sends_and_markers(
     failed = session.exec(select(Event).where(Event.action == due.DUE_FAILED)).all()
     assert {(e.after or {}).get("sender") for e in failed} == {"balances"}
     assert all("no currency" in (e.after or {})["error"] for e in failed)
+
+
+def test_the_due_works_q4_figure_carries_the_stored_q3_excess(
+    session: Session, bk_en: Ferinos, bk_pin: Pin
+) -> None:
+    kiosk, rosa = bk_en[0], bk_en[1]["Rosa"]
+    september = Expense(
+        branch_id=kiosk.id, business_date=dt.date(2026, 9, 15), category="supplies",
+        amount=112_000, currency="PHP", vat_amount=12_000, source="bank", recorded_by=rosa.id,
+    )  # fmt: skip
+    store.insert(session, september, Actor.system(kiosk.id))
+    session.commit()
+    _tick(session, bk_pin, at(dt.date(2026, 10, 20), 9, 10))  # Q3's figure, five days before
+    stmt = select(TaxFigure).where(TaxFigure.branch_id == kiosk.id)
+    (q3,) = session.exec(stmt).all()
+    assert (q3.period_start, q3.due) == (dt.date(2026, 7, 1), -12_000)  # no Q3 sales: an excess
+    _tick(session, bk_pin, at(dt.date(2027, 1, 20), 9, 10))
+    q4 = session.exec(stmt.where(TaxFigure.period_start == OCTOBER)).one()
+    typed = tools._input_vat(session, kiosk.id, OCTOBER, dt.date(2026, 12, 31))
+    assert q4.input_tax == typed + 12_000  # the stored Q3 row's excess, carried
+    assert q4.due == tax.quarter_tax("vat", OCTOBER, q4.gross, typed, 12_000).due
+
+
+def test_a_sender_that_fails_after_a_send_keeps_nothing_of_it(
+    session: Session, bk_en: Ferinos, bk_pin: Pin, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marites = bk_en[1]["Marites"]
+    real = due._count_reminder
+
+    def sends_then_fails(session: Session, branch: Branch, day: dt.date) -> list[Message]:
+        real(session, branch, day)
+        raise LookupError("after a send")
+
+    monkeypatch.setattr(due, "_count_reminder", sends_then_fails)
+    _tick(session, bk_pin, at(BK_TODAY, 22, 5))
+    assert notifications(session, marites) == []  # the partial send rolled back with it
+    assert not alerts._marked(session, due.COUNT_REMINDED, bk_en[0].id, BK_TODAY)
+    failed = session.exec(select(Event).where(Event.action == due.DUE_FAILED)).all()
+    assert failed and {(e.after or {})["sender"] for e in failed} == {"count_reminder"}
+    monkeypatch.setattr(due, "_count_reminder", real)
+    _tick(session, bk_pin, at(BK_TODAY, 22, 40))  # tried again, sent once
+    assert texts(session, marites) == [t("bk.count.reminder", EN)]
