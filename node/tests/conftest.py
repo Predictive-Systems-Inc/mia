@@ -260,6 +260,7 @@ CLOCK_USERS = (
     "mia.templates.retail.items",
     "mia.agents.branch_manager.tools",
     "mia.agents.branch_manager.due",
+    "mia.agents.bookkeeper.tools",
 )
 for _name in CLOCK_USERS:
     # Import every clock user up front: one first imported while mia.core.db.utcnow is patched

@@ -51,5 +51,16 @@ roles:
   # step-up; the owner's own large expense is decided by the owner with the step-up (D37).
   approvers:
     bookkeeper.record_large_expense: [owner, admin]
-tools: []
+tools:
+  - {id: bookkeeper.record_cash_count, kind: agent, risk: write_internal, approval: never, reads: [sales_counts, retail_items, retail_branch_hours], writes: [bookkeeper_cash_counts]}
+  - {id: bookkeeper.record_settlement, kind: agent, risk: write_internal, approval: never, reads: [sales_counts, retail_items], writes: [bookkeeper_settlements]}
+  - {id: bookkeeper.record_payout, kind: agent, risk: write_internal, approval: never, reads: [sales_counts, retail_items], writes: [bookkeeper_payouts]}
+  - {id: bookkeeper.record_expense, kind: agent, risk: write_internal, approval: never, reads: [bookkeeper_expenses, retail_items, retail_branch_hours], writes: [bookkeeper_expenses]}
+  - {id: bookkeeper.record_large_expense, kind: agent, risk: money, approval: always, reads: [bookkeeper_expenses, retail_items, retail_branch_hours], writes: [bookkeeper_expenses, approval]}
+  - {id: bookkeeper.record_petty, kind: agent, risk: write_internal, approval: never, reads: [bookkeeper_cash_counts, bookkeeper_expenses, bookkeeper_deposits, retail_items, retail_branch_hours], writes: [bookkeeper_expenses, bookkeeper_deposits]}
+  - {id: bookkeeper.record_deposit, kind: agent, risk: write_internal, approval: never, reads: [bookkeeper_cash_counts, bookkeeper_expenses, bookkeeper_deposits, retail_items, retail_branch_hours], writes: [bookkeeper_deposits]}
+  - {id: bookkeeper.balances, kind: agent, risk: read, approval: never, reads: [bookkeeper_cash_counts, bookkeeper_expenses, bookkeeper_deposits, retail_items, retail_branch_hours]}
+  - {id: bookkeeper.sales_journal, kind: agent, risk: read, approval: never, reads: [sales_counts, retail_items]}
+  - {id: bookkeeper.tax_quarter, kind: agent, risk: read, approval: never, reads: [sales_counts, bookkeeper_expenses, retail_items, retail_branch_hours]}
+  - {id: bookkeeper.monthly_profit, kind: agent, risk: read, sensitive: true, approval: never, reads: [payslips, sales_counts, bookkeeper_expenses, supplier_orders, stock_events, retail_items]}
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}
