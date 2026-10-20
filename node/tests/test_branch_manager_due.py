@@ -24,6 +24,7 @@ from mia.core.models import (
     Branch,
     ChannelIdentity,
     ChannelOutbox,
+    Event,
     Message,
     Person,
     Thread,
@@ -363,3 +364,38 @@ def test_nothing_runs_for_an_organisation_without_the_branch_manager(
 ) -> None:
     assert _tick(session, pin, at(TODAY, 9, 10)) == 0
     assert notifications(session, bm_en[1]["Ana"]) == []
+
+
+def actions_of(session: Session, person: Person) -> set[str]:
+    rows = session.exec(select(Event).where(Event.entity_type == Coaching.__tablename__))
+    ids = {c.id for c in session.exec(select(Coaching).where(Coaching.person_id == person.id))}
+    return {e.action for e in rows if e.entity_id in ids}
+
+
+def test_coaching_sends_log_the_spec_event_names(
+    session: Session, bm_en: Ferinos, pin: Pin
+) -> None:
+    ana = bm_en[1]["Ana"]
+    _tick(session, pin, at(TODAY, 9, 10))
+    assert actions_of(session, ana) == {f"{MANIFEST.id}.morning_sent", f"{MANIFEST.id}.tip_given"}
+    set_day_target(session, bm_en, 10_000_000, days=3)
+    _tick(session, pin, at(TODAY - ONE_DAY, 22, 10))
+    count(session, pin, ana, "Box of 4", 30, TODAY)
+    _tick(session, pin, at(TODAY, 22, 10))
+    assert {f"{MANIFEST.id}.cheered", f"{MANIFEST.id}.nudged"} <= actions_of(session, ana)
+
+
+def test_a_personal_best_is_cheered_when_the_branch_misses(
+    session: Session, bm_en: Ferinos, pin: Pin
+) -> None:
+    kiosk, people = bm_en
+    ana = people["Ana"]
+    deps = sales_deps(session, people["Rosa"])
+    args = SetTargetInput(period="day", starts_on=TODAY, amount=10_000_000)
+    sales_tools.set_target(deps, args, "t0")
+    count(session, pin, ana, "Box of 4", 60, TODAY)  # above her best seeded day
+    _tick(session, pin, at(TODAY, 22, 10))
+    best = sum(c.amount for c in sales_tools._live_counts(session, [kiosk.id], TODAY, TODAY))
+    assert day_total(session, kiosk, TODAY) < (share(session, kiosk, TODAY) or 0)
+    assert t("bm.cheer.best", EN, amount=money(best)) in texts(session, ana)
+    assert t("bm.cheer.target", EN) not in texts(session, ana)

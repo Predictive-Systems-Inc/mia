@@ -219,3 +219,12 @@ pricing, competitor prices.
   most salted egg?" (sales_supervisor at 0.85 to 1.0 in six languages); "stop the new price"
   read as keep once (bcl, 0.66); a count read as the promo price ("3 kape for 65");
   `cost_minor` in the usage rows.
+- 20 Oct 2026, the due work (Task 6, node/mia/agents/branch_manager/due.py), rulings made in
+  the build: a quote given is stored as a Coaching row of kind `tip` (the Tip row's kind tells a
+  tip from a quote); a nudge counts misses only on open days with counts and a target (a day
+  the node was down or nobody reported is never a miss); a cheer and a nudge are independent (a
+  personal best on a missed day gets both); owners and admins are never cheered or nudged; the
+  weekly summary and the monthly letter go per branch (an owner gets one per branch) and run
+  the tools as each recipient, so rbac decides what each reads. A Monday the branch is closed
+  gives no weekly summary that week. When every recipient is denied nothing is sent and no
+  marker is written, so the tools run again on each tick of the window.

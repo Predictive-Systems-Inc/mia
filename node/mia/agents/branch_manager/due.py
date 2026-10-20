@@ -101,11 +101,12 @@ def _coached(
     branch: Branch,
     person: Person,
     kind: str,
+    action: str,
     day: dt.date,
     message: Message,
     tip_id: str | None = None,
 ) -> None:
-    """The Coaching row of a send (the per person and day marker), event `{id}.<kind>_sent`."""
+    """The Coaching row of a send (the per person and day marker), event `{id}.<action>`."""
     row = Coaching(
         branch_id=branch.id,
         person_id=person.id,
@@ -114,7 +115,7 @@ def _coached(
         tip_id=tip_id,
         message_id=message.id,
     )
-    store.insert(session, row, Actor.system(branch.id), action=f"{MANIFEST.id}.{kind}_sent")
+    store.insert(session, row, Actor.system(branch.id), action=f"{MANIFEST.id}.{action}")
 
 
 def _rows(session: Session, person_id: str, kind: str | None = None) -> list[Coaching]:
@@ -217,10 +218,10 @@ def _morning(session: Session, branch: Branch, hours: Hours, day: dt.date) -> li
         if text is None:
             continue
         message = _send(session, branch, person, [TextBlock(text=text)])
-        _coached(session, branch, person, "morning", day, message)
+        _coached(session, branch, person, "morning", "morning_sent", day, message)
         for row in (tip, quote):
             if row is not None:
-                _coached(session, branch, person, "tip", day, message, row.id)
+                _coached(session, branch, person, "tip", "tip_given", day, message, row.id)
         sent.append(message)
     return sent
 
@@ -292,12 +293,12 @@ def _evening(session: Session, branch: Branch, hours: Hours, day: dt.date) -> li
         text = _cheer_text(met, best, currency, lang)
         if text is not None and not _had(session, person.id, "cheer", day):
             message = _send(session, branch, person, [TextBlock(text=text)], urgent=True)
-            _coached(session, branch, person, "cheer", day, message)
+            _coached(session, branch, person, "cheer", "cheered", day, message)
             sent.append(message)
         nudges = [r.sent_on for r in _rows(session, person.id, "nudge")]
         if calc.nudge_due(missed, max(nudges, default=None), day, after):
             message = _send(session, branch, person, [TextBlock(text=t("bm.nudge", lang))], True)
-            _coached(session, branch, person, "nudge", day, message)
+            _coached(session, branch, person, "nudge", "nudged", day, message)
             sent.append(message)
     return sent
 
