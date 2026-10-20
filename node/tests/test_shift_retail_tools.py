@@ -26,18 +26,21 @@ from mia.agents.shift_supervisor.tools import (
     ShiftIn,
     SwapShiftsInput,
 )
-from mia.core import approvals, orgconfig, scheduling
+from mia.core import approvals, orgconfig, scheduling, store
 from mia.core.models import (
     Actor,
     Approval,
     Branch,
     Incident,
     Job,
+    Leave,
+    Location,
     Message,
     Person,
     SupplierOrder,
     Thread,
     Timesheet,
+    Visit,
 )
 from mia.core.rbac import PermissionDenied
 from mia.i18n import t
@@ -51,6 +54,7 @@ from tests.test_data_standard_1_7 import (
     Ferinos,
     at,
     names_on,
+    stall,
     visit_of,
 )
 
@@ -276,6 +280,79 @@ def test_a_swap_whose_shift_changed_is_refused(session: Session, rs: Ferinos) ->
         approvals.decide(session, approval.id, Actor.person(rs[1]["Marites"]), "approved")
 
 
+def test_a_booking_at_the_other_kiosk_makes_a_swap_an_override(
+    session: Session, rs: Ferinos
+) -> None:
+    pao_saturday = visit_of(session, rs[1]["Pao"], SATURDAY)  # 06:00 to 15:00 at the stall
+    both = [rs[1]["Pao"].id, rs[1]["Liza"].id]
+    store.update(
+        session, pao_saturday, {"assigned_person_ids": both}, Actor.system(stall(session).id)
+    )
+    ask = SwapShiftsInput(person_name="Liza", date=SATURDAY)
+    tools.swap_shifts(deps_for(session, rs[1]["Ana"]), ask, "s1")
+    out = tools.swap_shifts(deps_for(session, rs[1]["Liza"]), SwapShiftsInput(accept=True), "s2")
+    approval = session.get(Approval, out.approval_id)
+    assert approval is not None
+    booked = f"{rs[1]['Liza'].name}: already booked at that time"
+    assert (out.status, booked in approval.evidence["reasons"]) == ("override", True)
+
+
+def test_a_leave_approved_after_the_ask_refuses_the_swap(session: Session, rs: Ferinos) -> None:
+    approval = agree_swap(session, rs)
+    liza = rs[1]["Liza"]
+    leave = Leave(
+        branch_id=liza.branch_id,
+        person_id=liza.id,
+        kind="vacation",
+        start_date=SATURDAY,
+        end_date=SATURDAY,
+        days=1,
+        status="approved",
+        reason="",
+    )
+    store.insert(session, leave, Actor.system(liza.branch_id))
+    with pytest.raises(LookupError):
+        approvals.decide(session, approval.id, Actor.person(rs[1]["Marites"]), "approved")
+
+
+def test_a_clerk_booked_at_the_other_kiosk_is_a_roster_clash(session: Session, rs: Ferinos) -> None:
+    pao = rs[1]["Pao"]
+    mall_saturday = visit_of(session, rs[1]["Ana"], SATURDAY)  # 09:00 to 17:00 at the mall
+    store.update(session, mall_saturday, {"assigned_person_ids": [pao.id]}, Actor.system(rs[0].id))
+    shift = ShiftIn(person_id=pao.id, byday=["SA"], start=dt.time(6), end=dt.time(15))
+    out = tools.set_roster(
+        deps_for(session, rs[1]["Rosa"]),
+        SetRosterInput(shifts=[shift], location_name="Street stall"),
+        "s",
+    )
+    clash = next(c for c in out.clashes if c.reason == "already booked at that time")
+    assert (out.status, clash.person, clash.dates) == ("ok", pao.name, [SATURDAY])
+    job = session.exec(select(Job).where(Job.recurrence == "FREQ=WEEKLY;BYDAY=SA")).one()
+    stall_saturday = session.exec(
+        select(Visit).where(Visit.job_id == job.id).where(Visit.date == SATURDAY)
+    ).one()
+    assert (stall_saturday.status, stall_saturday.assigned_person_ids) == ("unfilled", [])
+
+
+def test_a_start_correction_on_shift_does_not_check_the_clerk_out(
+    session: Session, rs: Ferinos
+) -> None:
+    ana = deps_for(session, rs[1]["Ana"])
+    assert tools.check_in(ana, CheckInInput(), "c").status == "ok"  # 10:00, the 09:00 shift
+    early = CorrectTimesheetInput(start=dt.time(8, 45))
+    assert tools.correct_timesheet(ana, early, "t").reason == "in_progress"
+    assert visit_of(session, rs[1]["Ana"], RS_TODAY).status == "in_progress"
+
+
+def test_a_clerk_naming_an_unknown_kiosk_is_denied(session: Session, rs: Ferinos) -> None:
+    with pytest.raises(PermissionDenied):
+        tools.close_day(
+            deps_for(session, rs[1]["Ana"]),
+            CloseDayInput(date=MONDAY, location_name="Nowhere"),
+            "c",
+        )
+
+
 def test_a_closed_day_refuses_a_past_date(session: Session, rs: Ferinos) -> None:
     out = tools.close_day(
         deps_for(session, rs[1]["Marites"]),
@@ -283,6 +360,13 @@ def test_a_closed_day_refuses_a_past_date(session: Session, rs: Ferinos) -> None
         "c",
     )
     assert (out.status, out.reason) == ("invalid", "past")
+
+
+def test_a_full_kiosk_name_matches_its_location(session: Session, rs: Ferinos) -> None:
+    rows = session.exec(select(Location)).all()
+    for name in ("Mall kiosk", "Street stall", "mall kiosk"):
+        found = [loc.name for loc in rows if tools._location_matches(loc, name)]
+        assert found == [name.capitalize()], name
 
 
 # ---- the flows -----------------------------------------------------------------------------

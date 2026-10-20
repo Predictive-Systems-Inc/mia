@@ -257,6 +257,8 @@ def _degrade(word: str) -> str:
 
 def _location_matches(loc: Location, hint: str) -> bool:
     hint_low = _degrade(hint)
+    if _degrade(loc.name) == hint_low:  # the full name ("Mall kiosk": "Mall" is too short)
+        return True
     return any(
         hint_low.startswith(word) or word.startswith(hint_low)
         for word in (_degrade(w) for w in loc.name.split())
@@ -897,9 +899,9 @@ def _kiosk(
         found = [(b, loc) for loc, b in rows if _location_matches(loc, location_name)]
     else:
         found = [(b, loc) for loc, b in rows if b.id == deps.branch.id]
+    _check(deps, resource, "write", tool_call_id)  # before any lookup: no kiosk names leak
     if len({b.id for b, _ in found}) != 1:
         raise LookupError(f"no single kiosk matches {location_name or deps.branch.name!r}")
-    _check(deps, resource, "write", tool_call_id)
     branch, loc = found[0]
     if branch.id != deps.branch.id:
         _check(deps, resource, "write_all", tool_call_id)
@@ -1221,7 +1223,7 @@ class CorrectTimesheetInput(BaseModel):
 
 class TimesheetOut(BaseModel):
     status: Literal["ok", "invalid"]
-    reason: str | None = None  # no_time, no_timesheet, approved, end_before_start
+    reason: str | None = None  # no_time, no_timesheet, in_progress, approved, end_before_start
     date: dt.date | None = None
     start: str | None = None
     end: str | None = None
@@ -1230,9 +1232,10 @@ class TimesheetOut(BaseModel):
 
 def _sheet(
     deps: AgentDeps, person: Person, day: dt.date, end: dt.time | None, tool_call_id: str
-) -> Timesheet | None:
-    """The person's timesheet of the day; a shift still in progress is checked out at `end`
-    (else now) and drafted first, a finished one without a draft drafted."""
+) -> Timesheet | Literal["in_progress"] | None:
+    """The person's timesheet of the day; a shift still in progress is checked out at the
+    stated `end` and drafted first ("in_progress", nothing changed, without an end), a
+    finished one without a draft drafted."""
     session = deps.session
     stmt = select(Timesheet).where(Timesheet.person_id == person.id).where(Timesheet.date == day)
     if (row := session.exec(stmt).first()) is not None:
@@ -1240,6 +1243,8 @@ def _sheet(
     where = _branch_ids(deps) if person.id == deps.person.id else [deps.branch.id]
     for v in visits_for(session, where, person.id, day, day):
         if v.status == "in_progress":
+            if end is None:
+                return "in_progress"  # a start alone never checks her out
             _check(
                 deps,
                 Resource(kind="data", name="core.visit", owner_id=person.id),
@@ -1247,8 +1252,9 @@ def _sheet(
                 tool_call_id,
             )
             zone = ZoneInfo(deps.branch.timezone)
-            when = dt.datetime.combine(day, end, zone) if end else utcnow()
-            scheduling.check_out(session, deps.actor, v, person, when)
+            scheduling.check_out(
+                session, deps.actor, v, person, dt.datetime.combine(day, end, zone)
+            )
         if v.status == "completed":
             sheets.draft(session, v)
     return session.exec(stmt).first()  # ponytail: one kiosk shift per clerk and day
@@ -1274,16 +1280,17 @@ def correct_timesheet(
     if args.start is None and args.end is None:
         return TimesheetOut(status="invalid", reason="no_time", date=day)
     row = _sheet(deps, person, day, args.end, tool_call_id)
-    if row is None:
-        return TimesheetOut(status="invalid", reason="no_timesheet", date=day)
+    if row is None or row == "in_progress":
+        return TimesheetOut(status="invalid", reason=row or "no_timesheet", date=day)
     zone = ZoneInfo(deps.branch.timezone)
     start = dt.datetime.combine(day, args.start, zone) if args.start else row.start
     end = dt.datetime.combine(day, args.end, zone) if args.end else row.end
     try:
         row = sheets.correct(session, deps.actor, row, start, end, args.note)
-    except sheets.TimesheetError as exc:
-        reason = "approved" if "approved" in str(exc) else "end_before_start"
-        return TimesheetOut(status="invalid", reason=reason, date=day)
+    except sheets.AlreadyApproved:
+        return TimesheetOut(status="invalid", reason="approved", date=day)
+    except sheets.TimesheetError:
+        return TimesheetOut(status="invalid", reason="end_before_start", date=day)
     tz = deps.branch.timezone
     return TimesheetOut(
         status="ok",

@@ -33,6 +33,12 @@ def test_request_is_pending_and_logged(session: Session, people: dict[str, Perso
     assert session.exec(select(Event).where(Event.action == "approval.requested")).first()
 
 
+def test_a_request_can_end_at_a_set_moment(session: Session, people: dict[str, Person]) -> None:
+    end = dt.datetime(2030, 1, 2, 9, 0, tzinfo=ZoneInfo("Europe/Helsinki"))
+    row = _request(session, Actor.person(people["Sanna"]), expires_at=end)
+    assert row.expires_at == end
+
+
 def test_requester_cannot_approve_own_request(session: Session, people: dict[str, Person]) -> None:
     sanna = Actor.person(people["Sanna"])
     row = _request(session, sanna.as_agent("agent.shift_supervisor"))

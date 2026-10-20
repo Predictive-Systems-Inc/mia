@@ -488,11 +488,34 @@ def open_swap(session: Session, person: Person) -> Event | None:
         for e in session.exec(select(Event).where(Event.action == SWAP_ANSWERED)).all()
     }
     asks = session.exec(
-        select(Event).where(Event.action == SWAP_ASKED).order_by(col(Event.id).desc())
+        select(Event)
+        .where(Event.action == SWAP_ASKED)
+        .where(Event.branch_id == person.branch_id)  # a swap stays in one branch
+        .order_by(col(Event.id).desc())
     ).all()
     return next(
         (e for e in asks if (e.after or {}).get("other_id") == person.id and e.id not in answered),
         None,
+    )
+
+
+def _swap_reasons(session: Session, mine: Visit, theirs: Visit, a: str, b: str) -> list[str]:
+    """roster.swap_breaks for clerk `a` on `mine` and `b` on `theirs`, with their leave, limits
+    and bookings from every branch of the organisation (swaps are retail only, D39)."""
+    branch = _branch(session, mine.branch_id)
+    data = {
+        c.person_id: c
+        for c in scheduling.candidate_data(
+            session, branch, mine, include_assigned=True, only={a, b}, org_wide=True
+        )
+    }
+    if {a, b} - set(data):
+        raise CoverError("only two clerks swap shifts")
+    return roster.swap_breaks(
+        data[a],
+        scheduling.slot_of(session, mine, branch.timezone),
+        data[b],
+        scheduling.slot_of(session, theirs, branch.timezone),
     )
 
 
@@ -535,21 +558,7 @@ def answer_swap(
     start = min(mine.planned_start, theirs.planned_start)
     if start <= now:
         raise CoverError("the shift has started")
-    branch = _branch(session, mine.branch_id)
-    data = {
-        c.person_id: c
-        for c in scheduling.candidate_data(
-            session, branch, mine, include_assigned=True, only={asker.id, person.id}
-        )
-    }
-    if {asker.id, person.id} - set(data):
-        raise CoverError("only two clerks swap shifts")
-    reasons = roster.swap_breaks(
-        data[asker.id],
-        scheduling.slot_of(session, mine, tz),
-        data[person.id],
-        scheduling.slot_of(session, theirs, tz),
-    )
+    reasons = _swap_reasons(session, mine, theirs, asker.id, person.id)
     kind = SWAP_OVERRIDE_TYPE if reasons else SWAP_TYPE
     params = _visit_text(session, mine, tz, "en")
     approval = approvals.request(
@@ -571,19 +580,17 @@ def answer_swap(
             "reasons": reasons,
             "triggered_by": [asker.id, person.id],
         },
-        ttl=start - now,
+        expires_at=start,
         tool_call_id=tool_call_id,
     )
-    # request counts its ttl from its own clock read: pin the end to the shift start exactly
-    return store.update(
-        session, approval, {"expires_at": start}, actor, action="approval.expiry_set"
-    )
+    return approval
 
 
 def on_swap_approved(session: Session, approval: Approval, decider: Actor) -> None:
-    """Approval handler: under the write lock, reread both visits; refuse (CoverError, the
-    caller rolls back and closes the request) when either changed since the ask, else swap the
-    two clerks on both visits (`visit.swapped`) and tell both."""
+    """Approval handler: under the write lock, reread both visits and rerun the swap checks;
+    refuse (CoverError, the caller rolls back and closes the request) when either visit changed
+    since the ask or a rule breaks that the approver did not see, else swap the two clerks on
+    both visits (`visit.swapped`) and tell both."""
     ev = approval.evidence
     events.write_lock(session)
     mine, theirs = session.get(Visit, str(ev["mine"])), session.get(Visit, str(ev["theirs"]))
@@ -599,6 +606,8 @@ def on_swap_approved(session: Session, approval: Approval, decider: Actor) -> No
     ):
         raise CoverError("a shift changed since the swap was asked")
     a, b = str(ev["asker_id"]), str(ev["other_id"])
+    if set(_swap_reasons(session, mine, theirs, a, b)) - set(ev["reasons"]):
+        raise CoverError("a rule breaks since the swap was asked")  # a leave approved since
     for row, out, into in ((mine, a, b), (theirs, b, a)):
         ids = [into if p == out else p for p in row.assigned_person_ids]
         store.update(

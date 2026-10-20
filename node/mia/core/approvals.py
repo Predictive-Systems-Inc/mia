@@ -77,11 +77,13 @@ def request(
     risk: str | None = None,
     evidence: dict[str, Any] | None = None,
     ttl: timedelta = DEFAULT_TTL,
+    expires_at: datetime | None = None,
     escalate_to: list[str] | None = None,
     tool_call_id: str | None = None,
 ) -> Approval:
     """Create a pending approval. Money, external and delete risks are forced to app_only and
-    recorded as evidence["risk"] (the approvals table has no risk column; D37 reads it)."""
+    recorded as evidence["risk"] (the approvals table has no risk column; D37 reads it). It
+    expires at `expires_at` when given, else `ttl` from now."""
     if not approver_roles:
         raise ValueError("an approval needs at least one approver role")
     if risk in RISKY:
@@ -101,7 +103,7 @@ def request(
         evidence=evidence or {},
         approver_roles=list(approver_roles),
         channel=channel,
-        expires_at=utcnow() + ttl,
+        expires_at=expires_at or utcnow() + ttl,
         escalate_to=escalate_to or ["owner"],
     )
     return store.insert(

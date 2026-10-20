@@ -27,6 +27,10 @@ class TimesheetError(ValueError):
     """A correction or approval that the rules refuse (not a permission problem)."""
 
 
+class AlreadyApproved(TimesheetError):
+    """A correction of an approved row by someone who may not reopen it (the office may)."""
+
+
 class SeparationError(TimesheetError):
     """The approver entered the row (the check-out or the correction)."""
 
@@ -130,7 +134,7 @@ def correct(
     if row.status == "approved" and not get_rbac().check(
         actor, Resource(kind="data", name=RESOURCE), "write"
     ):
-        raise TimesheetError("already approved; ask the office to correct it")
+        raise AlreadyApproved("already approved; ask the office to correct it")
     if end <= start:
         raise TimesheetError("the end must be after the start")
     changes = {
