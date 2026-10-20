@@ -171,6 +171,47 @@ def test_a_tapped_retail_decision_outside_the_actions_asks_to_rephrase(
     assert len(jev_on) == asked  # never sent to Jev, never run
 
 
+def _tool_calls(session: Session) -> list[Event]:
+    return list(session.exec(select(Event).where(Event.action == "tool.called")))
+
+
+@pytest.mark.parametrize("text", ["naubusan kami ng LPG", "nahurot na ang gas sa tangke"])
+def test_a_stock_word_never_becomes_a_missed_delivery(
+    session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, text: str
+) -> None:
+    """fil and ceb: LPG running out is the inventory manager's (Q108); a no_delivery pick asks."""
+    liza = rs[1]["Liza"]
+    _answers(monkeypatch, "report_site_problem", problem_kind="no_delivery")
+    reply = _turn(session, liza, text)
+    assert reply.text() == t("clarify.rephrase", liza.language)
+    missed = select(Incident).where(Incident.kind == "no_delivery")
+    assert not session.exec(missed).all() and not _tool_calls(session)
+
+
+def test_a_wrong_check_out_time_is_never_a_check_out_now(
+    session: Session, rs_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    ana = rs_en[1]["Ana"]
+    rs_pin(at(RS_TODAY, 9, 1))
+    tools.check_in(deps_for(session, ana), CheckInInput(), "c")
+    session.commit()
+    rs_pin(at(RS_TODAY, 18))
+    _answers(monkeypatch, "check_out")
+    reply = _turn(session, ana, "sayop akong check out, 5pm ko mibiya")
+    assert reply.text() == t("clarify.rephrase", EN)
+    assert visit_of(session, ana, RS_TODAY).status == "in_progress"
+
+
+def test_a_cover_ask_with_an_unread_date_asks(
+    session: Session, rs_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marites = rs_en[1]["Marites"]
+    site = visit_of(session, rs_en[1]["Ana"], TUESDAY).location_id
+    _answers(monkeypatch, "find_replacements", site=site)  # the date not stated
+    reply = _turn(session, marites, "sino pwede sa Mall kiosk sa susunod?")
+    assert reply.text() == t("clarify.rephrase", EN) and not _tool_calls(session)
+
+
 # ---- scenarios -----------------------------------------------------------------------------
 
 

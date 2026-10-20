@@ -273,6 +273,7 @@ Format for each entry:
 - The inventory manager's Filipino keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Filipino keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Filipino keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
+- The shift supervisor's retail Filipino keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
 
 ## Q29: Review of the Cebuano strings
 - Where: node/mia/i18n/ceb.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -283,6 +284,7 @@ Format for each entry:
 - The inventory manager's Cebuano keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Cebuano keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Cebuano keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
+- The shift supervisor's retail Cebuano keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
 
 ## Q30: Review of the Ilocano strings
 - Where: node/mia/i18n/ilo.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -293,6 +295,7 @@ Format for each entry:
 - The inventory manager's Ilocano keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Ilocano keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Ilocano keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
+- The shift supervisor's retail Ilocano keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
 
 ## Q31: Review of the Hiligaynon strings
 - Where: node/mia/i18n/hil.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -303,6 +306,7 @@ Format for each entry:
 - The inventory manager's Hiligaynon keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Hiligaynon keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Hiligaynon keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
+- The shift supervisor's retail Hiligaynon keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
 
 ## Q32: Review of the Waray strings
 - Where: node/mia/i18n/war.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -313,6 +317,7 @@ Format for each entry:
 - The inventory manager's Waray keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Waray keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Waray keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
+- The shift supervisor's retail Waray keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
 
 ## Q33: Review of the Bikol strings
 - Where: node/mia/i18n/bcl.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -323,6 +328,7 @@ Format for each entry:
 - The inventory manager's Bikol keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Bikol keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Bikol keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
+- The shift supervisor's retail Bikol keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
 
 ## Q34: Review of the Kapampangan strings
 - Where: node/mia/i18n/pam.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -333,6 +339,7 @@ Format for each entry:
 - The inventory manager's Kapampangan keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Kapampangan keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Kapampangan keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
+- The shift supervisor's retail Kapampangan keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
 
 ## Q35: Review of the Pangasinan strings
 - Where: node/mia/i18n/pag.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -343,6 +350,7 @@ Format for each entry:
 - The inventory manager's Pangasinan keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Pangasinan keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Pangasinan keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
+- The shift supervisor's retail Pangasinan keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
 
 ## Q36: Accountants and viewers have no agent
 - Where: node/config/policies/policy.csv (no `agent:*` line for `accountant` or `viewer`); node/mia/chat/access.py

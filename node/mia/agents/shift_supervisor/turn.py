@@ -433,7 +433,8 @@ SPEC = AgentSpec(
         " finding and answering cover, swapping shifts, a forgotten or wrong check-out time,"
         " checking in and out, the day's plan and the week's roster, a kiosk closed for a day,"
         " problems at a site or a kiosk (a broken stove, a delivery that never came, a"
-        " customer making trouble); not sales counts, stock, cash or pay."
+        " customer making trouble); for cleaning, visits, sites and cleaning checklists; for"
+        " retail, shifts, kiosks and cover; not sales counts, stock, cash or pay."
     ),
     handle_turn=handle_turn,
     run_due=_run_due,

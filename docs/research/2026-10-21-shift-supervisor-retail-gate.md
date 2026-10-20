@@ -9,6 +9,14 @@ this folder: `shift-supervisor-retail-2026-10-21-0303.raw.json` (tune half, the 
 c044bdc), `-0305` (tune half after the one tuning edit), `-0306` (the gate half, once) and
 `router-2026-10-21-0301.raw.json` (the router, once).
 
+**Changed in code after the run (21 Oct 2026, fix wave B).** The numbers below are unchanged
+and describe the code under test named in Setup. After the run: the shift supervisor's router
+description names both worlds again (cleaning visits, sites and checklists; retail shifts,
+kiosks and cover), and the decider asks instead of writing for a kiosk cover ask with no
+understood date, a no_delivery pick that names LPG or stock, and a check_out with a time and a
+correction word; "tubtob" and "sagkod" read as "hanggang". A rerun of either gate needs a fresh
+gate half.
+
 **What happened, in order.**
 
 1. **Router gate (`0301`, a fresh gate half, once) failed.** Wrong 0% (bar at most 2%: pass);

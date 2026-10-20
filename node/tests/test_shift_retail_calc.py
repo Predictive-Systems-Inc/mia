@@ -115,6 +115,15 @@ def test_weekday_ranges_and_lists_become_byday() -> None:
     assert roster.find_days("Biyernes hangtod Lunes").byday == ["MO", "FR", "SA", "SU"]
 
 
+def test_tubtob_and_sagkod_read_as_hanggang() -> None:
+    """hil and war "tubtob", bcl "sagkod": the same range and days as "hanggang"."""
+    r = lambda text: [(x.start, x.end) for _, x in roster.find_ranges(text, NINE, NINE_PM)]
+    assert r("9 tubtob 5") == r("alas 9 sagkod alas 5") == r("9 hanggang 5") == [(NINE, FIVE_PM)]
+    tu_su = roster.find_days("Martes hanggang Domingo").byday
+    assert roster.find_days("Martes tubtob Domingo").byday == tu_su == WEEK
+    assert roster.find_days("Martes sagkod Domingo").byday == WEEK
+
+
 def test_the_owners_pattern_parses_clause_by_clause() -> None:
     p = roster.parse_pattern(PATTERN, {"a": "Ana", "l": "Liza"}, NINE, NINE_PM)
     assert [(c.person_id, c.byday, c.start, c.end) for c in p.clauses] == [

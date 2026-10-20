@@ -7,6 +7,7 @@ shift supervisor's argument mapping.
 """
 
 import datetime as dt
+import re
 from functools import partial
 from typing import Any
 
@@ -19,8 +20,25 @@ from mia.agents.shift_supervisor.actions import (
     build_request,
     problem_kinds,
 )
+from mia.agents.shift_supervisor.rules import is_retail
 
 __all__ = ["Alternative", "DecideError", "Decision", "decide", "parse"]
+
+# Rule 7 guards: words code reads so a wrong pick asks instead of writing. Stock is the inventory
+# manager's (Q108: "ubos na ang LPG"), never a missed delivery; a correction word with a time is
+# a time correction, never a check-out now. Local forms are machine drafts (Q28 to Q35).
+STOCK_WORDS = frozenset({
+    "lpg", "gas", "gasul", "tangke", "stock", "stocks", "ubos", "naubos", "naubusan", "maubos",
+    "paubos", "maubusan", "hurot", "nahurot", "mahurot", "nahurtan", "nahutdan",
+})  # fmt: skip
+CORRECTION_WORDS = frozenset({
+    "mali", "nagkamali", "sayop", "nasayop", "sala", "nasala", "tama", "dapat", "wrong",
+    "correct", "correction",
+})  # fmt: skip
+
+
+def _has_word(text: str, words: frozenset[str]) -> bool:
+    return any(w in words for w in re.findall(r"\w+", text.casefold()))
 
 
 def _period(value: str | None, today: dt.date) -> tuple[str | None, str | None]:
@@ -83,6 +101,8 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         site, day = r.pick("site", q.sites), r.pick("date", {*q.dates, ANOTHER_DAY})
         if site is None or day == ANOTHER_DAY:
             return {}, "visit"
+        if day is None and is_retail():  # never today by default at the kiosk: ask
+            return {}, "date"
         return {"location_name": q.sites[site], "date": day}, None
     if action == "assign_cover":
         person = r.pick("person", q.people)
@@ -97,11 +117,16 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         return {"accept": r.yes("accept")}, None
     if action in ("check_in", "check_out", "visit_details"):
         site = r.pick("site", q.sites)
+        fixing = action == "check_out" and q.times and _has_word(q.message, CORRECTION_WORDS)
+        if fixing and is_retail():  # "sayop akong check out, 5pm": a correction, never now
+            return {}, "time"
         return {"location_name": q.sites.get(site or "")}, None
     if action == "report_site_problem":
         kind = r.pick("problem_kind", set(problem_kinds()))
         site = r.pick("site", q.sites)
         location = q.sites.get(site or "")
+        if kind == "no_delivery" and _has_word(q.message, STOCK_WORDS):  # stock: ask first
+            return {}, "problem_kind"
         return {"kind": kind, "text": q.message[:500], "location_name": location}, None
     if action == "checklist":
         item = r.pick("checklist_item", q.checklist_items)

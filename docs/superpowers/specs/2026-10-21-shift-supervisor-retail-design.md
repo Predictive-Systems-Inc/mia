@@ -238,3 +238,12 @@ swap, closures. 6. New tools and actions, the decider. 7. Chat turn, scenarios 1
   read as a check-out (owned by shift_supervisor/actions.py, a tuning round needs a fresh decider
   gate half); a customer at the counter routed to customer_service in ceb and hil (owned by
   shift_supervisor/turn.py and customer_service/turn.py, a rerun needs a fresh router gate half).
+- Fix wave B (21 Oct): `timesheets.py` `entered_by` records the person who entered a time, never
+  the agent, for cleaning too. A deliberate change outside `is_retail()` (separation of duties:
+  the person who entered a correction cannot approve it); owned by shift_supervisor/timesheets.py.
+- Fix wave B (21 Oct), the open items above now guarded in code (rule 7): a find_replacements at
+  the kiosk with a site and no understood date asks for the date; a no_delivery pick whose text
+  names LPG or stock (`decider.STOCK_WORDS`) asks; a retail check_out whose text has a time and a
+  correction word (`decider.CORRECTION_WORDS`) asks; "tubtob" and "sagkod" read as "hanggang".
+  The router description names both worlds again (cleaning checklists). None of this was in the
+  gate runs; a rerun needs fresh gate halves.

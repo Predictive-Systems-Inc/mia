@@ -167,3 +167,9 @@ languages. 8. Evals, gates, docs.
   mostly the right action below 0.6. The router gate of 21 Oct failed on other agents' seeds
   (the bookkeeper's route at 97.6%); with the bookkeeper active, "how are sales today" stays
   with it in four languages. The next attempt needs fresh gate seeds and the developer's word.
+- `_seed_bookkeeper` (templates/retail/seed.py) computes the seeded counts' expected amount
+  without `drawer_out`, so the Mall's petty refill 13 days back makes that day differ from the
+  rule in bookkeeper/tools.py; owned by the bookkeeper (found in the shift supervisor retail
+  review, 21 Oct).
+- A Grab payout guard is owed in bookkeeper/tools.py; owned by the bookkeeper (found in the
+  shift supervisor retail review, 21 Oct).

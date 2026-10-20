@@ -63,8 +63,10 @@ def _time(tag: str) -> str:
     )
 
 
+# "until" per language: fil hanggang, ceb hangtod, hil and war tubtob, bcl sagkod.
+_UNTIL = r"(?:-|\bto\b|\bhanggang\b|\bhangtod\b|\btubtob\b|\bsagkod\b|\buntil\b)"
 _RANGE = re.compile(
-    rf"(?<![\d:]){_time('a')}\s*(?:-|\bto\b|\bhanggang\b|\bhangtod\b|\buntil\b)\s*{_time('b')}\b",
+    rf"(?<![\d:]){_time('a')}\s*{_UNTIL}\s*{_time('b')}\b",
     re.IGNORECASE,
 )
 
@@ -103,7 +105,9 @@ _DAY_INDEX = {name: i for names in DAY_NAMES.values() for i, name in enumerate(n
 _DAY = re.compile(
     r"\b(" + "|".join(sorted(_DAY_INDEX, key=len, reverse=True)) + r")\b", re.IGNORECASE
 )
-_THROUGH = re.compile(r"^\s*(?:-|to|hanggang|hangtod|until|through)\s*$", re.IGNORECASE)
+_THROUGH = re.compile(
+    r"^\s*(?:-|to|hanggang|hangtod|tubtob|sagkod|until|through)\s*$", re.IGNORECASE
+)
 _WORD = re.compile(r"\w+")
 # A week phrase names a week, never a Sunday ("linggo"); parsing._DATE consumes the same ones.
 _WEEK = re.compile(
