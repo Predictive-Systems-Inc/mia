@@ -11,7 +11,16 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps, call_tool
 from mia.agents.inventory_manager import MANIFEST as INVENTORY
 from mia.agents.inventory_manager import tools as inventory
-from mia.agents.shift_supervisor import MANIFEST, agent, alerts, cover, replies, tools
+from mia.agents.shift_supervisor import (
+    MANIFEST,
+    actions,
+    agent,
+    alerts,
+    cover,
+    decider,
+    replies,
+    tools,
+)
 from mia.agents.shift_supervisor.rules import fmt_date
 from mia.agents.shift_supervisor.tools import (
     AssignCoverInput,
@@ -405,6 +414,16 @@ def test_the_cleaning_agent_is_never_offered_the_kiosk_tools(
     manifest, bindings = agent.offered()
     assert not kiosk & {b.tool_id for b in bindings} and not kiosk & {x.id for x in manifest.tools}
     assert len(bindings) == len(tools.BINDINGS) - len(kiosk)
+
+
+def test_a_named_time_is_now_only_near_the_pinned_clock(
+    session: Session, rs: Ferinos, rs_pin: Pin
+) -> None:
+    ana = deps_for(session, rs[1]["Ana"])
+    rs_pin(at(RS_TODAY, 18))
+    assert decider._not_now(actions.build_query(ana, "nag-out ako 5pm", ""))
+    rs_pin(at(RS_TODAY, 18, 2))
+    assert not decider._not_now(actions.build_query(ana, "nag-out ako 6pm", ""))
 
 
 def test_a_future_end_on_shift_does_not_check_the_clerk_out(session: Session, rs: Ferinos) -> None:

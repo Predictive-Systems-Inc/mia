@@ -20,7 +20,6 @@ from mia.agents.decider import NOT_STATED, THRESHOLD, Action  # noqa: F401 (THRE
 from mia.agents.parsing import EN_WEEKDAYS, FI_WEEKDAYS, find_times
 from mia.agents.shift_supervisor import MANIFEST, cover, roster, tools
 from mia.agents.shift_supervisor.rules import is_retail
-from mia.core.db import utcnow
 from mia.core.models import Branch, Event, Location, Person, Visit
 from mia.templates.retail import hours as retail_hours
 
@@ -409,6 +408,11 @@ def _roster(
     return shifts, pattern.unclear
 
 
+def _local_now(tz: str) -> dt.time:
+    """The branch's clock (tools.utcnow, which the tests and evals pin, as _checklist_items)."""
+    return tools.utcnow().astimezone(ZoneInfo(tz)).time()  # type: ignore[attr-defined]
+
+
 def build_query(deps: AgentDeps, message: str, previous_mia_message: str) -> Query:
     """Read every candidate the request needs. Reads only; the caller holds no write lock."""
     session, branch = deps.session, deps.branch
@@ -431,7 +435,7 @@ def build_query(deps: AgentDeps, message: str, previous_mia_message: str) -> Que
         times={tid: at.strftime("%H:%M") for tid, at in find_times(message)},
         roster=shifts,
         roster_unclear=unclear,
-        now=utcnow().astimezone(ZoneInfo(branch.timezone)).time(),
+        now=_local_now(branch.timezone),
     )
 
 

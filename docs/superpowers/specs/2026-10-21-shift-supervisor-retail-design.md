@@ -213,6 +213,10 @@ swap, closures. 6. New tools and actions, the decider. 7. Chat turn, scenarios 1
 
 ## Carried over
 
+- A check-out naming a clock time is held as a correction when the time is more than five
+  minutes from the branch's clock (`decider.CHECK_OUT_NOW`); the comparison is within one day,
+  so a time across midnight (23:58 named at 00:01) reads as far off and asks; owned by
+  shift_supervisor/decider.py.
 - The scoring reasons are English literals in a user-facing card (an i18n bug in cleaning too);
   owned by shift_supervisor/scoring.py.
 - sales_supervisor `_clerks` falls back to every clerk when a branch has no visits that day; once
