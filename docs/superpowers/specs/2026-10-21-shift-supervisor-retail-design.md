@@ -221,3 +221,20 @@ swap, closures. 6. New tools and actions, the decider. 7. Chat turn, scenarios 1
   cleaning seed has leave); `roster.job_name` may repeat for one clerk, so Task 4 must not rely
   on it being unique; `scheduling.ineligibility` stays branch-only (fails closed) until Task 4
   passes `org_wide=is_retail()`; owned by shift_supervisor/roster.py and core/scheduling.py.
+- Task 8 (evals and docs): the cleaning scoring reasons stay English literals, so the cleaning
+  tests stay unchanged (retail words them through `roster.REASON_KEYS`); owned by
+  shift_supervisor/scoring.py. The Weekend second clerk Job comes from the owner's pattern
+  (set_roster), not the seed; owned by templates/retail/seed.py. A Street stall override waits
+  for an owner or admin of the stall under `approvals.decide` (it matches the decider's branch,
+  and Ferino's has none at the stall); owned by core/approvals.py. Code reads shift and day
+  ranges with "-", "to", "hanggang", "hangtod", "until" and "through" only, so a Hiligaynon,
+  Waray or Bikol pattern with "tubtob" or "sagkod" is asked again (the eval set writes "-");
+  owned by shift_supervisor/roster.py.
+- Task 8 gates (docs/research/2026-10-21-shift-supervisor-retail-gate.md): the decider gate and
+  the router gate failed and are reported as they are. Open for the developer: a
+  find_replacements with a site and no understood date passes `date: None` instead of asking,
+  and a cover ask that names the absent clerk but no kiosk asks for the visit (owned by
+  shift_supervisor/decider.py); "ran out of LPG" read as a missed delivery and a corrected time
+  read as a check-out (owned by shift_supervisor/actions.py, a tuning round needs a fresh decider
+  gate half); a customer at the counter routed to customer_service in ceb and hil (owned by
+  shift_supervisor/turn.py and customer_service/turn.py, a rerun needs a fresh router gate half).

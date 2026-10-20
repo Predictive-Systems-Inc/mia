@@ -25,7 +25,7 @@ are a later phase (see the last section).
 | Agent | Serves | Owns |
 | --- | --- | --- |
 | sales_supervisor (built, v1) | clerks, head staff, owner | what was sold, targets, how today compares, why notes |
-| shift_supervisor (built) | clerks, head staff | schedules, absences, cover, check-in, incidents, checklists |
+| shift_supervisor (built for cleaning and retail) | clerks, head staff | schedules, absences, cover, check-in, incidents, checklists (cleaning) |
 | inventory_manager | clerks, baker, owner | stock, sell-outs, leftovers and waste, what to bake, supplier orders |
 | bookkeeper | head staff, owner | cash count, expenses, deposits, GCash and Maya settlements, VAT and BIR |
 | hr_officer | all staff, owner | hours, payroll, 13th month, leave, SSS, PhilHealth, Pag-IBIG, hiring, onboarding |
@@ -67,9 +67,14 @@ people and roles, who may approve what. 10. Permits and renewals calendar with r
 11. Rent and fixed costs per branch. 12. Weekly summary pulled from every agent. 13. Open a
 branch checklist.
 
-**shift_supervisor (built; retail copy needed)**
+**shift_supervisor (built for cleaning and retail, D39)**
 "I'm sick tomorrow", cover for a counter shift, check-in at the shop, "the oven is broken",
 power cut, LPG out, a customer complaint, opening and closing checklists, rider dispatch.
+The retail copy (spec 2026-10-21-shift-supervisor-retail) is the same package with a template
+switch: the roster from the owner's pattern, check-in and check-out at the counter, late and
+sick, cover from the other kiosk, swaps, a corrected check-out, a broken stove, a missed delivery
+or a customer at the counter, the weekly roster on Sunday and a closed day. LPG out stays the
+inventory manager's (Q108); checklists and rider dispatch are later (Q109).
 
 **inventory_manager**
 Daily ingredient counts; "sold out at 2pm" and "15 left at closing"; waste with a reason;

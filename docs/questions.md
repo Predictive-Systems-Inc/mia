@@ -694,3 +694,72 @@ Format for each entry:
 - Question: Do head staff pay bills and refill petty cash from the drawer before the closing count, or only from the petty box and the bank?
 - Assumed answer: yes, from the drawer. A closing count's expected cash is the date's cash sales less the date's cash spends and petty refills (drawer_out), and the undeposited balance takes them out only on a date without a count (a count already holds what is left). Something taken from the drawer after that date's count is missed by the balance.
 - Blocking: no.
+
+## Q101: The retail shift supervisor's package
+- Where: docs/agents-catalogue.md, rule 15 (node/mia/agents/shift_supervisor)
+- Question: Is the kiosk shift supervisor the same package with a template switch, or a sibling agent id?
+- Assumed answer: the same package (a).
+- Answered 21 Oct 2026 (D39): the same package with a template switch (`rules.is_retail()` for logic, `replies.word_key` for words); tool and intent ids stay.
+- Blocking: no.
+
+## Q102: A kiosk shift as a Visit, and the retail incident kinds
+- Where: data standard (visit, incident), node/mia/core/models.py
+- Question: Is a kiosk shift a Visit (the branch's one Location, a Job per shift pattern, one visit per clerk) or a new core `shifts` table; and may incidents gain equipment, no_delivery and customer (1.7)?
+- Assumed answer: Visit, kinds yes.
+- Answered 21 Oct 2026 (D39): a kiosk shift is a Visit (the branch is the site, one visit per clerk per shift); incidents gain equipment, no_delivery and customer (data standard 1.7).
+- Blocking: yes, until answered (gate 1).
+
+## Q103: Cover from the other kiosk
+- Where: core/scheduling.candidate_data, rbac branch scoping
+- Question: May a clerk of one kiosk cover the other kiosk's shift (a person on another branch's visit, read_own there)?
+- Assumed answer: yes within one organisation; head staff of the shift's branch instructs.
+- Answered 21 Oct 2026 (D39): yes, within one organisation; branch scoping is widened for cover only, with negative tests.
+- Blocking: yes, until answered (the cross-kiosk part of scenario 4).
+
+## Q104: Who approves a swap two clerks agree on
+- Where: D1, the retail spec's scenario 5 (shift_supervisor swap_shifts)
+- Question: Who approves a swap two clerks agree on?
+- Assumed answer: head staff's yes is the instruction; a rule break is the swap override (admin or owner, app only).
+- Blocking: no.
+
+## Q105: Where a closed day lives
+- Where: node/mia/templates/retail/hours.py
+- Question: Where does a closed day (a holiday, a mall closure) live?
+- Assumed answer: the template table `retail_closures`, read by hours.open_days, written by the shift supervisor's close_day (supervisor, owner).
+- Blocking: yes for scenario 9 only (a table several agents read).
+
+## Q106: Ferino's hour limits and availability
+- Where: core work_limits, Availability (node/mia/templates/retail/seed.py)
+- Question: What are Ferino's daily and weekly hour limits and each clerk's availability?
+- Assumed answer: daily 600 minutes, weekly 3,240 (six 9-hour shifts with the meal hour); availability the contract days and the branch hours; placeholders the owner corrects.
+- Blocking: no.
+
+## Q107: An incident when the reporter has no shift
+- Where: core incident (visit_id required), shift_supervisor report_site_problem
+- Question: Where does an incident go when the reporter (head staff) has no shift?
+- Assumed answer: it attaches to the branch's first open visit today; on a closed day head staff and the owner get the message, no row.
+- Blocking: no.
+
+## Q108: Whose are LPG out and a missed delivery
+- Where: docs/agents-catalogue.md
+- Question: Whose are "ubos na ang LPG" and a delivery that never came?
+- Assumed answer: LPG out is the inventory manager's stock event; a missed delivery is the shift supervisor's no_delivery incident; "kulang ang cash" is the bookkeeper's.
+- Blocking: no.
+
+## Q109: Checklists and rider dispatch at a kiosk
+- Where: the catalogue's shift_supervisor row
+- Question: Are opening and closing checklists and rider dispatch in the retail v1?
+- Assumed answer: no; later, with quality_officer and customer_service delivery. The checklist and visit details are not offered to a retail organisation.
+- Blocking: no.
+
+## Q110: When the weekly roster goes out
+- Where: shift_supervisor alerts.daily_plan, orgconfig.ShiftSupervisorSettings
+- Question: When does the weekly roster go out?
+- Assumed answer: Sunday 17:00 for Monday to Sunday; the daily plan only when tomorrow changed.
+- Blocking: no.
+
+## Q111: A customer at the counter: incident or complaint
+- Where: customer_service complaints, shift_supervisor incidents
+- Question: Is a clerk's report of a customer making trouble at the counter an incident or a complaint?
+- Assumed answer: an incident (kind customer); a complaint from the public stays customer_service's.
+- Blocking: no.

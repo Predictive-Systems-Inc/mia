@@ -31,7 +31,8 @@ mia/
                             (the monthly summary export), jev.py (one TypeSafe Jev request)
       templates/cleaning/   models (sites, checklists, checklist ticks), seed, importer (master data from YAML)
       templates/retail/     models (items with short codes, prices, bundle components and cost, dated
-                            branch prices, branch hours, closed days), items (dated prices per branch,
+                            branch prices, branch hours, closed days as retail_closures), items
+                            (dated prices per branch,
                             short codes), hours (opening hours helpers, closed days and the business
                             date), seed
                             (Ferino's demo)
@@ -44,7 +45,10 @@ mia/
                             scoring.py, cover.py (confirmation flow), alerts.py (missed
                             check-in and check-out, overtime, unstaffed visits, daily plan),
                             timesheets.py (drafts, corrections, approval, payroll rows),
-                            rules.py, tools.py (incl. incidents),
+                            rules.py (is_retail, the template switch), roster.py (pure: the
+                            weekly pattern, shift ranges and days, swap checks), actions.py
+                            and decider.py (Jev; the retail actions beside the cleaning ones),
+                            tools.py (incl. incidents),
                             agent.py, turn.py (its chat turn and AgentSpec),
                             tests/scenarios.yaml (and scenarios_en.yaml)
         sales_supervisor/   manifest.yaml, job.md, prompts/, actions.py and decider.py (Jev),
@@ -110,6 +114,8 @@ mia/
                             test_customer_service_evals.py for the real-Jev customer service
                             decider eval; bookkeeper_cases.py, test_bookkeeper_cases.py
                             and test_bookkeeper_evals.py for the bookkeeper's;
+                            shift_retail_cases.py, test_shift_retail_cases.py and
+                            test_shift_retail_evals.py for the retail shift supervisor's;
                             <id>_cases.py and
                             test_<id>_evals.py from the scaffold)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,

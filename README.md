@@ -282,6 +282,16 @@ half): `MIA_DECIDER=jev uv run pytest node/tests/evals/test_bookkeeper_evals.py 
 table in `agents/bookkeeper/tax.py` is written from memory and must be checked with an
 accountant before a real filing (Q97).
 
+The shift supervisor also runs a kiosk chain (`template: retail`, D39): the same agent sets the
+week's roster from the owner's pattern, checks clerks in and out at the counter, records late
+and sick, finds cover from the other kiosk, swaps shifts, corrects a forgotten check-out, reports
+a broken stove, a missed delivery or a customer at the counter, sends the weekly roster on Sunday
+and closes a kiosk for a day. For a retail organisation it answers only with `MIA_DECIDER=jev`.
+Its decider eval (900 synthetic messages in six languages, gated on the gate half at the Q40
+bar; `MIA_EVAL_HALVES=tune` or `gate` runs one half):
+`MIA_DECIDER=jev uv run pytest node/tests/evals/test_shift_retail_evals.py -m evals -s`
+(needs `MIA_TYPESAFE_KEY`; writes `docs/research/shift-supervisor-retail-<date>-<HHMM>.raw.json`).
+
 To evaluate a model: `MIA_EVAL_MODEL=gateway/<route>` or `local/<model>`, then
 `uv run pytest node/tests/evals -m evals`.
 
