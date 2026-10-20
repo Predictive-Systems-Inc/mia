@@ -11,7 +11,7 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps, call_tool
 from mia.agents.inventory_manager import MANIFEST as INVENTORY
 from mia.agents.inventory_manager import tools as inventory
-from mia.agents.shift_supervisor import MANIFEST, alerts, cover, replies, tools
+from mia.agents.shift_supervisor import MANIFEST, agent, alerts, cover, replies, tools
 from mia.agents.shift_supervisor.rules import fmt_date
 from mia.agents.shift_supervisor.tools import (
     AssignCoverInput,
@@ -393,6 +393,18 @@ def test_a_cleaning_org_is_not_offered_the_kiosk_tools(
     out = getattr(tools, tool)(deps_for(session, rs[1]["Marites"]), args, "c")
     assert (out.status, out.reason) == ("invalid", "not_offered")
     assert len(session.exec(select(Event)).all()) == n
+
+
+def test_the_cleaning_agent_is_never_offered_the_kiosk_tools(
+    rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kiosk = {f"{MANIFEST.id}.{name}" for name in replies.RETAIL_TOOLS}
+    manifest, bindings = agent.offered()  # retail
+    assert kiosk <= {b.tool_id for b in bindings} and kiosk <= {x.id for x in manifest.tools}
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings())
+    manifest, bindings = agent.offered()
+    assert not kiosk & {b.tool_id for b in bindings} and not kiosk & {x.id for x in manifest.tools}
+    assert len(bindings) == len(tools.BINDINGS) - len(kiosk)
 
 
 def test_a_future_end_on_shift_does_not_check_the_clerk_out(session: Session, rs: Ferinos) -> None:

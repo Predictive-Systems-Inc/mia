@@ -204,6 +204,64 @@ def test_a_wrong_check_out_time_is_never_a_check_out_now(
     assert visit_of(session, ana, RS_TODAY).status == "in_progress"
 
 
+def test_a_stock_word_asks_whatever_kind_jev_picks(
+    session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    liza = rs[1]["Liza"]
+    n = len(session.exec(select(Incident)).all())
+    for kind in ("equipment", "site_problem"):
+        _answers(monkeypatch, "report_site_problem", problem_kind=kind)
+        assert _turn(session, liza, "naubusan kami ng LPG").text() == t(
+            "clarify.rephrase", liza.language
+        )
+    assert len(session.exec(select(Incident)).all()) == n and not _tool_calls(session)
+
+
+def test_a_missed_lpg_delivery_is_still_reported(
+    session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    rs_pin(at(RS_TODAY, 14))
+    _answers(monkeypatch, "report_site_problem", problem_kind="no_delivery")
+    _turn(session, rs[1]["Liza"], "walang dumating na LPG")
+    missed = select(Incident).where(Incident.kind == "no_delivery")
+    assert [r.text for r in session.exec(missed).all()] == ["walang dumating na LPG"]
+
+
+def _on_shift_at_six(session: Session, ana: Person, rs_pin: Pin) -> None:
+    rs_pin(at(RS_TODAY, 9, 1))
+    tools.check_in(deps_for(session, ana), CheckInInput(), "c")
+    session.commit()
+    rs_pin(at(RS_TODAY, 18))
+
+
+def test_a_check_out_with_a_past_time_is_never_now(
+    session: Session, rs_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    ana = rs_en[1]["Ana"]
+    _on_shift_at_six(session, ana, rs_pin)
+    _answers(monkeypatch, "check_out")
+    reply = _turn(session, ana, "nag-out ako 5pm")
+    assert reply.text() == t("clarify.rephrase", EN)
+    assert visit_of(session, ana, RS_TODAY).status == "in_progress"
+    assert not session.exec(select(Timesheet).where(Timesheet.date == RS_TODAY)).all()
+
+
+def test_a_check_out_with_a_past_time_runs_as_the_offered_correction(
+    session: Session, rs_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    ana = rs_en[1]["Ana"]
+    _on_shift_at_six(session, ana, rs_pin)
+    odds = {"check_out": 0.7, "correct_time": 0.3}
+    _answers(monkeypatch, "check_out", probabilities=odds, time="t0")
+    _turn(session, ana, "nag-out ako 5pm")
+    visit = visit_of(session, ana, RS_TODAY)
+    assert visit.actual_end is not None
+    assert (visit.status, visit.actual_end.astimezone(MNL).strftime("%H:%M")) == (
+        "completed",
+        "17:00",
+    )  # her stated time, never 18:00
+
+
 def test_a_cover_ask_with_an_unread_date_asks(
     session: Session, rs_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

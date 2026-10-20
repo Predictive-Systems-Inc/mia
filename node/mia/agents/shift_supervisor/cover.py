@@ -532,7 +532,8 @@ def answer_swap(
     requests head staff's confirmation (`shift_supervisor.swap`), or the owner's
     (`shift_supervisor.swap_override`, app only) when roster.swap_breaks finds reasons; both
     clerks are recorded as triggering it, so neither decides it, and it expires at the earlier
-    shift's planned start (no escalation). Raises CoverError when there is no open ask or a shift is gone."""
+    shift's planned start (no escalation). Raises CoverError when there is no open ask or a
+    shift is gone."""
     ask = open_swap(session, person)
     if ask is None:
         raise CoverError("no open swap ask for you")

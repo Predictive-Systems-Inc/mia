@@ -27,9 +27,10 @@ __all__ = ["Alternative", "DecideError", "Decision", "decide", "parse"]
 # Rule 7 guards: words code reads so a wrong pick asks instead of writing. Stock is the inventory
 # manager's (Q108: "ubos na ang LPG"), never a missed delivery; a correction word with a time is
 # a time correction, never a check-out now. Local forms are machine drafts (Q28 to Q35).
+# Only the "ran out" words: an item noun alone ("walang dumating na LPG") is a missed delivery.
 STOCK_WORDS = frozenset({
-    "lpg", "gas", "gasul", "tangke", "stock", "stocks", "ubos", "naubos", "naubusan", "maubos",
-    "paubos", "maubusan", "hurot", "nahurot", "mahurot", "nahurtan", "nahutdan",
+    "stock", "stocks", "ubos", "naubos", "naubusan", "maubos", "paubos", "maubusan", "hurot",
+    "nahurot", "mahurot", "nahurtan", "nahutdan",
 })  # fmt: skip
 CORRECTION_WORDS = frozenset({
     "mali", "nagkamali", "sayop", "nasayop", "sala", "nasala", "tama", "dapat", "wrong",
@@ -37,8 +38,25 @@ CORRECTION_WORDS = frozenset({
 })  # fmt: skip
 
 
+# A check-out time this far from the branch's clock is a time correction, never a check-out now.
+CHECK_OUT_NOW = dt.timedelta(minutes=5)
+
+
 def _has_word(text: str, words: frozenset[str]) -> bool:
     return any(w in words for w in re.findall(r"\w+", text.casefold()))
+
+
+def _minutes(at: dt.time) -> int:
+    return at.hour * 60 + at.minute
+
+
+def _not_now(q: Query) -> bool:
+    """True when the message names a clock time away from the branch's clock (CHECK_OUT_NOW)."""
+    if q.now is None:
+        return False
+    now = _minutes(q.now)
+    limit = CHECK_OUT_NOW.total_seconds() // 60
+    return any(abs(_minutes(dt.time.fromisoformat(v)) - now) > limit for v in q.times.values())
 
 
 def _period(value: str | None, today: dt.date) -> tuple[str | None, str | None]:
@@ -117,15 +135,16 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         return {"accept": r.yes("accept")}, None
     if action in ("check_in", "check_out", "visit_details"):
         site = r.pick("site", q.sites)
-        fixing = action == "check_out" and q.times and _has_word(q.message, CORRECTION_WORDS)
-        if fixing and is_retail():  # "sayop akong check out, 5pm": a correction, never now
+        # "sayop akong check out, 5pm" or "nag-out ako 5pm" at 18:00: a correction, never now
+        timed = q.times and (_has_word(q.message, CORRECTION_WORDS) or _not_now(q))
+        if action == "check_out" and timed and is_retail():
             return {}, "time"
         return {"location_name": q.sites.get(site or "")}, None
     if action == "report_site_problem":
         kind = r.pick("problem_kind", set(problem_kinds()))
         site = r.pick("site", q.sites)
         location = q.sites.get(site or "")
-        if kind == "no_delivery" and _has_word(q.message, STOCK_WORDS):  # stock: ask first
+        if is_retail() and _has_word(q.message, STOCK_WORDS):  # stock (Q108): ask, any kind
             return {}, "problem_kind"
         return {"kind": kind, "text": q.message[:500], "location_name": location}, None
     if action == "checklist":
@@ -180,16 +199,25 @@ def _retail_args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     )
 
 
+def _as_correction(d: Decision) -> Decision:
+    """A check-out held back for its time (missing "time") runs as correct_time when Jev offered
+    that with every input; else it stays a clarify that asks."""
+    if d.action != "clarify" or d.raw_action != "check_out" or d.missing != "time":
+        return d
+    fix = next((a for a in d.alternatives if a.action == "correct_time"), None)
+    if fix is None or fix.missing is not None:
+        return d
+    return Decision(
+        action="correct_time", args=fix.args, confidence=d.confidence, raw_action=d.raw_action
+    )
+
+
 def parse(answers: dict[str, Any], q: Query) -> Decision:
     """The shared parse over the template's actions (actions_for) and argument mapping."""
-    return shared.parse(answers, q, actions=actions_for(), args=_args)
+    return _as_correction(shared.parse(answers, q, actions=actions_for(), args=_args))
 
 
 async def decide(q: Query) -> Decision:
     """One Jev request for the query. Raises JevUnreachable when Jev cannot be reached, and
     JevError (DecideError for an answer outside the options) when no usable answer came."""
-    return await shared.decide(
-        q,
-        build_request=build_request,
-        parse=partial(shared.parse, q=q, actions=actions_for(), args=_args),
-    )
+    return await shared.decide(q, build_request=build_request, parse=partial(parse, q=q))

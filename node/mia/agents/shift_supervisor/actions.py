@@ -11,6 +11,7 @@ import datetime as dt
 from dataclasses import dataclass, field
 from itertools import islice
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlmodel import col, select
 
@@ -19,6 +20,7 @@ from mia.agents.decider import NOT_STATED, THRESHOLD, Action  # noqa: F401 (THRE
 from mia.agents.parsing import EN_WEEKDAYS, FI_WEEKDAYS, find_times
 from mia.agents.shift_supervisor import MANIFEST, cover, roster, tools
 from mia.agents.shift_supervisor.rules import is_retail
+from mia.core.db import utcnow
 from mia.core.models import Branch, Event, Location, Person, Visit
 from mia.templates.retail import hours as retail_hours
 
@@ -302,6 +304,7 @@ class Query:
     times: dict[str, str] = field(default_factory=dict)  # t0 -> "21:00" (parsing.find_times)
     roster: list[dict[str, Any]] = field(default_factory=list)  # the pattern's shifts, by code
     roster_unclear: list[str] = field(default_factory=list)  # pattern clauses code cannot read
+    now: dt.time | None = None  # the branch's local clock (code's guards only, never sent)
 
 
 def _dates(today: dt.date) -> dict[str, str]:
@@ -428,6 +431,7 @@ def build_query(deps: AgentDeps, message: str, previous_mia_message: str) -> Que
         times={tid: at.strftime("%H:%M") for tid, at in find_times(message)},
         roster=shifts,
         roster_unclear=unclear,
+        now=utcnow().astimezone(ZoneInfo(branch.timezone)).time(),
     )
 
 

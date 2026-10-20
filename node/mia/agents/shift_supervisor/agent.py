@@ -7,10 +7,11 @@ from typing import Any
 import httpx
 from pydantic_ai import Agent, RunContext, TextOutput
 
-from mia.agents.base import AgentDeps, build_agent, build_model
+from mia.agents.base import AgentDeps, Manifest, ToolBinding, build_agent, build_model
 from mia.agents.shift_supervisor import AGENT_DIR, MANIFEST, cover
 from mia.agents.shift_supervisor.classifier import classify
-from mia.agents.shift_supervisor.rules import rules_model
+from mia.agents.shift_supervisor.replies import RETAIL_TOOLS
+from mia.agents.shift_supervisor.rules import is_retail, rules_model
 from mia.agents.shift_supervisor.tools import BINDINGS
 from mia.chat.blocks import AgentReply, TextBlock
 from mia.settings import get_settings
@@ -21,6 +22,18 @@ def text_reply(text: str) -> AgentReply:
     return AgentReply(blocks=[TextBlock(text=text)])
 
 
+def offered() -> tuple[Manifest, list[ToolBinding]]:
+    """The manifest and tools this organisation's template offers: the kiosk tools
+    (replies.RETAIL_TOOLS) only in retail, so a cleaning model is never offered them."""
+    if is_retail():
+        return MANIFEST, list(BINDINGS)
+    kiosk = {f"{MANIFEST.id}.{name}" for name in RETAIL_TOOLS}
+    tools = [tool for tool in MANIFEST.tools if tool.id not in kiosk]
+    return MANIFEST.model_copy(update={"tools": tools}), [
+        b for b in BINDINGS if b.tool_id not in kiosk
+    ]
+
+
 def create_agent(
     model_name: str | None = None,
     org: str | None = None,
@@ -29,10 +42,11 @@ def create_agent(
     """A new shift supervisor agent for the given model (default settings.MIA_MODEL)."""
     settings = get_settings()
     model = build_model(model_name or settings.MIA_MODEL, rules_model(), transport=transport)
+    manifest, bindings = offered()
     return build_agent(
-        MANIFEST,
+        manifest,
         AGENT_DIR,
-        BINDINGS,
+        bindings,
         [AgentReply, TextOutput(text_reply)],
         model,
         org or settings.MIA_ORG,
