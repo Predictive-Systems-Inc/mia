@@ -39,11 +39,12 @@ def test_context_cases_name_an_active_agent() -> None:
 
 
 def test_halves_are_balanced_per_language_and_group() -> None:
-    """The tune half and the spent gate half are balanced; the fresh gate half has at least
-    five per gated language and group."""
+    """Every language and group has a tune half of at least five; the fresh gate half has at
+    least five per gated language and group. The spent half grows with every gate run, so it
+    is not balanced against the tune half."""
     for (lang, group), cases in _grouped(CASES).items():
         halves = Counter(c.half for c in cases)
-        assert abs(halves["tune"] - halves["spent"]) <= 1, (lang, group, halves)
+        assert halves["tune"] >= 5, (lang, group, halves)
         assert halves["gate"] >= 5 or lang not in GATED_LANGS, (lang, group, halves)
 
 
