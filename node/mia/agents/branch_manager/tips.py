@@ -234,60 +234,67 @@ QUOTES: list[tuple[str, str, str]] = [
 ]
 
 NAGLE = "Nagle and Muller, The Strategy and Tactics of Pricing"
-# name_key, kind (the experiment kind), params (read by experiments.py), source; spec section 13.
+# name_key, kind (the experiment kind), params (read by experiments.py), source, description (the
+# fixed English line Jev reads to match a request, actions.build_query); spec section 13.
 # Money in params is minor units, shares and cuts are whole percents.
-STRATEGIES: list[tuple[str, str, dict[str, Any], str]] = [
+STRATEGIES: list[tuple[str, str, dict[str, Any], str, str]] = [
     (
         "bm.strategy.charm",
         "price",
-        {"endings": [0, 5], "under": 100},  # 50 pesos tested at 49
+        {"endings": [0], "under": 100},  # 50 pesos tested at 49
         (
             "Thomas and Morwitz, Penny Wise and Pound Foolish: The Left-Digit Effect in Price "
             "Cognition (2005)"
         ),
+        "Charm pricing: a price just under a round number (49 instead of 50)",
     ),
     (
         "bm.strategy.anchor",
         "price",
         {"premium_percent": 20},
         f"Tversky and Kahneman, Judgment under Uncertainty (1974), on anchoring; {NAGLE}",
+        "Anchoring: a premium item or price shown next to the usual one",
     ),
     (
         "bm.strategy.bundle",
         "bundle",
         {"off_percent": 10, "min_pair_share": 30},
         "Stremersch and Tellis, Strategic Bundling of Products and Prices (2002)",
+        "Bundling: items often bought together sold as one, a little cheaper",
     ),
     (
         "bm.strategy.volume",
         "promo",
         {"min_quantity": 3, "off_percent": 10, "min_multi_share": 30},
         f"{NAGLE} (nonlinear pricing)",
+        "Volume pricing: less per piece when buying several (3 for, buy more)",
     ),
     (
         "bm.strategy.markdown",
         "promo",
         {"min_leftover_days": 2, "window_days": 14, "max_off_percent": 20},
         "Talluri and van Ryzin, The Theory and Practice of Revenue Management (2004)",
+        "Markdown: a lower price for an item usually left over at closing",
     ),
     (
         "bm.strategy.increase",
         "price",
-        # up_percent_max 12, not the spec's 10: the step to the next 5 pesos (4500 to 5000 is
-        # 11 percent) must fit, else the rule falls back to the next whole peso.
-        {"min_sold_out_share": 50, "up_percent_min": 5, "up_percent_max": 12},
+        {"min_sold_out_share": 50, "up_percent_min": 5, "up_percent_max": 10},
         "Simon and Fassnacht, Price Management (2019), elasticity testing",
+        "A price increase for an item that often sells out",
     ),
     (
         "bm.strategy.seasonal",
         "promo",
         {"lead_days": 14},
         "The shop's own history: last year's sales of the same month",
+        "A seasonal promo before a holiday or a busy month",
     ),
     (
         "bm.strategy.decoy",
         "price",
         {"variants": 3},
         f"Ariely, Predictably Irrational (2008); {NAGLE}",
+        "Decoy pricing: three sizes or variants so the middle one looks best",
     ),
 ]

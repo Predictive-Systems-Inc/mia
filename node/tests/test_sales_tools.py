@@ -81,12 +81,12 @@ def test_record_counts_writes_rows_and_events(session: Session, ferinos: Ferinos
         items=[CountIn(item_id=special, quantity=3), CountIn(item_id=classic, quantity=5)]
     )
     out = tools.record_counts(deps_for(session, people["Ana"]), args, "c1")
-    # Special is 50 at the kiosk while the seeded experiment runs (TODAY minus 4 days on).
-    assert out.day_total == 3 * 5000 + 5 * 4000 and out.currency == "PHP"
+    # Special is 49.50 at the kiosk while the seeded experiment runs (TODAY minus 4 days on).
+    assert out.day_total == 3 * 4950 + 5 * 4000 and out.currency == "PHP"
     assert out.business_date == today() and out.target_share is not None
     rows = counts(session, people["Ana"], today())
     assert {(r.item_id, r.quantity, r.amount) for r in rows} == {
-        (special, 3, 15000),
+        (special, 3, 14850),
         (classic, 5, 20000),
     }
     assert len(session.exec(select(Event).where(Event.action == "sales.counted")).all()) == 2
@@ -118,7 +118,7 @@ def test_a_correction_supersedes_only_the_reporters_last_count(
     assert {(r.reported_by, r.quantity) for r in live} == {(ana.id, 4), (liza.id, 2)}
     assert session.exec(select(Event).where(Event.action == "sales.corrected")).one()
     (shown,) = tools.today(deps_for(session, ana), TodayInput(), "c3").branches
-    assert [(i.quantity, i.amount) for i in shown.items if i.item_id == special] == [(6, 30000)]
+    assert [(i.quantity, i.amount) for i in shown.items if i.item_id == special] == [(6, 29700)]
 
 
 def test_a_correction_without_a_count_is_refused(session: Session, ferinos: Ferinos) -> None:
@@ -409,11 +409,11 @@ def test_today_after_midnight_shows_the_business_date(
 def test_day_total_is_the_branchs_running_total(session: Session, ferinos: Ferinos) -> None:
     _, people = ferinos
     ana, liza = deps_for(session, people["Ana"]), deps_for(session, people["Liza"])
-    tools.record_counts(ana, three_special(session), "c1")  # 150.00 (the seeded experiment)
+    tools.record_counts(ana, three_special(session), "c1")  # 148.50 (the seeded experiment)
     classic = RecordCountsInput(items=[CountIn(item_id=item(session, "Classic"), quantity=2)])
     tools.record_counts(liza, classic, "c2")  # 80.00
-    out = tools.record_counts(ana, three_special(session, total=99999), "c3")  # 150.00
-    assert out.day_total == 15000 + 8000 + 15000
+    out = tools.record_counts(ana, three_special(session, total=99999), "c3")  # 148.50
+    assert out.day_total == 14850 + 8000 + 14850
     assert out.target_share is not None
 
 

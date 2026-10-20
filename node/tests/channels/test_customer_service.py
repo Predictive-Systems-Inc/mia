@@ -358,16 +358,12 @@ def decide_last(
 
 
 def prices_text(lang: str, names: list[str]) -> str:
-    from mia.core.models import Branch
-    from mia.templates.retail import items as retail_items
     from mia.templates.retail.models import RetailItem
-    from tests.conftest import TODAY
 
     with Session(db.get_engine()) as other:
         rows = {i.name: i for i in other.exec(select(RetailItem))}
-        kiosk = other.exec(select(Branch).where(Branch.name == "Mall kiosk")).one()
-        # The kiosk's price in force (Special is 50 while the seeded experiment runs).
-        price = {n: retail_items.price_on(other, rows[n], kiosk.id, TODAY) for n in names}
+    # The kiosk's Special is 49.50 while the seeded price experiment runs (4500 to 4950).
+    price = {n: 4950 if n == "Special" else rows[n].price for n in names}
     items = ", ".join(f"{n} {format_money(price[n], rows[n].currency, lang)}" for n in names)
     return t("cs.prices", lang, items=items)
 

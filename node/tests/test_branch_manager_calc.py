@@ -6,14 +6,15 @@ import datetime as dt
 from dataclasses import asdict, replace
 
 import pytest
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from mia.agents.branch_manager import calc, experiments, tools
 from mia.agents.branch_manager import tips as bm_tips
 from mia.agents.branch_manager.experiments import BranchNumbers, Day
 from mia.agents.branch_manager.models import Experiment, Strategy
-from mia.core.models import Branch, Person
+from mia.core.models import Branch, Person, StockEvent
 from mia.templates.retail import items as retail_items
+from mia.templates.retail import seed
 from mia.templates.retail.models import RetailItem
 from tests.conftest import BM_TODAY as TODAY
 
@@ -89,8 +90,8 @@ def test_the_suggestion_is_last_years_month_a_bundle_first() -> None:
 
 # The engine: the seeded catalogue (Task 1's params) over plain items and numbers.
 CATALOGUE = {
-    key: Strategy(name_key=key, kind=kind, params=params, source=source)
-    for key, kind, params, source in bm_tips.STRATEGIES
+    key: Strategy(name_key=key, kind=kind, params=params, source=source, description=text)
+    for key, kind, params, source, text in bm_tips.STRATEGIES
 }
 
 
@@ -114,18 +115,26 @@ def ids(menu: list[RetailItem]) -> dict[str, str]:
     return {i.name: i.id for i in menu}
 
 
-def test_charm_tests_a_round_price_one_peso_under(menu: list[RetailItem]) -> None:
+def test_charm_tests_a_price_ending_in_0_one_peso_under(menu: list[RetailItem]) -> None:
     n = ids(menu)
     numbers = BranchNumbers(open_days=14, units={n["Ube"]: 90, n["Classic"]: 50})
-    assert proposals("bm.strategy.charm", numbers, menu) == [(n["Ube"], 4400)]
-    assert proposals("bm.strategy.charm", numbers, [menu[3]]) == []  # 25.49 is not round
+    # Ube (45) sells most but ends in 5: Classic goes from 40 to 39.
+    [p] = experiments.propose(numbers, menu, [CATALOGUE["bm.strategy.charm"]], START)
+    assert (p.item_id, p.to_price, p.new_item) == (n["Classic"], 3900, None)
+    assert proposals("bm.strategy.charm", numbers, [menu[2], menu[3]]) == []  # 45, 25.49
 
 
 def test_anchor_adds_a_premium_beside_a_one_size_item(menu: list[RetailItem]) -> None:
     n = ids(menu)
     numbers = BranchNumbers(open_days=14, units={n["Classic"]: 99, n["Special"]: 50})
-    # Classic has a box, so Special (one size) gets the premium at 20 percent above.
-    assert proposals("bm.strategy.anchor", numbers, menu) == [(n["Special"], 5400)]
+    # Classic has a box, so Special (one size) gets a new premium variant 20 percent above.
+    [p] = experiments.propose(numbers, menu, [CATALOGUE["bm.strategy.anchor"]], START)
+    assert (p.item_id, p.to_price, p.new_item) == (n["Special"], 5400, [])
+    # A new item has no history: Special's own recent experiment does not refuse it.
+    recent = replace(
+        numbers, since_experiment={n["Special"]: 3}, last_prices_90d={n["Special"]: [9000]}
+    )
+    assert proposals("bm.strategy.anchor", recent, menu) == [(n["Special"], 5400)]
 
 
 def test_bundle_prices_the_usual_pair_below_its_sum(menu: list[RetailItem]) -> None:
@@ -135,6 +144,7 @@ def test_bundle_prices_the_usual_pair_below_its_sum(menu: list[RetailItem]) -> N
     [p] = experiments.propose(numbers, menu, [CATALOGUE["bm.strategy.bundle"]], START)
     assert (p.kind, p.from_price, p.to_price) == ("bundle", 6549, 5800)  # 10 off, peso down
     assert set(p.rationale["pair"]) == set(pair) and p.rationale["share"] == 66
+    assert p.new_item is not None and set(p.new_item) == set(pair)  # created, never a repricing
     rare = replace(numbers, baskets=[pair, *[frozenset({n["Ube"]})] * 3])  # 25 percent
     assert proposals("bm.strategy.bundle", rare, menu) == []
 
@@ -149,9 +159,15 @@ def test_volume_tiers_when_multi_piece_orders_are_common(menu: list[RetailItem])
 
 def test_markdown_clears_the_leftover_and_never_goes_below_cost(menu: list[RetailItem]) -> None:
     n = ids(menu)
-    left = {START - dt.timedelta(days=k): 4 for k in (1, 3)}
-    numbers = BranchNumbers(open_days=14, units={n["Ube"]: 168}, leftovers={n["Ube"]: left})
-    # 4 left of 12 sold plus 4 made: 25 percent, capped at 20: 45 to 36 pesos.
+    small = {START - dt.timedelta(days=k): 4 for k in (1, 3)}
+    numbers = BranchNumbers(open_days=14, units={n["Ube"]: 168}, leftovers={n["Ube"]: small})
+    # 8 left over 14 open days is 0.57 a day against 12 sold: 5 percent off, 45 to 42 pesos.
+    [p] = experiments.propose(numbers, menu, [CATALOGUE["bm.strategy.markdown"]], START)
+    assert (p.item_id, p.to_price, p.rationale["off_percent"]) == (n["Ube"], 4200, 5)
+    assert (p.rationale["mean_leftover"], p.rationale["mean_units"]) == (1, 12)  # half up
+    left = {START - dt.timedelta(days=k): 40 for k in (1, 3)}
+    numbers = replace(numbers, leftovers={n["Ube"]: left})
+    # 80 left over 14 days is 5.7 a day against 12 sold: 33 percent, capped at 20: 45 to 36.
     [p] = experiments.propose(numbers, menu, [CATALOGUE["bm.strategy.markdown"]], START)
     assert (p.item_id, p.to_price, p.rationale["off_percent"]) == (n["Ube"], 3600, 20)
     costly = [replace_cost(menu[2], 4000)]
@@ -169,10 +185,13 @@ def replace_cost(item: RetailItem, cost: int) -> RetailItem:
 def test_increase_on_an_item_that_sells_out(menu: list[RetailItem]) -> None:
     n = ids(menu)
     numbers = BranchNumbers(open_days=14, sold_out_days={n["Special"]: 8, n["Classic"]: 6})
-    assert proposals("bm.strategy.increase", numbers, menu) == [(n["Special"], 5000)]
+    # 45 up 5 percent rounds up to 50, past 10 percent: the limit, 49.50.
+    assert proposals("bm.strategy.increase", numbers, menu) == [(n["Special"], 4950)]
     kape = BranchNumbers(open_days=10, sold_out_days={n["Kape"]: 9})
-    # 25.49 up 5 percent is 26.76: the next 5 pesos (30) is past 12 percent, so 27.
-    assert proposals("bm.strategy.increase", kape, menu) == [(n["Kape"], 2700)]
+    # 25.49 to the next 5 pesos (30) is past 10 percent: 28.03 down to the peso, 28.
+    assert proposals("bm.strategy.increase", kape, menu) == [(n["Kape"], 2800)]
+    dear = [RetailItem(id=n["Kape"], name="Kape", price=9000, currency="PHP")]
+    assert proposals("bm.strategy.increase", kape, dear) == [(n["Kape"], 9500)]  # fits: 5.6%
 
 
 def test_seasonal_promotes_last_years_best_seller_ahead(menu: list[RetailItem]) -> None:
@@ -184,12 +203,14 @@ def test_seasonal_promotes_last_years_best_seller_ahead(menu: list[RetailItem]) 
     assert proposals("bm.strategy.seasonal", early, menu) == []
 
 
-def test_decoy_makes_the_box_the_one_to_sell(menu: list[RetailItem]) -> None:
+def test_decoy_makes_the_box_the_middle_of_three(menu: list[RetailItem]) -> None:
     n = ids(menu)
     [p] = experiments.propose(
         BranchNumbers(open_days=14), menu, [CATALOGUE["bm.strategy.decoy"]], START
     )
-    assert (p.item_id, p.to_price, p.rationale["pieces"]) == (n["Box of 4"], 14000, 3)
+    # Classic (40) and its box of 4 (160): a new box of 8 at two boxes plus a piece (360).
+    assert (p.item_id, p.from_price, p.to_price) == (n["Box of 4"], 32000, 36000)
+    assert p.new_item == [n["Classic"]] * 8 and p.rationale["pieces"] == 8
 
 
 def test_an_inactive_strategy_proposes_nothing(menu: list[RetailItem]) -> None:
@@ -202,11 +223,12 @@ def test_a_proposal_that_fails_a_rail_falls_to_the_next_item(menu: list[RetailIt
     n = ids(menu)
     numbers = BranchNumbers(
         open_days=14,
-        units={n["Ube"]: 90, n["Classic"]: 50},
-        since_experiment={n["Ube"]: 10},
+        units={n["Classic"]: 90},
+        since_experiment={n["Classic"]: 10},
     )
+    # Classic was tested 10 days ago; the next round price is the box (160 to 159).
     [p] = experiments.propose(numbers, menu, [CATALOGUE["bm.strategy.charm"]], START)
-    assert (p.item_id, p.floor, p.ceiling) == (n["Classic"], 3200, 4800)
+    assert (p.item_id, p.to_price, p.floor, p.ceiling) == (n["Box of 4"], 15900, 12800, 19200)
 
 
 def test_the_guard_refuses_the_price_in_force() -> None:
@@ -242,23 +264,32 @@ def test_seeded_experiments_are_scored_by_the_same_functions(session: Session, b
     )
     base = experiments.baseline(daily, start, 14)
     assert base is not None and running.baseline == asdict(base)
-    assert (start, running.from_price, running.to_price) == (TODAY - 4 * ONE_DAY, 4500, 5000)
+    assert (start, running.from_price, running.to_price) == (TODAY - 4 * ONE_DAY, 4500, 4950)
     special = session.get(RetailItem, running.item_id)
     assert special is not None and special.name == "Special"
-    assert retail_items.price_on(session, special, running.branch_id, start) == 5000
-    assert (
-        retail_items.price_on(session, special, running.branch_id, running.ends_on + ONE_DAY)
-        == 4500
-    )
+    assert retail_items.price_on(session, special, running.branch_id, start) == 4950
+    after = running.ends_on + ONE_DAY
+    assert retail_items.price_on(session, special, running.branch_id, after) == 4500
     during = tools.daily(session, running.branch_id, running.item_id, start, TODAY - ONE_DAY)
-    assert {a // u for u, a in during.values()} == {5000}  # counts priced by the price rows
+    assert {a // u for u, a in during.values()} == {4950}  # counts priced by the price rows
+    # The rationale is the seeded stock rows: Special sold out on 5 or more of the open days.
+    sold_out = session.exec(
+        select(StockEvent.business_date)
+        .where(StockEvent.branch_id == running.branch_id)
+        .where(StockEvent.item_id == special.id)
+        .where(StockEvent.kind == "sold_out")
+        .where(col(StockEvent.business_date) < start)
+    ).all()
+    assert running.rationale == {"sold_out_days": len(set(sold_out)), "days": len(daily)}
+    assert running.rationale["sold_out_days"] * 2 >= running.rationale["days"]
     done = session.exec(select(Experiment).where(Experiment.status == "done")).one()
-    assert done.result is not None and done.baseline is not None
-    # Its daily totals are seed-only (no counts before the seed's 14 days): the shape is Score's.
-    assert set(done.result) == set(
-        asdict(experiments.score(experiments.Baseline(**done.baseline), {}))
-    )
-    assert done.result["days"] == 14
+    before, units = seed.done_units(done.starts_on, 14)
+    daily = {d: (q, q * done.from_price) for d, q in before.items()}
+    daily |= {d: (q, q * done.to_price) for d, q in units.items()}
+    base = experiments.baseline(daily, done.starts_on, 14)
+    assert base is not None and done.baseline == asdict(base)
+    assert done.result == asdict(experiments.score(base, {d: daily[d] for d in units}))
+    assert done.rationale == {"price": 4000, "units": sum(before.values())}
     strategies = {s.id: s.name_key for s in session.exec(select(Strategy))}
     assert strategies[running.strategy_id] == "bm.strategy.increase"
     assert strategies[done.strategy_id] == "bm.strategy.charm" and done.to_price == 3900

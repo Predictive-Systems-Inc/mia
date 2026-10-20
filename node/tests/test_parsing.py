@@ -227,12 +227,21 @@ def test_domingo_is_sunday_in_hiligaynon_waray_and_bikol() -> None:
 
 
 def test_find_prices_reads_pesos_to_minor_units() -> None:
-    assert find_prices("subukan natin \u20b150 o 49.50 pesos") == [("p0", 5000), ("p1", 4950)]
-    assert find_prices("P50, php 45 o 1,450 piso") == [("p0", 5000), ("p1", 4500), ("p2", 145000)]
-    assert find_prices("49,5 lang") == [("p0", 4950)]  # a decimal comma
+    assert find_prices("subukan natin \u20b150 o 49.50 pesos", "fil") == [
+        ("p0", 5000),
+        ("p1", 4950),
+    ]
+    assert find_prices("P50, php 45 o 1,450 piso", "fil") == [
+        ("p0", 5000),
+        ("p1", 4500),
+        ("p2", 145000),
+    ]
+    assert find_prices("49,5 lang", "fil") == [("p0", 4950)]  # a decimal comma
 
 
 def test_times_and_dates_are_not_prices() -> None:
-    assert find_prices("48 simula Nov 2 alas 3") == [("p0", 4800)]
-    assert find_prices("45 from 2026-11-02 at 3 pm or 14:30") == [("p0", 4500)]
-    assert find_prices("sp50 ube") == []  # a digit inside a word is not an amount
+    assert find_prices("48 simula Nov 2 alas 3", "fil") == [("p0", 4800)]
+    assert find_prices("45 from 2026-11-02 at 3 pm or 14:30", "en") == [("p0", 4500)]
+    assert find_prices("45 from May 5", "en") == [("p0", 4500)]  # an English date
+    assert find_prices("may 5 pesos pa", "fil") == [("p0", 500)]  # Filipino "may": there is
+    assert find_prices("sp50 ube", "fil") == []  # a digit inside a word is not an amount

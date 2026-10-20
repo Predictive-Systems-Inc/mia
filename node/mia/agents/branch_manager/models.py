@@ -12,7 +12,8 @@ from mia.core.models import BranchScoped, Stamped
 class Strategy(Stamped, table=True):
     """One pricing strategy of the curated catalogue (spec section 13): name_key is its i18n
     label, kind the experiment kind it proposes (price, promo, bundle), params the rule's numbers
-    read by experiments.py, source the published work it rests on. Seeded, never staff text."""
+    read by experiments.py, source the published work it rests on, description the fixed English
+    line Jev reads to match a request to it. Seeded, never staff text."""
 
     __tablename__: ClassVar[str] = "branch_manager_strategies"
 
@@ -20,6 +21,7 @@ class Strategy(Stamped, table=True):
     kind: str
     params: dict[str, Any] = Field(default_factory=dict, sa_type=JSON)
     source: str
+    description: str
     active: bool = True
 
 

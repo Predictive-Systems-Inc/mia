@@ -151,10 +151,13 @@ class BranchNumbers:
 
 @dataclass(frozen=True)
 class Proposal:
-    """One experiment the engine proposes: the strategy row, the item (for anchor and decoy the
-    item the new variant sits beside, for bundle the pair's first item, the pair in rationale),
-    the kind, the price in force and the price to test, the branch's numbers the condition read
-    (rationale, JSON-safe) and the guard rails' bounds (floor and ceiling, minor units)."""
+    """One experiment the engine proposes: the strategy row, the item, the kind, the reference
+    price and the price to test, the branch's numbers the condition read (rationale, JSON-safe),
+    the guard rails' bounds (floor and ceiling, minor units) and new_item. new_item is None when
+    the item itself is repriced; else the components of a new item to create at to_price ([] for
+    a premium variant of item_id, the pair for a bundle, the pieces for a decoy), never a
+    repricing of item_id. For a new item from_price is what it stands against: the item's price
+    (anchor), the pair's sum (bundle), two of the target box (decoy)."""
 
     strategy_id: str
     item_id: str
@@ -164,10 +167,21 @@ class Proposal:
     rationale: dict[str, Any]
     floor: int
     ceiling: int
+    new_item: list[str] | None = None
 
 
-# One candidate of a rule: item id, price in force, price to test, cost, rationale.
-Candidate = tuple[str, int, int, int | None, dict[str, Any]]
+@dataclass(frozen=True)
+class Candidate:
+    """One candidate of a rule, before the guard rails."""
+
+    item_id: str
+    price: int
+    to_price: int
+    cost: int | None
+    rationale: dict[str, Any]
+    new_item: list[str] | None = None
+
+
 Rule = Callable[[dict[str, Any], BranchNumbers, Sequence[RetailItem], dt.date], list[Candidate]]
 
 
@@ -191,20 +205,21 @@ def _up(x: int | Fraction, step: int = PESO) -> int:
 def _charm(
     p: dict[str, Any], n: BranchNumbers, items: Sequence[RetailItem], _: dt.date
 ) -> list[Candidate]:
-    """A whole-peso price whose last peso digit is in endings, tested `under` lower (50 to 49)."""
+    """A whole-peso price whose last peso digit is in endings ([0]): tested `under` (one peso)
+    lower, one peso under the next ten (50 to 49)."""
     out = []
     for i in _ranked(n, items):
         price = _price(n, i)
         if price % PESO == 0 and price // PESO % 10 in p["endings"]:
             rationale = {"price": price, "units": n.units.get(i.id, 0)}
-            out.append((i.id, price, price - p["under"], i.cost, rationale))
+            out.append(Candidate(i.id, price, price - p["under"], i.cost, rationale))
     return out
 
 
 def _sizes(items: Sequence[RetailItem]) -> dict[str, list[RetailItem]]:
-    """A line per single item: the item and the bundles made only of it."""
+    """A line per single item: the item, then the bundles made only of it, smallest first."""
     lines: dict[str, list[RetailItem]] = {i.id: [i] for i in items if not i.components}
-    for i in items:
+    for i in sorted(items, key=lambda i: len(i.components)):
         if i.components and len(set(i.components)) == 1 and i.components[0] in lines:
             lines[i.components[0]].append(i)
     return lines
@@ -213,7 +228,7 @@ def _sizes(items: Sequence[RetailItem]) -> dict[str, list[RetailItem]]:
 def _anchor(
     p: dict[str, Any], n: BranchNumbers, items: Sequence[RetailItem], _: dt.date
 ) -> list[Candidate]:
-    """A single item that comes in one size (no bundle holds it): a premium variant at
+    """A single item that comes in one size (no bundle holds it): a new premium variant at
     premium_percent above, rounded down to the whole peso."""
     held = {c for i in items for c in i.components}
     out = []
@@ -223,7 +238,7 @@ def _anchor(
         price = _price(n, i)
         to = _down(price * (100 + p["premium_percent"]) // 100)
         rationale = {"variant": "premium", "units": n.units.get(i.id, 0)}
-        out.append((i.id, price, to, i.cost, rationale))
+        out.append(Candidate(i.id, price, to, i.cost, rationale, []))
     return out
 
 
@@ -231,7 +246,8 @@ def _bundle(
     p: dict[str, Any], n: BranchNumbers, items: Sequence[RetailItem], _: dt.date
 ) -> list[Candidate]:
     """The pair most often in one basket, when in at least min_pair_share percent of baskets:
-    a bundle at off_percent below the pair's sum, rounded down to the whole peso."""
+    a new bundle of the two at off_percent below the pair's sum, rounded down to the whole
+    peso."""
     pair = calc.pairing(n.baskets)
     by_id = {i.id: i for i in items}
     if pair is None or not set(pair) <= set(by_id):
@@ -244,7 +260,8 @@ def _bundle(
     costs = (a.cost, b.cost)
     cost = sum(c for c in costs if c is not None) if None not in costs else None
     rationale = {"pair": list(pair), "share": share, "sum": total}
-    return [(a.id, total, _down(total * (100 - p["off_percent"]) // 100), cost, rationale)]
+    to = _down(total * (100 - p["off_percent"]) // 100)
+    return [Candidate(a.id, total, to, cost, rationale, list(pair))]
 
 
 def _volume(
@@ -261,26 +278,26 @@ def _volume(
         if share >= p["min_multi_share"]:
             price = _price(n, i)
             rationale = {"share": share, "orders": len(lines), "min_quantity": p["min_quantity"]}
-            out.append(
-                (i.id, price, _down(price * (100 - p["off_percent"]) // 100), i.cost, rationale)
-            )
+            to = _down(price * (100 - p["off_percent"]) // 100)
+            out.append(Candidate(i.id, price, to, i.cost, rationale))
     return out
 
 
 def _markdown(
     p: dict[str, Any], n: BranchNumbers, items: Sequence[RetailItem], today: dt.date
 ) -> list[Candidate]:
-    """An item with leftovers on at least min_leftover_days of the last window_days: a late-day
-    cut of the leftover share of what was made (mean leftover over mean units plus mean
-    leftover), at most max_off_percent, rounded down to the whole peso and never below cost."""
+    """An item with leftovers on at least min_leftover_days of the last window_days: a cut of
+    the leftover share of what was made (the leftover per open day over units plus leftover per
+    open day), at most max_off_percent, rounded down to the whole peso and never below cost.
+    ponytail: prices are dated per day, so the cut is all day (Q82), not late-day only."""
     start = today - dt.timedelta(days=p["window_days"])
     out = []
     for i in _ranked(n, items):
         left = [q for d, q in n.leftovers.get(i.id, {}).items() if start <= d < today and q > 0]
-        units = n.units.get(i.id, 0)
         if len(left) < p["min_leftover_days"] or not n.open_days:
             continue
-        mean_left, mean_units = Fraction(sum(left), len(left)), Fraction(units, n.open_days)
+        mean_left = Fraction(sum(left), n.open_days)
+        mean_units = Fraction(n.units.get(i.id, 0), n.open_days)
         off = min(p["max_off_percent"], math.ceil(100 * mean_left / (mean_units + mean_left)))
         price = _price(n, i)
         to = _down(price * (100 - off) // 100)
@@ -290,11 +307,11 @@ def _markdown(
             continue
         rationale = {
             "leftover_days": len(left),
-            "mean_leftover": round(mean_left),
-            "mean_units": round(mean_units),
+            "mean_leftover": _half_up(mean_left),
+            "mean_units": _half_up(mean_units),
             "off_percent": off,
         }
-        out.append((i.id, price, to, i.cost, rationale))
+        out.append(Candidate(i.id, price, to, i.cost, rationale))
     return out
 
 
@@ -302,20 +319,19 @@ def _increase(
     p: dict[str, Any], n: BranchNumbers, items: Sequence[RetailItem], _: dt.date
 ) -> list[Candidate]:
     """An item sold out before closing on at least min_sold_out_share percent of the open days:
-    up_percent_min higher, rounded up to the next 5 pesos when that stays within up_percent_max,
-    else up to the next whole peso."""
+    up_percent_min higher rounded up to the next 5 pesos; past up_percent_max, the limit itself
+    rounded down to 50 centavos (45 to 49.50; 25.49 to 28)."""
     out = []
     for i in _ranked(n, items):
         sold_out = n.sold_out_days.get(i.id, 0)
         if not n.open_days or sold_out * 100 // n.open_days < p["min_sold_out_share"]:
             continue
         price = _price(n, i)
-        least = Fraction(price * (100 + p["up_percent_min"]), 100)
-        to = _up(least, 5 * PESO)
+        to = _up(Fraction(price * (100 + p["up_percent_min"]), 100), 5 * PESO)
         if (to - price) * 100 > p["up_percent_max"] * price:
-            to = _up(least)
+            to = _down(price * (100 + p["up_percent_max"]) // 100, PESO // 2)
         rationale = {"sold_out_days": sold_out, "days": n.open_days}
-        out.append((i.id, price, to, i.cost, rationale))
+        out.append(Candidate(i.id, price, to, i.cost, rationale))
     return out
 
 
@@ -331,28 +347,25 @@ def _seasonal(
         return []
     price = _price(n, item)
     rationale = {"month": month, "units": sold[item.id]}
-    return [(item.id, price, suggested_price(price), item.cost, rationale)]
+    return [Candidate(item.id, price, suggested_price(price), item.cost, rationale)]
 
 
 def _decoy(
     p: dict[str, Any], n: BranchNumbers, items: Sequence[RetailItem], _: dt.date
 ) -> list[Candidate]:
-    """A line with one size short of `variants` (a single item and one bundle of n pieces of
-    it): a decoy of n - 1 pieces at the bundle's price less half a piece, rounded down to the
-    whole peso, so the bundle is the one to sell."""
+    """A line with one size short of `variants` (a single item and its box of n pieces): a new
+    top size of 2n pieces at two boxes plus one piece, rounded up to the whole peso, so the box
+    is the middle of three and the one to sell (good, better, best)."""
     out = []
-    for single, *bundles in _sizes(items).values():
-        if 1 + len(bundles) != p["variants"] - 1:  # the line's sizes, one short
+    for single, *boxes in _sizes(items).values():
+        if 1 + len(boxes) != p["variants"] - 1:  # the line's sizes, one short
             continue
-        box = bundles[0]
-        price, piece = _price(n, box), _price(n, single)
-        rationale = {
-            "variant": "decoy",
-            "pieces": len(box.components) - 1,
-            "units": n.units.get(box.id, 0),
-        }
-        out.append((box.id, price, _down(price - piece // 2), box.cost, rationale))
-    return sorted(out, key=lambda c: -c[4]["units"])
+        box = boxes[-1]
+        two = 2 * _price(n, box)
+        pieces = [single.id] * (2 * len(box.components))
+        rationale = {"variant": "decoy", "pieces": len(pieces), "units": n.units.get(box.id, 0)}
+        out.append(Candidate(box.id, two, _up(two + _price(n, single)), None, rationale, pieces))
+    return sorted(out, key=lambda c: -c.rationale["units"])
 
 
 RULES: dict[str, Rule] = {
@@ -375,23 +388,37 @@ def propose(
 ) -> list[Proposal]:
     """For each active strategy whose condition holds in the branch's numbers, one Proposal:
     the rule's first candidate (best seller first) that passes guard; strategies in the given
-    order. A strategy with no rule in RULES (an owner's own row) proposes nothing."""
+    order. A new item has no price history and no past experiment (guard gets () and None). A
+    strategy with no rule in RULES (an owner's own row) proposes nothing."""
     out = []
     for s in strategies:
         rule = RULES.get(s.name_key)
         if not s.active or rule is None:
             continue
-        for item_id, price, to, cost, rationale in rule(s.params, numbers, items, today):
+        for c in rule(s.params, numbers, items, today):
+            new = c.new_item is not None
             refused = guard(
-                price,
-                cost,
-                to,
-                numbers.last_prices_90d.get(item_id, ()),
-                numbers.since_experiment.get(item_id),
+                c.price,
+                c.cost,
+                c.to_price,
+                () if new else numbers.last_prices_90d.get(c.item_id, ()),
+                None if new else numbers.since_experiment.get(c.item_id),
             )
             if refused is None:
-                floor = max(cost or 0, math.ceil(Fraction(price * (100 - MAX_MOVE_PERCENT), 100)))
-                ceiling = price * (100 + MAX_MOVE_PERCENT) // 100
-                out.append(Proposal(s.id, item_id, s.kind, price, to, rationale, floor, ceiling))
+                least = math.ceil(Fraction(c.price * (100 - MAX_MOVE_PERCENT), 100))
+                floor = max(c.cost or 0, least)
+                ceiling = c.price * (100 + MAX_MOVE_PERCENT) // 100
+                proposal = Proposal(
+                    strategy_id=s.id,
+                    item_id=c.item_id,
+                    kind=s.kind,
+                    from_price=c.price,
+                    to_price=c.to_price,
+                    rationale=c.rationale,
+                    floor=floor,
+                    ceiling=ceiling,
+                    new_item=c.new_item,
+                )
+                out.append(proposal)
                 break
     return out

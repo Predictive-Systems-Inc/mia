@@ -602,3 +602,9 @@ Format for each entry:
 - Question: Under 16:00 to 02:00 hours, a report at 01:00 should belong to the day before, but `business_date` returns today: it compares against yesterday's closing time on yesterday's date plus two hours (02:00 yesterday plus two hours is long past). Should the shared function take the closing on the next day when the closing is at or before the opening?
 - Assumed answer: yes, fix the shared function the way calc.hours_span does (a closing at or before the opening is the next calendar day's), in a follow-up with the three agents' tests; the customer service keeps its own until then.
 - Blocking: no.
+
+## Q82: A late-day markdown under prices dated per day
+- Where: node/mia/agents/branch_manager/experiments.py (`_markdown`), node/mia/templates/retail/items.py (`retail_item_prices.effective_on` is a date)
+- Question: The markdown strategy (spec section 13, 5) is a late-day cut on an item that is often left over, but a branch's price changes by the day, not by the hour. Should the template gain a time-of-day price?
+- Assumed answer: not in v1; the markdown is proposed as an all-day price for the 14 days and the owner's card says "all day" until a time-of-day price exists.
+- Blocking: no.

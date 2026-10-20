@@ -1150,6 +1150,7 @@ def upgrade() -> None:
         sa.Column("kind", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("params", sa.JSON(), nullable=False),
         sa.Column("source", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("description", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("active", sa.Boolean(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("name_key"),

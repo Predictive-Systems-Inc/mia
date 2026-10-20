@@ -71,6 +71,16 @@ def test_the_strategies_offered_are_the_active_catalogue(session: Session, bm: F
     assert decider._args("propose_experiment", r)[0]["strategy_id"] is None
 
 
+def test_jev_reads_each_strategy_rows_description(session: Session, bm: Ferinos) -> None:
+    rows = session.exec(select(Strategy).where(col(Strategy.active))).all()
+    assert rows and all(r.description.strip() for r in rows)
+    q = actions.build_query(deps_for(session, bm[1]["Marites"]), "subukan natin 49", "")
+    offered = actions.build_request(q, "jev")["questions"]["strategy"]["criteria"]
+    assert {k: v for k, v in offered.items() if k != "not_stated"} == {
+        r.id: r.description for r in rows
+    }
+
+
 def test_candidates_come_from_code_and_no_message_word_reaches_a_question(
     session: Session, bm: Ferinos
 ) -> None:
@@ -78,7 +88,7 @@ def test_candidates_come_from_code_and_no_message_word_reaches_a_question(
     q = actions.build_query(deps_for(session, bm[1]["Marites"]), message, "")
     names = session.exec(select(RetailItem.name).where(col(RetailItem.active))).all()
     assert sorted(q.items.values()) == sorted(names)
-    assert q.prices == dict(find_prices(message))
+    assert q.prices == dict(find_prices(message, q.lang))
     assert q.dates == {i: d.isoformat() for i, d in find_dates(message, TODAY, q.lang)}
     assert "zqx" in q.codes.values() and "cl" not in q.codes.values()  # cl is Classic's code
     body = actions.build_request(q, "jev")

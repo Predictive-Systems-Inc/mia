@@ -359,19 +359,18 @@ _PRICE = re.compile(
 )
 
 
-def _undated(m: re.Match[str]) -> str:
-    # ponytail: "may 5" stays (Filipino "may" is "there is", as find_dates reads it outside en);
-    # an English "May 5" is then a price candidate too, which Jev may pass over.
-    month = m["m1"] or m["m2"]
-    return m[0] if month and month.lower() == "may" else " "
-
-
-def find_prices(text: str) -> list[tuple[str, int]]:
+def find_prices(text: str, lang: str) -> list[tuple[str, int]]:
     """Amounts in the message in text order as (id "p0", "p1", ..., integer minor units):
-    "50", "₱50", "P50", "50 pesos", "50 piso", "49.50" (4950). Clock times (strip_times) and
-    dates (find_dates' patterns) are removed first, so "Nov 2" and "alas 3" are never prices.
-    Pure; the model only picks among these candidates, never computes one."""
-    text = _DATE.sub(_undated, strip_times(text))
+    "50", "₱50", "P50", "50 pesos", "50piso", "49.50" (4950). Clock times (strip_times) and
+    dates (find_dates' patterns, read as find_dates reads them in lang) are removed first, so
+    "Nov 2", "alas 3" and an English "May 5" are never prices; outside en "may 5" stays (Filipino
+    "may" is "there is"). Pure; the model only picks among these candidates, never computes one."""
+
+    def undated(m: re.Match[str]) -> str:
+        month = m["m1"] or m["m2"]
+        return m[0] if month and month.lower() == "may" and lang != "en" else " "
+
+    text = _DATE.sub(undated, strip_times(text))
     found = []
     for m in _PRICE.finditer(text):
         pesos = int(m["whole"].replace(",", ""))

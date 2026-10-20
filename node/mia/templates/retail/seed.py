@@ -11,7 +11,7 @@ import random
 from dataclasses import asdict
 from zoneinfo import ZoneInfo
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from mia.agents.branch_manager import experiments
 from mia.agents.branch_manager import tips as bm_tips
@@ -88,15 +88,15 @@ CONTRACTS: list[tuple[str, str, int, dt.date, str]] = [
 REST_DAYS = (0, 1)  # Monday at the mall, Tuesday at the stall (by branch index)
 # clerk, branch index, shift start, shift end (local); the last one runs to 23:30 (night minutes)
 SHIFTS = {"Ana": (0, "09:00", "17:00"), "Liza": (0, "13:00", "21:00"), "Pao": (1, "06:00", "15:00")}
-# The Mall kiosk's seeded experiments: item, strategy, days before today it started, status, and
-# the seed-only numbers (made up for the demo, like the done one's daily totals below) that the
-# strategy engine read when it was proposed. The running one's baseline comes from the seeded
-# counts; the done one ended last month, before the counts, so its totals are seed-only too.
-# (open days, units by item name, sold-out days by item name).
-SEEDED_EXPERIMENTS: list[tuple[str, str, int, str, int, dict[str, int], dict[str, int]]] = [
-    ("Classic", "bm.strategy.charm", 49, "done", 14, {"Classic": 150}, {}),
-    ("Special", "bm.strategy.increase", 4, "running", 14, {}, {"Special": 8}),
+# The Mall kiosk's seeded experiments: item, strategy, days before today it started, status.
+# experiments.propose reads the seeded data before the start: the running one the counts and the
+# stock rows (Special sells out early most days at the kiosk), the done one, which ended last
+# month before the counts, its own seed-only daily totals (done_units).
+SEEDED_EXPERIMENTS: list[tuple[str, str, int, str]] = [
+    ("Classic", "bm.strategy.charm", 49, "done"),
+    ("Special", "bm.strategy.increase", 4, "running"),
 ]
+KIOSK_SOLD_OUT = range(10, 15)  # days before today the kiosk's Special also sold out at 14:00
 LATE_SHIFT = (
     "Liza",
     "13:00",
@@ -169,7 +169,7 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
         )
     clerks = {0: staff["Ana"], 1: staff["Pao"]}
     strategies = _seed_strategies(session, actor)
-    planned = _plan_experiments(session, first, items, strategies, today)
+    planned: list[Planned] = []
     kiosk_daily: dict[str, dict[dt.date, experiments.Day]] = {}
     rng = random.Random(7)
     for index, (branch, (_, opens, closes, target)) in enumerate(
@@ -181,12 +181,18 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
                 branch_id=branch.id, weekday=weekday, opens=opens, closes=closes
             )
             store.insert(session, hours, branch_actor)
+        _seed_stock(session, branch, today, items, ingredients, clerks[index].id, index == 0)
+        units: dict[dt.date, dict[str, int]] = {}
         for offset in range(1, 15):
             day = today - dt.timedelta(days=offset)
             boost = 1.3 if day.weekday() >= 5 else 1.0
+            units[day] = {item.id: round(rng.randint(3, 12) * boost) for item in items}
+        if index == 0:  # the price rows go in before the counts, so the counts are priced by them
+            planned = _plan_experiments(session, branch, items, strategies, today, units)
+        for day, sold in units.items():
             reported_at = dt.datetime.combine(day, dt.time(20, 0), ZoneInfo(branch.timezone))
             for item in items:
-                quantity = round(rng.randint(3, 12) * boost)
+                quantity = sold[item.id]
                 amount = quantity * retail_items.price_on(session, item, branch.id, day)
                 if index == 0:
                     kiosk_daily.setdefault(item.id, {})[day] = (quantity, amount)
@@ -201,7 +207,6 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
                     business_date=day,
                 )
                 store.insert(session, count, branch_actor)
-        _seed_stock(session, branch, today, items, ingredients, clerks[index].id)
         if index == 0:
             _seed_order(session, branch, today, ingredients["Eggs"], staff["Marites"].id)
         target_row = SalesTarget(
@@ -244,12 +249,54 @@ def _seed_branch_manager(session: Session, items: list[RetailItem], actor: Actor
 def _seed_strategies(session: Session, actor: Actor) -> list[Strategy]:
     """The pricing strategies with their sources (mia/agents/branch_manager/tips.py)."""
     return [
-        store.insert(session, Strategy(name_key=k, kind=kind, params=params, source=src), actor)
-        for k, kind, params, src in bm_tips.STRATEGIES
+        store.insert(
+            session,
+            Strategy(name_key=k, kind=kind, params=params, source=src, description=text),
+            actor,
+        )
+        for k, kind, params, src, text in bm_tips.STRATEGIES
     ]
 
 
 Planned = tuple[RetailItem, experiments.Proposal, dt.date, dt.date, str]
+
+
+def done_units(starts_on: dt.date, days: int) -> tuple[dict[dt.date, int], dict[dt.date, int]]:
+    """The done experiment's seed-only daily units (no counts exist that far back): the 28 days
+    before starts_on and its `days` days, from random.Random(11) so the counts' sequence is
+    unchanged. Pure; the seed test recomputes the row from it."""
+    rng = random.Random(11)
+    before = {starts_on - dt.timedelta(days=k): rng.randint(8, 13) for k in range(1, 29)}
+    during = {starts_on + dt.timedelta(days=k): rng.randint(9, 15) for k in range(days)}
+    return before, during
+
+
+def kiosk_numbers(
+    session: Session, kiosk: Branch, units: dict[dt.date, dict[str, int]], starts_on: dt.date
+) -> experiments.BranchNumbers:
+    """The BranchNumbers experiments.propose reads on starts_on from the seeded data: the days
+    with units before it (open days), their units by item, and the kiosk's sold-out stock rows
+    on those days (distinct dates by item)."""
+    days = {d: v for d, v in units.items() if d < starts_on}
+    rows = session.exec(
+        select(StockEvent)
+        .where(StockEvent.branch_id == kiosk.id)
+        .where(StockEvent.kind == "sold_out")
+        .where(col(StockEvent.business_date).in_(days))
+    ).all()
+    sold_out: dict[str, set[dt.date]] = {}
+    for row in rows:
+        if row.item_id is not None:
+            sold_out.setdefault(row.item_id, set()).add(row.business_date)
+    totals: dict[str, int] = {}
+    for sold in days.values():
+        for item_id, q in sold.items():
+            totals[item_id] = totals.get(item_id, 0) + q
+    return experiments.BranchNumbers(
+        open_days=len(days),
+        units=totals,
+        sold_out_days={k: len(v) for k, v in sold_out.items()},
+    )
 
 
 def _plan_experiments(
@@ -258,25 +305,28 @@ def _plan_experiments(
     items: list[RetailItem],
     strategies: list[Strategy],
     today: dt.date,
+    units: dict[dt.date, dict[str, int]],
 ) -> list[Planned]:
-    """Each seeded experiment as experiments.propose made it from its seed-only numbers on its
-    start date, with its two price rows at the kiosk (to_price from the start, from_price after
-    the end), written before the counts so the counts are priced by them."""
+    """Each seeded experiment as experiments.propose makes it on its start date from the
+    seeded data (kiosk_numbers over the counts' units and the stock rows; the done one over
+    done_units), with its two price rows at the kiosk (to_price from the start, from_price
+    after the end)."""
     ids = {i.name: i.id for i in items}
     days = orgconfig.load().branch_manager.experiment_days
     actor, out = Actor.system(kiosk.id), []
-    for name, key, back, status, open_days, units, sold_out in SEEDED_EXPERIMENTS:
-        numbers = experiments.BranchNumbers(
-            open_days=open_days,
-            units={ids[k]: v for k, v in units.items()},
-            sold_out_days={ids[k]: v for k, v in sold_out.items()},
-        )
+    for name, key, back, status in SEEDED_EXPERIMENTS:
         starts_on = today - dt.timedelta(days=back)
+        if status == "done":
+            before, _ = done_units(starts_on, days)
+            units_on = {d: {ids[name]: q} for d, q in before.items()}
+        else:
+            units_on = units
+        numbers = kiosk_numbers(session, kiosk, units_on, starts_on)
         strategy = next(s for s in strategies if s.name_key == key)
         proposal = next(
             p
             for p in experiments.propose(numbers, items, [strategy], starts_on)
-            if p.item_id == ids[name]
+            if p.item_id == ids[name] and p.new_item is None
         )
         item = next(i for i in items if i.id == proposal.item_id)
         ends_on = starts_on + dt.timedelta(days=days - 1)
@@ -298,15 +348,13 @@ def _seed_experiments(
 ) -> None:
     """The kiosk's experiment rows (proposed by Marites, approved by Rosa; the seed does not go
     through approvals, so approval_id stays empty): baseline and result from experiments.baseline
-    and experiments.score. A running one reads the seeded counts; a done one reads its own
-    seed-only daily totals (random.Random(11), so the counts' sequence is unchanged)."""
-    rng = random.Random(11)
+    and experiments.score. A running one reads the seeded counts; a done one done_units, priced
+    at from_price before and to_price during."""
     for item, p, starts_on, ends_on, status in planned:
         days = (ends_on - starts_on).days + 1
         daily = kiosk_daily.get(item.id, {})
         if status == "done":
-            before = {starts_on - dt.timedelta(days=k): rng.randint(8, 13) for k in range(1, 29)}
-            during = {starts_on + dt.timedelta(days=k): rng.randint(9, 15) for k in range(days)}
+            before, during = done_units(starts_on, days)
             daily = {d: (q, q * p.from_price) for d, q in before.items()}
             daily |= {d: (q, q * p.to_price) for d, q in during.items()}
         base = experiments.baseline(daily, starts_on, days)
@@ -589,15 +637,18 @@ def _seed_stock(
     items: list[RetailItem],
     ingredients: dict[str, RetailIngredient],
     by: str,
+    kiosk: bool = False,
 ) -> None:
-    """Add a fortnight's stock events: Special sold out on two Saturdays, Classic leftovers on
-    two weekdays, one waste row, counts of LPG (under its reorder point) and eggs, and a low
-    banana leaves."""
+    """Add a fortnight's stock events: Special sold out on two Saturdays (at the kiosk also on
+    the KIOSK_SOLD_OUT days, its price increase experiment's reason), Classic leftovers on two
+    weekdays, one waste row, counts of LPG (under its reorder point) and eggs, and a low banana
+    leaves."""
     days = [today - dt.timedelta(days=n) for n in range(1, 15)]
     saturdays = [d for d in days if d.weekday() == 5][:2]
     weekdays = [d for d in days if d.weekday() < 5][:2]
     special, classic, ube = items[0], items[1], items[2]
-    for day in saturdays:
+    early = set(saturdays) | {today - dt.timedelta(days=n) for n in KIOSK_SOLD_OUT if kiosk}
+    for day in sorted(early):
         _stock(session, branch, "sold_out", day, dt.time(14, 0), by, item_id=special.id)
     for day in weekdays:
         _stock(

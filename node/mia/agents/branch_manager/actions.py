@@ -34,17 +34,6 @@ KINDS = {
     "bundle": "A bundle: two or more items sold together at one price (combo, box, pares)",
     NOT_STATED: "The message does not say.",
 }
-# What Jev reads about each catalogue strategy, by name_key (fixed text; the rows hold the rest).
-STRATEGY_TEXT = {
-    "bm.strategy.charm": "Charm pricing: a price just under a round number (49 instead of 50)",
-    "bm.strategy.anchor": "Anchoring: a premium item or price shown next to the usual one",
-    "bm.strategy.bundle": "Bundling: items often bought together sold as one, a little cheaper",
-    "bm.strategy.volume": "Volume pricing: less per piece when buying several (3 for, buy more)",
-    "bm.strategy.markdown": "Markdown: a lower price late in the day for items usually left over",
-    "bm.strategy.increase": "A price increase for an item that often sells out",
-    "bm.strategy.seasonal": "A seasonal promo before a holiday or a busy month",
-    "bm.strategy.decoy": "Decoy pricing: three sizes or variants so the middle one looks best",
-}
 LEADS = {"supervisor", "owner", "admin"}  # the senders who are offered the branch's people
 CODE_WORD = re.compile(r"\b\w{2,6}\b")
 
@@ -193,11 +182,11 @@ def build_query(
         role=", ".join(deps.person.roles),
         today=deps.today,
         items={i.id: i.name for i in rows},
-        prices=dict(find_prices(message)),
+        prices=dict(find_prices(message, deps.lang)),
         dates={i: d.isoformat() for i, d in find_dates(message, deps.today, deps.lang)},
         codes={f"c{i}": w for i, w in enumerate(codes)},
         people=people,
-        strategies={s.id: STRATEGY_TEXT.get(s.name_key, s.name_key) for s in strategies},
+        strategies={s.id: s.description for s in strategies},
         next_open_day=_next_open_day(deps).isoformat(),
         lang=deps.lang,
         message_id=message_id,
