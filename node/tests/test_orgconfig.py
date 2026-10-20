@@ -8,6 +8,21 @@ from pydantic import ValidationError
 from mia.core import orgconfig
 
 
+def test_production_planner_settings_load() -> None:
+    s = orgconfig.load("ferinos").production_planner
+    got = (s.commissary, s.serves, s.ovens, s.hours.start, s.hours.end, s.plan_at, s.dispatch_at)
+    assert got == (
+        "Commissary",
+        ["Mall kiosk", "Street stall"],
+        2,
+        dt.time(3),
+        dt.time(9),
+        dt.time(14),
+        dt.time(8, 30),
+    )
+    assert orgconfig.OrgSettings().production_planner.commissary == ""  # off by default
+
+
 def test_payroll_defaults_and_no_holidays() -> None:
     s = orgconfig.OrgSettings()
     assert s.payroll.cutoffs == "semi_monthly" and s.payroll.pay_lag_days == 5

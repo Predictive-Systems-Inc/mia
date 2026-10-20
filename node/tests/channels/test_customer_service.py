@@ -349,7 +349,7 @@ def decide_last(
     outcome: str,
     reason: str | None = None,
 ) -> None:
-    """CustomerOrder, then Ana (a Mall kiosk clerk) decides it in the app; the reply is sent."""
+    """Order, then Ana (a Mall kiosk clerk) decides it in the app; the reply is sent."""
     order(client, sim, monkeypatch)
     approval = one(session, Approval)
     ana = Actor.person(shop.people["Ana"])

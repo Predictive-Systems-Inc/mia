@@ -164,6 +164,16 @@ def bookkeeper_role() -> None:
     get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
 
 
+@pytest.fixture(autouse=True)
+def production_planner_role() -> None:
+    """The production planner's manifest grants are in RBAC for every test (no LLM agent)."""
+    from mia.agents.production_planner import MANIFEST
+    from mia.core.rbac import get_rbac
+
+    roles = MANIFEST.roles
+    get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
+
+
 @pytest.fixture
 def fresh_rbac() -> Iterator[None]:
     """A new enforcer from the policy files only, as on a node that built no agent: the autouse
@@ -506,3 +516,31 @@ def rs_en(rs_shop: Shop, session: Session) -> tuple[Branch, dict[str, Person]]:
 def rs_pin(rs_shop: Shop) -> Pin:
     """Move the rs_shop clock to an aware moment (_set_at from RS_TODAY)."""
     return _set_at(rs_shop, RS_TODAY)
+
+
+PP_TODAY = dt.date(2026, 11, 10)  # a Tuesday; the seed's counts are 27 October to 9 November
+PP_TOMORROW = PP_TODAY + dt.timedelta(days=1)  # Wednesday: two same weekdays in the counts
+
+
+@pytest.fixture
+def pp_shop(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Shop]:
+    """The production planner's shop: _ferinos_on PP_TODAY, the seed's languages kept."""
+    yield from _ferinos_on(monkeypatch, session, PP_TODAY)
+
+
+@pytest.fixture
+def pp(pp_shop: Shop) -> tuple[Branch, dict[str, Person]]:
+    """pp_shop as (the Mall kiosk, people by first name); pp_shop.pin moves the clock."""
+    return pp_shop.kiosk, pp_shop.people
+
+
+@pytest.fixture
+def pp_en(pp_shop: Shop, session: Session) -> tuple[Branch, dict[str, Person]]:
+    """pp with every seeded person set to English (_en), for English literals."""
+    return _en(pp_shop, session)
+
+
+@pytest.fixture
+def pp_pin(pp_shop: Shop) -> Pin:
+    """Move the pp_shop clock to an aware moment (_set_at from PP_TODAY)."""
+    return _set_at(pp_shop, PP_TODAY)

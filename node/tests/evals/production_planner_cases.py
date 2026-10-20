@@ -1,0 +1,21 @@
+"""The production planner decider eval set: what the people who talk to it send, ten messages per
+scenario in each gated language and half, split by seed (no text in both halves). Data only;
+test_production_planner_evals.py runs it. Synthetic (D18); empty until the plan's evals task."""
+
+from dataclasses import dataclass
+from typing import Literal
+
+
+@dataclass(frozen=True)
+class Case:
+    lang: str
+    scenario: str
+    text: str
+    expected_action: str
+    role: str  # a role of a seeded Ferino's person (clerk, supervisor, owner)
+    previous: str = ""  # Mia's last message in the thread
+    half: Literal["tune", "gate"] = "tune"
+
+
+GATED_LANGS = ("en", "fil", "ceb", "hil", "war", "bcl")
+CASES: list[Case] = []

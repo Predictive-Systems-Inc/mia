@@ -138,6 +138,8 @@ def pickup_reminders(session: Session, branch: Branch, now: dt.datetime) -> int:
 
 
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
+    if not retail_hours.is_shop(session, branch.id):  # the commissary sells nothing
+        return 0
     count = tools.close_undecided(session, branch, now)
     count += pickup_reminders(session, branch, now)
     day = digest_due(branch, retail_hours.load(session, branch.id), now)

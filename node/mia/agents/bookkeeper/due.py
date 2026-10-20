@@ -300,6 +300,8 @@ def _isolated(session: Session, branch: Branch, sender: str, send: Callable[[], 
 
 
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
+    if not retail_hours.is_shop(session, branch.id):  # the commissary sells nothing
+        return 0
     hours = retail_hours.load(session, branch.id)
     count = _isolated(
         session, branch, "close_undecided", lambda: close_undecided(session, branch, now)

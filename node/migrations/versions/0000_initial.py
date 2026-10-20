@@ -1604,6 +1604,151 @@ def upgrade() -> None:
         )
 
     op.create_table(
+        "production_planner_plans",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("production_date", sa.Date(), nullable=False),
+        sa.Column("status", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("lines", sa.JSON(), nullable=False),
+        sa.Column("confirmed_by", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["confirmed_by"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("branch_id", "production_date"),
+    )
+    with op.batch_alter_table("production_planner_plans", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_production_planner_plans_branch_id"), ["branch_id"], unique=False
+        )
+
+    op.create_table(
+        "production_planner_recipes",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("item_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("batch_yield", sa.Integer(), nullable=False),
+        sa.Column("oven_minutes", sa.Integer(), nullable=False),
+        sa.Column("lines", sa.JSON(), nullable=False),
+        sa.Column("keeps_overnight", sa.Boolean(), nullable=False),
+        sa.Column("active", sa.Boolean(), nullable=False),
+        sa.Column("set_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["item_id"],
+            ["retail_items.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["set_by"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("production_planner_recipes", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_production_planner_recipes_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_production_planner_recipes_item_id"), ["item_id"], unique=False
+        )
+
+    op.create_table(
+        "production_planner_batches",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("plan_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("item_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("batch_no", sa.Integer(), nullable=False),
+        sa.Column("planned_yield", sa.Integer(), nullable=False),
+        sa.Column("good", sa.Integer(), nullable=False),
+        sa.Column("waste", sa.Integer(), nullable=False),
+        sa.Column("reason", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("recorded_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["item_id"],
+            ["retail_items.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["plan_id"],
+            ["production_planner_plans.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["recorded_by"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("production_planner_batches", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_production_planner_batches_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_production_planner_batches_plan_id"), ["plan_id"], unique=False
+        )
+
+    op.create_table(
+        "production_planner_dispatches",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("from_branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("plan_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("business_date", sa.Date(), nullable=False),
+        sa.Column("lines", sa.JSON(), nullable=False),
+        sa.Column("status", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("delivered_by", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("delivered_at", mia.core.db.TZDateTime(length=40), nullable=True),
+        sa.Column("received", sa.JSON(), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["delivered_by"],
+            ["person.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["from_branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["plan_id"],
+            ["production_planner_plans.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("branch_id", "business_date"),
+    )
+    with op.batch_alter_table("production_planner_dispatches", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_production_planner_dispatches_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_production_planner_dispatches_business_date"),
+            ["business_date"],
+            unique=False,
+        )
+
+    op.create_table(
         "cover_requests",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -1749,6 +1894,25 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_cover_requests_branch_id"))
 
     op.drop_table("cover_requests")
+    with op.batch_alter_table("production_planner_dispatches", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_production_planner_dispatches_business_date"))
+        batch_op.drop_index(batch_op.f("ix_production_planner_dispatches_branch_id"))
+    op.drop_table("production_planner_dispatches")
+
+    with op.batch_alter_table("production_planner_batches", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_production_planner_batches_plan_id"))
+        batch_op.drop_index(batch_op.f("ix_production_planner_batches_branch_id"))
+    op.drop_table("production_planner_batches")
+
+    with op.batch_alter_table("production_planner_recipes", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_production_planner_recipes_item_id"))
+        batch_op.drop_index(batch_op.f("ix_production_planner_recipes_branch_id"))
+    op.drop_table("production_planner_recipes")
+
+    with op.batch_alter_table("production_planner_plans", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_production_planner_plans_branch_id"))
+    op.drop_table("production_planner_plans")
+
     with op.batch_alter_table("customer_service_complaints", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_customer_service_complaints_customer_id"))
         batch_op.drop_index(batch_op.f("ix_customer_service_complaints_branch_id"))

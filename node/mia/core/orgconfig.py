@@ -103,6 +103,26 @@ class BookkeeperSettings(BaseModel):
     undeposited_limit: int = 2_000_000
 
 
+class ProductionHours(BaseModel):
+    """The commissary's production window (local times): the ovens run from start to end."""
+
+    start: dt.time = dt.time(3, 0)
+    end: dt.time = dt.time(9, 0)
+
+
+class ProductionPlannerSettings(BaseModel):
+    """The production planner's commissary: the branch by name (empty: the agent does nothing),
+    the kiosks it bakes for by name, the number of ovens, the production window, when the draft
+    plan goes to the head (the day before) and when the dispatch list goes out at the latest."""
+
+    commissary: str = ""
+    serves: list[str] = Field(default_factory=list)
+    ovens: int = 2
+    hours: ProductionHours = Field(default_factory=ProductionHours)
+    plan_at: dt.time = dt.time(14, 0)
+    dispatch_at: dt.time = dt.time(8, 30)
+
+
 class ShiftSupervisorSettings(BaseModel):
     """When the shift supervisor sends the next week's roster (retail, Q110): the local weekday
     (0 is Monday) and time; the roster covers the Monday to Sunday that follows."""
@@ -126,6 +146,7 @@ class OrgSettings(BaseModel):
     customer_service: CustomerServiceSettings = Field(default_factory=CustomerServiceSettings)
     branch_manager: BranchManagerSettings = Field(default_factory=BranchManagerSettings)
     bookkeeper: BookkeeperSettings = Field(default_factory=BookkeeperSettings)
+    production_planner: ProductionPlannerSettings = Field(default_factory=ProductionPlannerSettings)
     shift_supervisor: ShiftSupervisorSettings = Field(default_factory=ShiftSupervisorSettings)
     # The agents this organisation runs, in routing order.
     agents: list[str] = Field(default_factory=lambda: ["shift_supervisor"])

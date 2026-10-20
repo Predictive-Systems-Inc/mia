@@ -57,7 +57,9 @@ def test_cover_never_reaches_another_organisation(session: Session, rs: Ferinos)
     )
     visit = visit_of(session, rs[1]["Ana"], TUESDAY)
     names = {c.name for c in scheduling.candidate_data(session, rs[0], visit, org_wide=True)}
-    assert names == {"Liza", "Pao"}
+    # Berto is the commissary's driver (same organisation, staff); without availability windows
+    # scoring never finds him free for a kiosk shift
+    assert names == {"Liza", "Pao", "Berto"}
 
 
 def test_cover_stays_in_the_branch_by_default(session: Session, rs: Ferinos) -> None:

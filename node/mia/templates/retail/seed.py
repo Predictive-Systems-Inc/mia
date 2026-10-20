@@ -1,7 +1,8 @@
 """Demo data for Ferino's Bibingka, a Philippine chain of kiosks.
 
 Two branches (a mall kiosk and a street stall), eight items with short codes, opening hours,
-an owner, two supervisors, three clerks, 14 days of sales counts and a month target per branch,
+an owner, two supervisors, three clerks, a commissary branch (no hours) with its head and
+driver and the production planner's recipes, 14 days of sales counts and a month target per branch,
 HR data, a shift Job per clerk with availability, hour limits and shifts planned from today (the
 stall closed on the next holiday), two customer service customers with their orders and a
 complaint, and the branch manager's tips, quotes and pricing strategies. All rows are written through mia.core.store, so seeding appears in the events log.
@@ -22,6 +23,7 @@ from mia.agents.branch_manager import tips as bm_tips
 from mia.agents.branch_manager.models import Experiment, Strategy, Tip
 from mia.agents.customer_service.models import Complaint, Customer
 from mia.agents.hr_officer import calc, calendar
+from mia.agents.production_planner.models import Recipe
 from mia.agents.shift_supervisor import roster
 from mia.core import events, orgconfig, scheduling, store
 from mia.core.models import (
@@ -84,7 +86,10 @@ INGREDIENTS: list[tuple[str, list[str], str, int, str | None, int | None]] = [
 ]
 # branch name, opens, closes, month target (centavos)
 BRANCHES = [("Mall kiosk", "09:00", "21:00", 480000), ("Street stall", "06:00", "19:00", 300000)]
-# name, role, branch index, language
+# The kitchen that bakes for both kiosks: a third branch without hours rows (it sells nothing,
+# retail_hours.is_shop), named in the production planner's settings (Q92).
+COMMISSARY = "Commissary"
+# name, role, branch index (2 is the commissary), language
 PEOPLE = [
     ("Rosa", "owner", 0, "fil"),
     ("Marites", "supervisor", 0, "fil"),
@@ -92,7 +97,29 @@ PEOPLE = [
     ("Ana", "clerk", 0, "fil"),
     ("Liza", "clerk", 0, "fil"),
     ("Pao", "clerk", 1, "ceb"),
+    ("Nonoy", "supervisor", 2, "fil"),
+    ("Berto", "staff", 2, "fil"),
 ]
+SKILLS = {"Berto": ["driver"]}  # the commissary's driver (Q94)
+# The made-up recipes (the owner corrects them): pieces per batch, 45 oven minutes each, and
+# one batch's lines in thousandths of each ingredient's unit. Classic's base, scaled to 36
+# pieces for the 36-piece items, plus the item's own ingredient. Kape and Box of 4 have none.
+OVEN_MINUTES = 45
+BASE_RECIPE = {
+    "Rice flour": 2000,
+    "Eggs": 1000,
+    "Coconut": 6000,
+    "Sugar": 1000,
+    "Banana leaves": 1000,
+}
+RECIPES: dict[str, tuple[int, dict[str, int]]] = {
+    "Classic": (48, {}),
+    "Special": (36, {}),
+    "Ube": (36, {}),
+    "Salted egg": (36, {"Salted duck eggs": 12000}),
+    "Cheese overload": (36, {"Cheese": 500}),
+    "Puto bumbong": (48, {}),
+}
 # name, employment type, daily rate (centavos), start date, position. The owner has no contract.
 CONTRACTS: list[tuple[str, str, int, dt.date, str]] = [
     ("Marites", "regular", 80000, dt.date(2025, 2, 3), "Supervisor"),
@@ -151,6 +178,9 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
     store.insert(session, org, actor)
     for branch in branches:
         store.insert(session, branch, Actor.system(branch.id))
+    # ponytail: kept out of `branches`, which every kiosk helper below loops over
+    commissary = Branch(organisation_id=org.id, name=COMMISSARY, timezone="Asia/Manila")
+    store.insert(session, commissary, Actor.system(commissary.id))
     today = today or dt.datetime.now(ZoneInfo(first.timezone)).date()
 
     items: list[RetailItem] = []
@@ -187,7 +217,7 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
 
     staff = {}
     for name, role, where, lang in PEOPLE:
-        branch_id = branches[where].id
+        branch_id = [*branches, commissary][where].id
         staff[name] = add_person(
             session,
             Actor.system(branch_id),
@@ -195,6 +225,7 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
             name=name,
             roles=[role],
             language=lang,
+            skills=SKILLS.get(name),
         )
     clerks = {0: staff["Ana"], 1: staff["Pao"]}
     strategies = _seed_strategies(session, actor)
@@ -254,7 +285,33 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
     _seed_branch_manager(session, items, actor)
     _seed_experiments(session, first, planned, kiosk_daily, staff)
     _seed_customers(session, first, items[1], staff["Marites"].id, today)
+    _seed_recipes(session, commissary, items, ingredients, staff["Rosa"].id)
     return first
+
+
+def _seed_recipes(
+    session: Session,
+    commissary: Branch,
+    items: list[RetailItem],
+    ingredients: dict[str, RetailIngredient],
+    owner: str,
+) -> None:
+    """The production planner's recipes at the commissary (RECIPES): the base lines scaled to
+    the batch yield (exact: 48 and 36 pieces), plus the item's own ingredient, set by the owner."""
+    by_name = {item.name: item for item in items}
+    for name, (batch_yield, extra) in RECIPES.items():
+        lines = {k: v * batch_yield // 48 for k, v in BASE_RECIPE.items()} | extra
+        recipe = Recipe(
+            branch_id=commissary.id,
+            item_id=by_name[name].id,
+            batch_yield=batch_yield,
+            oven_minutes=OVEN_MINUTES,
+            lines=[
+                {"ingredient_id": ingredients[k].id, "quantity_milli": v} for k, v in lines.items()
+            ],
+            set_by=owner,
+        )
+        store.insert(session, recipe, Actor.system(commissary.id))
 
 
 def _seed_branch_manager(session: Session, items: list[RetailItem], actor: Actor) -> None:

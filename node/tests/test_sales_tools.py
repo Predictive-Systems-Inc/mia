@@ -446,9 +446,8 @@ def test_the_owner_sets_one_target_on_every_branch(session: Session, ferinos: Fe
     args = SetTargetInput(period="day", starts_on=today(), amount=350000, branch_id="all")
     out = tools.set_target(deps_for(session, people["Rosa"]), args, "c1")
     rows = [session.get(SalesTarget, i) for i in out.target_ids]
-    assert sorted(r.branch_id for r in rows if r) == sorted(
-        b.id for b in session.exec(select(Branch))
-    )
+    kiosks = select(Branch).where(Branch.name != "Commissary")  # the commissary sells nothing
+    assert sorted(r.branch_id for r in rows if r) == sorted(b.id for b in session.exec(kiosks))
     assert len(session.exec(select(Event).where(Event.action == "sales.target_set")).all()) == 2
 
 

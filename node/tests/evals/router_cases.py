@@ -25,7 +25,7 @@ class Case:
 GATED_LANGS = ("en", "fil", "ceb", "hil", "war", "bcl")
 REPORTED_LANGS = ("fi", "ilo", "pam", "pag")
 # Agents scaffolded but without router cases yet; the gates step of /mia-build-agent empties this.
-PENDING: set[str] = set()
+PENDING: set[str] = {"production_planner"}
 
 # (expected agent, English seed). Ten per agent, two greetings, two thanks; customer_service
 # has five here and five in GATE_SEEDS, staff messages only (customers bypass the router).

@@ -87,13 +87,12 @@ def _branch(
 def _branches(
     deps: AgentDeps, branch_id: str | None, resource: Resource, action: str, tool_call_id: str
 ) -> list[Branch]:
-    """Every branch of the organisation by name for "all" (after the `<action>_all` check),
-    else the one branch _branch gives."""
+    """Every shop of the organisation by name for "all" (after the `<action>_all` check; the
+    commissary sells nothing), else the one branch _branch gives."""
     if branch_id != "all":
         return [_branch(deps, branch_id, resource, action, tool_call_id)]
     _check(deps, resource, f"{action}_all", tool_call_id)
-    stmt = select(Branch).where(Branch.organisation_id == deps.organisation_id)
-    return list(deps.session.exec(stmt.order_by(col(Branch.name))))
+    return retail_hours.shops(deps.session, deps.organisation_id)
 
 
 def _catalog(session: Session, branch_id: str) -> list[RetailItem]:

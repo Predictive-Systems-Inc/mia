@@ -134,6 +134,8 @@ DUE: list[tuple[Callable[[Branch, Hours, dt.datetime], dt.date | None], str, Sen
 
 
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
+    if not retail_hours.is_shop(session, branch.id):  # the commissary sells nothing
+        return 0
     hours, closed = retail_hours.load(session, branch.id), retail_hours.closed(session, branch.id)
     count = 0
     for is_due, marker, send in DUE:

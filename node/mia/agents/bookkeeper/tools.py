@@ -202,8 +202,7 @@ def _all_or_own(deps: AgentDeps, resources: list[Resource], tool_call_id: str) -
         for r in resources
     ):
         return [deps.branch]
-    stmt = select(Branch).where(Branch.organisation_id == deps.organisation_id)
-    return list(deps.session.exec(stmt.order_by(col(Branch.name))))
+    return retail_hours.shops(deps.session, deps.organisation_id)  # never the commissary
 
 
 def _month(day: dt.date) -> tuple[dt.date, dt.date]:

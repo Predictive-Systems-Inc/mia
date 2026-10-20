@@ -1,6 +1,6 @@
 """Opening hours of a retail branch as pure functions over its retail_branch_hours rows, and the
 business date they give. Shared by the agents that work to a shop's hours; imports nothing from
-mia.agents. Only load() and closed() read the database, unchecked: callers check
+mia.agents. Only load(), is_shop(), shops() and closed() read the database, unchecked: callers check
 retail_branch_hours (or retail_closures) read first, or are the system tick.
 """
 
@@ -8,7 +8,7 @@ import datetime as dt
 from collections.abc import Callable, Collection, Sequence
 from zoneinfo import ZoneInfo
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from mia.core.models import Branch
 from mia.templates.retail.models import RetailBranchHours, RetailClosure
@@ -24,6 +24,25 @@ def load(session: Session, branch_id: str) -> list[RetailBranchHours]:
     """The branch's hours rows (no permission check; see the module docstring)."""
     stmt = select(RetailBranchHours).where(RetailBranchHours.branch_id == branch_id)
     return list(session.exec(stmt))
+
+
+def is_shop(session: Session, branch_id: str) -> bool:
+    """True when the branch sells (it has hours rows); a commissary has none, so the kiosk
+    agents' due work skips it (no permission check; see the module docstring)."""
+    stmt = select(RetailBranchHours.id).where(RetailBranchHours.branch_id == branch_id).limit(1)
+    return session.exec(stmt).first() is not None
+
+
+def shops(session: Session, organisation_id: str) -> list[Branch]:
+    """The organisation's branches that sell (is_shop), by name: an owner's "every branch"
+    never lists the commissary (no permission check; see the module docstring)."""
+    selling = select(RetailBranchHours.branch_id)
+    stmt = (
+        select(Branch)
+        .where(Branch.organisation_id == organisation_id)
+        .where(col(Branch.id).in_(selling))
+    )
+    return list(session.exec(stmt.order_by(col(Branch.name))))
 
 
 def closed(session: Session, branch_id: str) -> frozenset[dt.date]:

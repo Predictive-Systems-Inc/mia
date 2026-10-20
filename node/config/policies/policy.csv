@@ -264,6 +264,33 @@ p, admin, *, tool:bookkeeper.monthly_profit, execute, allow
 p, admin, *, data:bookkeeper_*, read_all, allow
 p, admin, *, data:bookkeeper_*, write_all, allow
 
+# staff (the driver, Q94: staff at the commissary with the skill driver, checked in
+# confirm_delivery; read_own gates by role only, the rows are those from the driver's branch)
+p, staff, *, tool:production_planner.dispatch_list, execute, allow
+p, staff, *, tool:production_planner.confirm_delivery, execute, allow
+p, staff, *, data:production_planner_dispatches, read_own, allow
+p, staff, *, data:production_planner_dispatches, write_own, allow
+
+# supervisor (the commissary head plans, records batches and packs; a kiosk supervisor reads
+# their kiosk's dispatch and plan lines; the plan rows are at the commissary, so a kiosk
+# supervisor's write needs write_all and is refused); owner and admin inherit
+p, supervisor, *, tool:production_planner.plan, execute, allow
+p, supervisor, *, tool:production_planner.change_plan, execute, allow
+p, supervisor, *, tool:production_planner.confirm_plan, execute, allow
+p, supervisor, *, tool:production_planner.batch_sheet, execute, allow
+p, supervisor, *, tool:production_planner.record_batch, execute, allow
+p, supervisor, *, tool:production_planner.capacity, execute, allow
+p, supervisor, *, data:production_planner_*, read, allow
+p, supervisor, *, data:production_planner_*, write, allow
+
+# admin: recipes and every branch's planner rows; the owner inherits
+p, admin, *, tool:production_planner.set_recipe, execute, allow
+p, admin, *, data:production_planner_*, read_all, allow
+p, admin, *, data:production_planner_*, write_all, allow
+
+# a clerk inherits staff and is not offered the planner (spec section 3)
+p, clerk, *, agent:production_planner, use, deny
+
 # agents a role may talk to (chat/access.py); owner inherits admin > supervisor > staff
 p, staff, *, agent:shift_supervisor, use, allow
 p, clerk, *, agent:sales_supervisor, use, allow
@@ -285,3 +312,7 @@ p, supervisor, *, agent:branch_manager, use, allow
 p, admin, *, agent:branch_manager, use, allow
 p, supervisor, *, agent:bookkeeper, use, allow
 p, admin, *, agent:bookkeeper, use, allow
+p, staff, *, agent:production_planner, use, allow
+p, supervisor, *, agent:production_planner, use, allow
+p, owner, *, agent:production_planner, use, allow
+p, admin, *, agent:production_planner, use, allow

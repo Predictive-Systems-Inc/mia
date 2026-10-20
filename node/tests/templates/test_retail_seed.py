@@ -28,13 +28,17 @@ def test_org_template_selects_the_retail_seed(ferinos: None, session: Session) -
     assert orgconfig.load().template == "retail"
     branch = seed.seed(session)
     assert branch.timezone == "Asia/Manila"
-    assert len(session.exec(select(Branch)).all()) == 2
+    assert [b.name for b in session.exec(select(Branch))] == [
+        "Mall kiosk",
+        "Street stall",
+        "Commissary",
+    ]
     assert len(session.exec(select(RetailItem)).all()) == 8
     assert len(session.exec(select(RetailBranchHours)).all()) == 14
     assert len(session.exec(select(SalesTarget)).all()) == 2
     assert len(session.exec(select(SalesCount)).all()) > 100
     assert len(session.exec(select(RetailIngredient)).all()) == 8
-    for b in session.exec(select(Branch)).all():
+    for b in session.exec(select(Branch).where(Branch.name != seed.COMMISSARY)).all():
         stock = select(StockEvent).where(StockEvent.branch_id == b.id)
         assert len(session.exec(stock).all()) >= 8
     orders = session.exec(select(SupplierOrder)).all()

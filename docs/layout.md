@@ -76,6 +76,7 @@ mia/
                             tax table) and words.py (the fixed lists, the amount, receipt, VAT,
                             period and bank readers); the four tables it reads from the HR
                             officer and the inventory manager are core (1.6)
+        production_planner/ Production Planner: the mia agent scaffold shape (turn.py, actions.py, ...)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
       skills/               classifier runtime and per-turn routing (ADR 013)
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls),

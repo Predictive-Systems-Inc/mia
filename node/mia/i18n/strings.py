@@ -737,6 +737,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "agent.hr_officer.label": "HR Officer",
         "agent.branch_manager.label": "Branch Manager",
         "agent.customer_service.label": "Customer Service",
+        "agent.production_planner.label": "Production Planner",
         "cs.menu": (
             "Hello! I can tell you our opening hours, prices and delivery areas, take a pickup"
             " order, check or cancel your order, or pass on a complaint. What would you like?"
@@ -1566,6 +1567,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "agent.hr_officer.label": "Henkilöstöasiantuntija",
         "agent.branch_manager.label": "Myymäläpäällikkö",
         "agent.customer_service.label": "Asiakaspalvelu",
+        "agent.production_planner.label": "Tuotannonsuunnittelija",
         "cs.menu": (
             "Hei! Kerron aukioloajat, hinnat ja toimitusalueet, otan noutotilauksen, tarkistan tai"
             " peruutan tilauksesi tai välitän palautteesi. Miten voin auttaa?"

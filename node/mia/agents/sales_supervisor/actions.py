@@ -27,8 +27,8 @@ from mia.agents.parsing import (
     was_corrected,
 )
 from mia.agents.sales_supervisor import MANIFEST
-from mia.core.models import Branch
 from mia.i18n import t
+from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailItem
 
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -250,8 +250,7 @@ def build_query(
     )
     rows = session.exec(stmt).all()
     items = {i.id: f"{i.name} ({', '.join(i.short_codes)})" for i in rows}
-    stmt_b = select(Branch).where(Branch.organisation_id == deps.organisation_id)
-    branches = {b.id: b.name for b in session.exec(stmt_b.order_by(col(Branch.name)))}
+    branches = {b.id: b.name for b in retail_hours.shops(session, deps.organisation_id)}
     groups, total = pre_parse(message, menu_tokens((i.name, i.short_codes) for i in rows))
     why_asked = previous_mia_message in why_texts(deps.lang)
     return Query(

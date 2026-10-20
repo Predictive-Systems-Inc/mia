@@ -433,6 +433,8 @@ def _branch_marked(
 
 
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
+    if not retail_hours.is_shop(session, branch.id):  # the commissary sells nothing
+        return 0
     hours = retail_hours.load(session, branch.id)
     count = _experiments(session, branch, hours, now)  # prices due first, at the opening
     day = morning_message(branch, hours, now)

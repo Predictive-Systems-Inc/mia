@@ -1,6 +1,6 @@
 # Organisation settings for Ferino's Bibingka (kiosks in the Philippines). Times are local "HH:MM".
 template: retail
-agents: [sales_supervisor, shift_supervisor, inventory_manager, hr_officer, customer_service, branch_manager, bookkeeper]
+agents: [sales_supervisor, shift_supervisor, inventory_manager, hr_officer, customer_service, branch_manager, bookkeeper, production_planner]
 languages: [fil, ceb, en]
 quiet_hours: {start: "21:00", end: "06:00"}
 payroll: {cutoffs: semi_monthly, pay_lag_days: 5}
@@ -21,3 +21,12 @@ bookkeeper:
   tax_regime: vat
   petty_floor: 50000
   undeposited_limit: 2000000
+# The commissary bakes for the kiosks; the ovens run in hours (local), the draft plan goes to the
+# head at plan_at the day before, the dispatch list at dispatch_at at the latest.
+production_planner:
+  commissary: Commissary
+  serves: [Mall kiosk, Street stall]
+  ovens: 2
+  hours: {start: "03:00", end: "09:00"}
+  plan_at: "14:00"
+  dispatch_at: "08:30"
