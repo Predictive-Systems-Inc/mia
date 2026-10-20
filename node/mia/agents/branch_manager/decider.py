@@ -61,8 +61,11 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         item, code = _pick(r, "item", q.items), _pick(r, "code", q.codes)
         args = {"item_id": item, "code": q.codes[code] if code else None}
         return args, "item" if not item else None if code else "code"
-    if action == "coaching_who":
-        return {"person_id": _pick(r, "person", q.people)}, None
+    if action == "coaching_who":  # an item only when one is named ("sino magaling sa ube")
+        args = {"person_id": _pick(r, "person", q.people)}
+        if item := _pick(r, "item", q.items):
+            args["item_id"] = item
+        return args, None
     if action == "decide_experiment_result":
         return {"keep": r.yes("keep")}, None
     if action == "reply_only":
