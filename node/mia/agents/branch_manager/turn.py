@@ -17,7 +17,7 @@ from pydantic import BaseModel, ValidationError
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, ToolBinding, Turn, call_tool
-from mia.agents.branch_manager import MANIFEST, actions, decider, experiments, replies, tools
+from mia.agents.branch_manager import MANIFEST, actions, decider, due, experiments, replies, tools
 from mia.agents.branch_manager.models import Experiment, Strategy
 from mia.agents.decider import Decision
 from mia.agents.sales_supervisor.tools import _currency
@@ -483,6 +483,6 @@ SPEC = AgentSpec(
         " and not a shift change."
     ),
     handle_turn=handle_turn,
-    run_due=None,
+    run_due=due.run_due,
     stream_agent=None,
 )

@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterator
 import pytest
 from sqlmodel import Session, select
 
+from mia.agents.branch_manager import MANIFEST as BM
 from mia.agents.sales_supervisor import MANIFEST, actions, due, tools
 from mia.agents.sales_supervisor.tools import CountIn, RecordCountsInput, SetTargetInput
 from mia.channels import registry
@@ -35,6 +36,7 @@ from tests.test_sales_tools import deps_for
 
 Ferinos = tuple[Branch, dict[str, Person]]
 At = Callable[[int, int], dt.datetime]
+BRANCH_MANAGER = BM.id
 
 
 @pytest.fixture(autouse=True)
@@ -281,8 +283,13 @@ def test_report_reaches_every_owner_and_admin_once_in_their_language(
 # ---- the morning message --------------------------------------------------------------------
 
 
-def test_morning_message_at_opening(session: Session, ferinos: Ferinos, manila_at: At) -> None:
+def test_morning_message_at_opening(
+    session: Session, ferinos: Ferinos, manila_at: At, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _, people = ferinos
+    org = orgconfig.load()
+    alone = org.model_copy(update={"agents": [a for a in org.agents if a != BRANCH_MANAGER]})
+    monkeypatch.setattr(orgconfig, "load", lambda org_name=None: alone)
     sent = due.run_due(session, manila_at(9, 5))
     kiosk_people = {people[n].id for n in ("Ana", "Liza", "Marites")}
     owners = {_owner(session, n) for n in _notes(session)}
@@ -291,6 +298,15 @@ def test_morning_message_at_opening(session: Session, ferinos: Ferinos, manila_a
     (ana,) = _notes(session, people["Ana"])
     assert ana.text.count("₱") == 3  # yesterday, its target share, today's share
     assert due.run_due(session, manila_at(9, 20)) == 0
+
+
+def test_the_sales_morning_leaves_clerks_to_the_branch_manager(
+    session: Session, ferinos: Ferinos, manila_at: At
+) -> None:
+    _, people = ferinos
+    assert BRANCH_MANAGER in orgconfig.load().agents
+    assert due.run_due(session, manila_at(9, 5)) == 1
+    assert [_owner(session, n) for n in _notes(session)] == [people["Marites"].id]
 
 
 # ---- the why question -----------------------------------------------------------------------
@@ -442,12 +458,12 @@ def test_morning_after_a_day_without_counts_names_only_the_target(
         store.update(session, row, {"superseded_by": "gone"}, Actor.system(kiosk.id))
     session.commit()
     due.run_due(session, manila_at(9, 5))
-    (note,) = _notes(session, people["Ana"])
+    (note,) = _notes(session, people["Marites"])
     share = tools._share(
         session, kiosk.id, _hours(session, kiosk), yesterday + dt.timedelta(days=1)
     )
     assert share is not None
-    lang = people["Ana"].language
+    lang = people["Marites"].language
     assert note.text == t("sales.morning.first", lang, target=format_money(share, "PHP", lang))
 
 

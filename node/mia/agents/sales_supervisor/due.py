@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
+from mia.agents.branch_manager import MANIFEST as BRANCH_MANAGER
 from mia.agents.sales_supervisor import MANIFEST, actions, calc, replies, tools
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import Block, TextBlock
@@ -233,14 +234,26 @@ def _morning_text(lang: str, yesterday: str | None, target: str | None) -> str |
     return t("sales.morning", lang, yesterday=yesterday, target=target)
 
 
+def _branch_manager_runs() -> bool:
+    """True when the organisation runs the branch manager, whose morning message (with a tip
+    and a quote) then goes to the clerks instead of this one."""
+    return BRANCH_MANAGER.id in orgconfig.load().agents
+
+
 def _morning(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Message]:
+    """Yesterday against its target and today's target to the supervisors, and to the clerks
+    unless the branch manager runs."""
     yesterday = day - dt.timedelta(days=1)
     counted = retail_hours.open_days(hours)(yesterday) and _reporters(session, branch.id, yesterday)
     total = _total(session, branch.id, yesterday)
     currency = tools._currency(session, branch.id)
     past = tools._share(session, branch.id, hours, yesterday)
     share = tools._share(session, branch.id, hours, day)
-    people = {p.id: p for p in alerts._people(session, branch.id, "clerk")}
+    people = (
+        {}
+        if _branch_manager_runs()
+        else {p.id: p for p in alerts._people(session, branch.id, "clerk")}
+    )
     people |= {p.id: p for p in alerts.supervisors(session, branch.id)}
     sent = []
     for person in people.values():

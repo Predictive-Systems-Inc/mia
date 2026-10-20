@@ -259,6 +259,7 @@ CLOCK_USERS = (
     "mia.agents.customer_service.due",
     "mia.templates.retail.items",
     "mia.agents.branch_manager.tools",
+    "mia.agents.branch_manager.due",
 )
 
 
