@@ -596,3 +596,9 @@ Format for each entry:
 - Question: The approvals core never lets a requester decide their own request. When the owner types a price change, who approves it?
 - Answer (20 Oct 2026, D37): the owner's own typed request is the decision: the approval row exists, the owner decides it themselves with the PIN step-up, only for the owner role in their own branch; everyone else waits for another approver.
 - Blocking: no (answered).
+
+## Q80: The business date under hours that close after midnight
+- Where: node/mia/templates/retail/hours.py (`business_date`, `business_date_at`); node/mia/agents/sales_supervisor/tools.py:254 and node/mia/agents/inventory_manager/tools.py:90 call it; node/mia/agents/customer_service/calc.py (`hours_span`) already handles it on its own
+- Question: Under 16:00 to 02:00 hours, a report at 01:00 should belong to the day before, but `business_date` returns today: it compares against yesterday's closing time on yesterday's date plus two hours (02:00 yesterday plus two hours is long past). Should the shared function take the closing on the next day when the closing is at or before the opening?
+- Assumed answer: yes, fix the shared function the way calc.hours_span does (a closing at or before the opening is the next calendar day's), in a follow-up with the three agents' tests; the customer service keeps its own until then.
+- Blocking: no.

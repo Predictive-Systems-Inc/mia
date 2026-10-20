@@ -99,7 +99,8 @@ Core touched: none. Template read: `retail_items`, `retail_branch_hours`. Org se
 `delivery_areas: [{name, fee, currency}]` and `customer_service.max_order_quantity` (default
 50), `customer_service.messages_per_hour` (default 30) and `customer_service.public_calls_per_hour`
 (default 600: public turns, each one Jev request, per hour across the node; over it a message
-gets the hold text without a Jev call and `customer_service.budget_held`). A customer has one
+gets `cs.unavailable` without a Jev call and `customer_service.budget_held`, and the first such
+message of a clock hour tells the owners and admins `cs.budget_alarm`, once per hour). A customer has one
 waiting order at a time (a second is refused, `cs.refused.pending`).
 
 ## 6. The agent
@@ -222,5 +223,13 @@ side and the due work (8, 10). 7. Ten languages. 8. Evals, gates, docs.
   text, the profile name, the address and any shared point.
 - `staff_resolve_complaint` (and its slot) came with the fix wave after both gate runs: it
   has tune cases only (`TUNE_STAFF_ONLY`) and is ungated until a run 3 writes fresh gate seeds.
+- An index on `customer_service_messages.at` (the budget count scans the hour's rows): in
+  `0000_initial` after the branch_manager Task 1 commit lands, not before.
+- A settings validator so one organisation never mixes currencies (item prices, delivery fees):
+  `orgconfig.py`, at the same time. Until then the order precheck refuses a mixed order.
+- A held address still grows the chain by three events per message (`channel.received`,
+  `inbound_processing`, `inbound_done`), bounded only by the channel's own sender limits.
+- `cs.budget_alarm` is in en and fi only; the eight Philippine modules get it with the
+  branch_manager Task 7 or a follow-up (a missing key falls back to English).
 - A media or location message from a customer goes to Jev with empty text, and its inbound
   body keeps the point (the review's M1, not in this fix wave).

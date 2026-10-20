@@ -235,6 +235,8 @@ def _named(session: Session, branch: Branch, message: str) -> set[str]:
 def _without(message: str, named: set[str]) -> str:
     """The message with each word whose folded form is one of `named` replaced by "Customer"
     (whole words, as public._scrubbed does for the customer's own name)."""
+    # ponytail: a first name that is also a common word ("May", "Joy") is scrubbed wherever it
+    # appears; the decision rarely needs that word, so keep it until a staff case shows it does
     if not named:
         return message
     return re.sub(r"\w+", lambda m: "Customer" if fold(m[0]) in named else m[0], message)

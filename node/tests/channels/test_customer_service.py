@@ -812,7 +812,32 @@ def test_the_public_jev_budget_holds_a_message_without_a_jev_call(
     store.update(session, mark, {"channel": "sim"}, Actor.system(mark.branch_id))
     session.commit()
     assert say(client, sim, "hello po") == [t("cs.menu", "fil")]
-    assert say(client, sim, "hello", address=MARK_ADDR) == [t("cs.held", "en")]
+    # one message from Mark: the node is busy, not Mark (cs.held would blame him)
+    assert say(client, sim, "hello", address=MARK_ADDR) == [t("cs.unavailable", "en")]
     assert len(seen) == 1  # across addresses: the second message never reached Jev
     held = session.exec(select(Event).where(Event.action == f"{MANIFEST.id}.budget_held")).one()
     assert held.on_behalf_of == mark.id
+
+
+def test_the_first_budget_hold_of_an_hour_alarms_the_owner_once(
+    shop: Shop,
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answer(monkeypatch, "greeting")
+    tight = orgconfig.load().model_copy(
+        update={"customer_service": orgconfig.CustomerServiceSettings(public_calls_per_hour=1)}
+    )
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: tight)
+    shop.pin(10, 20)
+    say(client, sim, "hello po")
+    say(client, sim, "hello ulit")
+    say(client, sim, "hello ulit po")  # a second hold in the same hour: no second alarm
+    rosa = shop.people["Rosa"]  # the owner
+    alarm = t("cs.budget_alarm", rosa.language, time="11:00")
+    told = [m.text for m in notifications(session, rosa)]
+    assert told.count(alarm) == 1
+    marks = session.exec(select(Event).where(Event.action == f"{MANIFEST.id}.budget_alarm")).all()
+    assert len(marks) == 1

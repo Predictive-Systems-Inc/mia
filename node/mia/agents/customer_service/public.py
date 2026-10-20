@@ -6,7 +6,8 @@ router, run_turn, a Thread or a staff agent; every event this module writes for 
 carries the agent on behalf of the customer, and no customer_service.* event carries a name or
 address (rule 5, `__redact__`); a reply staff cause (mark_ready, an order decision) is queued
 by the staff tool or the approval handler, with that actor; the throttle key is an HMAC of
-`channel:address`; a node-wide budget caps public turns (Jev requests) per hour; replies are
+`channel:address`; a node-wide budget caps public turns (Jev requests) per hour and alarms the
+owners once an hour when reached; replies are
 out rows sent by send_pending, leased and committed before the network, and never sent
 outside the 24-hour window (Q68); DB work runs in worker threads and nothing holds the write
 lock across an await (rules 11, 12). A held message writes no customer event: only its
@@ -31,15 +32,17 @@ from mia.agents.base import Manifest, ToolLogEntry, call_tool
 from mia.agents.customer_service import MANIFEST, actions, calc, decider, replies
 from mia.agents.customer_service.models import Customer, CustomerMessage
 from mia.agents.decider import Decision
+from mia.agents.shift_supervisor import alerts
 from mia.channels import outbox
 from mia.channels.base import DeliveryResult, InboundMessage
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
+from mia.chat.channels import notify
 from mia.core import auth, events, keys, orgconfig, store
 from mia.core.db import session_scope, utcnow
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError
-from mia.core.models import Actor, Branch, ChannelInbound, Organisation, Principal
+from mia.core.models import Actor, Branch, ChannelInbound, Event, Organisation, Principal
 from mia.core.rbac import Rbac, get_rbac
 from mia.i18n import SUPPORTED, t
 from mia.settings import get_settings
@@ -59,6 +62,7 @@ ATTEMPT = f"{MANIFEST.id}.attempt"
 LANGUAGE = f"{MANIFEST.id}.language_set"
 TURN_FAILED = f"{MANIFEST.id}.turn_failed"
 BUDGET_HELD = f"{MANIFEST.id}.budget_held"
+BUDGET_ALARM = f"{MANIFEST.id}.budget_alarm"
 log = logging.getLogger(__name__)
 _BLOCKS: TypeAdapter[list[Block]] = TypeAdapter(list[Block])
 
@@ -190,7 +194,10 @@ def _upsert(
 
 def _public_calls(session: Session, now: dt.datetime) -> int:
     """Public turns in the hour before `now`, node-wide: each recorded inbound message is one
-    Jev request (a held or budget-held message records none)."""
+    Jev request (a held or budget-held message records none). Read under the write lock
+    (_arrive), so simultaneous arrivals never overshoot the cap."""
+    # ponytail: a full scan of the hour's rows with no index on `at`; the spec's Carried over
+    # adds one with the next 0000_initial edit
     since = (now - auth.H1).astimezone(dt.UTC)  # stored times are UTC; SQL compares strings
     stmt = (
         select(func.count())
@@ -201,12 +208,36 @@ def _public_calls(session: Session, now: dt.datetime) -> int:
     return session.exec(stmt).one()
 
 
+def _alarm(session: Session, branch_id: str, now: dt.datetime) -> None:
+    """On the first budget hold of a clock hour (UTC), tell the organisation's owners and admins
+    (alerts.leads) that the public line is paused until the next hour (local), not urgent;
+    the marker `customer_service.budget_alarm` on the branch names the hour, so it goes once.
+    The budget is a rolling hour, so the line may open again a little before or after."""
+    hour = now.astimezone(dt.UTC).strftime("%Y-%m-%dT%H")
+    marks = session.exec(
+        select(Event).where(Event.action == BUDGET_ALARM).where(Event.entity_id == branch_id)
+    ).all()
+    if any((m.after or {}).get("hour") == hour for m in marks):
+        return
+    branch = session.get(Branch, branch_id)
+    if branch is None:
+        return
+    local = now.astimezone(ZoneInfo(branch.timezone))
+    until = f"{local.replace(minute=0, second=0, microsecond=0) + dt.timedelta(hours=1):%H:%M}"
+    system = Actor.system(branch_id)
+    for lead in alerts.leads(session, branch.organisation_id):
+        blocks: list[Block] = [TextBlock(text=t("cs.budget_alarm", lead.language, time=until))]
+        notify(session, lead, blocks, system, MANIFEST.id)
+    events.emit(session, BUDGET_ALARM, ("branch", branch_id), None, {"hour": hour}, system)
+
+
 def _arrive(
     session: Session, inbound_id: str, msg: InboundMessage, text: str, now: dt.datetime
 ) -> Customer | None:
     """Record the message. None when the turn stops here: the customer is held (ignored, no
     customer write or event), is over the hourly limit (held now, one hold reply queued), or
-    the node is over its public budget (cs.held queued, `customer_service.budget_held`).
+    the node is over its public budget (cs.unavailable queued, `customer_service.budget_held`,
+    the hour's alarm to the owners).
     The write lock comes first, so two first messages from one number (two webhook posts)
     never both read no row and insert (rule 11, the `_lease` pattern)."""
     session.execute(sql("UPDATE customer_service_customers SET id = id WHERE 0"))
@@ -227,9 +258,14 @@ def _arrive(
         queue(session, customer, [TextBlock(text=t("cs.held", customer.language))], actor)
         return None
     auth.record_attempt(session, THROTTLE, key, False, now, actor=actor, action=ATTEMPT)
+    # record_attempt committed: the lock again, so the count and the message row below are one
+    # write (the cap holds with simultaneous arrivals, and the hour's alarm goes once)
+    session.execute(sql("UPDATE customer_service_customers SET id = id WHERE 0"))
     if _public_calls(session, now) >= orgconfig.load().customer_service.public_calls_per_hour:
         events.emit(session, BUDGET_HELD, (Customer.__tablename__, customer.id), None, {}, actor)
-        queue(session, customer, [TextBlock(text=t("cs.held", customer.language))], actor)
+        _alarm(session, customer.branch_id, now)
+        # the node is busy, not this sender: cs.held would blame a customer who wrote once
+        queue(session, customer, [TextBlock(text=t("cs.unavailable", customer.language))], actor)
         return None
     message = CustomerMessage(
         branch_id=customer.branch_id,

@@ -422,6 +422,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
             " order, check or cancel your order, or pass on a complaint. What would you like?"
         ),
         "cs.held": "You have sent many messages in a short time. Please write again in an hour.",
+        "cs.budget_alarm": "The public line is paused until {time}: this hour's budget of customer messages is reached. Customers are told to try again later.",
         "cs.unavailable": "Sorry, I cannot answer right now. Please try again in a little while.",
         "cs.ask_time": "What time will you pick up your order?",
         "cs.open_until": "Yes, we are open until {closes}. We open again at {opens}.",
@@ -930,6 +931,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
             " peruutan tilauksesi tai välitän palautteesi. Miten voin auttaa?"
         ),
         "cs.held": "Olet lähettänyt monta viestiä lyhyessä ajassa. Kirjoita uudelleen tunnin päästä.",
+        "cs.budget_alarm": "Asiakaslinja on tauolla klo {time} asti: tämän tunnin asiakasviestien kiintiö on täynnä. Asiakkaita pyydetään yrittämään myöhemmin.",
         "cs.unavailable": "En valitettavasti pysty vastaamaan juuri nyt. Yritä hetken päästä uudelleen.",
         "cs.ask_time": "Mihin aikaan noudat tilauksesi?",
         "cs.open_until": "Kyllä, olemme auki {closes} asti. Avaamme taas klo {opens}.",
