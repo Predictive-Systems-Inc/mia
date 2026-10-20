@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from zoneinfo import ZoneInfo
 
-from mia.agents.parsing import ALAS, DAY_NAMES, NEGATIONS
+from mia.agents.parsing import ALAS, DAY_NAMES, NEGATIONS, NEXT_WEEK
 from mia.agents.shift_supervisor import scoring
 from mia.core.scheduling import WEEKDAYS
 from mia.templates.retail import hours as retail_hours
@@ -105,25 +105,36 @@ _DAY = re.compile(
 )
 _THROUGH = re.compile(r"^\s*(?:-|to|hanggang|hangtod|until|through)\s*$", re.IGNORECASE)
 _WORD = re.compile(r"\w+")
+# A week phrase names a week, never a Sunday ("linggo"); parsing._DATE consumes the same ones.
+_WEEK = re.compile(
+    r"\b(?:"
+    + "|".join(map(re.escape, sorted({*NEXT_WEEK, "ngayong linggo"}, key=len, reverse=True)))
+    + r")\b",
+    re.IGNORECASE,
+)
 
 
 def find_days(text: str) -> Days:
     """The weekdays named in the text as BYDAY codes in WEEKDAYS order (en, fil, ceb and the
     other DAY_NAMES): "Martes hanggang Linggo" is a range (wrapping past Sunday), "Sabado at
-    Linggo" a list. A day right after a NEGATIONS word is dropped and `corrected` set. Pure."""
+    Linggo" a list, "susunod na linggo" a week (no day). A day right after a NEGATIONS word is
+    removed (also from a range) and `corrected` set. Pure."""
+    text = _WEEK.sub(" ", text)
     days: set[int] = set()
-    corrected, prev, prev_end = False, None, 0
+    negated: set[int] = set()
+    prev, prev_end = None, 0
     for m in _DAY.finditer(text):
         day, gap = _DAY_INDEX[m[1].lower()], text[prev_end : m.start()]
         words = _WORD.findall(gap.lower())
         if words and words[-1] in NEGATIONS:
-            corrected = True
+            negated.add(day)
         elif prev is not None and _THROUGH.match(gap):
             days |= {(prev + k) % 7 for k in range((day - prev) % 7 + 1)}
         else:
             days.add(day)
         prev, prev_end = day, m.end()
-    return Days([code for i, code in enumerate(WEEKDAYS) if i in days], corrected)
+    days -= negated
+    return Days([code for i, code in enumerate(WEEKDAYS) if i in days], bool(negated))
 
 
 # ---- the pattern -------------------------------------------------------------------------
@@ -131,26 +142,40 @@ def find_days(text: str) -> Days:
 _CLAUSE = re.compile(r"[,;]|\btapos\b|\bthen\b", re.IGNORECASE)
 
 
+def _clauses(text: str) -> list[str]:
+    """The text split at each _CLAUSE mark, except a comma between two day names (a list of
+    days, "Lunes, Martes at Miyerkules")."""
+    parts, start = [], 0
+    for m in _CLAUSE.finditer(text):
+        before, after = text[start : m.start()], text[m.end() :]
+        if (
+            m[0] == ","
+            and re.search(_DAY.pattern + r"\s*$", before, re.IGNORECASE)
+            and _DAY.match(after.lstrip())
+        ):
+            continue
+        parts.append(before)
+        start = m.end()
+    return [p.strip() for p in [*parts, text[start:]] if p.strip()]
+
+
 def parse_pattern(text: str, people: Mapping[str, str], opens: dt.time, closes: dt.time) -> Pattern:
     """The owner's pattern as clauses: split on commas, semicolons, "tapos" and "then"; each
     names exactly one of `people` (person id to first name) by word, its days (else the previous
-    clause's) and one shift range per Clause (two ranges are a split shift, two Clauses). A
+    clear clause's; a comma between day names does not split) and one shift range per Clause (two ranges are a split shift, two Clauses). A
     clause with no days and none before it, no single name or no range goes to `unclear`."""
     by_name = {name.casefold(): pid for pid, name in people.items()}
     clauses: list[Clause] = []
     unclear: list[str] = []
     last_days: list[str] = []
-    for part in (p.strip() for p in _CLAUSE.split(text)):
-        if not part:
-            continue
+    for part in _clauses(text):
         named = {by_name[w] for w in _WORD.findall(part.casefold()) if w in by_name}
         byday = find_days(part).byday or last_days
-        last_days = byday
         ranges = find_ranges(part, opens, closes)
         if len(named) != 1 or not byday or not ranges:
-            unclear.append(part)
+            unclear.append(part)  # an unclear clause passes no days on
             continue
-        pid = named.pop()
+        last_days, pid = byday, named.pop()
         clauses += [Clause(pid, byday, r.start, r.end) for _, r in ranges]
     return Pattern(clauses, unclear)
 

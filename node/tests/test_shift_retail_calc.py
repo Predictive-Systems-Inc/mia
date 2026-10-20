@@ -175,3 +175,26 @@ def test_reason_keys_cover_every_scoring_reason() -> None:
     slot = scoring.Slot(at(SATURDAY, 9), at(SATURDAY, 17))
     c = scoring.CandidateData("a", "Ana", [], {}, 0, 0, booked=[slot], absent_dates={SATURDAY})
     assert sorted(roster.REASON_KEYS) == sorted(scoring.ineligibility(c, slot))
+
+
+def test_a_negated_day_is_removed_from_a_range() -> None:
+    d = roster.find_days("Martes hanggang Linggo hindi Sabado")
+    assert (d.byday, d.corrected) == (["TU", "WE", "TH", "FR", "SU"], True)
+
+
+def test_a_week_phrase_is_not_a_sunday() -> None:
+    assert roster.find_days("sa susunod na linggo Lunes at Martes").byday == ["MO", "TU"]
+    assert roster.find_days("ngayong linggo Sabado").byday == ["SA"]
+
+
+def test_a_comma_between_days_keeps_one_clause() -> None:
+    p = roster.parse_pattern("Ana Lunes, Martes at Miyerkules 9 to 5", {"a": "Ana"}, NINE, NINE_PM)
+    assert ([(c.byday, c.start, c.end) for c in p.clauses], p.unclear) == (
+        [(["MO", "TU", "WE"], NINE, FIVE_PM)],
+        [],
+    )
+
+
+def test_an_unclear_clause_passes_no_days_on() -> None:
+    p = roster.parse_pattern("si Pedro Sabado 9 to 5, Ana 1 to 9", {"a": "Ana"}, NINE, NINE_PM)
+    assert (p.clauses, p.unclear) == ([], ["si Pedro Sabado 9 to 5", "Ana 1 to 9"])

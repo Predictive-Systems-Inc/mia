@@ -217,3 +217,7 @@ swap, closures. 6. New tools and actions, the decider. 7. Chat turn, scenarios 1
   owned by shift_supervisor/scoring.py.
 - sales_supervisor `_clerks` falls back to every clerk when a branch has no visits that day; once
   retail visits are generated it narrows to the shift; owned by sales_supervisor/due.py.
+- Task 2 (roster and cover): approved leave now counts as absent for cleaning orgs too (no
+  cleaning seed has leave); `roster.job_name` may repeat for one clerk, so Task 4 must not rely
+  on it being unique; `scheduling.ineligibility` stays branch-only (fails closed) until Task 4
+  passes `org_wide=is_retail()`; owned by shift_supervisor/roster.py and core/scheduling.py.
