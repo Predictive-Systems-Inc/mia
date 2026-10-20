@@ -25,7 +25,7 @@ from mia.core.models import (
 )
 from mia.core.orgconfig import ChannelConfig, OrgSettings, QuietHours
 from mia.i18n import t
-from mia.templates.retail.models import RetailBranchHours
+from mia.templates.retail.models import RetailBranchHours, RetailClosure
 from tests.test_inventory_tools import deps_for, ingredient, item, stall
 
 Ferinos = tuple[Branch, dict[str, Person]]
@@ -113,6 +113,20 @@ def test_closing_summary_goes_to_head_staff_once(
     assert due.run_due(session, manila_at(22, 30)) == 0
     marker = next(m for m in _markers(session, due.SUMMARY) if m.entity_id == kiosk.id)
     assert marker.after is not None and len(marker.after["message_ids"]) == 2
+
+
+def test_a_closed_day_sends_no_summary(session: Session, ferinos: Ferinos, manila_at: At) -> None:
+    kiosk, people = ferinos
+    today = manila_at(15, 0).date()
+    _close_day(session, people)
+    closure = RetailClosure(
+        branch_id=kiosk.id, date=today, reason="Undas", set_by=people["Rosa"].id
+    )
+    store.insert(session, closure, Actor.system(kiosk.id), action="retail.closure_set")
+    session.commit()
+    due.run_due(session, manila_at(21, 45))
+    assert _notes(session, people["Marites"]) == []
+    assert [m for m in _markers(session, due.SUMMARY) if m.entity_id == kiosk.id] == []
 
 
 def test_the_summary_names_an_ingredient(session: Session, ferinos: Ferinos, manila_at: At) -> None:

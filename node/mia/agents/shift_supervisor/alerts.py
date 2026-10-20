@@ -351,8 +351,11 @@ def _retail_plan(
 ) -> int:
     """Each person whose tomorrow at the branch differs from what the roster or her last plan
     told her gets her new day (or shift.plan.off for a day emptied), not urgent, the marker with
-    the send. Nothing went out yet for the day: nothing to correct, so nothing is sent."""
+    the send. Nothing went out yet for the day: nothing to correct, so nothing is sent. A closed
+    day sends nothing either: close_day already told the clerks (shift.closed.told)."""
     tomorrow = today + dt.timedelta(days=1)
+    if tomorrow in retail_hours.closed(session, branch.id):
+        return 0
     # ponytail: loads the branch's plan and roster markers each tick; filter by date if it hurts.
     marks = list(
         session.exec(
@@ -393,8 +396,10 @@ def _retail_plan(
 
 
 def daily_plan(session: Session, now: dt.datetime) -> int:
-    """From the plan time on, once a day: everyone assigned tomorrow gets a card of their
-    visits (people without visits get nothing). Returns how many plans went out."""
+    """From the plan time on. Cleaning: once a day, everyone assigned tomorrow gets a card of
+    their visits (people without visits get nothing). Retail: only a clerk whose tomorrow changed
+    since the roster or her last plan, her new day or shift.plan.off for a day emptied, never for
+    a closed day. Returns how many plans went out."""
     return _each_branch(session, now, _plan_in)
 
 

@@ -32,8 +32,6 @@ from tests.test_data_standard_1_7 import (
 )
 from tests.test_shift_retail_tools import agree_swap, deps_for
 
-fmt_date = getattr(rules, "fmt_date", None) or rules._fmt_date  # renamed in Task 5's round
-
 
 def _tick(session: Session, rs_pin: Pin, moment: dt.datetime) -> int:
     return turn.SPEC.run_due(session, rs_pin(moment))
@@ -146,7 +144,10 @@ def test_a_closed_day_cancels_its_shifts(session: Session, rs: Ferinos, rs_pin: 
     ).all()
     assert (out.cancelled, {v.status for v in day}) == (2, {"cancelled"})
     told = t(
-        "shift.closed.told", "fil", location="Mall kiosk", date=fmt_date(NOV_1.isoformat(), "fil")
+        "shift.closed.told",
+        "fil",
+        location="Mall kiosk",
+        date=rules.fmt_date(NOV_1.isoformat(), "fil"),
     )
     assert told in texts(session, rs[1]["Ana"]) and told in texts(session, rs[1]["Liza"])
     sales_due.run_due(session, rs_pin(at(NOV_1, 20, 40)))
@@ -190,6 +191,31 @@ def test_the_daily_plan_goes_only_when_tomorrow_changed(
     assert texts(session, liza).count(t("shift.plan.off", "fil")) == 1
     assert texts(session, ana) == before
     assert urgency[t("shift.plan.off", "fil")] is False
+
+
+def test_a_day_closed_after_the_roster_gets_no_plan(
+    session: Session, rs: Ferinos, rs_pin: Pin
+) -> None:
+    liza, marites = rs[1]["Liza"], rs[1]["Marites"]
+    _tick(session, rs_pin, at(NOV_1, 17, 5))
+    rs_pin(at(MONDAY, 10))
+    out = tools.close_day(deps_for(session, marites, MONDAY), CloseDayInput(date=TUESDAY), "c")
+    session.commit()
+    assert out.status == "ok"
+    _tick(session, rs_pin, at(MONDAY, 17, 5))
+    told = texts(session, liza)
+    assert t("shift.plan.off", "fil") not in told
+    assert (
+        told.count(
+            t(
+                "shift.closed.told",
+                "fil",
+                location="Mall kiosk",
+                date=rules.fmt_date(TUESDAY.isoformat(), "fil"),
+            )
+        )
+        == 1
+    )
 
 
 def test_an_undecided_swap_expires_at_the_shift_start(
