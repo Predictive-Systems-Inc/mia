@@ -1012,17 +1012,17 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "intent.shift_supervisor.visit_details": "Käynnin tiedot",
         "intent.shift_supervisor.checklist": "Tarkistuslista",
         "intent.shift_supervisor.send_photos": "Lähetä kuvat",
-        "reply.send_photos": [
-            "Liitä kuvat viestiin ja lähetä ne tänne.",
-            "Lähetä kuvat tänne liitteinä, niin tallennan ne käynnin tietoihin.",
-        ],
-        "reply.unavailable": [
         "intent.shift_supervisor.set_roster": "Aseta vuorolista",
         "intent.shift_supervisor.swap": "Vaihda vuoro",
         "intent.shift_supervisor.swap_reply": "Vastaa vaihtoon",
         "intent.shift_supervisor.correct_time": "Korjaa aikani",
         "intent.shift_supervisor.close_day": "Sulje päivä",
         "intent.shift_supervisor.week_roster": "Viikon vuorolista",
+        "reply.send_photos": [
+            "Liitä kuvat viestiin ja lähetä ne tänne.",
+            "Lähetä kuvat tänne liitteinä, niin tallennan ne käynnin tietoihin.",
+        ],
+        "reply.unavailable": [
             "Anteeksi, en pysty vastaamaan juuri nyt. Yritä hetken päästä uudelleen.",
             "Anteeksi, jokin meni vikaan päässäni. Yritä pian uudelleen.",
         ],
