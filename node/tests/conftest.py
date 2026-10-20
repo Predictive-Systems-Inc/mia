@@ -154,6 +154,16 @@ def branch_manager_role() -> None:
     get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
 
 
+@pytest.fixture(autouse=True)
+def bookkeeper_role() -> None:
+    """The bookkeeper's manifest grants are in RBAC for every test (no LLM agent)."""
+    from mia.agents.bookkeeper import MANIFEST
+    from mia.core.rbac import get_rbac
+
+    roles = MANIFEST.roles
+    get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
+
+
 @pytest.fixture
 def fresh_rbac() -> Iterator[None]:
     """A new enforcer from the policy files only, as on a node that built no agent: the autouse

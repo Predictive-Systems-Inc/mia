@@ -37,7 +37,7 @@ from mia.core.models import (
     SalesCount,
     Thread,
 )
-from mia.core.rbac import PermissionDenied, get_rbac
+from mia.core.rbac import PermissionDenied
 from tests.conftest import BK_TODAY, Pin
 from tests.test_sales_tools import stall
 
@@ -110,14 +110,6 @@ ONE_DAY = dt.timedelta(days=1)
 YESTERDAY = BK_TODAY - ONE_DAY
 MNL = ZoneInfo("Asia/Manila")
 BINDING = {b.tool_id: b for b in tools.BINDINGS}
-
-
-@pytest.fixture(autouse=True)
-def bookkeeper_role() -> None:
-    """The bookkeeper's manifest grants in RBAC (no LLM agent builds them here; conftest's
-    role loaders are left to the plan's later tasks)."""
-    roles = MANIFEST.roles
-    get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
 
 
 def deps_for(session: Session, person: Person) -> AgentDeps:
