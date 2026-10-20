@@ -32,15 +32,22 @@ from mia.agents.production_planner import capacity as oven
 from mia.agents.production_planner.models import Batch, Dispatch, Plan, Recipe
 from mia.agents.sales_supervisor.tools import ITEMS, _as_reporter, _check, _currency, _live_counts
 from mia.agents.shift_supervisor import alerts
-from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
 from mia.core import store
 from mia.core.db import utcnow
-from mia.core.models import Actor, Branch, CustomerOrder, Person, Principal, SalesCount, StockEvent
+from mia.core.models import (
+    Actor,
+    Branch,
+    CustomerOrder,
+    Message,
+    Person,
+    Principal,
+    SalesCount,
+    StockEvent,
+)
 from mia.core.orgconfig import ProductionPlannerSettings
 from mia.core.orgconfig import load as load_settings
 from mia.core.rbac import Resource, get_rbac
-from mia.i18n import t
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailIngredient, RetailItem
 
@@ -52,6 +59,7 @@ RECIPES = Resource(kind="data", name=Recipe.__tablename__)
 PLANS = Resource(kind="data", name=Plan.__tablename__)
 BATCHES = Resource(kind="data", name=Batch.__tablename__)
 DISPATCHES = Resource(kind="data", name=Dispatch.__tablename__)
+PEOPLE = Resource(kind="data", name="core.person")
 DRIVER = "driver"
 ONE_DAY = dt.timedelta(days=1)
 
@@ -791,33 +799,31 @@ def record_batch(deps: AgentDeps, args: BatchInput, tool_call_id: str) -> BatchO
     )
 
 
-def send_dispatch(session: Session, commissary: Branch, rows: list[Dispatch]) -> None:
-    """Each dispatch's list to the commissary's supervisors and every person there with the
-    driver skill, urgent. ponytail: one line of item names and pieces; Task 5's dispatch_text
-    and its Delivered buttons replace it."""
+def send_dispatch(session: Session, commissary: Branch, rows: list[Dispatch]) -> list[Message]:
+    """Each dispatch's card (replies.dispatch_card: the list and its Delivered button, the
+    decision stored by turn.remember) to the commissary's supervisors and every active person
+    there with the driver skill, urgent. People and items are read by the agent alone after
+    its read check. Returns the messages sent."""
+    from mia.agents.production_planner import replies, turn  # both import this module
+
+    agent, rbac = agent_actor(commissary.id), get_rbac()
+    rbac.require(agent, PEOPLE, "read", session=session)
     people = session.exec(select(Person).where(Person.branch_id == commissary.id)).all()
     heads = alerts.supervisors(session, commissary.id)
     drivers = [p for p in people if DRIVER in p.skills and p.status == "active"]
     to = list({p.id: p for p in [*heads, *drivers]}.values())
+    rbac.require(agent, ITEMS, "read", session=session)
     names = {i.id: i.name for i in session.exec(select(RetailItem))}
+    names |= {k.id: k.name for k in served(session, commissary)}  # the kiosks named in settings
+    actor = Actor.system(commissary.id)
+    sent = []
     for d in rows:
-        kiosk = session.get(Branch, d.branch_id)
-        lines = ", ".join(f"{names[x['item_id']]} {x['quantity']}" for x in d.lines)
         for person in to:
-            text = t(
-                "pp.dispatch.packed",
-                person.language or "en",
-                kiosk=kiosk.name if kiosk else "",
-                lines=lines,
-            )
-            notify(
-                session,
-                person,
-                [TextBlock(text=text)],
-                Actor.system(commissary.id),
-                MANIFEST.id,
-                urgent=True,
-            )
+            blocks, options = replies.dispatch_card(dispatch_out(d), names, person.language or "en")
+            message = notify(session, person, blocks, actor, MANIFEST.id, urgent=True)
+            turn.remember(session, message, options, actor)
+            sent.append(message)
+    return sent
 
 
 # ---- dispatch_list and confirm_delivery ---------------------------------------------------

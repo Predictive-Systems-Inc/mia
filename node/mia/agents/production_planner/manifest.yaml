@@ -51,7 +51,7 @@ tools:
   - {id: production_planner.confirm_plan, kind: agent, risk: write_internal, approval: never, reads: [production_planner_plans, production_planner_recipes], writes: [production_planner_plans]}
   - {id: production_planner.batch_sheet, kind: agent, risk: read, approval: never, reads: [production_planner_recipes, production_planner_plans, retail_ingredients, retail_items]}
   - {id: production_planner.set_recipe, kind: agent, risk: write_internal, approval: never, reads: [production_planner_recipes, retail_items, retail_ingredients], writes: [production_planner_recipes]}
-  - {id: production_planner.record_batch, kind: agent, risk: write_internal, approval: never, reads: [production_planner_plans, production_planner_recipes, production_planner_batches], writes: [production_planner_batches, production_planner_dispatches]}
+  - {id: production_planner.record_batch, kind: agent, risk: write_internal, approval: never, reads: [production_planner_plans, production_planner_recipes, production_planner_batches, retail_items, core.person], writes: [production_planner_batches, production_planner_dispatches]}
   - {id: production_planner.dispatch_list, kind: agent, risk: read, approval: never, reads: [production_planner_dispatches]}
   - {id: production_planner.confirm_delivery, kind: agent, risk: write_internal, approval: never, reads: [production_planner_dispatches], writes: [production_planner_dispatches]}
   - {id: production_planner.capacity, kind: agent, risk: read, approval: never, reads: [production_planner_recipes, production_planner_plans]}
