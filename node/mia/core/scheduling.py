@@ -144,29 +144,37 @@ def candidate_data(
     *,
     include_assigned: bool = False,
     only: set[str] | None = None,
+    org_wide: bool = False,
 ) -> list[scoring.CandidateData]:
     """Everything scoring needs for the active staff of the branch (or `only` those ids):
-    availability windows, hour limits, this week's other bookings, absences, site history."""
-    from mia.core.models import Absence
+    availability windows, hour limits, this week's other bookings, absences and approved leave
+    days, site history. With `org_wide` (the retail cover, D39) the staff and their bookings
+    come from every branch of the branch's organisation, never another organisation's."""
+    from mia.core.models import Absence, Leave
 
-    tz = branch.timezone
+    branches = (
+        session.exec(select(Branch).where(Branch.organisation_id == branch.organisation_id)).all()
+        if org_wide
+        else [branch]
+    )
+    zones = {b.id: b.timezone for b in branches}
     week_start = _monday(visit.date)
     week_end = week_start + dt.timedelta(days=6)
     persons = session.exec(
-        select(Person).where(Person.branch_id == branch.id).where(Person.status == "active")
+        select(Person).where(col(Person.branch_id).in_(zones)).where(Person.status == "active")
     ).all()
     week_visits = [
         v
         for v in session.exec(
             select(Visit)
-            .where(Visit.branch_id == branch.id)
+            .where(col(Visit.branch_id).in_(zones))
             .where(col(Visit.date) >= week_start)
             .where(col(Visit.date) <= week_end)
             .where(Visit.status != "cancelled")
         ).all()
         if v.id != visit.id
     ]
-    slots = {v.id: slot_of(session, v, tz) for v in week_visits}
+    slots = {v.id: slot_of(session, v, zones[v.branch_id]) for v in week_visits}
     past_here = session.exec(
         select(Visit)
         .where(Visit.location_id == visit.location_id)
@@ -183,7 +191,12 @@ def candidate_data(
             for a in session.exec(select(Availability).where(Availability.person_id == p.id))
         }
         limit = session.exec(select(WorkLimit).where(WorkLimit.person_id == p.id)).first()
-        absences = session.exec(select(Absence).where(Absence.person_id == p.id)).all()
+        absent = {a.date for a in session.exec(select(Absence).where(Absence.person_id == p.id))}
+        for leave in session.exec(
+            select(Leave).where(Leave.person_id == p.id).where(Leave.status == "approved")
+        ):
+            span = (leave.end_date - leave.start_date).days + 1
+            absent |= {leave.start_date + dt.timedelta(days=n) for n in range(span)}
         home = (
             (p.home_lat, p.home_lon) if p.home_lat is not None and p.home_lon is not None else None
         )
@@ -196,7 +209,7 @@ def candidate_data(
                 max_daily_minutes=limit.max_daily_minutes if limit else 600,
                 max_weekly_minutes=limit.max_weekly_minutes if limit else 2400,
                 booked=[slots[v.id] for v in week_visits if p.id in v.assigned_person_ids],
-                absent_dates={a.date for a in absences},
+                absent_dates=absent,
                 site_visits=sum(1 for v in past_here if p.id in v.assigned_person_ids),
                 home=home,
             )

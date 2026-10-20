@@ -22,6 +22,7 @@ from mia.agents.branch_manager import tips as bm_tips
 from mia.agents.branch_manager.models import Experiment, Strategy, Tip
 from mia.agents.customer_service.models import Complaint, Customer, Order
 from mia.agents.hr_officer import calc, calendar
+from mia.agents.shift_supervisor import roster
 from mia.core import events, orgconfig, scheduling, store
 from mia.core.models import (
     Actor,
@@ -574,18 +575,20 @@ def _seed_hr(
 
 
 def _shift_job(session: Session, branch: Branch, loc: Location, name: str, since: dt.date) -> Job:
-    """The clerk's weekly shift Job on SHIFT_DAYS at SHIFTS' times, named "Opening <name>" when
-    it starts at the branch's opening, else "Closing <name>"; created on `since` (local), so
-    generation never depends on the wall clock."""
+    """The clerk's weekly shift Job on SHIFT_DAYS at SHIFTS' times, named by roster.job_name
+    from the branch's hours ("Opening Ana"); created on `since` (local), so generation never
+    depends on the wall clock."""
     where, begin, finish = SHIFTS[name]
     zone = ZoneInfo(branch.timezone)
     start, end = (dt.datetime.combine(since, dt.time.fromisoformat(t)) for t in (begin, finish))
-    # ponytail: Opening or Closing by the branch's opening; roster.job_name (Task 2) names Mid
-    label = "Opening" if begin == BRANCHES[where][1] else "Closing"
+    _, opens, closes, _ = BRANCHES[where]
+    times = (dt.time.fromisoformat(t) for t in (begin, finish, opens, closes))
+    shift_start, shift_end, branch_opens, branch_closes = times
+    days = SHIFT_DAYS[name].split(",")
     job = Job(
         branch_id=branch.id,
         location_id=loc.id,
-        name=f"{label} {name}",
+        name=roster.job_name(shift_start, shift_end, days, branch_opens, branch_closes, name),
         recurrence=f"FREQ=WEEKLY;BYDAY={SHIFT_DAYS[name]}",
         start_time=begin,
         duration_minutes=int((end - start).total_seconds() // 60),
