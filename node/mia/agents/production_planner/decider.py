@@ -99,6 +99,7 @@ def _capacity(r: Reader) -> Args:
     if n is not None and r.pick("unit", set(UNITS)) == "batches":
         n = n * q.batch_yields[item] if item in q.batch_yields else None
     day = _date(r) or q.today + dt.timedelta(days=1)
+    # 0 pieces is no amount: CapacityInput.pieces is None or more than 0
     return {"day": day, "item_id": item, "pieces": n or None}, None
 
 

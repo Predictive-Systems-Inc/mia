@@ -7,12 +7,12 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from mia.agents.production_planner import actions, decider, words
+from mia.agents.production_planner import actions, decider, tools, words
 from mia.core.models import Branch, Person
 from mia.templates.retail.models import RetailIngredient
-from tests.conftest import PP_TODAY, PP_TOMORROW
+from tests.conftest import PP_TODAY, PP_TOMORROW, Pin
 from tests.jev_fake import answers_for
-from tests.test_production_planner_tools import deps_for, draft, item, stall
+from tests.test_production_planner_tools import at, comm, deps_for, draft, item, stall
 
 Ferinos = tuple[Branch, dict[str, Person]]
 
@@ -119,6 +119,29 @@ def test_pieces_become_whole_batches(session: Session, pp: Ferinos) -> None:
         PP_TOMORROW,
         None,
     )
+
+
+def test_the_plan_read_is_the_production_days(session: Session, pp: Ferinos, pp_pin: Pin) -> None:
+    ube = item(session, "Ube").id
+    today = tools.draft_plan(session, comm(session), PP_TODAY)
+    tools.set_batches(session, today, ube, 9, tools.agent_actor(comm(session).id))
+    tomorrow = {x["item_id"]: x["batches"] for x in draft(session).lines}
+    assert tomorrow[ube] != 9
+    pp_pin(at(PP_TODAY, 14, 5))  # production ended at 09:00: the day is tomorrow
+    q = query(session, pp[1]["Nonoy"], "dagdagan ng isang batch ang ube")
+    assert (q.plan_date, q.plan_batches) == (PP_TOMORROW, tomorrow)
+    args = reader(q, item=ube, direction="add", number="n0")
+    assert decider._args("change_plan", args)[0]["batches"] == tomorrow[ube] + 1
+    pp_pin(at(PP_TODAY, 7, 0))  # before the end of production: today's plan
+    assert query(session, pp[1]["Nonoy"], "ube").plan_batches[ube] == 9
+
+
+def test_a_date_other_than_the_plans_is_missing_the_plan(session: Session, pp: Ferinos) -> None:
+    draft(session)
+    q = query(session, pp[1]["Nonoy"], "dagdagan ng 2 batch ang ube sa Biyernes")
+    assert q.plan_date == PP_TOMORROW and q.dates == {"d0": "2026-11-13"}
+    args = reader(q, item=item(session, "Ube").id, direction="add", number="n0", date="d0")
+    assert decider._args("change_plan", args)[1] == "plan"
 
 
 def test_a_negated_change_is_a_no(session: Session, pp: Ferinos) -> None:

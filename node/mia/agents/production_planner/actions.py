@@ -16,8 +16,7 @@ from mia.agents.base import AgentDeps
 from mia.agents.decider import NOT_STATED, Action
 from mia.agents.parsing import find_dates, has_negation
 from mia.agents.production_planner import MANIFEST, tools, words
-from mia.agents.production_planner.models import Plan
-from mia.core import orgconfig
+from mia.core import db, orgconfig
 from mia.core.models import Branch
 from mia.templates.retail.models import RetailIngredient, RetailItem
 
@@ -130,12 +129,11 @@ class Query:
     role: str
     today: dt.date
     items: dict[str, str] = field(default_factory=dict)  # single item id -> "Name (codes)"
-    ingredients: dict[str, str] = field(default_factory=dict)  # id -> "Name (codes)"
     kiosks: dict[str, str] = field(default_factory=dict)  # served branch id -> name
     numbers: dict[str, int] = field(default_factory=dict)  # n0 -> count (words.numbers)
     dates: dict[str, str] = field(default_factory=dict)  # d0 -> ISO date, from find_dates
     plan_batches: dict[str, int] = field(default_factory=dict)  # item id -> batches planned
-    plan_date: dt.date | None = None  # the date of the plan plan_batches is read from
+    plan_date: dt.date | None = None  # the production day whose plan plan_batches is
     batch_yields: dict[str, int] = field(default_factory=dict)  # item id -> its recipe's yield
     recipe: words.RecipeParse | None = None
     batch: words.BatchParse | None = None
@@ -160,10 +158,10 @@ def _named(row: RetailItem | RetailIngredient) -> str:
 def build_query(
     deps: AgentDeps, message: str, previous_mia_message: str, *, message_id: str | None = None
 ) -> Query:
-    """Every candidate the request needs: the single items (never a bundle) and ingredients,
-    the commissary's served kiosks, recipe yields and the batches of its next plan (the first
-    on or after today), and what code reads from the message. Reads only; the caller holds no
-    write lock."""
+    """Every candidate the request needs: the single items (never a bundle), the commissary's
+    served kiosks, recipe yields, the batches of the production day's plan (tools.production_day
+    now: the plan the tools edit) and what code reads from the message (a recipe against the
+    ingredients). Reads only; the caller holds no write lock."""
     session = deps.session
     home = commissary(session, deps.organisation_id)
     here = (home or deps.branch).id
@@ -185,19 +183,15 @@ def build_query(
     if home is not None:
         kiosks = {b.id: b.name for b in tools.served(session, home)}
         yields = {r.item_id: r.batch_yield for r in tools.recipes(session, home.id)}
-        plan = session.exec(
-            select(Plan)
-            .where(Plan.branch_id == home.id)
-            .where(col(Plan.production_date) >= deps.today)
-            .order_by(col(Plan.production_date))
-        ).first()
+        # the plan the tools edit: production_day on the clock the tests pin (mia.core.db)
+        day = tools.production_day(home, orgconfig.load().production_planner, db.utcnow())
+        plan = tools.plan_for(session, home.id, day)
     return Query(
         message=message,
         previous_mia_message=previous_mia_message,
         role=", ".join(deps.person.roles),
         today=deps.today,
         items={i.id: _named(i) for i in items if not i.components},
-        ingredients={i.id: _named(i) for i in ings},
         kiosks=kiosks,
         numbers=words.numbers(message, deps.today, deps.lang),
         dates={i: d.isoformat() for i, d in find_dates(message, deps.today, deps.lang)},
