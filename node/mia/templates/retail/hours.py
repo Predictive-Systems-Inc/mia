@@ -1,7 +1,8 @@
 """Opening hours of a retail branch as pure functions over its retail_branch_hours rows, and the
 business date they give. Shared by the agents that work to a shop's hours; imports nothing from
-mia.agents. Only load(), is_shop(), shops() and closed() read the database, unchecked: callers check
-retail_branch_hours (or retail_closures) read first, or are the system tick.
+mia.agents. Only load(), is_shop(), shops() and closed() read the database, unchecked: callers of load()
+check retail_branch_hours read, of closed() retail_closures read, of shops() the sales and
+bookkeeper rights of their own tools, or are the system tick.
 """
 
 import datetime as dt
@@ -28,7 +29,7 @@ def load(session: Session, branch_id: str) -> list[RetailBranchHours]:
 
 def is_shop(session: Session, branch_id: str) -> bool:
     """True when the branch sells (it has hours rows); a commissary has none, so the kiosk
-    agents' due work skips it (no permission check; see the module docstring)."""
+    agents' due work skips it (so does any kiosk without hours rows) (no permission check; see the module docstring)."""
     stmt = select(RetailBranchHours.id).where(RetailBranchHours.branch_id == branch_id).limit(1)
     return session.exec(stmt).first() is not None
 

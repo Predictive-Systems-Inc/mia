@@ -771,3 +771,9 @@ Format for each entry:
 - Question: Is a clerk's report of a customer making trouble at the counter an incident or a complaint?
 - Assumed answer: an incident (kind customer); a complaint from the public stays customer_service's.
 - Blocking: no.
+
+## Q112: Commissary staff covering a kiosk shift
+- Where: shift_supervisor cover and roster (D39), scheduling.candidate_data
+- Question: May commissary staff (the driver) ever cover a kiosk shift?
+- Assumed answer: no; cross-kiosk cover is kiosk staff only (branches with opening hours).
+- Blocking: no.

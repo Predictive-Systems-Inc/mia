@@ -265,7 +265,9 @@ p, admin, *, data:bookkeeper_*, read_all, allow
 p, admin, *, data:bookkeeper_*, write_all, allow
 
 # staff (the driver, Q94: staff at the commissary with the skill driver, checked in
-# confirm_delivery; read_own gates by role only, the rows are those from the driver's branch)
+# confirm_delivery; read_own gates by role only, the rows are those from the driver's branch).
+# The staff use offer is by role, not by skill; a clerk inherits staff's planner lines, but the
+# agent itself is denied to clerks
 p, staff, *, tool:production_planner.dispatch_list, execute, allow
 p, staff, *, tool:production_planner.confirm_delivery, execute, allow
 p, staff, *, data:production_planner_dispatches, read_own, allow

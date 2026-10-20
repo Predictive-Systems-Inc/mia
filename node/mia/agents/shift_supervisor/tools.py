@@ -305,13 +305,25 @@ def resolve_visit(session: Session, deps: AgentDeps, args: FindReplacementsInput
     return visits[0]
 
 
+def _kiosks(session: Session, branch: Branch) -> set[str]:
+    """Ids of the organisation's kiosks (branches with hours rows): cross-kiosk cover is kiosk
+    staff only (D39, Q112), never the commissary's. Used only where org_wide is, which is
+    retail only, so the cleaning organisation (no hours rows) is untouched."""
+    return {b.id for b in retail_hours.shops(session, branch.organisation_id)}
+
+
 def candidate_data(
     session: Session, deps: AgentDeps, visit: Visit, *, include_assigned: bool = False
 ) -> list[scoring.CandidateData]:
     """Gather everything scoring needs, for every active staff member not on the visit: the
     organisation's in retail (the cover across kiosks, D39), else the branch's."""
     return scheduling.candidate_data(
-        session, deps.branch, visit, include_assigned=include_assigned, org_wide=is_retail()
+        session,
+        deps.branch,
+        visit,
+        include_assigned=include_assigned,
+        org_wide=is_retail(),
+        among=_kiosks(session, deps.branch) if is_retail() else None,
     )
 
 
@@ -1097,16 +1109,19 @@ def set_roster(deps: AgentDeps, args: SetRosterInput, tool_call_id: str) -> Rost
         dict[tuple[str, str], list[dt.date]](),
         retail_hours.closed(session, branch.id),
     )
+    kiosks = _kiosks(session, branch)
     for pid, rows in jobs.items():
         person = people[pid]
         for v in (v for job in rows for v in _open_visits(session, job, deps.today)):
             if pid in v.assigned_person_ids or v.date in closed:
                 continue
-            reasons = scheduling.ineligibility(session, branch, v, person, org_wide=True)
+            reasons = scheduling.ineligibility(
+                session, branch, v, person, org_wide=True, among=kiosks
+            )
             for r in reasons:
                 clashes.setdefault((person.name, r), []).append(v.date)
             if not reasons:
-                scheduling.assign(session, deps.actor, v, person, org_wide=True)
+                scheduling.assign(session, deps.actor, v, person, org_wide=True, among=kiosks)
                 planned += 1
     return RosterOut(
         status="ok",

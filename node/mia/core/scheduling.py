@@ -9,6 +9,7 @@ until it is approved.
 
 import datetime as dt
 import logging
+from collections.abc import Collection
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
@@ -145,11 +146,13 @@ def candidate_data(
     include_assigned: bool = False,
     only: set[str] | None = None,
     org_wide: bool = False,
+    among: Collection[str] | None = None,
 ) -> list[scoring.CandidateData]:
     """Everything scoring needs for the active staff of the branch (or `only` those ids):
     availability windows, hour limits, this week's other bookings, absences and approved leave
     days, site history. With `org_wide` (the retail cover, D39) the staff and their bookings
-    come from every branch of the branch's organisation, never another organisation's."""
+    come from every branch of the branch's organisation (only those in `among` when given, the
+    retail kiosks), never another organisation's."""
     from mia.core.models import Absence, Leave
 
     branches = (
@@ -157,6 +160,8 @@ def candidate_data(
         if org_wide
         else [branch]
     )
+    if among is not None:
+        branches = [b for b in branches if b.id in among or b.id == branch.id]
     zones = {b.id: b.timezone for b in branches}
     week_start = _monday(visit.date)
     week_end = week_start + dt.timedelta(days=6)
@@ -218,7 +223,13 @@ def candidate_data(
 
 
 def ineligibility(
-    session: Session, branch: Branch, visit: Visit, person: Person, *, org_wide: bool = False
+    session: Session,
+    branch: Branch,
+    visit: Visit,
+    person: Person,
+    *,
+    org_wide: bool = False,
+    among: Collection[str] | None = None,
 ) -> list[str]:
     """Why the person may not take the visit (empty when they may): the shift supervisor's reasons
     plus missing skills. An inactive or non-staff person gets one reason. `org_wide` as in
@@ -229,7 +240,13 @@ def ineligibility(
         return ["not a staff member"]
     job = session.get(Job, visit.job_id)
     data = candidate_data(
-        session, branch, visit, include_assigned=True, only={person.id}, org_wide=org_wide
+        session,
+        branch,
+        visit,
+        include_assigned=True,
+        only={person.id},
+        org_wide=org_wide,
+        among=among,
     )
     if not data:
         return ["person is not active"]
@@ -381,6 +398,7 @@ def assign(
     *,
     add: bool = False,
     org_wide: bool = False,
+    among: Collection[str] | None = None,
 ) -> Assignment:
     """Put the person on the visit (replacing the assignees unless `add`). Eligible: done and
     `visit.assigned`. Not eligible: an override approval is created and the visit is unchanged
@@ -395,7 +413,7 @@ def assign(
         return Assignment(visit, None, [])
     branch = session.get(Branch, visit.branch_id)
     assert branch is not None
-    reasons = ineligibility(session, branch, visit, person, org_wide=org_wide)
+    reasons = ineligibility(session, branch, visit, person, org_wide=org_wide, among=among)
     if reasons:
         for open_one in approvals.pending(session, visit.branch_id):  # one card per ask
             if (

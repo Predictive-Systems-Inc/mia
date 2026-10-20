@@ -8,8 +8,9 @@ from sqlmodel import Session, select
 
 from mia.agents.shift_supervisor import roster, scoring
 from mia.core import scheduling, store
-from mia.core.models import Actor, Branch, Job, Organisation, Person, Visit
+from mia.core.models import Actor, Availability, Branch, Job, Organisation, Person, Visit
 from mia.core.people import add_person
+from mia.templates.retail import hours as retail_hours
 from tests.conftest import RS_TODAY
 
 Ferinos = tuple[Branch, dict[str, Person]]
@@ -56,10 +57,38 @@ def test_cover_never_reaches_another_organisation(session: Session, rs: Ferinos)
         language="fil",
     )
     visit = visit_of(session, rs[1]["Ana"], TUESDAY)
-    names = {c.name for c in scheduling.candidate_data(session, rs[0], visit, org_wide=True)}
-    # Berto is the commissary's driver (same organisation, staff); without availability windows
-    # scoring never finds him free for a kiosk shift
-    assert names == {"Liza", "Pao", "Berto"}
+    kiosks = {b.id for b in retail_hours.shops(session, rs[0].organisation_id)}
+    data = scheduling.candidate_data(session, rs[0], visit, org_wide=True, among=kiosks)
+    names = {c.name for c in data}
+    assert names == {"Liza", "Pao"}  # kiosk staff only, never the commissary driver (Q112)
+
+
+def test_commissary_driver_with_windows_is_not_kiosk_cover(session: Session, rs: Ferinos) -> None:
+    berto = rs[1]["Berto"]
+    for weekday in range(7):  # free all day, yet never a candidate (Q112)
+        store.insert(
+            session,
+            Availability(
+                branch_id=berto.branch_id,
+                person_id=berto.id,
+                weekday=weekday,
+                start="00:00",
+                end="23:59",
+            ),
+            Actor.system(berto.branch_id),
+        )
+    visit = visit_of(session, rs[1]["Ana"], TUESDAY)
+    data = scheduling.candidate_data(session, rs[0], visit, org_wide=True, among=None)
+    assert "Berto" in {c.name for c in data}  # the raw org-wide pool still has him
+    kiosks = {b.id for b in retail_hours.shops(session, rs[0].organisation_id)}
+    names = {
+        c.name
+        for c in scheduling.candidate_data(session, rs[0], visit, org_wide=True, among=kiosks)
+    }
+    assert "Berto" not in names
+    assert scheduling.ineligibility(session, rs[0], visit, berto, org_wide=True, among=kiosks) == [
+        "person is not active"
+    ]
 
 
 def test_cover_stays_in_the_branch_by_default(session: Session, rs: Ferinos) -> None:

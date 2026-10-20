@@ -27,6 +27,7 @@ from mia.core.models import Actor, Approval, Branch, CoverRequest, Event, Locati
 from mia.core.orgconfig import OrgSettings
 from mia.core.orgconfig import load as load_org
 from mia.i18n import t
+from mia.templates.retail import hours as retail_hours
 
 AGENT_ID = MANIFEST.id
 OVERRIDE_TYPE = "shift_supervisor.cover_override"
@@ -506,7 +507,13 @@ def _swap_reasons(session: Session, mine: Visit, theirs: Visit, a: str, b: str) 
     data = {
         c.person_id: c
         for c in scheduling.candidate_data(
-            session, branch, mine, include_assigned=True, only={a, b}, org_wide=True
+            session,
+            branch,
+            mine,
+            include_assigned=True,
+            only={a, b},
+            org_wide=True,
+            among={s.id for s in retail_hours.shops(session, branch.organisation_id)},
         )
     }
     if {a, b} - set(data):
