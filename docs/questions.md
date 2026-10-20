@@ -777,3 +777,9 @@ Format for each entry:
 - Question: May commissary staff (the driver) ever cover a kiosk shift?
 - Assumed answer: no; cross-kiosk cover is kiosk staff only (branches with opening hours).
 - Blocking: no.
+
+## Q113: The split of a batch when no kiosk has a forecast
+- Where: production_planner forecast.dispatch_split (plan section Task 2; the tie rule in the plan)
+- Question: When no kiosk has a same-weekday history (every forecast None, so every demand is 0), how are the pieces of a whole batch split between the kiosks?
+- Assumed answer: evenly, the remainder to the first kiosk in `serves`; whenever any kiosk has a forecast, the plan's rule holds (each kiosk its demand, the surplus to the larger forecast, a tie to the first in `serves`).
+- Blocking: no.
