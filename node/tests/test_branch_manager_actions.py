@@ -120,6 +120,10 @@ def test_propose_experiment_without_item_price_or_start(session: Session, bm: Fe
     args, missing = decider._args("propose_experiment", reader(q, item=item(session, "Classic")))
     assert missing == "price" and args["starts_on"] == "2026-10-27"  # the next open day
     assert args["kind"] == "price"
+    charm = session.exec(select(Strategy).where(Strategy.name_key == "bm.strategy.charm")).one()
+    r = reader(q, item=item(session, "Classic"), strategy=charm.id)
+    args, missing = decider._args("propose_experiment", r)
+    assert (args["to_price"], args["strategy_id"], missing) == (None, charm.id, None)  # sized
 
 
 def test_how_to_sell_needs_an_item_and_keep_is_a_yes_or_no(session: Session, bm: Ferinos) -> None:

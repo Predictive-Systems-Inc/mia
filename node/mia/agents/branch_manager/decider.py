@@ -15,8 +15,9 @@ def _pick(r: Reader, slot: str, options: dict[str, Any]) -> str | None:
 
 
 def _propose(r: Reader) -> tuple[dict[str, Any], str | None]:
-    """No item: {} (the turn offers the engine's suggestion). No price: missing price. No start:
-    the next open day. strategy_id None is refused by the tool (no_strategy)."""
+    """No item: {} (the turn offers the engine's suggestion). No price: missing price, unless a
+    strategy is picked (to_price None: the tool sizes it through experiments.propose). No
+    start: the next open day. strategy_id None is refused by the tool (no_strategy)."""
     q: Query = r.q
     item = _pick(r, "item", q.items)
     if item is None:
@@ -30,7 +31,7 @@ def _propose(r: Reader) -> tuple[dict[str, Any], str | None]:
         "kind": r.pick("kind", set(KINDS) - {NOT_STATED}) or "price",
         "strategy_id": _pick(r, "strategy", q.strategies),
     }
-    return args, None if price else "price"
+    return args, None if price or args["strategy_id"] else "price"
 
 
 def _change_price(r: Reader) -> tuple[dict[str, Any], str | None]:

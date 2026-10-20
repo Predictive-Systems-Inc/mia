@@ -608,3 +608,9 @@ Format for each entry:
 - Question: The markdown strategy (spec section 13, 5) is a late-day cut on an item that is often left over, but a branch's price changes by the day, not by the hour. Should the template gain a time-of-day price?
 - Assumed answer: not in v1; the markdown is proposed as an all-day price for the 14 days and the owner's card says "all day" until a time-of-day price exists.
 - Blocking: no.
+
+## Q83: Order lines for the volume strategy
+- Where: node/mia/agents/branch_manager/tools.py (`branch_numbers`, `order_pieces`), node/mia/agents/customer_service/models.py (`Order.lines`)
+- Question: The volume tier strategy (spec section 13, 4) reads how many pieces each customer order line holds, but order lines live in the customer service's own table (rule 9: no other agent reads it). Should order lines become shared data (a data standard change), or should the volume strategy read the sales counts some other way?
+- Assumed answer: neither in v1; `order_pieces` stays empty, so the volume strategy proposes nothing until the owner decides.
+- Blocking: no.

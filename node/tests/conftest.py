@@ -144,6 +144,16 @@ def customer_service_role() -> None:
     get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
 
 
+@pytest.fixture(autouse=True)
+def branch_manager_role() -> None:
+    """The branch manager's manifest grants are in RBAC for every test (no LLM agent)."""
+    from mia.agents.branch_manager import MANIFEST
+    from mia.core.rbac import get_rbac
+
+    roles = MANIFEST.roles
+    get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
+
+
 @pytest.fixture
 def fresh_rbac() -> Iterator[None]:
     """A new enforcer from the policy files only, as on a node that built no agent: the autouse
@@ -248,6 +258,7 @@ CLOCK_USERS = (
     "mia.agents.customer_service.public",
     "mia.agents.customer_service.due",
     "mia.templates.retail.items",
+    "mia.agents.branch_manager.tools",
 )
 
 
@@ -384,3 +395,29 @@ def bm_shop(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Shop]
 def bm(bm_shop: Shop) -> tuple[Branch, dict[str, Person]]:
     """bm_shop as (the Mall kiosk, people by first name); bm_shop.pin moves the clock."""
     return bm_shop.kiosk, bm_shop.people
+
+
+@pytest.fixture
+def bm_en(bm_shop: Shop, session: Session) -> tuple[Branch, dict[str, Person]]:
+    """bm with every seeded person set to English (people.set_language), for English literals."""
+    from mia.core import people
+
+    for person in session.exec(select(Person)).all():
+        people.set_language(session, Actor.system(bm_shop.kiosk.id), person, "en")
+    session.commit()
+    return bm_shop.kiosk, {p.name.split()[0]: p for p in session.exec(select(Person)).all()}
+
+
+Pin = Callable[[dt.datetime], dt.datetime]
+
+
+@pytest.fixture
+def pin(bm_shop: Shop) -> Pin:
+    """Move the bm_shop clock to an aware moment (bm_shop.pin at its Manila hour, minute and
+    days from BM_TODAY; the clock keeps running from there). Returns the local moment."""
+
+    def set_at(at: dt.datetime) -> dt.datetime:
+        local = at.astimezone(MNL)
+        return bm_shop.pin(local.hour, local.minute, (local.date() - BM_TODAY).days)
+
+    return set_at

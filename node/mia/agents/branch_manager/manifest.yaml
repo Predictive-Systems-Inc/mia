@@ -6,7 +6,49 @@ job_description: job.md
 instructions: {base: prompts/base.md}
 roles:
   agent_role: agent.branch_manager
-  grants: []
+  grants:
+    - data:sales_counts:read
+    - data:sales_counts:read_all
+    - data:sales_targets:read
+    - data:sales_targets:read_all
+    - data:sales_notes:read
+    - data:stock_events:read
+    - data:stock_events:read_all
+    - data:retail_items:read
+    - data:retail_items:write
+    - data:retail_ingredients:read
+    - data:retail_branch_hours:read
+    - data:core.person:read
+    - data:branch_manager_experiments:read
+    - data:branch_manager_experiments:write
+    - data:branch_manager_experiments:read_all
+    - data:branch_manager_strategies:read
+    - data:branch_manager_tips:read
+    - data:branch_manager_coaching:read
+    - data:branch_manager_coaching:write
+    - tool:branch_manager.coaching:execute
+    - tool:branch_manager.how_to_sell:execute
+    - tool:branch_manager.propose_experiment:request
+    - tool:branch_manager.score_experiment:execute
+    - tool:branch_manager.decide_experiment:execute
+    - tool:branch_manager.change_price:request
+    - tool:branch_manager.set_short_code:execute
+    - tool:branch_manager.weekly_summary:execute
+    - tool:branch_manager.monthly_letter:execute
   denies: [tool:*:approve]
-tools: []
+  # Money waits for the owner (or an admin), in the app with the PIN step-up; the owner's own
+  # request is decided by the owner with the step-up (D37).
+  approvers:
+    branch_manager.propose_experiment: [owner, admin]
+    branch_manager.change_price: [owner, admin]
+tools:
+  - {id: branch_manager.coaching, kind: agent, risk: read, approval: never, reads: [sales_counts, person, branch_manager_coaching]}
+  - {id: branch_manager.how_to_sell, kind: agent, risk: write_internal, approval: never, reads: [sales_notes, sales_counts, branch_manager_tips], writes: [branch_manager_coaching]}
+  - {id: branch_manager.propose_experiment, kind: agent, risk: money, approval: always, reads: [sales_counts, stock_events, retail_items, branch_manager_strategies, branch_manager_experiments], writes: [branch_manager_experiments, retail_item_prices, retail_items, approval]}
+  - {id: branch_manager.score_experiment, kind: agent, risk: read, approval: never, reads: [branch_manager_experiments, sales_counts]}
+  - {id: branch_manager.decide_experiment, kind: agent, risk: write_internal, approval: never, reads: [branch_manager_experiments], writes: [branch_manager_experiments, retail_item_prices, retail_items]}
+  - {id: branch_manager.change_price, kind: agent, risk: money, approval: always, reads: [retail_items], writes: [retail_item_prices, approval]}
+  - {id: branch_manager.set_short_code, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_ingredients], writes: [retail_items]}
+  - {id: branch_manager.weekly_summary, kind: agent, risk: read, approval: never, reads: [sales_counts, sales_targets, stock_events, branch_manager_experiments]}
+  - {id: branch_manager.monthly_letter, kind: agent, risk: read, approval: never, reads: [sales_counts, sales_targets, branch_manager_experiments]}
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

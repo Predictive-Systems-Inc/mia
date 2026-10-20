@@ -93,3 +93,29 @@ def set_short_codes(
     """Replace the item's short codes (event retail_items.updated). Clash checks are the
     caller's (the tool refuses a code another item or ingredient holds)."""
     return store.update(session, item, {"short_codes": codes}, actor, tool_call_id=tool_call_id)
+
+
+def create_variant(
+    session: Session,
+    base: RetailItem,
+    name: str,
+    price: int,
+    components: list[str],
+    actor: Actor,
+    tool_call_id: str | None,
+) -> RetailItem:
+    """A new item beside `base` (a premium variant, a bundle or a larger box) sold only at the
+    actor's branch at `price` in base's currency, after it in the menu, inactive until its
+    experiment starts (event retail.item_created). components lists a bundle's item ids."""
+    item = RetailItem(
+        branch_id=actor.branch_id,
+        name=name,
+        price=price,
+        currency=base.currency,
+        active=False,
+        sort_order=base.sort_order,
+        components=components,
+    )
+    return store.insert(
+        session, item, actor, action="retail.item_created", tool_call_id=tool_call_id
+    )
