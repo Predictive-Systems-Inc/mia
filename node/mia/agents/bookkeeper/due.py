@@ -106,12 +106,12 @@ def _once_each(people: list[Person]) -> list[Person]:
     return list({p.id: p for p in people}.values())
 
 
-def _deps(session: Session, person: Person, day: dt.date) -> AgentDeps:
+def _deps(session: Session, person: Person, day: dt.date) -> AgentDeps | None:
     """The lead acting from their own branch on day, so the tools' rbac checks apply (another
-    branch needs read_all)."""
+    branch needs read_all); None when their branch row is gone (the lead is skipped)."""
     branch = session.get(Branch, person.branch_id)
     if branch is None:
-        raise LookupError("the person's branch")
+        return None
     return AgentDeps(
         session=session,
         actor=Actor.person(person).as_agent(MANIFEST.roles.agent_role),
@@ -153,7 +153,7 @@ def _count_reminder(session: Session, branch: Branch, day: dt.date) -> list[Mess
 
 
 def _balance_reminders(session: Session, branch: Branch, day: dt.date) -> int:
-    """bk.petty.low when the petty balance is under the floor and bk.undeposited.high when the
+    """bk.petty.low when the petty fund is open (a refill or spend ever) and under the floor, and bk.undeposited.high when the
     undeposited cash was over the limit OVER_DAYS business dates in a row, each once per
     branch and day, to the supervisors and the leads."""
     settings = orgconfig.load().bookkeeper
@@ -164,8 +164,11 @@ def _balance_reminders(session: Session, branch: Branch, day: dt.date) -> int:
     currency = _currency(session, branch.id)
     count = 0
     balance = tools._latest(petty)
-    if balance < settings.petty_floor and not alerts._marked(
-        session, PETTY_REMINDED, branch.id, day
+    opened = bool(petty)  # a branch that never refilled or spent petty cash has no fund
+    if (
+        opened
+        and balance < settings.petty_floor
+        and not alerts._marked(session, PETTY_REMINDED, branch.id, day)
     ):
         sent = [
             _send(
@@ -211,8 +214,11 @@ def _profit(session: Session, branch: Branch, day: dt.date) -> list[Message]:
     names = _names(session, branch.organisation_id)
     sent = []
     for person in alerts.leads(session, branch.organisation_id):
+        deps = _deps(session, person, day)
+        if deps is None:
+            continue
         try:
-            out = tools.monthly_profit(_deps(session, person, day), args, new_id())
+            out = tools.monthly_profit(deps, args, new_id())
         except PermissionDenied:
             continue
         text = replies.profit_text(out, names, _lang(person))
@@ -236,10 +242,11 @@ def _quarter(session: Session, branch: Branch, day: dt.date, start: dt.date) -> 
     figure: tools.TaxOut | None = None
     sent = 0
     for person in alerts.leads(session, branch.organisation_id):
+        deps = _deps(session, person, day)
+        if deps is None:
+            continue
         try:
-            out = tools.tax_quarter(
-                _deps(session, person, day), tools.TaxInput(quarter_start=start), new_id()
-            )
+            out = tools.tax_quarter(deps, tools.TaxInput(quarter_start=start), new_id())
         except PermissionDenied:
             continue
         mine = [b for b in out.branches if b.branch_id == branch.id]

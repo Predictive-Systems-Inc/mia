@@ -43,6 +43,7 @@ from mia.core.orgconfig import ChannelConfig, OrgSettings
 from mia.i18n import t
 from tests.conftest import BK_TODAY, Pin
 from tests.test_bookkeeper_tools import BINDING, deps_for
+from tests.test_sales_tools import stall
 
 Ferinos = tuple[Branch, dict[str, Person]]
 MNL = ZoneInfo("Asia/Manila")
@@ -154,6 +155,35 @@ def test_the_petty_floor_reminder_waits_for_the_morning(
     _tick(session, bk_pin, at(BK_TODAY + ONE_DAY, 9, 10))
     _tick(session, bk_pin, at(BK_TODAY + ONE_DAY, 9, 40))
     assert texts(session, bk_en[1]["Marites"]).count(low) == 1
+
+
+def test_a_branch_without_a_petty_fund_gets_no_petty_reminder(
+    session: Session, bk_en: Ferinos, bk_pin: Pin
+) -> None:
+    jun = bk_en[1]["Jun"]  # the street stall's supervisor; the stall has no petty fund
+    assert tools.balance_days(session, stall(session).id, BK_TODAY + ONE_DAY)[0] == {}
+    bk_pin(at(BK_TODAY, 20, 0))
+    tools.record_petty(
+        deps_for(session, bk_en[1]["Marites"]), PettyInput(kind="spend", amount=50_000), "p"
+    )
+    _tick(session, bk_pin, at(BK_TODAY + ONE_DAY, 6, 10))  # the stall's morning
+    _tick(session, bk_pin, at(BK_TODAY + ONE_DAY, 9, 10))  # the kiosk's morning
+    assert not any(m.startswith("Petty cash is at") for m in texts(session, jun))
+    low = t("bk.petty.low", EN, balance=money(30_000), floor=money(50_000))
+    assert low in texts(session, bk_en[1]["Marites"])
+
+
+def test_a_lead_without_a_branch_row_does_not_stop_the_letters(
+    session: Session, bk_en: Ferinos, bk_pin: Pin, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rosa = bk_en[1]["Rosa"]
+    ghost = rosa.model_copy(update={"id": "01GHOSTGHOSTGHOSTGHOSTGHOS", "branch_id": "missing"})
+    monkeypatch.setattr(alerts, "leads", lambda session, organisation_id: [ghost, rosa])
+    _tick(session, bk_pin, at(dt.date(2026, 11, 2), 9, 10))
+    _tick(session, bk_pin, at(dt.date(2027, 1, 20), 9, 10))
+    head = t("bk.profit.head", EN, month="2026-10")
+    assert any(head in m for m in texts(session, rosa))
+    assert session.exec(select(TaxFigure).where(TaxFigure.branch_id == bk_en[0].id)).one()
 
 
 def test_undeposited_cash_over_the_limit_two_days_reminds(
