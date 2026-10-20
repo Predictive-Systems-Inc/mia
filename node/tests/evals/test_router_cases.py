@@ -145,3 +145,17 @@ def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path:
     path.write_text("{}")
     with pytest.raises(FileExistsError, match="router-2026-10-19-2305"):
         _report_path(now, tmp_path)
+
+
+def test_short_cash_routes_to_the_bookkeeper() -> None:
+    """Q108 in the fresh gate half: "kulang ang cash" is the bookkeeper's and LPG out the
+    inventory manager's, and the shift supervisor's description says so ("not ... stock, cash")."""
+    from mia.agents.shift_supervisor.turn import SPEC
+
+    gate = {(c.expected, c.text) for c in CASES if c.half == "gate"}
+    assert {
+        ("bookkeeper", "kulang ang cash ngayong gabi"),
+        ("inventory_manager", "ubos na ang LPG"),
+    } <= gate
+    contrast = SPEC.router_description.split("; not ")[1]
+    assert "cash" in contrast and "stock" in contrast
