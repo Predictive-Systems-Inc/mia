@@ -13,8 +13,9 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
+from mia.agents.branch_manager import experiments
 from mia.agents.branch_manager import tips as bm_tips
-from mia.agents.branch_manager.models import Strategy, Tip
+from mia.agents.branch_manager.models import Experiment, Strategy, Tip
 from mia.agents.customer_service.models import Complaint, Customer, Order
 from mia.agents.hr_officer import calc, calendar
 from mia.agents.hr_officer.models import Contract, Leave, Payslip
@@ -35,6 +36,7 @@ from mia.core.models import (
     Visit,
 )
 from mia.core.people import add_person
+from mia.templates.retail import items as retail_items
 from mia.templates.retail.models import RetailBranchHours, RetailIngredient, RetailItem
 
 CURRENCY = "PHP"
@@ -86,6 +88,15 @@ CONTRACTS: list[tuple[str, str, int, dt.date, str]] = [
 REST_DAYS = (0, 1)  # Monday at the mall, Tuesday at the stall (by branch index)
 # clerk, branch index, shift start, shift end (local); the last one runs to 23:30 (night minutes)
 SHIFTS = {"Ana": (0, "09:00", "17:00"), "Liza": (0, "13:00", "21:00"), "Pao": (1, "06:00", "15:00")}
+# The Mall kiosk's seeded experiments: item, strategy, days before today it started, status, and
+# the seed-only numbers (made up for the demo, like the done one's daily totals below) that the
+# strategy engine read when it was proposed. The running one's baseline comes from the seeded
+# counts; the done one ended last month, before the counts, so its totals are seed-only too.
+# (open days, units by item name, sold-out days by item name).
+SEEDED_EXPERIMENTS: list[tuple[str, str, int, str, int, dict[str, int], dict[str, int]]] = [
+    ("Classic", "bm.strategy.charm", 49, "done", 14, {"Classic": 150}, {}),
+    ("Special", "bm.strategy.increase", 4, "running", 14, {}, {"Special": 8}),
+]
 LATE_SHIFT = (
     "Liza",
     "13:00",
@@ -157,6 +168,9 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
             language=lang,
         )
     clerks = {0: staff["Ana"], 1: staff["Pao"]}
+    strategies = _seed_strategies(session, actor)
+    planned = _plan_experiments(session, first, items, strategies, today)
+    kiosk_daily: dict[str, dict[dt.date, experiments.Day]] = {}
     rng = random.Random(7)
     for index, (branch, (_, opens, closes, target)) in enumerate(
         zip(branches, BRANCHES, strict=True)
@@ -173,11 +187,14 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
             reported_at = dt.datetime.combine(day, dt.time(20, 0), ZoneInfo(branch.timezone))
             for item in items:
                 quantity = round(rng.randint(3, 12) * boost)
+                amount = quantity * retail_items.price_on(session, item, branch.id, day)
+                if index == 0:
+                    kiosk_daily.setdefault(item.id, {})[day] = (quantity, amount)
                 count = SalesCount(
                     branch_id=branch.id,
                     item_id=item.id,
                     quantity=quantity,
-                    amount=quantity * item.price,
+                    amount=amount,
                     currency=CURRENCY,
                     reported_at=reported_at,
                     reported_by=clerks[index].id,
@@ -198,13 +215,14 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
         store.insert(session, target_row, branch_actor)
     _seed_hr(session, branches, staff, today)
     _seed_branch_manager(session, items, actor)
+    _seed_experiments(session, first, planned, kiosk_daily, staff)
     _seed_customers(session, first, items[1], staff["Marites"].id, today)
     return first
 
 
 def _seed_branch_manager(session: Session, items: list[RetailItem], actor: Actor) -> None:
-    """The branch manager's curated rows: tips and quotes in Filipino and English, and the
-    pricing strategies, each with its source (mia/agents/branch_manager/tips.py)."""
+    """The branch manager's curated rows: tips and quotes in Filipino and English, each with its
+    source (mia/agents/branch_manager/tips.py)."""
     ids = {i.name: i.id for i in items}
     for name, fil, en, source in bm_tips.TIPS:
         for language, text in (("fil", fil), ("en", en)):
@@ -221,9 +239,98 @@ def _seed_branch_manager(session: Session, items: list[RetailItem], actor: Actor
             store.insert(
                 session, Tip(language=language, kind="quote", text=text, source=source), actor
             )
-    for name_key, kind, params, source in bm_tips.STRATEGIES:
-        row = Strategy(name_key=name_key, kind=kind, params=params, source=source)
-        store.insert(session, row, actor)
+
+
+def _seed_strategies(session: Session, actor: Actor) -> list[Strategy]:
+    """The pricing strategies with their sources (mia/agents/branch_manager/tips.py)."""
+    return [
+        store.insert(session, Strategy(name_key=k, kind=kind, params=params, source=src), actor)
+        for k, kind, params, src in bm_tips.STRATEGIES
+    ]
+
+
+Planned = tuple[RetailItem, experiments.Proposal, dt.date, dt.date, str]
+
+
+def _plan_experiments(
+    session: Session,
+    kiosk: Branch,
+    items: list[RetailItem],
+    strategies: list[Strategy],
+    today: dt.date,
+) -> list[Planned]:
+    """Each seeded experiment as experiments.propose made it from its seed-only numbers on its
+    start date, with its two price rows at the kiosk (to_price from the start, from_price after
+    the end), written before the counts so the counts are priced by them."""
+    ids = {i.name: i.id for i in items}
+    days = orgconfig.load().branch_manager.experiment_days
+    actor, out = Actor.system(kiosk.id), []
+    for name, key, back, status, open_days, units, sold_out in SEEDED_EXPERIMENTS:
+        numbers = experiments.BranchNumbers(
+            open_days=open_days,
+            units={ids[k]: v for k, v in units.items()},
+            sold_out_days={ids[k]: v for k, v in sold_out.items()},
+        )
+        starts_on = today - dt.timedelta(days=back)
+        strategy = next(s for s in strategies if s.name_key == key)
+        proposal = next(
+            p
+            for p in experiments.propose(numbers, items, [strategy], starts_on)
+            if p.item_id == ids[name]
+        )
+        item = next(i for i in items if i.id == proposal.item_id)
+        ends_on = starts_on + dt.timedelta(days=days - 1)
+        retail_items.schedule_price(session, item, kiosk.id, proposal.to_price, starts_on, actor)
+        retail_items.schedule_price(
+            session, item, kiosk.id, proposal.from_price, ends_on + dt.timedelta(days=1), actor
+        )
+        out.append((item, proposal, starts_on, ends_on, status))
+    retail_items.apply_due(session, kiosk, today, actor)
+    return out
+
+
+def _seed_experiments(
+    session: Session,
+    kiosk: Branch,
+    planned: list[Planned],
+    kiosk_daily: dict[str, dict[dt.date, experiments.Day]],
+    staff: dict[str, Person],
+) -> None:
+    """The kiosk's experiment rows (proposed by Marites, approved by Rosa; the seed does not go
+    through approvals, so approval_id stays empty): baseline and result from experiments.baseline
+    and experiments.score. A running one reads the seeded counts; a done one reads its own
+    seed-only daily totals (random.Random(11), so the counts' sequence is unchanged)."""
+    rng = random.Random(11)
+    for item, p, starts_on, ends_on, status in planned:
+        days = (ends_on - starts_on).days + 1
+        daily = kiosk_daily.get(item.id, {})
+        if status == "done":
+            before = {starts_on - dt.timedelta(days=k): rng.randint(8, 13) for k in range(1, 29)}
+            during = {starts_on + dt.timedelta(days=k): rng.randint(9, 15) for k in range(days)}
+            daily = {d: (q, q * p.from_price) for d, q in before.items()}
+            daily |= {d: (q, q * p.to_price) for d, q in during.items()}
+        base = experiments.baseline(daily, starts_on, days)
+        assert base is not None, "a seeded experiment needs its baseline"
+        during_daily = {d: v for d, v in daily.items() if starts_on <= d <= ends_on}
+        result = asdict(experiments.score(base, during_daily)) if status == "done" else None
+        row = Experiment(
+            branch_id=kiosk.id,
+            kind=p.kind,
+            strategy_id=p.strategy_id,
+            item_id=item.id,
+            from_price=p.from_price,
+            to_price=p.to_price,
+            currency=item.currency,
+            starts_on=starts_on,
+            ends_on=ends_on,
+            baseline=asdict(base),
+            result=result,
+            rationale=p.rationale,
+            status=status,
+            proposed_by=staff["Marites"].id,
+            decided_by=staff["Rosa"].id,
+        )
+        store.insert(session, row, Actor.system(kiosk.id))
 
 
 # name, language, channel address (made-up numbers)

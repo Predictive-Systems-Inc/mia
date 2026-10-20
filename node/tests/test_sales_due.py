@@ -252,7 +252,7 @@ def test_owner_report_compares_with_last_week_and_the_average(
     rosa = _notes(session, people["Rosa"])
     assert len(rosa) == 2  # one report per branch
     kiosk_report = next(n for n in rosa if "Mall kiosk" in n.text)
-    assert "40 Special" in kiosk_report.text and "₱1,800.00" in kiosk_report.text
+    assert "40 Special" in kiosk_report.text and "₱2,000.00" in kiosk_report.text  # at 50
     assert "%" in kiosk_report.text and len(kiosk_report.blocks) == 2  # the comparison line
     stall_report = next(n for n in rosa if "Street stall" in n.text)
     assert stall_report.text == t(

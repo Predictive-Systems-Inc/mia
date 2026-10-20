@@ -3,6 +3,7 @@ import datetime as dt
 from mia.agents.parsing import (
     DAY_NAMES,
     find_dates,
+    find_prices,
     find_times,
     has_buy_word,
     menu_tokens,
@@ -223,3 +224,15 @@ def test_domingo_is_sunday_in_hiligaynon_waray_and_bikol() -> None:
         assert find_dates(text, MONDAY, lang) == [("d0", sunday)], lang
         assert DAY_NAMES[lang][6] == "domingo" and DAY_NAMES[lang][0] == "lunes"
     assert find_dates("Miyerkoles", MONDAY, "hil") == [("d0", dt.date(2026, 10, 21))]
+
+
+def test_find_prices_reads_pesos_to_minor_units() -> None:
+    assert find_prices("subukan natin \u20b150 o 49.50 pesos") == [("p0", 5000), ("p1", 4950)]
+    assert find_prices("P50, php 45 o 1,450 piso") == [("p0", 5000), ("p1", 4500), ("p2", 145000)]
+    assert find_prices("49,5 lang") == [("p0", 4950)]  # a decimal comma
+
+
+def test_times_and_dates_are_not_prices() -> None:
+    assert find_prices("48 simula Nov 2 alas 3") == [("p0", 4800)]
+    assert find_prices("45 from 2026-11-02 at 3 pm or 14:30") == [("p0", 4500)]
+    assert find_prices("sp50 ube") == []  # a digit inside a word is not an amount

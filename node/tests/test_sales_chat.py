@@ -112,7 +112,7 @@ def test_a_count_is_recorded_and_echoed(
     _answers(monkeypatch, "report_sales", item_0=sp, item_1=cl, conversation="other")
     reply = _turn(session, people["Ana"], "3 sp 5 cl")
     text = reply.text()
-    assert "3 Special" in text and "5 Classic" in text and "₱335.00" in text  # 3x45 + 5x40
+    assert "3 Special" in text and "5 Classic" in text and "₱350.00" in text  # 3x50 + 5x40
     assert len(_counted(session)) == 2
     said = session.exec(select(Message).where(Message.text == "3 sp 5 cl")).one()
     rows = session.exec(select(SalesCount).where(SalesCount.reported_by == people["Ana"].id))
@@ -127,10 +127,10 @@ def test_today_so_far_is_the_running_total(
     _, people = ferinos
     _answers(monkeypatch, "report_sales", item_0=_item(session, "Special"))
     first = _turn(session, people["Ana"], "3 sp")
-    assert "₱135.00" in first.text()
+    assert "₱150.00" in first.text()  # Special is 50 while the seeded experiment runs
     _answers(monkeypatch, "report_sales", item_0=_item(session, "Classic"))
     second = _turn(session, people["Ana"], "5 cl", first.thread_id)
-    assert "₱335.00" in second.text()  # 135.00 + 200.00
+    assert "₱350.00" in second.text()  # 150.00 + 200.00
 
 
 def test_an_unsure_item_asks_which_item(
@@ -207,7 +207,7 @@ def test_how_are_we_doing_shows_total_against_target(
     first = _turn(session, people["Ana"], "3 sp")
     _answers(monkeypatch, "sales_today", period="today")
     reply = _turn(session, people["Ana"], "how are we doing", first.thread_id)
-    assert "Mall kiosk" in reply.text() and "%" in reply.text() and "₱135.00" in reply.text()
+    assert "Mall kiosk" in reply.text() and "%" in reply.text() and "₱150.00" in reply.text()
 
 
 def test_a_count_after_closing_is_recorded_on_today_without_asking(

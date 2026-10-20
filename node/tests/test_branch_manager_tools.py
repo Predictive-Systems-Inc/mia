@@ -30,7 +30,7 @@ def test_counts_use_the_price_in_force_on_the_business_date(session: Session, bm
     special = item(session, "Special")
     items.schedule_price(session, special, kiosk.id, 5000, TODAY, Actor.system(kiosk.id))
     assert (
-        items.price_on(session, special, kiosk.id, TODAY - ONE_DAY)
+        items.price_on(session, special, kiosk.id, TODAY - 5 * ONE_DAY)  # the seeded test: -4
         == items.price_on(session, special, stall(session).id, TODAY)
         == 4500
     )
@@ -59,7 +59,8 @@ def test_apply_due_stamps_each_due_row_once(session: Session, bm_shop: Shop) -> 
     assert due.applied_at is not None and abs(due.applied_at - at) < dt.timedelta(minutes=1)
     assert items.apply_due(session, kiosk, TODAY, actor) == []
     changed = session.exec(select(Event).where(Event.action == "retail.item_price_changed")).all()
-    assert [e.after["effective_on"] for e in changed if e.after] == [TODAY.isoformat()]
+    dates = [e.after["effective_on"] for e in changed if e.after]
+    assert dates.count(TODAY.isoformat()) == 1  # the others are the seeded experiments' rows
     assert session.exec(select(RetailItemPrice)).all()  # nothing removed
 
 

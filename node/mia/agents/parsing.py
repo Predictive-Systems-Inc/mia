@@ -347,3 +347,33 @@ def find_dates(text: str, today: dt.date, lang: str) -> list[tuple[str, dt.date]
         if day is not None:
             found.append(day)
     return [(f"d{i}", d) for i, d in enumerate(found)]
+
+
+# An amount in pesos: an optional currency mark (peso sign, "php", "p" right before the digits),
+# the whole pesos (a comma before exactly three digits groups thousands), then centavos after a
+# point or comma ("49.50", "49,5"). "50 pesos" and "50 piso" read as 50: the word is not needed.
+_PRICE = re.compile(
+    r"(?<![\w.,])(?:₱\s?|php\s?|p)?(?P<whole>\d{1,3}(?:,\d{3})+(?!\d)|\d+)"
+    r"(?:[.,](?P<cents>\d{1,2}))?(?![.,]\d)(?=pesos?\b|piso\b|\W|$)",
+    re.IGNORECASE,
+)
+
+
+def _undated(m: re.Match[str]) -> str:
+    # ponytail: "may 5" stays (Filipino "may" is "there is", as find_dates reads it outside en);
+    # an English "May 5" is then a price candidate too, which Jev may pass over.
+    month = m["m1"] or m["m2"]
+    return m[0] if month and month.lower() == "may" else " "
+
+
+def find_prices(text: str) -> list[tuple[str, int]]:
+    """Amounts in the message in text order as (id "p0", "p1", ..., integer minor units):
+    "50", "₱50", "P50", "50 pesos", "50 piso", "49.50" (4950). Clock times (strip_times) and
+    dates (find_dates' patterns) are removed first, so "Nov 2" and "alas 3" are never prices.
+    Pure; the model only picks among these candidates, never computes one."""
+    text = _DATE.sub(_undated, strip_times(text))
+    found = []
+    for m in _PRICE.finditer(text):
+        pesos = int(m["whole"].replace(",", ""))
+        found.append(pesos * 100 + int((m["cents"] or "0").ljust(2, "0")))
+    return [(f"p{i}", amount) for i, amount in enumerate(found)]

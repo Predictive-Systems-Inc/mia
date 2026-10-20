@@ -273,7 +273,9 @@ STRATEGIES: list[tuple[str, str, dict[str, Any], str]] = [
     (
         "bm.strategy.increase",
         "price",
-        {"min_sold_out_share": 50, "up_percent_min": 5, "up_percent_max": 10},
+        # up_percent_max 12, not the spec's 10: the step to the next 5 pesos (4500 to 5000 is
+        # 11 percent) must fit, else the rule falls back to the next whole peso.
+        {"min_sold_out_share": 50, "up_percent_min": 5, "up_percent_max": 12},
         "Simon and Fassnacht, Price Management (2019), elasticity testing",
     ),
     (
