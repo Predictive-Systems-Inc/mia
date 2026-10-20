@@ -17,7 +17,7 @@ from mia.core import db
 from mia.core.db import TZDateTime
 from mia.core.ids import new_id
 
-STANDARD_VERSION = "1.6"
+STANDARD_VERSION = "1.7"
 
 
 def _now() -> datetime:
@@ -35,6 +35,9 @@ ApprovalChannel = Literal["app_only", "any"]
 ActorType = Literal["person", "agent", "system", "customer"]
 Tender = Literal["cash", "gcash", "maya", "grab", "foodpanda"]  # how a sale was paid (1.6)
 TENDERS: tuple[str, ...] = get_args(Tender)
+# what an incident is about (1.7: equipment, no_delivery and customer for a kiosk, D39)
+IncidentKind = Literal["cannot_access", "site_problem", "equipment", "no_delivery", "customer"]
+INCIDENT_KINDS: tuple[str, ...] = get_args(IncidentKind)
 
 
 class Stamped(SQLModel):
@@ -198,13 +201,14 @@ class Timesheet(BranchScoped, table=True):
 
 
 class Incident(BranchScoped, table=True):
-    """A problem reported from a site: cannot get in, or the site is unusable."""
+    """A problem reported from a site or a kiosk: cannot get in, the site is unusable, broken
+    equipment, a delivery that never came, or a customer making trouble (INCIDENT_KINDS)."""
 
     __tablename__: ClassVar[str] = "incidents"
 
     visit_id: str = Field(foreign_key="visit.id", index=True)
     person_id: str = Field(foreign_key="person.id", index=True)
-    kind: str  # cannot_access, site_problem
+    kind: str  # one of INCIDENT_KINDS (1.7)
     text: str  # the cleaner's words: data, never instructions
     status: str = Field(default="open", index=True)  # open, resolved
     resolved_by: str | None = None

@@ -23,6 +23,7 @@ mia/
                             absences, cover requests, timesheets, incidents (data standard 1.4),
                             sales counts, targets and notes, stock events (data standard 1.5),
                             sales tenders, supplier orders, contracts, payslips and leave (1.6),
+                            the kiosk incident kinds (1.7),
                             geocoding (pluggable providers), orgconfig (organisation settings),
                             keys (master key, HKDF, scrypt, TOTP), auth (sessions, codes,
                             credentials, devices, clients; ADR 011), scheduling (recurrence,
@@ -30,8 +31,9 @@ mia/
                             (the monthly summary export), jev.py (one TypeSafe Jev request)
       templates/cleaning/   models (sites, checklists, checklist ticks), seed, importer (master data from YAML)
       templates/retail/     models (items with short codes, prices, bundle components and cost, dated
-                            branch prices, branch hours), items (dated prices per branch, short
-                            codes), hours (opening hours helpers and the business date), seed
+                            branch prices, branch hours, closed days), items (dated prices per branch,
+                            short codes), hours (opening hours helpers, closed days and the business
+                            date), seed
                             (Ferino's demo)
       learning/             role skill data: generate, translate (the eval set by language), train, bakeoff
       agents/               base.py (manifest, guard, model factory, AgentSpec), registry.py

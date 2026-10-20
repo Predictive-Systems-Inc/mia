@@ -870,6 +870,32 @@ def upgrade() -> None:
         )
 
     op.create_table(
+        "retail_closures",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("date", sa.Date(), nullable=False),
+        sa.Column("reason", sqlmodel.sql.sqltypes.AutoString(length=200), nullable=False),
+        sa.Column("set_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["set_by"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("branch_id", "date"),
+    )
+    with op.batch_alter_table("retail_closures", schema=None) as batch_op:
+        batch_op.create_index(batch_op.f("ix_retail_closures_date"), ["date"], unique=False)
+        batch_op.create_index(
+            batch_op.f("ix_retail_closures_branch_id"), ["branch_id"], unique=False
+        )
+
+    op.create_table(
         "sales_counts",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -1832,6 +1858,11 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_sales_counts_branch_id"))
 
     op.drop_table("sales_counts")
+    with op.batch_alter_table("retail_closures", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_retail_closures_branch_id"))
+        batch_op.drop_index(batch_op.f("ix_retail_closures_date"))
+
+    op.drop_table("retail_closures")
     with op.batch_alter_table("retail_branch_hours", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_retail_branch_hours_branch_id"))
 

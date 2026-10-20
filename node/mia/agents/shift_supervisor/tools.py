@@ -13,7 +13,7 @@ from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.shift_supervisor import cover, scoring
 from mia.core import scheduling, store
 from mia.core.db import utcnow
-from mia.core.models import Absence, Job, Location, Person, Visit
+from mia.core.models import Absence, IncidentKind, Job, Location, Person, Visit
 from mia.core.rbac import Resource, get_rbac
 
 MORNING_ENDS = dt.time(12, 0)
@@ -565,7 +565,7 @@ def visit_details(
 
 
 class ReportProblemInput(BaseModel):
-    kind: Literal["cannot_access", "site_problem"] = Field(
+    kind: IncidentKind = Field(
         description="cannot_access: locked door, no key, wrong code, alarm; site_problem: the "
         "site is unusable (no water or power, renovation, client still there)"
     )

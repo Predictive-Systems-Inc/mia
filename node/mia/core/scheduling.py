@@ -114,6 +114,19 @@ def local_dt(day: dt.date, hhmm: str, tz: str) -> dt.datetime:
 # ---- eligibility -------------------------------------------------------------------------
 
 
+def is_staff(person: Person) -> bool:
+    """True when one of the person's roles is staff or inherits staff (a retail clerk) without
+    being or inheriting supervisor: field staff are cover candidates, head staff never."""
+    from mia.core.rbac import get_rbac
+
+    enforcer = get_rbac().enforcer
+    for role in person.roles:
+        graph = {role, *enforcer.get_implicit_roles_for_user(role, "*")}
+        if "staff" in graph and "supervisor" not in graph:
+            return True
+    return False
+
+
 def slot_of(session: Session, visit: Visit, tz: str) -> scoring.Slot:
     """The visit as a local-time slot with the site's coordinates when known."""
     zone = ZoneInfo(tz)
@@ -161,7 +174,7 @@ def candidate_data(
     ).all()
     result = []
     for p in persons:
-        if "staff" not in p.roles or (only is not None and p.id not in only):
+        if not is_staff(p) or (only is not None and p.id not in only):
             continue
         if p.id in visit.assigned_person_ids and not include_assigned:
             continue
@@ -196,7 +209,7 @@ def ineligibility(session: Session, branch: Branch, visit: Visit, person: Person
     plus missing skills. An inactive or non-staff person gets one reason."""
     if person.status != "active":
         return ["person is not active"]
-    if "staff" not in person.roles:
+    if not is_staff(person):
         return ["not a staff member"]
     job = session.get(Job, visit.job_id)
     data = candidate_data(session, branch, visit, include_assigned=True, only={person.id})
@@ -389,6 +402,21 @@ def assign(
         )
         return Assignment(visit, approval.id, reasons)
     return Assignment(_apply(session, actor, visit, person, add), None, [])
+
+
+def cancel_day(session: Session, actor: Actor, branch_id: str, day: dt.date) -> list[Visit]:
+    """Cancel every open (planned or unfilled) visit of the branch on the local date, each with
+    `visit.cancelled`; visits in progress or done are left alone. Returns the cancelled ones."""
+    rows = session.exec(
+        select(Visit)
+        .where(Visit.branch_id == branch_id)
+        .where(Visit.date == day)
+        .where(col(Visit.status).in_(OPEN))
+    ).all()
+    return [
+        store.update(session, v, {"status": "cancelled"}, actor, action="visit.cancelled")
+        for v in rows
+    ]
 
 
 def unassign(session: Session, actor: Actor, visit: Visit, person: Person) -> Visit:

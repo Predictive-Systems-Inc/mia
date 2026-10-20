@@ -52,7 +52,8 @@ def test_the_price_and_experiment_ids_are_foreign_keys() -> None:
             table: {
                 c for fk in inspect(conn).get_foreign_keys(table) for c in fk["constrained_columns"]
             }
-            for table in ("branch_manager_experiments", "retail_item_prices")
+            for table in ("branch_manager_experiments", "retail_item_prices", "retail_closures")
         }
     assert {"approval_id", "proposed_by", "decided_by"} <= found["branch_manager_experiments"]
     assert {"approval_id", "set_by"} <= found["retail_item_prices"]
+    assert found["retail_closures"] == {"branch_id", "set_by"}

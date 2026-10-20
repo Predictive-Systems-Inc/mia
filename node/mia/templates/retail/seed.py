@@ -2,8 +2,9 @@
 
 Two branches (a mall kiosk and a street stall), eight items with short codes, opening hours,
 an owner, two supervisors, three clerks, 14 days of sales counts and a month target per branch,
-HR data, two customer service customers with their orders and a complaint, and the branch
-manager's tips, quotes and pricing strategies. All rows are written through mia.core.store, so seeding appears in the events log.
+HR data, a shift Job per clerk with availability, hour limits and shifts planned from today (the
+stall closed on the next holiday), two customer service customers with their orders and a
+complaint, and the branch manager's tips, quotes and pricing strategies. All rows are written through mia.core.store, so seeding appears in the events log.
 """
 
 import datetime as dt
@@ -21,12 +22,14 @@ from mia.agents.branch_manager import tips as bm_tips
 from mia.agents.branch_manager.models import Experiment, Strategy, Tip
 from mia.agents.customer_service.models import Complaint, Customer, Order
 from mia.agents.hr_officer import calc, calendar
-from mia.core import events, orgconfig, store
+from mia.core import events, orgconfig, scheduling, store
 from mia.core.models import (
     Actor,
+    Availability,
     Branch,
     Client,
     Contract,
+    Incident,
     Job,
     Leave,
     Location,
@@ -39,10 +42,16 @@ from mia.core.models import (
     SupplierOrder,
     Timesheet,
     Visit,
+    WorkLimit,
 )
 from mia.core.people import add_person
 from mia.templates.retail import items as retail_items
-from mia.templates.retail.models import RetailBranchHours, RetailIngredient, RetailItem
+from mia.templates.retail.models import (
+    RetailBranchHours,
+    RetailClosure,
+    RetailIngredient,
+    RetailItem,
+)
 
 CURRENCY = "PHP"
 ITEMS: list[tuple[str, list[str], int]] = [
@@ -93,6 +102,9 @@ CONTRACTS: list[tuple[str, str, int, dt.date, str]] = [
 REST_DAYS = (0, 1)  # Monday at the mall, Tuesday at the stall (by branch index)
 # clerk, branch index, shift start, shift end (local); the last one runs to 23:30 (night minutes)
 SHIFTS = {"Ana": (0, "09:00", "17:00"), "Liza": (0, "13:00", "21:00"), "Pao": (1, "06:00", "15:00")}
+# each clerk's working days (scheduling.WEEKDAYS codes): every day but the contract's rest day
+SHIFT_DAYS = {"Ana": "TU,WE,TH,FR,SA,SU", "Liza": "TU,WE,TH,FR,SA,SU", "Pao": "MO,WE,TH,FR,SA,SU"}
+DAILY_LIMIT, WEEKLY_LIMIT = 600, 3240  # minutes (Q106 placeholders: six 9-hour shifts)
 # The Mall kiosk's seeded experiments: item, strategy, days before today it started, status.
 # experiments.propose reads the seeded data before the start: the running one the counts and the
 # stock rows (Special sells out early most days at the kiosk), the done one, which ended last
@@ -235,6 +247,7 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
         )
         store.insert(session, target_row, branch_actor)
     _seed_hr(session, branches, staff, today)
+    _seed_shift_supervisor(session, branches, staff, today)
     _seed_bookkeeper(session, branches, staff, today)
     _seed_branch_manager(session, items, actor)
     _seed_experiments(session, first, planned, kiosk_daily, staff)
@@ -478,7 +491,7 @@ def _leave_plan(today: dt.date) -> list[tuple[str, str, dt.date, dt.date, int, s
 def _seed_hr(
     session: Session, branches: list[Branch], staff: dict[str, Person], today: dt.date
 ) -> None:
-    """Seed-only HR data: contracts, a Counter shift per branch with completed visits and
+    """Seed-only HR data: contracts, a shift Job per clerk (_shift_job) with completed visits and
     approved timesheets from the start of the last two closed cutoffs to yesterday (inserted
     directly with a note; the real flow is the shift supervisor's draft and approval), two
     approved leave rows and an issued payslip per clerk for each of those cutoffs, computed by
@@ -510,18 +523,10 @@ def _seed_hr(
             branch_id=branch.id, client_id=client.id, name=BRANCHES[index][0], address=""
         )
         loc = store.insert(session, loc, actor)
-        job = Job(
-            branch_id=branch.id,
-            location_id=loc.id,
-            name="Counter shift",
-            recurrence="FREQ=DAILY",
-            start_time=BRANCHES[index][1],
-            duration_minutes=480,
-        )
-        job = store.insert(session, job, actor)
         for name, (where_index, begin, finish) in SHIFTS.items():
             if where_index != index:
                 continue
+            job = _shift_job(session, branch, loc, name, today - dt.timedelta(days=back))
             off = {
                 start + dt.timedelta(days=n)
                 for who, _, start, end, _, _ in leave_plan
@@ -566,6 +571,83 @@ def _seed_hr(
                 issued_at=dt.datetime.combine(pay_date, dt.time(9, 0), zone),
             )
             store.insert(session, slip, Actor.system(branch.id))
+
+
+def _shift_job(session: Session, branch: Branch, loc: Location, name: str, since: dt.date) -> Job:
+    """The clerk's weekly shift Job on SHIFT_DAYS at SHIFTS' times, named "Opening <name>" when
+    it starts at the branch's opening, else "Closing <name>"; created on `since` (local), so
+    generation never depends on the wall clock."""
+    where, begin, finish = SHIFTS[name]
+    zone = ZoneInfo(branch.timezone)
+    start, end = (dt.datetime.combine(since, dt.time.fromisoformat(t)) for t in (begin, finish))
+    # ponytail: Opening or Closing by the branch's opening; roster.job_name (Task 2) names Mid
+    label = "Opening" if begin == BRANCHES[where][1] else "Closing"
+    job = Job(
+        branch_id=branch.id,
+        location_id=loc.id,
+        name=f"{label} {name}",
+        recurrence=f"FREQ=WEEKLY;BYDAY={SHIFT_DAYS[name]}",
+        start_time=begin,
+        duration_minutes=int((end - start).total_seconds() // 60),
+        created_at=dt.datetime.combine(since, dt.time(0, 0), zone),
+    )
+    return store.insert(session, job, Actor.system(branch.id))
+
+
+def _seed_shift_supervisor(
+    session: Session, branches: list[Branch], staff: dict[str, Person], today: dt.date
+) -> None:
+    """The shift supervisor's retail rows: each clerk's Availability on SHIFT_DAYS within the
+    branch hours and a WorkLimit, planned visits generated from today, a closure at the Street
+    stall on the first holiday after today (its open visits cancelled) and one open equipment
+    incident on Pao's next visit."""
+    where = {name: index for name, _, index, _ in PEOPLE}
+    for name in SHIFTS:
+        branch = branches[where[name]]
+        actor, person = Actor.system(branch.id), staff[name]
+        _, opens, closes, _ = BRANCHES[where[name]]
+        for code in SHIFT_DAYS[name].split(","):
+            window = Availability(
+                branch_id=branch.id,
+                person_id=person.id,
+                weekday=scheduling.WEEKDAYS.index(code),
+                start=opens,
+                end=closes,
+            )
+            store.insert(session, window, actor)
+        limit = WorkLimit(
+            branch_id=branch.id,
+            person_id=person.id,
+            max_daily_minutes=DAILY_LIMIT,
+            max_weekly_minutes=WEEKLY_LIMIT,
+        )
+        store.insert(session, limit, actor)
+    for branch in branches:
+        scheduling.generate(session, Actor.system(branch.id), branch, today=today)
+    stall, pao = branches[where["Pao"]], staff["Pao"]
+    ahead = sorted((h for h in orgconfig.load().holidays if h.date > today), key=lambda h: h.date)
+    if ahead:
+        closure = RetailClosure(
+            branch_id=stall.id, date=ahead[0].date, reason=ahead[0].name, set_by=staff["Rosa"].id
+        )
+        store.insert(session, closure, Actor.system(stall.id), action="retail.closure_set")
+        scheduling.cancel_day(session, Actor.system(stall.id), stall.id, ahead[0].date)
+    upcoming = session.exec(
+        select(Visit)
+        .where(Visit.branch_id == stall.id)
+        .where(col(Visit.date) >= today)
+        .where(Visit.status == "planned")
+        .order_by(col(Visit.planned_start))
+    ).all()
+    visit = next(v for v in upcoming if pao.id in v.assigned_person_ids)
+    incident = Incident(
+        branch_id=stall.id,
+        visit_id=visit.id,
+        person_id=pao.id,
+        kind="equipment",
+        text="seed-only: the freezer door does not close",
+    )
+    store.insert(session, incident, Actor.system(stall.id), action="site_problem.reported")
 
 
 def _seed_shifts(

@@ -12,7 +12,7 @@ from mia.agents.sales_supervisor import MANIFEST, actions, due, tools
 from mia.agents.sales_supervisor.tools import CountIn, RecordCountsInput, SetTargetInput
 from mia.channels import registry
 from mia.channels.simulator import SimAdapter
-from mia.core import orgconfig, store
+from mia.core import orgconfig, scheduling, store
 from mia.core.models import (
     Actor,
     Branch,
@@ -152,6 +152,8 @@ def test_reminder_only_to_clerks_on_shift_when_visits_exist(
     kiosk, people = ferinos
     at = manila_at(20, 35)
     system = Actor.system(kiosk.id)
+    # 21 Oct 2026: the seed plans Ana's and Liza's shifts (D39); cancelled, only Ana's below counts
+    scheduling.cancel_day(session, system, kiosk.id, at.date())
     client = store.insert(session, Client(branch_id=kiosk.id, name="Mall"), system)
     place = Location(branch_id=kiosk.id, client_id=client.id, name="Kiosk", address="Mall")
     store.insert(session, place, system)

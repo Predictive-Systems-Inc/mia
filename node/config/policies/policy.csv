@@ -30,6 +30,12 @@ p, staff, *, data:core.visit, write_own, allow
 p, staff, *, data:core.auth_devices, read_own, allow
 p, staff, *, data:core.auth_devices, write_own, allow
 
+# staff (clerk inherits): their week, a swap with a co-worker, their own draft time
+p, staff, *, tool:shift_supervisor.roster, execute, allow
+p, staff, *, tool:shift_supervisor.swap_shifts, execute, allow
+p, staff, *, tool:shift_supervisor.correct_timesheet, execute, allow
+p, staff, *, data:retail_closures, read, allow
+
 # supervisor: schedules and approvals for daily operations
 p, supervisor, *, data:core.*, read, allow
 p, supervisor, *, data:core.absence, write, allow
@@ -42,8 +48,18 @@ p, supervisor, *, tool:shift_supervisor.assign_cover, execute, allow
 p, supervisor, *, data:core.visit, write, allow
 p, supervisor, *, data:core.auth_devices, write, allow
 
+# supervisor: the branch's roster pattern, closed days and swap confirmations; owner and admin inherit
+p, supervisor, *, tool:shift_supervisor.set_roster, execute, allow
+p, supervisor, *, tool:shift_supervisor.close_day, execute, allow
+p, supervisor, *, tool:shift_supervisor.swap, approve, allow
+p, supervisor, *, data:core.job, write, allow
+p, supervisor, *, data:retail_closures, write, allow
+
 # admin and owner decide cover overrides (instructions that break a scheduling rule)
 p, admin, *, tool:shift_supervisor.cover_override, approve, allow
+p, admin, *, tool:shift_supervisor.swap_override, approve, allow
+p, admin, *, data:core.job, write_all, allow
+p, admin, *, data:retail_closures, write_all, allow
 
 # admin: users, roles, settings (Phase 1 adds endpoints)
 p, admin, *, data:core.*, write, allow

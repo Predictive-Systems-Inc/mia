@@ -7,3 +7,4 @@ Planned for the initial build: 001 stack, 002 data standard v1.0 field list, 003
 - [016](016-language-chosen-once.md) The reply language is chosen once
 - [017](017-data-standard-1-5-sales-and-stock-tables.md) Data standard 1.5, the sales and stock tables become shared
 - [018](018-data-standard-1-6-tender-orders-and-hr-tables.md) Data standard 1.6, a tender on sales counts, supplier orders and the HR tables shared
+- [019](019-data-standard-1-7-orders-and-incident-kinds.md) Data standard 1.7, the kiosk incident kinds (customer orders follow with the production planner)

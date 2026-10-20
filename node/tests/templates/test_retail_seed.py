@@ -89,7 +89,8 @@ def test_seed_hr_data(ferinos: None, session: Session) -> None:
         days = {t.date for t in sheets if people[t.person_id] == clerk}
         assert len(days) >= 9 and min(days) <= today - dt.timedelta(days=10)
         assert max(days) >= today - dt.timedelta(days=2)
-    visits = session.exec(select(Visit)).all()
+    # 21 Oct 2026: the seed also plans shifts from today (D39); a timesheet per completed visit
+    visits = session.exec(select(Visit).where(Visit.status == "completed")).all()
     assert {t.visit_id for t in sheets} == {v.id for v in visits}  # a timesheet per visit
     assert len(sheets) == len(visits)
 
@@ -129,8 +130,8 @@ def test_late_shift_exists_on_any_weekday_and_skips_rest_and_leave_days(
     assert len(late) == 1 and late[0].minutes == 630
     night = (late[0].end - late[0].end.replace(hour=22, minute=0)).total_seconds() / 60
     assert night == 90  # the 22:00 to 06:00 window
-    visits = session.exec(select(Visit)).all()
-    assert len(visits) == len(sheets)
+    visits = session.exec(select(Visit).where(Visit.status == "completed")).all()
+    assert len(visits) == len(sheets)  # 21 Oct 2026: the planned shifts from today are not
 
 
 def test_hr_events_hide_rates_amounts_and_leave_reasons(ferinos: None, session: Session) -> None:

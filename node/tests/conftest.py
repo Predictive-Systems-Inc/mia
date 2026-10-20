@@ -258,6 +258,7 @@ CLOCK_USERS = (
     "mia.agents.inventory_manager.tools",
     "mia.agents.hr_officer.tools",
     "mia.agents.shift_supervisor.cover",
+    "mia.agents.shift_supervisor.timesheets",
     "mia.chat.service",
     "mia.api.main",
     "mia.channels.outbox",
@@ -477,3 +478,31 @@ def bk_en(bk_shop: Shop, session: Session) -> tuple[Branch, dict[str, Person]]:
 def bk_pin(bk_shop: Shop) -> Pin:
     """Move the bk_shop clock to an aware moment (_set_at from BK_TODAY)."""
     return _set_at(bk_shop, BK_TODAY)
+
+
+RS_TODAY = dt.date(2026, 10, 28)  # a Wednesday; the seed plans shifts from today, Nov 1 closed
+
+
+@pytest.fixture
+def rs_shop(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Shop]:
+    """The retail shift supervisor's shop: _ferinos_on RS_TODAY, the seed's languages kept (the
+    Street stall closed on All Saints' Day, 1 November)."""
+    yield from _ferinos_on(monkeypatch, session, RS_TODAY)
+
+
+@pytest.fixture
+def rs(rs_shop: Shop) -> tuple[Branch, dict[str, Person]]:
+    """rs_shop as (the Mall kiosk, people by first name); rs_shop.pin moves the clock."""
+    return rs_shop.kiosk, rs_shop.people
+
+
+@pytest.fixture
+def rs_en(rs_shop: Shop, session: Session) -> tuple[Branch, dict[str, Person]]:
+    """rs with every seeded person set to English (_en), for English literals."""
+    return _en(rs_shop, session)
+
+
+@pytest.fixture
+def rs_pin(rs_shop: Shop) -> Pin:
+    """Move the rs_shop clock to an aware moment (_set_at from RS_TODAY)."""
+    return _set_at(rs_shop, RS_TODAY)

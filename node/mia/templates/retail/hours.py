@@ -1,17 +1,17 @@
 """Opening hours of a retail branch as pure functions over its retail_branch_hours rows, and the
 business date they give. Shared by the agents that work to a shop's hours; imports nothing from
-mia.agents. Only load() reads the database, unchecked: callers check retail_branch_hours read
-first, or are the system tick.
+mia.agents. Only load() and closed() read the database, unchecked: callers check
+retail_branch_hours (or retail_closures) read first, or are the system tick.
 """
 
 import datetime as dt
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
 from mia.core.models import Branch
-from mia.templates.retail.models import RetailBranchHours
+from mia.templates.retail.models import RetailBranchHours, RetailClosure
 
 DEFAULT_OPENS = dt.time(9, 0)
 DEFAULT_CLOSES = dt.time(21, 0)
@@ -26,6 +26,12 @@ def load(session: Session, branch_id: str) -> list[RetailBranchHours]:
     return list(session.exec(stmt))
 
 
+def closed(session: Session, branch_id: str) -> frozenset[dt.date]:
+    """The branch's closed dates (no permission check; see the module docstring)."""
+    stmt = select(RetailClosure).where(RetailClosure.branch_id == branch_id)
+    return frozenset(row.date for row in session.exec(stmt))
+
+
 def closes(hours: Hours, weekday: int) -> dt.time:
     """The closing time on the weekday, 21:00 when no hours are set for it."""
     row = next((h for h in hours if h.weekday == weekday), None)
@@ -38,10 +44,11 @@ def opens(hours: Hours, weekday: int) -> dt.time:
     return dt.time.fromisoformat(row.opens) if row else DEFAULT_OPENS
 
 
-def open_days(hours: Hours) -> Callable[[dt.date], bool]:
-    """A weekday is open when the branch has hours for it; a branch without hours is always open."""
+def open_days(hours: Hours, closed: Collection[dt.date] = frozenset()) -> Callable[[dt.date], bool]:
+    """A weekday is open when the branch has hours for it (a branch without hours is always
+    open), except on a `closed` date."""
     weekdays = {h.weekday for h in hours} or set(range(7))
-    return lambda day: day.weekday() in weekdays
+    return lambda day: day.weekday() in weekdays and day not in closed
 
 
 def at(branch: Branch, hours: Hours, day: dt.date, closing: bool) -> dt.datetime:

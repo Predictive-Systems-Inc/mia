@@ -57,6 +57,18 @@ class RetailBranchHours(BranchScoped, table=True):
     closes: str
 
 
+class RetailClosure(BranchScoped, table=True):
+    """A local date the branch is closed (a holiday, a kiosk shut for a day): no shifts that
+    day. One row per branch and date; set_by is the person who closed it."""
+
+    __tablename__: ClassVar[str] = "retail_closures"
+    __table_args__ = (UniqueConstraint("branch_id", "date"),)
+
+    date: dt.date = Field(index=True)
+    reason: str = Field(default="", max_length=200)
+    set_by: str = Field(foreign_key="person.id")
+
+
 class RetailIngredient(Stamped, table=True):
     """A stocked ingredient. A null branch_id means every branch stocks it."""
 
