@@ -735,7 +735,8 @@ def test_a_refused_approval_is_closed_with_its_reason(session: Session, bm: Feri
         "approval.refused",  # no approval.approved: nothing was approved
         "approval.expired",
     ]
-    assert t("bm.experiment_refused.too_far", "fil") in told(session, people["Marites"])
+    said = t("bm.experiment_refused.too_far", "fil", **tools.WORDED)
+    assert said in told(session, people["Marites"]) and "20%" in said  # the constant, worded
     res = TestClient(app).post(url, json={"outcome": "approved"}, headers=rosa)
     assert res.status_code == 403  # closed: no retry loop
 
@@ -820,3 +821,19 @@ def test_an_unknown_refusal_reason_is_told_in_plain_words(session: Session, bm: 
     price_id = change(session, people["Marites"], 4800)["approval_id"]
     approvals.close_refused(session, price_id, Actor.person(people["Rosa"]), "no input")
     assert t("bm.price_refused.other", "fil") in told(session, people["Marites"])
+
+
+def test_the_cli_never_decides_an_owners_own_request(
+    session: Session, bm: Ferinos, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """D37 needs the PIN step-up; the shell takes none, so from the shell an owner's own money
+    request waits for another approver (another's request the shell still decides, ADR 011)."""
+    from mia.cli import main
+
+    approval_id = change(session, bm[1]["Rosa"], 4800)["approval_id"]
+    session.commit()
+    assert main(["decide", approval_id, "approved", "--as", "Rosa"]) == 1
+    assert "refused: nobody approves a request they made or triggered" in capsys.readouterr().out
+    session.expire_all()
+    approval = session.get(Approval, approval_id)
+    assert approval is not None and approval.status == "pending"

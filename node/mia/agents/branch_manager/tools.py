@@ -97,6 +97,16 @@ NUMBERS_DAYS = 28  # the window the strategy engine reads
 PRICE_DAYS = 90  # experiments.guard's price history
 END_DELAY = dt.timedelta(hours=1)  # an experiment ends an hour after its last closing
 DEFAULT_LANGUAGE = "en"  # the tips of a language without rows
+# The fixed numbers the bm.* strings name, fed to every t() of them (no digit in a string).
+WORDED = {
+    "coaching_days": COACHING_DAYS,
+    "min_days": experiments.MIN_BASELINE_DAYS,
+    "baseline_days": experiments.BASELINE_DAYS,
+    "numbers_days": NUMBERS_DAYS,
+    "percent": experiments.MAX_MOVE_PERCENT,
+    "price_days": PRICE_DAYS,
+    "gap_days": experiments.ITEM_GAP_DAYS,
+}
 
 
 # ---- shared helpers -----------------------------------------------------------------------
@@ -179,7 +189,7 @@ def _requester_deps(session: Session, approval: Approval) -> AgentDeps:
 
 
 def _tell(session: Session, person: Person, key: str, **params: object) -> None:
-    text = t(key, person.language or DEFAULT_LANGUAGE, **params)
+    text = t(key, person.language or DEFAULT_LANGUAGE, **WORDED, **params)
     notify(session, person, [TextBlock(text=text)], Actor.system(person.branch_id), MANIFEST.id)
 
 

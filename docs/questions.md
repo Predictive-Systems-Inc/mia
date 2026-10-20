@@ -272,6 +272,7 @@ Format for each entry:
 - The sales supervisor's Filipino keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 - The inventory manager's Filipino keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Filipino keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
+- The branch manager's Filipino keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 
 ## Q29: Review of the Cebuano strings
 - Where: node/mia/i18n/ceb.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -281,6 +282,7 @@ Format for each entry:
 - The sales supervisor's Cebuano keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 - The inventory manager's Cebuano keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Cebuano keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
+- The branch manager's Cebuano keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 
 ## Q30: Review of the Ilocano strings
 - Where: node/mia/i18n/ilo.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -290,6 +292,7 @@ Format for each entry:
 - The sales supervisor's Ilocano keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 - The inventory manager's Ilocano keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Ilocano keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
+- The branch manager's Ilocano keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 
 ## Q31: Review of the Hiligaynon strings
 - Where: node/mia/i18n/hil.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -299,6 +302,7 @@ Format for each entry:
 - The sales supervisor's Hiligaynon keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 - The inventory manager's Hiligaynon keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Hiligaynon keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
+- The branch manager's Hiligaynon keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 
 ## Q32: Review of the Waray strings
 - Where: node/mia/i18n/war.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -308,6 +312,7 @@ Format for each entry:
 - The sales supervisor's Waray keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 - The inventory manager's Waray keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Waray keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
+- The branch manager's Waray keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 
 ## Q33: Review of the Bikol strings
 - Where: node/mia/i18n/bcl.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -317,6 +322,7 @@ Format for each entry:
 - The sales supervisor's Bikol keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 - The inventory manager's Bikol keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Bikol keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
+- The branch manager's Bikol keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 
 ## Q34: Review of the Kapampangan strings
 - Where: node/mia/i18n/pam.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -326,6 +332,7 @@ Format for each entry:
 - The sales supervisor's Kapampangan keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 - The inventory manager's Kapampangan keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Kapampangan keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
+- The branch manager's Kapampangan keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 
 ## Q35: Review of the Pangasinan strings
 - Where: node/mia/i18n/pag.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -335,6 +342,7 @@ Format for each entry:
 - The sales supervisor's Pangasinan keys (`sales.*`, `intent.sales_supervisor.*`, `conversation.greeting`, `conversation.thanks`, `conversation.goodbye`, `clarify.*`, `denied.generic`) are drafts under the same note.
 - The inventory manager's Pangasinan keys (`stock.*`, `intent.inventory_manager.*`) are drafts under the same note.
 - The HR officer's Pangasinan keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
+- The branch manager's Pangasinan keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 
 ## Q36: Accountants and viewers have no agent
 - Where: node/config/policies/policy.csv (no `agent:*` line for `accountant` or `viewer`); node/mia/chat/access.py
@@ -597,10 +605,22 @@ Format for each entry:
 - Answer (20 Oct 2026, D37): the owner's own typed request is the decision: the approval row exists, the owner decides it themselves with the PIN step-up, only for the owner role in their own branch; everyone else waits for another approver.
 - Blocking: no (answered).
 
+## Q79: Item costs for the cost floor
+- Where: node/mia/templates/retail/models.py (`retail_items.cost`, nullable minor units); node/mia/agents/branch_manager/experiments.py (`guard`: never below cost); node/mia/templates/retail/seed.py (made-up demo costs for Classic and Special)
+- Question: The guard rails never price below an item's cost, but nobody has entered the shop's real costs. Who enters them, and where?
+- Assumed answer: the owner enters each item's cost in the settings (or through a tool once one exists); without a cost an experiment cuts no deeper than 20 percent, and the seed's two costs are demo values only.
+- Blocking: no.
+
 ## Q80: The business date under hours that close after midnight
 - Where: node/mia/templates/retail/hours.py (`business_date`, `business_date_at`); node/mia/agents/sales_supervisor/tools.py:254 and node/mia/agents/inventory_manager/tools.py:90 call it; node/mia/agents/customer_service/calc.py (`hours_span`) already handles it on its own
 - Question: Under 16:00 to 02:00 hours, a report at 01:00 should belong to the day before, but `business_date` returns today: it compares against yesterday's closing time on yesterday's date plus two hours (02:00 yesterday plus two hours is long past). Should the shared function take the closing on the next day when the closing is at or before the opening?
 - Assumed answer: yes, fix the shared function the way calc.hours_span does (a closing at or before the opening is the next calendar day's), in a follow-up with the three agents' tests; the customer service keeps its own until then.
+- Blocking: no.
+
+## Q81: Decoy sizes
+- Where: node/mia/agents/branch_manager/experiments.py (`_decoy`), node/mia/agents/branch_manager/tools.py (`_reference`)
+- Question: The decoy strategy (spec section 13, 8) needs three sizes with the middle one to sell, but the shop sells a single piece and one box. Which third size, at what price?
+- Assumed answer: a new top size of twice the box's pieces (Box of 8 next to Box of 4), priced at two boxes plus one piece rounded up to the whole peso, created as a new item only when the owner approves the experiment; the guard holds it against its pieces bought singly.
 - Blocking: no.
 
 ## Q82: A late-day markdown under prices dated per day

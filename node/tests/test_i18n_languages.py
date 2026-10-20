@@ -52,3 +52,20 @@ def test_the_importer_accepts_a_clerk_and_checks_the_language() -> None:
         PersonIn(name="Aino", roles=["staff"], language="xx")
     with pytest.raises(ValidationError):
         OrganisationIn(name="Hype", default_language="xx")
+
+
+def test_the_branch_managers_numbers_come_only_through_placeholders() -> None:
+    """The guard's and the windows' fixed numbers are constants fed to t() (tools.WORDED), so a
+    string never carries a number the code could change without it."""
+    import re
+
+    from mia.agents.branch_manager import tools
+
+    assert set(i18n.STRINGS) == set(i18n.SUPPORTED)
+    for lang, strings in i18n.STRINGS.items():
+        for key, value in strings.items():
+            if not key.startswith(("bm.", "intent.branch_manager.")):
+                continue
+            for text in [value] if isinstance(value, str) else value:
+                assert not re.search(r"\d", re.sub(r"\{[^}]*\}", "", text)), (lang, key)
+    assert "20%" in i18n.t("bm.refused.too_far", "en", **tools.WORDED)

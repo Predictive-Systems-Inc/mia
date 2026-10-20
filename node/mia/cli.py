@@ -137,26 +137,31 @@ def chat(args: argparse.Namespace) -> int:
 
 def decide(args: argparse.Namespace) -> int:
     """Decide an approval as a person. Prints "refused: <reason>" and returns 1 when a rule
-    refuses it, the permission check fails, or the handler refuses (the request is then closed
-    as expired with the reason, as the API does)."""
+    refuses it (an owner's own request too: the shell is no PIN step-up, D37), the permission
+    check fails, or the handler refuses (the request is then closed as expired with the
+    reason, as the API does)."""
     from mia.agents.registry import load_roles
     from mia.core import approvals
     from mia.core.db import session_scope, utcnow
-    from mia.core.models import Actor
+    from mia.core.models import Actor, Approval
     from mia.core.rbac import PermissionDenied
 
     load_roles()  # a handler re-runs an agent's tool outside any turn
     with session_scope() as session:
         person = _find_person(session, args.as_person)
+        actor = Actor.person(person)
+        asked = session.get(Approval, args.approval_id)
+        own = asked is not None and bool(actor.ids & approvals.requester_ids(asked))
         try:
-            # Shell access is full access: the CLI counts as a fresh step-up (ADR 011).
+            # Shell access is full access: the CLI counts as a fresh step-up (ADR 011), except
+            # for the requester's own request: D37 needs a PIN the shell never takes.
             row = approvals.decide(
                 session,
                 args.approval_id,
-                Actor.person(person),
+                actor,
                 args.outcome,
                 args.reason,
-                stepped_up_at=utcnow(),
+                stepped_up_at=None if own else utcnow(),
             )
         except (approvals.ApprovalError, PermissionDenied) as exc:
             session.rollback()
@@ -166,7 +171,7 @@ def decide(args: argparse.Namespace) -> int:
             reason = str(getattr(exc, "reason", None) or exc)
             session.rollback()
             with contextlib.suppress(approvals.ApprovalError):  # no open request to close
-                approvals.close_refused(session, args.approval_id, Actor.person(person), reason)
+                approvals.close_refused(session, args.approval_id, actor, reason)
             print(f"refused: {reason}")
             return 1
     print(f"approval {row.id}: {row.status} by {person.name}")

@@ -68,8 +68,9 @@ offered the agent. Languages: ten, Filipino first.
 7. Owner: "gawin nating 48 ang bibingka simula Lunes": a price change on a date behind the
    owner's approval, the sales supervisor's counts use the new price from that date; short code
    edits the same way without approval (no money). `test_a_price_change_on_a_date_needs_the_owner`.
-8. Weekly summary on Monday at opening to the owner and supervisors: sales against target per
-   branch, best and worst items, waste from stock_events, the open experiment's progress.
+8. Weekly summary on Monday at opening (the first open day after a closed Monday) to the owner
+   and supervisors: sales against target per branch, best and worst items, waste from
+   stock_events, the open experiment's progress.
    `test_the_weekly_summary_reads_sales_and_stock`.
 9. Monthly numbers letter on the first business day: the month against target, the best days,
    per-clerk totals, experiments decided; a template, not prose. `test_the_monthly_letter_is_numbers`.
@@ -226,5 +227,21 @@ pricing, competitor prices.
   personal best on a missed day gets both); owners and admins are never cheered or nudged; the
   weekly summary and the monthly letter go per branch (an owner gets one per branch) and run
   the tools as each recipient, so rbac decides what each reads. A Monday the branch is closed
-  gives no weekly summary that week. When every recipient is denied nothing is sent and no
-  marker is written, so the tools run again on each tick of the window.
+  moves the weekly summary to the week's first open day (fix wave). When every recipient is
+  denied nothing is sent and no marker is written, so the tools run again on each tick of the
+  window.
+- 20 Oct 2026, the fix wave after the whole-branch review: an experiment is refused
+  `price_scheduled` while the item has a price dated after the business date, and a price
+  change waits until a done experiment's revert took effect (`open_experiment`), so a revert
+  row never undoes an approved price; a typed keep with a negation word (`dai`, `huwag`, `no`,
+  `stop` and the rest of `parsing.NEGATION_WORDS`) gets the keep and revert buttons and never
+  keeps; a number right before a menu word is a count, never a price candidate, unless no
+  other amount is left; a keep or revert tap stays valid until the revert takes effect
+  (`too_late` is the deadline), not only on the day it was asked; a typed price under a
+  strategy whose condition does not hold is refused `no_strategy` (every proposal names its
+  rationale); D37 reaches money, external and delete requests only, and never from the shell;
+  a request whose approve handler refused is recorded `approval.refused` and closed as expired,
+  and only the reject handlers that opt in tell the requester (the branch manager's two);
+  every fixed number in a `bm.*` string is a placeholder fed from the constants
+  (`tools.WORDED`); `retail_item_prices.set_by` is the person who set the price, None for the
+  system, and the approval and people ids are foreign keys.

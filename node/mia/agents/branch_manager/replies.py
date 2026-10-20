@@ -8,6 +8,7 @@ from typing import Any
 
 from mia.agents.branch_manager.models import Experiment
 from mia.agents.branch_manager.tools import (
+    WORDED,
     CoachingOutput,
     HowToSellOutput,
     ItemOut,
@@ -63,13 +64,14 @@ def refusal_key(message: str) -> str:
 def coaching_text(out: CoachingOutput, lang: str, names: Names, currency: str = "PHP") -> str:
     """The period, one line per person (units, amount and the 30 days before; improved ones
     say so), most units first, and the pairing of two items by name."""
-    lines = [t("bm.coaching.head", lang, start=out.start.isoformat(), end=out.end.isoformat())]
+    start, end = out.start.isoformat(), out.end.isoformat()
+    lines = [t("bm.coaching.head", lang, start=start, end=end, **WORDED)]
     for r in out.rows:
         key = "bm.coaching.row_improved" if r.improved else "bm.coaching.row"
         amount = format_money(r.amount, currency, lang)
         lines.append(t(key, lang, name=r.name, units=r.units, amount=amount, before=r.before_units))
     if not out.rows:
-        lines.append(t("bm.coaching.none", lang))
+        lines.append(t("bm.coaching.none", lang, **WORDED))
     if out.pairing is not None:
         first, second = (names.get(i, "") for i in out.pairing)
         lines.append(t("bm.coaching.pairing", lang, first=first, second=second))
@@ -101,7 +103,7 @@ def score_text(
     """So far (running) or the result (done, naming the strategy and the item) in percent
     against the baseline; not enough data without a baseline to compare."""
     if units is None or amount is None:
-        return t("bm.experiment.not_enough", lang)
+        return t("bm.experiment.not_enough", lang, **WORDED)
     if done:
         return t(
             "bm.experiment.result",
@@ -125,7 +127,7 @@ def rationale_text(name_key: str, rationale: Mapping[str, Any], currency: str, l
         k: format_money(int(v), currency, lang) if k in MONEY_KEYS else v
         for k, v in rationale.items()
     }
-    return t(key, lang, **values)
+    return t(key, lang, **WORDED, **values)
 
 
 def experiment_waiting(

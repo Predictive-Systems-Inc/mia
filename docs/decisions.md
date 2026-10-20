@@ -358,3 +358,9 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
   of another branch cannot), the strategy catalogue as `branch_manager_strategies` rows seeded
   with sources, and a cost floor per item (`retail_items.cost`, nullable) so no strategy prices
   below cost. Recorded in the branch manager spec (section 13) and plan.
+- Note (20 Oct 2026, the branch manager's fix wave): the rule is a money rule. It reaches only
+  requests with a money, external or delete risk (approvals.request records it in
+  `evidence["risk"]`); an owner's own cover override, leave or other request still waits for
+  another approver. `mia decide` passes no step-up for the requester's own request, so from the
+  shell an owner's own request is refused (the shell was trusted for it before this branch; it
+  still decides other people's requests, ADR 011).

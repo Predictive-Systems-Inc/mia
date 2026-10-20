@@ -184,12 +184,13 @@ def _experiment_facts(
         t(
             "bm.baseline",
             lang,
+            **tools.WORDED,
             days=base.days,
             units=base.units,
             amount=_money(deps, base.amount, item.currency),
         )
         if base is not None
-        else t("bm.experiment.not_enough", lang)
+        else t("bm.experiment.not_enough", lang, **tools.WORDED)
     )
     old = _money(deps, now, item.currency)
     facts = {
@@ -438,7 +439,7 @@ def _run(
             found = _proposals(deps, starts_on) or []
             return _offer(session, deps, thread, found, starts_on, "bm.refused.no_strategy")
         key = replies.refusal_key(str(out["message"]))
-        return reply_text(session, deps, thread, t(key, deps.lang))
+        return reply_text(session, deps, thread, t(key, deps.lang, **tools.WORDED))
     return _result(session, deps, thread, tool, out)
 
 
