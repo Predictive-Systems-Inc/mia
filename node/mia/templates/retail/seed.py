@@ -13,6 +13,9 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, col, select
 
+from mia.agents.bookkeeper import calc as bk_calc
+from mia.agents.bookkeeper import tools as bk_tools
+from mia.agents.bookkeeper.models import CashCount, Deposit, Expense, Payout, Settlement
 from mia.agents.branch_manager import experiments
 from mia.agents.branch_manager import tips as bm_tips
 from mia.agents.branch_manager.models import Experiment, Strategy, Tip
@@ -232,6 +235,7 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
         )
         store.insert(session, target_row, branch_actor)
     _seed_hr(session, branches, staff, today)
+    _seed_bookkeeper(session, branches, staff, today)
     _seed_branch_manager(session, items, actor)
     _seed_experiments(session, first, planned, kiosk_daily, staff)
     _seed_customers(session, first, items[1], staff["Marites"].id, today)
@@ -691,6 +695,93 @@ def _seed_stock(
         by,
         ingredient_id=ingredients["Banana leaves"].id,
     )
+
+
+# category, days before today, amount, VAT amount, receipt number, source (the Mall kiosk's
+# expenses, each under the expense limit; the petty spends add up to 1,200 pesos)
+EXPENSES: list[tuple[str, int, int, int | None, str | None, str]] = [
+    ("utilities", 12, 224_000, 24_000, "MER-55120", "cash"),
+    ("rent", 10, 450_000, None, None, "bank"),
+    ("supplies", 8, 112_000, 12_000, "OR-00342", "cash"),
+    ("transport", 6, 70_000, None, None, "petty"),
+    ("repairs", 5, 85_000, None, "OR-1187", "cash"),
+    ("other", 2, 50_000, None, None, "petty"),
+]
+PETTY_REFILL = (13, 200_000)  # days before today, amount
+SHORT_DAY = 6  # days before today the closing count is 150 pesos short
+
+
+def _seed_bookkeeper(
+    session: Session, branches: list[Branch], staff: dict[str, Person], today: dt.date
+) -> None:
+    """Seed the books from the bookkeeper's own functions: a closing cash count for each seeded
+    day per branch (expected from bk_tools.tender_sales, counted off by 0 to 80 pesos, one day
+    150 pesos short), a GCash settlement for each of the last three days and a Grab payout for
+    last week (bk_calc.match with the settings' fee and commission), the Mall kiosk's expenses
+    and petty cash, and a bank deposit every Monday of the undeposited cash before it."""
+    settings = orgconfig.load().bookkeeper
+    supervisors = [staff["Marites"].id, staff["Jun"].id]
+    last_monday = today - dt.timedelta(days=today.weekday() + 7)
+    for index, branch in enumerate(branches):
+        actor, by, bid = Actor.system(branch.id), supervisors[index], branch.id
+        days = [today - dt.timedelta(days=offset) for offset in range(14, 0, -1)]
+        for day in days:
+            offset = (today - day).days
+            expected = bk_tools.tender_sales(session, bid, "cash", day, day)
+            off = -15_000 if offset == SHORT_DAY else (offset * 37 + index * 11) % 81 * 100
+            counted = expected + (off if offset % 2 or offset == SHORT_DAY else -off)
+            gap = bk_calc.match(counted, expected, 0, settings.threshold).gap
+            row = CashCount(
+                branch_id=bid, business_date=day, counted=counted, expected=expected,
+                difference=gap, currency=CURRENCY, counted_by=by,
+            )  # fmt: skip
+            store.insert(session, row, actor)
+        for day in days[-3:]:
+            sales = bk_tools.tender_sales(session, bid, "gcash", day, day)
+            fee = settings.fees["gcash"]
+            amount = sales - bk_calc.percent_of(sales, fee)  # settled in full
+            m = bk_calc.match(amount, sales, fee, settings.threshold)
+            settlement = Settlement(
+                branch_id=bid, provider="gcash", period_start=day, period_end=day,
+                amount=amount, expected=m.expected, fee=m.cut, currency=CURRENCY, matched_by=by,
+            )  # fmt: skip
+            store.insert(session, settlement, actor)
+        week_end = last_monday + dt.timedelta(days=6)
+        sales = bk_tools.tender_sales(session, bid, "grab", last_monday, week_end)
+        commission = settings.commissions["grab"]
+        amount = sales - bk_calc.percent_of(sales, commission) - 2_000  # 20 pesos short
+        m = bk_calc.match(amount, sales, commission, settings.threshold)
+        payout = Payout(
+            branch_id=bid, provider="grab", period_start=last_monday, period_end=week_end,
+            amount=amount, expected=m.expected, commission=m.cut, currency=CURRENCY,
+            recorded_by=by,
+        )  # fmt: skip
+        store.insert(session, payout, actor)
+        if index == 0:
+            back, refill = PETTY_REFILL
+            petty = Deposit(
+                branch_id=bid, business_date=today - dt.timedelta(days=back),
+                bank=bk_tools.PETTY, amount=refill, currency=CURRENCY, recorded_by=by,
+            )  # fmt: skip
+            store.insert(session, petty, actor)
+            for category, back, amount, vat, receipt, source in EXPENSES:
+                expense = Expense(
+                    branch_id=bid, business_date=today - dt.timedelta(days=back),
+                    category=category, amount=amount, currency=CURRENCY, vat_amount=vat,
+                    receipt_no=receipt, source=source, recorded_by=by,
+                )  # fmt: skip
+                store.insert(session, expense, actor)
+        for day in days:
+            if day.weekday() != 0:
+                continue
+            _, undeposited = bk_tools.balance_days(session, bid, day - dt.timedelta(days=1))
+            amount = undeposited[max(undeposited)] if undeposited else 0
+            if amount > 0:
+                deposit = Deposit(
+                    branch_id=bid, business_date=day, bank="bdo", amount=amount,
+                    currency=CURRENCY, reference=f"DS-{day:%m%d}-{index + 1}", recorded_by=by,
+                )  # fmt: skip
+                store.insert(session, deposit, actor)
 
 
 def _seed_order(
