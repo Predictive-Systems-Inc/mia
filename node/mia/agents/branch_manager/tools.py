@@ -68,6 +68,7 @@ from mia.core.models import (
 from mia.core.money import format_money
 from mia.core.rbac import Resource
 from mia.i18n import t
+from mia.i18n.strings import STRINGS
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail import items
 from mia.templates.retail.models import (
@@ -574,11 +575,12 @@ def _proposal_for(
 def check_experiment(deps: AgentDeps, args: ProposeExperimentInput, tool_call_id: str) -> None:
     """The guard's precheck for propose_experiment (after the permission check, before the
     approval). Refuses (ExperimentRefused) a request naming no active strategy, an item the
-    branch does not sell, a strategy with no proposal for the item when no price was typed, and
-    whatever _verify_experiment refuses. Completes the input in place, so the approval carries
-    it: kind from the strategy row, to_price from the engine when none was typed, and the
-    rationale always from the engine's proposal (with new_item: its components and from_price;
-    {} without one), never from the input."""
+    branch does not sell, a strategy with no proposal for the item (no_proposal without a
+    typed price, no_strategy with one: every proposal names its rationale), and whatever
+    _verify_experiment refuses. Completes the input in place, so the approval carries it: kind
+    from the strategy row, to_price from the engine when none was typed, and the rationale
+    always from the engine's proposal (with new_item: its components and from_price), never
+    from the input."""
     _engine_reads(deps, tool_call_id)
     strategy = deps.session.get(Strategy, args.strategy_id or "")
     if strategy is None or not strategy.active:
@@ -590,9 +592,9 @@ def check_experiment(deps: AgentDeps, args: ProposeExperimentInput, tool_call_id
     numbers = branch_numbers(deps.session, deps.branch, deps.today)
     catalog = _catalog(deps.session, deps.branch.id)
     proposal = _proposal_for(numbers, catalog, item, strategy, args.starts_on)
+    if proposal is None:  # a typed price under a strategy whose condition does not hold
+        raise ExperimentRefused("no_proposal" if args.to_price is None else "no_strategy")
     if args.to_price is None:
-        if proposal is None:
-            raise ExperimentRefused("no_proposal")
         args.to_price = proposal.to_price
     args.rationale = dict(proposal.rationale) if proposal is not None else {}
     if proposal is not None and proposal.new_item is not None:
@@ -745,6 +747,13 @@ def propose_experiment(
     return _experiment_out(deps.session, row)
 
 
+def _refused_key(prefix: str, reason: str | None) -> str:
+    """<prefix>.<reason> when that key exists, else <prefix>.other (a plain LookupError's
+    words, "the requester", never reach a person as a raw key)."""
+    key = f"{prefix}.{reason}"
+    return key if key in STRINGS["en"] else f"{prefix}.other"
+
+
 def _requested(approval: Approval, model: type[BaseModel]) -> Any:
     raw = approval.evidence.get("input")
     if raw is None:
@@ -781,12 +790,12 @@ def apply_experiment_rejection(session: Session, approval: Approval, decider: Ac
     """Reject handler: an experiment row with status rejected (event
     branch_manager.experiment_rejected; no price row, no new item) and the requester told. An
     approval closed as expired after the approve handler refused it (approvals.close_refused)
-    writes no row: the requester is told the reason (bm.experiment_refused.<reason>). Raises
-    LookupError when the requester or the input cannot be found."""
+    writes no row: the requester is told the reason (bm.experiment_refused.<reason>, else
+    .other). Raises LookupError when the requester or the input cannot be found."""
     deps = _requester_deps(session, approval)
     args: ProposeExperimentInput = _requested(approval, ProposeExperimentInput)
     if approval.status == "expired":
-        _tell(session, deps.person, f"bm.experiment_refused.{approval.reason}")
+        _tell(session, deps.person, _refused_key("bm.experiment_refused", approval.reason))
         return
     _check(deps, EXPERIMENTS, "write", str(approval.evidence.get("tool_call_id")))
     item = session.get(RetailItem, args.item_id)
@@ -831,7 +840,7 @@ def apply_experiment_rejection(session: Session, approval: Approval, decider: Ac
 
 
 approvals.register_handler(PROPOSE, apply_experiment_approval)
-approvals.register_reject_handler(PROPOSE, apply_experiment_rejection)
+approvals.register_reject_handler(PROPOSE, apply_experiment_rejection, on_refused=True)
 
 
 # ---- score_experiment ---------------------------------------------------------------------
@@ -1115,11 +1124,11 @@ def apply_price_rejection(session: Session, approval: Approval, decider: Actor) 
     """Reject handler: event branch_manager.price_rejected with the item, price and date (no
     row) and the requester told. An approval closed as expired after the approve handler
     refused it (approvals.close_refused): the requester is told the reason
-    (bm.price_refused.<reason>), no event."""
+    (bm.price_refused.<reason>, else .other), no event."""
     person, _ = _requester(session, approval)
     args: ChangePriceInput = _requested(approval, ChangePriceInput)
     if approval.status == "expired":
-        _tell(session, person, f"bm.price_refused.{approval.reason}")
+        _tell(session, person, _refused_key("bm.price_refused", approval.reason))
         return
     after = {"item_id": args.item_id, "price": args.price, "effective_on": str(args.effective_on)}
     events.emit(
@@ -1143,7 +1152,7 @@ def apply_price_rejection(session: Session, approval: Approval, decider: Actor) 
 
 
 approvals.register_handler(CHANGE_PRICE, apply_price_approval)
-approvals.register_reject_handler(CHANGE_PRICE, apply_price_rejection)
+approvals.register_reject_handler(CHANGE_PRICE, apply_price_rejection, on_refused=True)
 
 
 # ---- set_short_code -----------------------------------------------------------------------

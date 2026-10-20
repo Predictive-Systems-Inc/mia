@@ -342,6 +342,21 @@ def test_an_owner_cannot_approve_their_own_leave(session: Session, hr: Ferinos) 
     assert session.exec(select(Leave).where(Leave.approval_id == out["approval_id"])).all() == []
 
 
+def test_a_refused_leave_never_tells_the_requester_rejected(session: Session, hr: Ferinos) -> None:
+    """approvals.close_refused (an approve handler refused) runs only reject handlers that
+    opted in; the HR one did not, so Ana is not told "rejected" for a leave nobody rejected."""
+    _, people = hr
+    ana = people["Ana"]
+    out = file_leave(session, ana)
+    marites = Actor.person(people["Marites"])
+    approval = approvals.close_refused(session, str(out["approval_id"]), marites, "overlaps")
+    assert (approval.status, approval.reason) == ("expired", "overlaps")
+    assert notifications(session, ana) == []
+    assert not session.exec(select(Event).where(Event.action == "hr.leave_rejected")).all()
+    actions = session.exec(select(Event.action).where(Event.entity_id == approval.id)).all()
+    assert "approval.refused" in actions and "approval.approved" not in actions
+
+
 def test_a_clerk_cannot_approve_a_leave(session: Session, hr: Ferinos) -> None:
     _, people = hr
     out = file_leave(session, people["Ana"])

@@ -29,7 +29,7 @@ from mia.core import events, orgconfig
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
-from mia.core.models import Branch, Event, Message, Person, Thread
+from mia.core.models import Event, Message, Thread
 from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied, Resource, get_rbac
 from mia.i18n import t
@@ -124,11 +124,8 @@ def _did_you_mean(
     return _ask(session, deps, thread, blocks, options)
 
 
-def _names(session: Session) -> dict[str, str]:
-    """Item, person and branch ids to names, for the replies (ids are ULIDs, never shared)."""
-    out = {i.id: i.name for i in session.exec(select(RetailItem))}
-    out |= {p.id: p.name for p in session.exec(select(Person))}
-    return out | {b.id: b.name for b in session.exec(select(Branch))}
+def _names(session: Session, deps: AgentDeps) -> dict[str, str]:
+    return due.names(session, deps.organisation_id)
 
 
 def _money(deps: AgentDeps, amount: int, currency: str | None = None) -> str:
@@ -249,7 +246,7 @@ def _offer(
     experiment when tapped today; none: the numbers support no experiment."""
     if not found:
         return reply_text(session, deps, thread, t(key, deps.lang))
-    names = _names(session)
+    names = _names(session, deps)
     options: replies.Options = {}
     for p in found[:MAX_OPTIONS]:
         strategy = session.get(Strategy, p.strategy_id)
@@ -337,7 +334,7 @@ def _scored(session: Session, deps: AgentDeps, thread: Thread, out: dict[str, An
     row = session.get(Experiment, score.experiment_id)
     if row is None:
         return reply_text(session, deps, thread, t("bm.no_record", deps.lang))
-    names = _names(session)
+    names = _names(session, deps)
     strategy = session.get(Strategy, row.strategy_id)
     name = t(strategy.name_key, deps.lang) if strategy is not None else ""
     item = names.get(row.item_id, "")
@@ -372,7 +369,7 @@ def _result(
     session: Session, deps: AgentDeps, thread: Thread, tool: str, out: dict[str, Any]
 ) -> ChatReply:
     """The reply to one successful tool result (tool is the name without the agent prefix)."""
-    lang, names = deps.lang, _names(session)
+    lang, names = deps.lang, _names(session, deps)
     currency = _currency(session, deps.branch.id)
     blocks: list[Block]
     if tool == "coaching":

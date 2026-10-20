@@ -185,10 +185,10 @@ def replace_cost(item: RetailItem, cost: int) -> RetailItem:
 def test_increase_on_an_item_that_sells_out(menu: list[RetailItem]) -> None:
     n = ids(menu)
     numbers = BranchNumbers(open_days=14, sold_out_days={n["Special"]: 8, n["Classic"]: 6})
-    # 45 up 5 percent rounds up to 50, past 10 percent: the limit, 49.50.
+    # 45 up 5 percent rounds up to 50, past 10 percent: the limit (49.50) down to 50 centavos.
     assert proposals("bm.strategy.increase", numbers, menu) == [(n["Special"], 4950)]
     kape = BranchNumbers(open_days=10, sold_out_days={n["Kape"]: 9})
-    # 25.49 to the next 5 pesos (30) is past 10 percent: 28.03 down to the peso, 28.
+    # 25.49 to the next 5 pesos (30) is past 10 percent: 28.03 down to 50 centavos, 28.
     assert proposals("bm.strategy.increase", kape, menu) == [(n["Kape"], 2800)]
     dear = [RetailItem(id=n["Kape"], name="Kape", price=9000, currency="PHP")]
     assert proposals("bm.strategy.increase", kape, dear) == [(n["Kape"], 9500)]  # fits: 5.6%

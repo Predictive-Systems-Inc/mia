@@ -25,6 +25,7 @@ DEFAULT_TTL = timedelta(hours=24)
 Handler = Callable[[Session, Approval, Actor], None]
 _handlers: dict[str, Handler] = {}
 _reject_handlers: dict[str, Handler] = {}
+_on_refused: set[str] = set()  # types whose reject handler also follows up a close_refused
 
 
 class ApprovalRequired(Exception):
@@ -51,9 +52,17 @@ def register_handler(approval_type: str, handler: Handler) -> None:
     _handlers[approval_type] = handler
 
 
-def register_reject_handler(approval_type: str, handler: Handler) -> None:
-    """Register the service function that follows up a rejected request of this type."""
+def register_reject_handler(
+    approval_type: str, handler: Handler, *, on_refused: bool = False
+) -> None:
+    """Register the service function that follows up a rejected request of this type. With
+    on_refused it also runs after close_refused (it must handle status expired with the
+    approve handler's reason); without, a refused request closes silently."""
     _reject_handlers[approval_type] = handler
+    if on_refused:
+        _on_refused.add(approval_type)
+    else:
+        _on_refused.discard(approval_type)
 
 
 def request(
@@ -237,20 +246,20 @@ def decide(
 
 def close_refused(session: Session, approval_id: str, decider: Actor, reason: str) -> Approval:
     """After an approve handler refused (raised LookupError) and the caller rolled the
-    decision back: record the decision (event approval.approved by the decider, the status
-    unchanged), then close the request as expired with the reason (system actor, expire), so it
-    is no dead end that every retry refuses, and run the type's reject handler, which tells the
-    requester (it sees status expired and the reason). Raises ApprovalError when the request is
-    no longer open."""
+    decision back: record the attempt (event approval.refused by the decider with the reason,
+    the status unchanged), then close the request as expired with the reason (system actor,
+    expire), so it is no dead end that every retry refuses, and run the type's reject handler
+    only when it opted in (register_reject_handler on_refused; it sees status expired and the
+    reason and tells the requester). Raises ApprovalError when the request is no longer open."""
     approval = session.get(Approval, approval_id)
     if approval is None or approval.status not in ("pending", "escalated"):
         raise ApprovalError("approval is not open")
-    after = {"decided_by": decider.principal.id, "refused": reason}
+    after = {"reason": reason, "outcome": "approved"}
     events.emit(
-        session, "approval.approved", approval, None, after, decider, approval_id=approval.id
+        session, "approval.refused", approval, None, after, decider, approval_id=approval.id
     )
     approval = expire(session, approval, Actor.system(approval.branch_id), reason)
-    if approval.type in _reject_handlers:
+    if approval.type in _on_refused:
         _reject_handlers[approval.type](session, approval, decider)
     return approval
 

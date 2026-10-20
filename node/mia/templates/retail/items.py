@@ -34,7 +34,7 @@ def schedule_price(
         currency=item.currency,
         effective_on=effective_on,
         approval_id=approval_id,
-        set_by=actor.person_id or actor.principal.id,
+        set_by=actor.person_id,  # None for the system
     )
     return store.insert(
         session,

@@ -135,6 +135,16 @@ def test_the_windows_follow_the_branch_hours(session: Session, bm_en: Ferinos) -
     assert due.closing(kiosk, hours, at(TODAY, 22, 0)) == TODAY
 
 
+def test_a_closed_monday_moves_the_weekly_to_the_first_open_day(
+    session: Session, bm_en: Ferinos
+) -> None:
+    kiosk, _ = bm_en
+    no_monday = [h for h in kiosk_hours(session, kiosk) if h.weekday != 0]
+    assert due.weekly(kiosk, no_monday, at(TODAY, 9, 10)) is None  # closed
+    assert due.weekly(kiosk, no_monday, at(TODAY + ONE_DAY, 9, 10)) == TODAY + ONE_DAY
+    assert due.weekly(kiosk, no_monday, at(TODAY + 2 * ONE_DAY, 9, 10)) is None
+
+
 # ---- the morning message --------------------------------------------------------------------
 
 
@@ -157,6 +167,28 @@ def test_the_morning_message_has_result_tip_and_quote(
     assert tip.item_id is None and [
         c.message_id for c in coached(session, people["Ana"], "morning")
     ] == [note.id]
+
+
+def test_the_morning_message_in_filipino(session: Session, bm: Ferinos, pin: Pin) -> None:
+    """The proof shop's language end to end: Ana (fil) gets the morning words, the money and
+    a tip and a quote of her language."""
+    kiosk, people = bm
+    assert people["Ana"].language == "fil"
+    _tick(session, pin, at(TODAY, 9, 10))
+    (note,) = notifications(session, people["Ana"])
+    tip, quote = given(session, people["Ana"], "tip"), given(session, people["Ana"], "quote")
+    assert (tip.language, quote.language) == ("fil", "fil")
+    target = share(session, kiosk, TODAY)
+    assert target is not None
+    assert note.text == t(
+        "bm.morning",
+        "fil",
+        yesterday=format_money(day_total(session, kiosk, YESTERDAY), "PHP", "fil"),
+        target=format_money(target, "PHP", "fil"),
+        tip=tip.text,
+        quote=quote.text,
+        source=quote.source,
+    )
 
 
 def test_the_morning_message_is_sent_once_per_person_and_day(
@@ -331,7 +363,7 @@ def test_the_weekly_summary_reads_sales_and_stock(
         deps_for(session, people["Rosa"]), WeeklyInput(week_start=TODAY - dt.timedelta(days=7)), "w"
     )
     week = WeeklyOutput(start=out.start, end=out.end, branches=[out.branches[0]])
-    text = replies.weekly(week, due._names(session), "PHP", EN)[0].text
+    text = replies.weekly(week, due.names(session, bm_en[0].organisation_id), "PHP", EN)[0].text
     assert text in texts(session, people["Rosa"]) and out.branches[0].waste
     assert text in texts(session, people["Marites"])
     assert _tick(session, pin, at(TODAY, 9, 40)) == 0  # once per branch and Monday
@@ -343,7 +375,7 @@ def test_the_monthly_letter_is_numbers(session: Session, bm_en: Ferinos, pin: Pi
     out = tools.monthly_letter(
         deps_for(session, people["Rosa"]), MonthlyInput(month=dt.date(2026, 10, 1)), "m"
     )
-    text = replies.monthly(out, due._names(session), EN)[0].text
+    text = replies.monthly(out, due.names(session, bm_en[0].organisation_id), EN)[0].text
     assert text in texts(session, people["Rosa"])
     assert _tick(session, pin, at(dt.date(2026, 11, 1), 9, 40)) == 0
 

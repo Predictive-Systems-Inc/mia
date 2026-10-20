@@ -817,8 +817,12 @@ def upgrade() -> None:
         sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
         sa.Column("effective_on", sa.Date(), nullable=False),
         sa.Column("approval_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("set_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("set_by", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.Column("applied_at", mia.core.db.TZDateTime(length=40), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["approval_id"],
+            ["approval.id"],
+        ),
         sa.ForeignKeyConstraint(
             ["branch_id"],
             ["branch.id"],
@@ -826,6 +830,10 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["item_id"],
             ["retail_items.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["set_by"],
+            ["person.id"],
         ),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -1177,12 +1185,24 @@ def upgrade() -> None:
         sa.Column("proposed_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("decided_by", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.ForeignKeyConstraint(
+            ["approval_id"],
+            ["approval.id"],
+        ),
+        sa.ForeignKeyConstraint(
             ["branch_id"],
             ["branch.id"],
         ),
         sa.ForeignKeyConstraint(
+            ["decided_by"],
+            ["person.id"],
+        ),
+        sa.ForeignKeyConstraint(
             ["item_id"],
             ["retail_items.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["proposed_by"],
+            ["person.id"],
         ),
         sa.ForeignKeyConstraint(
             ["strategy_id"],

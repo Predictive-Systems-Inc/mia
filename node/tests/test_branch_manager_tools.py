@@ -166,7 +166,7 @@ def propose(
     who: Person,
     price: int | None = 4400,
     call: str = "e1",
-    key: str | None = "bm.strategy.increase",
+    key: str | None = "bm.strategy.charm",  # holds for Classic (a typed price, its rationale)
     name: str = "Classic",
 ) -> dict[str, Any]:
     args = ProposeExperimentInput(
@@ -238,7 +238,7 @@ def test_an_approved_experiment_changes_the_price_on_the_day(
     assert [k for k, _ in started] == ["started"] and started[0][1].status == "running"
     row = started[0][1]
     assert row.baseline is not None and row.baseline["days"] >= 7
-    assert (row.strategy_id, row.kind) == (strategy(session, "bm.strategy.increase").id, "price")
+    assert (row.strategy_id, row.kind) == (strategy(session, "bm.strategy.charm").id, "price")
     assert (
         tools.experiment_tick(session, kiosk, hours(session, kiosk), at(TODAY + ONE_DAY, 9, 6))
         == []
@@ -550,6 +550,17 @@ def test_a_short_code_needs_no_approval_and_never_clashes(session: Session, bm: 
 # ---- fix round 1: trust boundaries ----------------------------------------------------------
 
 
+def test_a_typed_price_under_a_strategy_that_does_not_hold_is_refused(
+    session: Session, bm: Ferinos
+) -> None:
+    """Every proposal names its rationale: the increase strategy needs sell-outs, which Classic
+    has none of, so a typed 44 under it is refused rather than carrying an empty rationale."""
+    end_seeded_experiment(session)
+    out = propose(session, bm[1]["Marites"], 4400, key="bm.strategy.increase")
+    assert (out["status"], out["message"]) == ("invalid", "no_strategy")
+    assert proposals_asked(session) == []
+
+
 def test_a_forged_rationale_is_ignored(session: Session, bm: Ferinos) -> None:
     end_seeded_experiment(session)
     menu = len(session.exec(select(RetailItem)).all())
@@ -557,7 +568,7 @@ def test_a_forged_rationale_is_ignored(session: Session, bm: Ferinos) -> None:
         item_id=item(session, "Classic").id,
         to_price=9000,
         starts_on=TODAY + ONE_DAY,
-        strategy_id=strategy(session, "bm.strategy.increase").id,
+        strategy_id=strategy(session, "bm.strategy.charm").id,
         rationale={"new_item": {"components": [], "from_price": 9000}},
     )
     out = call_tool(deps_for(session, bm[1]["Marites"]), BINDING[tools.PROPOSE], args, "e1")
@@ -721,7 +732,7 @@ def test_a_refused_approval_is_closed_with_its_reason(session: Session, bm: Feri
         select(Event.action).where(Event.entity_id == approval_id).order_by(col(Event.id))
     ).all()
     assert [a for a in chain if a.startswith("approval.")][-2:] == [
-        "approval.approved",
+        "approval.refused",  # no approval.approved: nothing was approved
         "approval.expired",
     ]
     assert t("bm.experiment_refused.too_far", "fil") in told(session, people["Marites"])
@@ -796,3 +807,16 @@ def test_a_price_dated_inside_a_done_experiment_waits_for_its_revert(
     )
     args = ChangePriceInput(item_id=classic, price=4600, effective_on=row.ends_on + 2 * ONE_DAY)
     assert call_tool(deps, binding, args, "p3")["status"] == "approval_required"
+
+
+def test_an_unknown_refusal_reason_is_told_in_plain_words(session: Session, bm: Ferinos) -> None:
+    _, people = bm
+    end_seeded_experiment(session)
+    approval_id = propose(session, people["Marites"])["approval_id"]
+    approvals.close_refused(session, approval_id, Actor.person(people["Rosa"]), "the requester")
+    said = told(session, people["Marites"])
+    assert t("bm.experiment_refused.other", "fil") in said
+    assert not [m for m in said if "bm.experiment_refused" in m]  # never a raw key
+    price_id = change(session, people["Marites"], 4800)["approval_id"]
+    approvals.close_refused(session, price_id, Actor.person(people["Rosa"]), "no input")
+    assert t("bm.price_refused.other", "fil") in told(session, people["Marites"])

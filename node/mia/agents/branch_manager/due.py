@@ -1,8 +1,8 @@
 """The branch manager's work on the tick: the experiment tick (prices due, experiments started,
 ended and scored), the morning message to each clerk on shift (yesterday's branch total, today's
 target, one tip and one quote), cheers and one kind nudge after the closing, the experiment's
-start and result to the leads and the requester, the weekly summary on Monday and the monthly
-numbers letter on the month's first open day.
+start and result to the leads and the requester, the weekly summary on Monday (the first open
+day after a closed one) and the monthly numbers letter on the month's first open day.
 
 What is due is pure code (rule 7): the window functions take the branch, its hours rows and
 `now` and return the business date the work is due for, or None. After-close work keeps the
@@ -26,7 +26,7 @@ tools as each recipient, so rbac decides what they read.
 import datetime as dt
 from collections.abc import Sequence
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, or_, select
 
 from mia.agents.base import AgentDeps
 from mia.agents.branch_manager import MANIFEST, calc, replies, tools
@@ -67,9 +67,14 @@ def closing(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
 
 
 def weekly(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
-    """Monday's date in Monday's morning window, else None."""
+    """The date of the week's first open day (Monday, or the first open day after a closed
+    Monday) in its morning window, else None."""
     day = morning_message(branch, hours, now)
-    return day if day is not None and day.weekday() == 0 else None
+    if day is None:
+        return None
+    is_open = retail_hours.open_days(hours)
+    earlier = (day - dt.timedelta(days=k) for k in range(1, day.weekday() + 1))
+    return None if any(is_open(d) for d in earlier) else day
 
 
 def monthly(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None:
@@ -142,11 +147,19 @@ def _deps(session: Session, person: Person, branch: Branch, day: dt.date) -> Age
     )
 
 
-def _names(session: Session) -> dict[str, str]:
-    """Item, person and branch ids to names (as turn._names; turn imports this module)."""
-    out = {i.id: i.name for i in session.exec(select(RetailItem))}
-    out |= {p.id: p.name for p in session.exec(select(Person))}
-    return out | {b.id: b.name for b in session.exec(select(Branch))}
+def names(session: Session, organisation_id: str) -> dict[str, str]:
+    """The organisation's branch, person and item ids to names, for the replies (ids are
+    ULIDs, never shared); shared with turn. Reads only the organisation's rows (an item is
+    the organisation's when it has no branch or one of its branches)."""
+    branches = {
+        b.id: b.name
+        for b in session.exec(select(Branch).where(Branch.organisation_id == organisation_id))
+    }
+    here = col(Person.branch_id).in_(list(branches))
+    out = {p.id: p.name for p in session.exec(select(Person).where(here))}
+    mine = or_(col(RetailItem.branch_id).in_(list(branches)), col(RetailItem.branch_id).is_(None))
+    out |= {i.id: i.name for i in session.exec(select(RetailItem).where(mine))}
+    return out | branches
 
 
 def _once_each(people: Sequence[Person]) -> list[Person]:
@@ -377,17 +390,18 @@ def _weekly(session: Session, branch: Branch, day: dt.date) -> list[Message]:
     """Last week's summary of the branch (tools.weekly_summary as each recipient) to its
     supervisors and the organisation's leads; a person the tool denies is skipped."""
     people = alerts.supervisors(session, branch.id) + alerts.leads(session, branch.organisation_id)
-    names, currency = _names(session), sales_tools._currency(session, branch.id)
-    args = tools.WeeklyInput(branch_id=branch.id, week_start=day - dt.timedelta(days=7))
+    names_ = names(session, branch.organisation_id)
+    currency = sales_tools._currency(session, branch.id)
+    last_monday = day - dt.timedelta(days=day.weekday() + 7)  # day may follow a closed Monday
+    args = tools.WeeklyInput(branch_id=branch.id, week_start=last_monday)
     sent = []
     for person in _once_each(people):
         try:
             out = tools.weekly_summary(_deps(session, person, branch, day), args, new_id())
         except PermissionDenied:
             continue
-        sent.append(
-            _send(session, branch, person, replies.weekly(out, names, currency, _lang(person)))
-        )
+        blocks = replies.weekly(out, names_, currency, _lang(person))
+        sent.append(_send(session, branch, person, blocks))
     return sent
 
 
@@ -395,14 +409,14 @@ def _monthly(session: Session, branch: Branch, day: dt.date) -> list[Message]:
     """Last month's numbers letter of the branch (tools.monthly_letter as each lead)."""
     month = day.replace(day=1) - dt.timedelta(days=1)
     args = tools.MonthlyInput(month=month.replace(day=1))
-    names = _names(session)
+    names_ = names(session, branch.organisation_id)
     sent = []
     for person in alerts.leads(session, branch.organisation_id):
         try:
             out = tools.monthly_letter(_deps(session, person, branch, day), args, new_id())
         except PermissionDenied:
             continue
-        sent.append(_send(session, branch, person, replies.monthly(out, names, _lang(person))))
+        sent.append(_send(session, branch, person, replies.monthly(out, names_, _lang(person))))
     return sent
 
 

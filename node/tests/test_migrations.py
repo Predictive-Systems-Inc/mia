@@ -43,3 +43,16 @@ def test_a_database_from_before_the_squash_fails_loudly() -> None:
         conn.execute(text("INSERT INTO alembic_version VALUES ('0001')"))
     with pytest.raises(CommandError):
         command.upgrade(_alembic_config(), "head")
+
+
+def test_the_price_and_experiment_ids_are_foreign_keys() -> None:
+    command.upgrade(_alembic_config(), "head")
+    with get_engine().connect() as conn:
+        found = {
+            table: {
+                c for fk in inspect(conn).get_foreign_keys(table) for c in fk["constrained_columns"]
+            }
+            for table in ("branch_manager_experiments", "retail_item_prices")
+        }
+    assert {"approval_id", "proposed_by", "decided_by"} <= found["branch_manager_experiments"]
+    assert {"approval_id", "set_by"} <= found["retail_item_prices"]

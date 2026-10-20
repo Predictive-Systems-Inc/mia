@@ -45,9 +45,9 @@ class Experiment(BranchScoped, table=True):
     result: dict[str, Any] | None = Field(default=None, sa_type=JSON)
     rationale: dict[str, Any] = Field(default_factory=dict, sa_type=JSON)
     status: str
-    approval_id: str | None = None
-    proposed_by: str
-    decided_by: str | None = None
+    approval_id: str | None = Field(default=None, foreign_key="approval.id")
+    proposed_by: str = Field(foreign_key="person.id")
+    decided_by: str | None = Field(default=None, foreign_key="person.id")
 
 
 class Tip(Stamped, table=True):

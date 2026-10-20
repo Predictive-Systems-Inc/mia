@@ -32,7 +32,8 @@ class RetailItem(Stamped, table=True):
 
 class RetailItemPrice(BranchScoped, table=True):
     """A branch's price for an item from effective_on (a local date) on; applied_at is set
-    when the change took effect (items.apply_due). The newest row wins on the same date."""
+    when the change took effect (items.apply_due). The newest row wins on the same date.
+    set_by is the person who set it, None when the system did (the seed)."""
 
     __tablename__: ClassVar[str] = "retail_item_prices"
 
@@ -40,8 +41,8 @@ class RetailItemPrice(BranchScoped, table=True):
     price: int  # integer minor units
     currency: str = Field(max_length=3)
     effective_on: dt.date = Field(index=True)
-    approval_id: str | None = None
-    set_by: str
+    approval_id: str | None = Field(default=None, foreign_key="approval.id")
+    set_by: str | None = Field(default=None, foreign_key="person.id")  # None: the system
     applied_at: dt.datetime | None = Field(default=None, sa_type=TZDateTime)
 
 

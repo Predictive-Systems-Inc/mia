@@ -96,7 +96,7 @@ SEEDED_EXPERIMENTS: list[tuple[str, str, int, str]] = [
     ("Classic", "bm.strategy.charm", 49, "done"),
     ("Special", "bm.strategy.increase", 4, "running"),
 ]
-KIOSK_SOLD_OUT = range(10, 15)  # days before today the kiosk's Special also sold out at 14:00
+KIOSK_SOLD_OUT = range(9, 15)  # days before today the kiosk's Special also sold out at 14:00
 LATE_SHIFT = (
     "Liza",
     "13:00",

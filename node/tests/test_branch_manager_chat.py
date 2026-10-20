@@ -22,6 +22,7 @@ from mia.chat.blocks import ApprovalCardBlock, ChatReply, QuickRepliesBlock
 from mia.chat.service import run_turn
 from mia.core import approvals, events, jev, orgconfig, store
 from mia.core.models import Actor, Approval, Branch, Message, Person, SalesCount, SalesNote, Thread
+from mia.core.money import format_money
 from mia.i18n import t
 from mia.settings import get_settings
 from mia.templates.retail import items
@@ -202,10 +203,11 @@ def test_tips_never_come_from_free_text(
 def test_an_experiment_waits_for_the_owner(
     session: Session, bm_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A typed price with its strategy; Classic 40 to 44 is within the guard rails."""
+    """A typed price with its strategy (charm holds for Classic); 40 to 44 is within the guard
+    rails."""
     _, people = bm_en
     end_seeded_experiment(session)
-    increase = strategy_id(session, "bm.strategy.increase")
+    increase = strategy_id(session, "bm.strategy.charm")
     _answers(
         monkeypatch,
         "propose_experiment",
@@ -221,12 +223,38 @@ def test_an_experiment_waits_for_the_owner(
     assert not experiments_of(session, "approved")
     assert approval.summary == card.summary and "₱44.00" in card.summary
     fields = {f.label: f.value for f in card.fields}
-    assert fields[t("bm.field.strategy", EN)] == t("bm.strategy.increase", EN)
+    assert fields[t("bm.field.strategy", EN)] == t("bm.strategy.charm", EN)
     assert fields[t("bm.field.price", EN)] == t(
         "bm.price_move", EN, from_price="₱40.00", to_price="₱44.00"
     )
     assert {t("bm.field.guard_rails", EN), t("bm.field.baseline", EN)} <= set(fields)
     assert not notifications(session, people["Ana"])  # a clerk never sees the card
+
+
+def test_an_experiment_card_in_filipino(
+    session: Session, bm: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The proof shop's language end to end: Marites (fil) gets the card in Filipino, every
+    field (the rationale too) through t(..., "fil")."""
+    _, people = bm
+    assert people["Marites"].language == "fil"
+    end_seeded_experiment(session)
+    charm = strategy_id(session, "bm.strategy.charm")
+    _answers(monkeypatch, "propose_experiment", item=item(session, "Classic").id, strategy=charm)
+    card = _card(_turn(session, people["Marites"], "subukan natin ang charm price sa classic"))
+    approval = session.get(Approval, card.approval_id)
+    assert approval is not None
+    rationale = approval.evidence["input"]["rationale"]
+    old, new = format_money(4000, "PHP", "fil"), format_money(3900, "PHP", "fil")
+    fields = {f.label: f.value for f in card.fields}
+    assert fields[t("bm.field.strategy", "fil")] == t("bm.strategy.charm", "fil")
+    assert fields[t("bm.field.price", "fil")] == t(
+        "bm.price_move", "fil", from_price=old, to_price=new
+    )
+    assert fields[t("bm.field.rationale", "fil")] == replies.rationale_text(
+        "bm.strategy.charm", rationale, "PHP", "fil"
+    )
+    assert new in card.summary and t("bm.strategy.charm", "fil") in card.summary
 
 
 def test_a_clerk_cannot_ask_for_an_experiment(
