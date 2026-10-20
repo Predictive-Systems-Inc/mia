@@ -324,18 +324,46 @@ def test_a_supervisor_gets_no_keep_button(
     assert not [b for b in reply.blocks if isinstance(b, QuickRepliesBlock)]
 
 
-def test_a_keep_button_from_another_day_goes_to_jev(
-    session: Session,
-    bm_en: Ferinos,
-    bm_shop: Shop,
-    jev_on: list[dict[str, Any]],
-    monkeypatch: pytest.MonkeyPatch,
+def test_a_keep_tap_after_a_late_close_still_keeps(
+    session: Session, bm_en: Ferinos, bm_shop: Shop, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The result goes out after the closing; the revert applies at the next opening. A tap
+    the morning after, before the revert, still keeps (the tool's too_late is the deadline)."""
+    row = running(session)
     reply = _done_with_buttons(session, bm_en, monkeypatch)
-    bm_shop.pin(10, 0, 1)  # tomorrow
-    _answers(monkeypatch, "reply_only", jev_on, conversation="greeting")
-    _turn(session, bm_en[1]["Rosa"], _quick(reply).options[0], reply.thread_id)
-    assert len(jev_on) == 1 and not experiments_of(session, "kept")
+    bm_shop.pin(7, 0, 1)  # tomorrow, before the opening
+    text = _turn(session, bm_en[1]["Rosa"], _quick(reply).options[0], reply.thread_id).text()
+    assert text == t("bm.experiment.kept", EN, item="Special", price="₱49.50", end=row.ends_on)
+
+
+def test_a_keep_tap_after_the_revert_is_too_late(
+    session: Session, bm_en: Ferinos, bm_shop: Shop, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kiosk, row = bm_en[0], running(session)
+    reply = _done_with_buttons(session, bm_en, monkeypatch)
+    after = (row.ends_on - TODAY).days + 1
+    bm_shop.pin(10, 0, after)
+    items.apply_due(session, kiosk, row.ends_on + ONE_DAY, Actor.system(kiosk.id))
+    session.commit()
+    text = _turn(session, bm_en[1]["Rosa"], _quick(reply).options[0], reply.thread_id).text()
+    assert text == t("bm.refused.too_late", EN) and not experiments_of(session, "kept")
+
+
+def test_a_negated_keep_asks_instead(
+    session: Session, bm_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gate 2 read the Bikol "no, keep the new price" as keep at 0.66: code never keeps on a
+    negation word; the keep and revert buttons decide."""
+    row = running(session)
+    end_seeded_experiment(session)
+    _answers(monkeypatch, "decide_experiment_result", confidence=0.66, keep=0.9)
+    reply = _turn(session, bm_en[1]["Rosa"], "dai, pundohon na an bagong presyo")
+    assert reply.blocks[0].text == t("clarify.question", EN)  # type: ignore[union-attr]
+    keep = t("bm.experiment.keep", EN, price="₱49.50")
+    assert _quick(reply).options == [keep, t("bm.experiment.revert", EN, price="₱45.00")]
+    assert not experiments_of(session, "kept")
+    special = item(session, "Special")
+    assert items.price_on(session, special, bm_en[0].id, row.ends_on + ONE_DAY) == 4500
 
 
 def test_a_tapped_decision_of_another_agent_asks_to_rephrase(

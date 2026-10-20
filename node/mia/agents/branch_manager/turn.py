@@ -1,8 +1,9 @@
 """The branch manager's answer to one chat turn: Jev picks the action (MIA_DECIDER=jev), code
 runs the tool through the guard and words the reply. The emergency script runs before this, in
 chat.service, for every agent. A button's decision is kept in the decision.clarify_asked event
-of its question and runs only when tapped on the day it was asked, and only when its action is
-one of ACTIONS. Money (an experiment, a dated price) goes through the approvals guard: the reply
+of its question and runs only when tapped on the day it was asked (a keep or revert button until
+the experiment reverts: the tool's too_late is its deadline), and only when its action is one of
+ACTIONS. A typed keep with a negation word is asked with the keep and revert buttons, never run. Money (an experiment, a dated price) goes through the approvals guard: the reply
 is the card the owner decides; a clerk never gets one (the guard denies the request)."""
 
 import asyncio
@@ -50,7 +51,8 @@ def _last_question(session: Session, thread: Thread) -> Message | None:
 
 
 def _tapped(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Decision | None:
-    """The decision behind a tapped button of the thread's last Mia message, asked today."""
+    """The decision behind a tapped button of the thread's last Mia message, asked today; a
+    keep or revert button any day (decide_experiment refuses too_late after the revert)."""
     asked = session.exec(
         select(Event)
         .where(Event.action == "decision.clarify_asked")
@@ -60,10 +62,15 @@ def _tapped(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Dec
     last = _last_question(session, thread)
     if asked is None or last is None or (asked.after or {}).get("message_id") != last.id:
         return None
+    chosen = ((asked.after or {}).get("options") or {}).get(text.strip())
+    if not chosen:
+        return None
+    decision = Decision.model_validate(chosen)
+    if decision.action == "decide_experiment_result":
+        return decision
     if asked.timestamp.astimezone(ZoneInfo(deps.branch.timezone)).date() != deps.today:
         return None
-    chosen = ((asked.after or {}).get("options") or {}).get(text.strip())
-    return Decision.model_validate(chosen) if chosen else None
+    return decision
 
 
 def _query(
@@ -291,17 +298,25 @@ def _own_suggestion(session: Session, deps: AgentDeps, thread: Thread) -> ChatRe
 # ---- tool results -------------------------------------------------------------------------
 
 
-def _decided(deps: AgentDeps, args: dict[str, Any]) -> dict[str, Any]:
-    """A typed keep or revert names no experiment: the branch's running or latest done one
-    (the tool checks the permission and the state)."""
-    if args.get("experiment_id"):
-        return args
-    row = deps.session.exec(
+def _awaiting(deps: AgentDeps) -> Experiment | None:
+    """The branch's latest done experiment awaiting a decision (its revert not yet in force),
+    else its running one."""
+    rows = deps.session.exec(
         select(Experiment)
         .where(Experiment.branch_id == deps.branch.id)
         .where(col(Experiment.status).in_(["running", "done"]))
-        .order_by(col(Experiment.starts_on).desc())
-    ).first()
+    ).all()
+    done = [r for r in rows if r.status == "done" and not tools._reverted(deps.session, r)]
+    running = [r for r in rows if r.status == "running"]
+    return max(done or running, key=lambda r: (r.ends_on, r.id), default=None)
+
+
+def _decided(deps: AgentDeps, args: dict[str, Any]) -> dict[str, Any]:
+    """A typed keep or revert names no experiment: _awaiting's (the tool checks the
+    permission and the state)."""
+    if args.get("experiment_id"):
+        return args
+    row = _awaiting(deps)
     return {**args, "experiment_id": row.id if row is not None else ""}
 
 
@@ -333,13 +348,23 @@ def _scored(session: Session, deps: AgentDeps, thread: Thread, out: dict[str, An
     may_decide = get_rbac().check(deps.actor, _DECIDE_TOOL, "execute")
     if row.status != "done" or not may_decide or tools._reverted(session, row):
         return reply_text(session, deps, thread, text)
-    options: replies.Options = {}
-    for keep, key, price in ((True, "keep", row.to_price), (False, "revert", row.from_price)):
-        label = t(f"bm.experiment.{key}", deps.lang, price=_money(deps, price, row.currency))
-        args = {"experiment_id": row.id, "keep": keep}
-        decision = Decision(action="decide_experiment_result", args=args, confidence=1.0)
-        options[label] = decision.model_dump(mode="json")
+    options = replies.keep_or_revert(row, deps.lang)
     blocks: list[Block] = [TextBlock(text=text), QuickRepliesBlock(options=list(options))]
+    return _ask(session, deps, thread, blocks, options)
+
+
+def _ask_keep_or_revert(session: Session, deps: AgentDeps, thread: Thread) -> ChatReply:
+    """A typed keep with a negation word ("dai, pundohon na an bagong presyo"): the keep and
+    revert buttons of _awaiting's experiment, so a tap decides; nothing is kept. Without one
+    the sender may decide, ask to rephrase."""
+    row = _awaiting(deps)
+    if row is None or not get_rbac().check(deps.actor, _DECIDE_TOOL, "execute"):
+        return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
+    options = replies.keep_or_revert(row, deps.lang)
+    blocks: list[Block] = [
+        TextBlock(text=t("clarify.question", deps.lang)),
+        QuickRepliesBlock(options=list(options)),
+    ]
     return _ask(session, deps, thread, blocks, options)
 
 
@@ -462,7 +487,22 @@ async def _jev_turn(
         except JevError as exc:
             return await asyncio.to_thread(_unavailable, session, deps, thread, str(exc))
     assert decision is not None
+    if query is not None and query.negated and _keeps(decision):
+        return await asyncio.to_thread(_negated_keep, session, deps, thread, decision)
     return await asyncio.to_thread(_act, session, deps, thread, decision)
+
+
+def _keeps(decision: Decision) -> bool:
+    return decision.action == "decide_experiment_result" and decision.args.get("keep") is True
+
+
+def _negated_keep(
+    session: Session, deps: AgentDeps, thread: Thread, decision: Decision
+) -> ChatReply:
+    """Log Jev's decision, then ask with the buttons instead of keeping."""
+    after = decision.model_dump(mode="json")
+    events.emit(session, "decision.made", ("thread", thread.id), None, after, deps.actor)
+    return _ask_keep_or_revert(session, deps, thread)
 
 
 async def handle_turn(turn: Turn) -> ChatReply:

@@ -6,6 +6,7 @@ only from branch_manager_tips rows (the tool's output); a note's text never reac
 from collections.abc import Mapping
 from typing import Any
 
+from mia.agents.branch_manager.models import Experiment
 from mia.agents.branch_manager.tools import (
     CoachingOutput,
     HowToSellOutput,
@@ -13,6 +14,7 @@ from mia.agents.branch_manager.tools import (
     MonthlyOutput,
     WeeklyOutput,
 )
+from mia.agents.decider import Decision
 from mia.agents.sales_supervisor.actions import THEMES
 from mia.chat.blocks import ApprovalCardBlock, Block, CardField, TextBlock
 from mia.core.money import format_money
@@ -28,6 +30,18 @@ CONVERSATION_KEYS = {
 MONEY_KEYS = ("price", "sum")  # rationale values in minor units
 Names = Mapping[str, str]  # item, person and branch ids -> names
 Options = dict[str, dict[str, Any]]  # button label -> the decision a tap runs
+
+
+def keep_or_revert(row: Experiment, lang: str) -> Options:
+    """The experiment's Keep (its tested price) and Revert (its old price) buttons, each with
+    the decide_experiment_result decision a tap runs."""
+    options: Options = {}
+    for keep, key, price in ((True, "keep", row.to_price), (False, "revert", row.from_price)):
+        label = t(f"bm.experiment.{key}", lang, price=format_money(price, row.currency, lang))
+        args = {"experiment_id": row.id, "keep": keep}
+        decision = Decision(action="decide_experiment_result", args=args, confidence=1.0)
+        options[label] = decision.model_dump(mode="json")
+    return options
 
 
 def conversation_reply(kind: str, lang: str) -> list[Block]:

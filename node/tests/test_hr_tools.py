@@ -317,6 +317,31 @@ def test_a_supervisor_cannot_approve_their_own_leave(session: Session, hr: Ferin
     assert session.exec(select(Leave).where(Leave.approval_id == out["approval_id"])).all() == []
 
 
+def test_an_owner_cannot_approve_their_own_leave(session: Session, hr: Ferinos) -> None:
+    _, people = hr  # D37 is a money rule: a leave waits for another approver
+    contract = SetContractInput(
+        person_id=people["Rosa"].id,
+        employment_type="regular",
+        daily_rate=90000,
+        currency="PHP",
+        rest_day=0,
+        start_date=dt.date(2026, 1, 1),
+        position="Owner",
+    )
+    tools.set_contract(deps_for(session, people["Rosa"]), contract, "c1")
+    out = file_leave(session, people["Rosa"])
+    assert out["status"] == "approval_required"
+    with pytest.raises(approvals.ApprovalError, match="made or triggered"):
+        approvals.decide(
+            session,
+            str(out["approval_id"]),
+            Actor.person(people["Rosa"]),
+            "approved",
+            stepped_up_at=approvals.utcnow(),
+        )
+    assert session.exec(select(Leave).where(Leave.approval_id == out["approval_id"])).all() == []
+
+
 def test_a_clerk_cannot_approve_a_leave(session: Session, hr: Ferinos) -> None:
     _, people = hr
     out = file_leave(session, people["Ana"])

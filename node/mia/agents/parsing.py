@@ -6,8 +6,10 @@ group to an item. Pure functions, no database access.
 
 import datetime as dt
 import re
+from collections import Counter
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 
 TOTAL_WORDS = ("total", "kabuuan", "tanan", "yhteensä", "sum")
 FILLER = {
@@ -19,6 +21,9 @@ NEGATIONS = {
     "not", "hindi", "dili", "diri", "indi", "bako", "ali", "aliwa", "ei", "instead", "saan",
     "haan",
 }  # fmt: skip
+# The words that mark a whole message as negated (has_negation): a typed keep with one is asked,
+# never run. "no" and the "don't" words are not in NEGATIONS: "no, 4 sp" corrects to 4.
+NEGATION_WORDS = NEGATIONS | {"no", "stop", "dai", "huwag", "wag", "ayaw"}
 
 
 @dataclass(frozen=True)
@@ -83,6 +88,11 @@ def was_corrected(text: str) -> bool:
     tokens = _tokens(text)
     numbers = [i for i, tok in enumerate(tokens) if tok.isdigit()]
     return any(i in numbers for i in _negated(tokens, numbers))
+
+
+def has_negation(text: str) -> bool:
+    """True when a token of the text is a negation word (NEGATION_WORDS). Pure."""
+    return any(tok.strip(".!?;:\"'()") in NEGATION_WORDS for tok in _tokens(text))
 
 
 def _join_names(tokens: list[str], menu_tokens: Collection[str]) -> list[str]:
@@ -359,20 +369,39 @@ _PRICE = re.compile(
 )
 
 
-def find_prices(text: str, lang: str) -> list[tuple[str, int]]:
+def find_prices(text: str, lang: str, menu_tokens: Collection[str] = ()) -> list[tuple[str, int]]:
     """Amounts in the message in text order as (id "p0", "p1", ..., integer minor units):
     "50", "₱50", "P50", "50 pesos", "50piso", "49.50" (4950). Clock times (strip_times) and
     dates (find_dates' patterns, read as find_dates reads them in lang) are removed first, so
     "Nov 2", "alas 3" and an English "May 5" are never prices; outside en "may 5" stays (Filipino
-    "may" is "there is"). Pure; the model only picks among these candidates, never computes one."""
+    "may" is "there is"). A number right before a menu token (filler words aside, as pre_parse
+    reads them) is a count ("3 kape for 65": only 65), unless no other amount is left
+    ("subukan natin 50 ang classic": 50); the digit of a menu name ("Box of 4") is no amount. Pure; the model only picks among these candidates,
+    never computes one."""
 
     def undated(m: re.Match[str]) -> str:
         month = m["m1"] or m["m2"]
         return m[0] if month and month.lower() == "may" and lang != "en" else " "
 
     text = _DATE.sub(undated, strip_times(text))
+    menu = {m.casefold() for m in menu_tokens}
+    kept_tokens = [tok for tok in _join_names(_tokens(text), menu) if tok not in FILLER]
+    counts = Counter(
+        int(a) for a, b in pairwise(kept_tokens) if a.isdigit() and b.strip(".,:;!?") in menu
+    )
+    for name in (m for m in menu if " " in m):  # "Box of 4": its digit is no amount
+        text = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", " ", text, flags=re.IGNORECASE)
     found = []
     for m in _PRICE.finditer(text):
         pesos = int(m["whole"].replace(",", ""))
         found.append(pesos * 100 + int((m["cents"] or "0").ljust(2, "0")))
-    return [(f"p{i}", amount) for i, amount in enumerate(found)]
+    # ponytail: a count is dropped by its value (the first amount equal to it, whole pesos);
+    # token positions if a count and a price ever share a value.
+    kept = []
+    for amount in found:
+        whole, cents = divmod(amount, 100)
+        if not cents and counts[whole] > 0:
+            counts[whole] -= 1
+            continue
+        kept.append(amount)
+    return [(f"p{i}", amount) for i, amount in enumerate(kept or found)]

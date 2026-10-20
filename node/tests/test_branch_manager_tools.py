@@ -11,7 +11,7 @@ import pytest
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, call_tool
-from mia.agents.branch_manager import MANIFEST, tools
+from mia.agents.branch_manager import MANIFEST, replies, tools
 from mia.agents.branch_manager.models import Coaching, Experiment, Strategy, Tip
 from mia.agents.branch_manager.tools import (
     ChangePriceInput,
@@ -577,7 +577,8 @@ def test_a_price_change_on_an_item_in_an_experiment_is_refused(
     end_seeded_experiment(session)
     assert propose(session, bm[1]["Marites"])["status"] == "approval_required"
     assert change(session, bm[1]["Rosa"], 4800, "p2")["message"] == "open_experiment"  # pending
-    assert call_tool(deps, binding, special, "p3")["status"] == "approval_required"
+    # done, but its revert (5 Nov) has not taken effect: a price set now would be undone
+    assert call_tool(deps, binding, special, "p3")["message"] == "open_experiment"
 
 
 def test_an_experiment_approved_after_its_price_moved_is_refused(
@@ -743,3 +744,55 @@ def test_the_cli_says_refused_and_closes_the_request(
     approval = session.get(Approval, approval_id)
     assert approval is not None and (approval.status, approval.reason) == ("expired", "in_the_past")
     assert t("bm.price_refused.in_the_past", "fil") in told(session, bm[1]["Marites"])
+
+
+# ---- fix wave: dated prices never undone, every refusal worded ------------------------------
+
+
+def test_an_experiment_over_a_scheduled_price_is_refused(session: Session, bm: Ferinos) -> None:
+    kiosk, people = bm
+    end_seeded_experiment(session)
+    decide(
+        session, change(session, people["Rosa"], 4200)["approval_id"], people["Rosa"], "approved"
+    )
+    out = propose(session, people["Marites"])  # its revert row would undo the owner's 42
+    assert (out["status"], out["message"]) == ("invalid", "price_scheduled")
+    assert replies.refusal_key("price_scheduled") == "bm.refused.price_scheduled"  # worded
+    assert items.price_on(session, item(session, "Classic"), kiosk.id, TODAY + 30 * ONE_DAY) == 4200
+
+
+def test_a_price_scheduled_while_an_experiment_waits_refuses_its_approval(
+    session: Session, bm: Ferinos
+) -> None:
+    kiosk, people = bm
+    end_seeded_experiment(session)
+    approval_id = propose(session, people["Marites"])["approval_id"]
+    classic = item(session, "Classic")
+    items.schedule_price(
+        session, classic, kiosk.id, 4200, TODAY + 7 * ONE_DAY, Actor.system(kiosk.id)
+    )
+    with pytest.raises(LookupError, match="price_scheduled"):
+        decide(session, approval_id, people["Rosa"], "approved")
+
+
+def test_a_price_dated_inside_a_done_experiment_waits_for_its_revert(
+    session: Session, bm: Ferinos, pin: Pin
+) -> None:
+    kiosk, people = bm
+    end_seeded_experiment(session)
+    decide(session, propose(session, people["Marites"])["approval_id"], people["Rosa"], "approved")
+    tools.experiment_tick(session, kiosk, hours(session, kiosk), pin(at(TODAY + ONE_DAY, 9, 5)))
+    row = session.exec(select(Experiment).where(Experiment.status == "running")).one()
+    tools.experiment_tick(session, kiosk, hours(session, kiosk), pin(at(row.ends_on, 22, 30)))
+    session.refresh(row)
+    assert row.status == "done"
+    deps, binding = deps_for(session, people["Rosa"]), BINDING[tools.CHANGE_PRICE]
+    classic = item(session, "Classic").id
+    for on, call in ((row.ends_on, "p1"), (row.ends_on + ONE_DAY, "p2")):
+        args = ChangePriceInput(item_id=classic, price=4600, effective_on=on)
+        assert call_tool(deps, binding, args, call)["message"] == "open_experiment"
+    tools.experiment_tick(
+        session, kiosk, hours(session, kiosk), pin(at(row.ends_on + ONE_DAY, 9, 5))
+    )
+    args = ChangePriceInput(item_id=classic, price=4600, effective_on=row.ends_on + 2 * ONE_DAY)
+    assert call_tool(deps, binding, args, "p3")["status"] == "approval_required"

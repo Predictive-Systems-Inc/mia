@@ -2,10 +2,10 @@
 
 Guarantees: nobody decides a request they made or triggered (checked on principal,
 on_behalf_of and evidence["triggered_by"]), except an owner of the approval's branch deciding
-their own request with a fresh PIN step-up (D37); agents never decide; the decider must hold one of
-the approver roles; app_only approvals are decided only in the authenticated app; every
-request and decision is written to the events log; approved requests run their handler and
-rejected ones their reject handler, in the decision's transaction.
+their own money, external or delete request with a fresh PIN step-up (D37); agents never
+decide; the decider must hold one of the approver roles; app_only approvals are decided only in
+the authenticated app; every request and decision is written to the events log; approved
+requests run their handler and rejected ones their reject handler, in the decision's transaction.
 """
 
 from collections.abc import Callable
@@ -71,11 +71,13 @@ def request(
     escalate_to: list[str] | None = None,
     tool_call_id: str | None = None,
 ) -> Approval:
-    """Create a pending approval. Money, external and delete risks are forced to app_only."""
+    """Create a pending approval. Money, external and delete risks are forced to app_only and
+    recorded as evidence["risk"] (the approvals table has no risk column; D37 reads it)."""
     if not approver_roles:
         raise ValueError("an approval needs at least one approver role")
     if risk in RISKY:
         channel = "app_only"
+        evidence = {**(evidence or {}), "risk": risk}
     approval = Approval(
         branch_id=requester.branch_id,
         type=type,
@@ -110,8 +112,13 @@ def _triggered(approval: Approval) -> set[str]:
 
 
 def owner_of_own(session: Session, approval: Approval, actor: Actor) -> bool:
-    """D37: the actor made (not triggered) the request and holds the owner role in the
-    approval's branch (their person row's branch), so they may decide it with a step-up."""
+    """D37, a money rule: the request carries a risky risk (money, external or delete, which
+    request records in evidence["risk"] and forces to app_only), the actor made (not
+    triggered) it and holds the owner role in the approval's branch (their person row's
+    branch), so they may decide it with a step-up. Any other own request (a cover override,
+    which is app_only without a risk, or a leave) waits for another approver."""
+    if approval.channel != "app_only" or approval.evidence.get("risk") not in RISKY:
+        return False
     if not actor.ids & requester_ids(approval) or actor.ids & _triggered(approval):
         return False
     person = session.get(Person, actor.person_id or "")

@@ -17,7 +17,7 @@ from mia.agents.base import AgentDeps
 from mia.agents.branch_manager import MANIFEST
 from mia.agents.branch_manager.models import Strategy
 from mia.agents.decider import NOT_STATED, Action
-from mia.agents.parsing import find_dates, find_prices
+from mia.agents.parsing import find_dates, find_prices, has_negation, menu_tokens
 from mia.core.models import Person
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailItem
@@ -259,6 +259,7 @@ class Query:
     people: dict[str, str] = field(default_factory=dict)  # supervisors and leads: id -> name
     strategies: dict[str, str] = field(default_factory=dict)  # active catalogue: id -> text
     next_open_day: str = ""  # ISO date: an experiment's start when none is said
+    negated: bool = False  # a negation word (parsing.has_negation): a typed keep is asked
     lang: str = "en"
     message_id: str | None = None
 
@@ -316,12 +317,15 @@ def build_query(
         role=", ".join(deps.person.roles),
         today=deps.today,
         items={i.id: i.name for i in rows},
-        prices=dict(find_prices(message, deps.lang)),
+        prices=dict(
+            find_prices(message, deps.lang, menu_tokens((i.name, i.short_codes) for i in rows))
+        ),
         dates={i: d.isoformat() for i, d in find_dates(message, deps.today, deps.lang)},
         codes={f"c{i}": w for i, w in enumerate(codes)},
         people=people,
         strategies={s.id: s.description for s in strategies},
         next_open_day=_next_open_day(deps).isoformat(),
+        negated=has_negation(message),
         lang=deps.lang,
         message_id=message_id,
     )

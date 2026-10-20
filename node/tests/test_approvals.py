@@ -51,6 +51,16 @@ def test_an_owners_own_price_change_is_decided_by_the_owner_with_step_up(
     assert ok.status == "approved" and ok.decided_by == people["Helena"].id
 
 
+def test_an_owner_cannot_self_decide_a_non_money_request(
+    session: Session, people: dict[str, Person]
+) -> None:
+    helena = Actor.person(people["Helena"])  # the owner; D37 reaches app_only requests only
+    row = _request(session, helena.as_agent("agent.shift_supervisor"))
+    assert row.channel == "any"
+    with pytest.raises(ApprovalError, match="made or triggered"):
+        approvals.decide(session, row.id, helena, "approved", stepped_up_at=utcnow())
+
+
 def test_a_supervisor_still_cannot_decide_their_own_request(
     session: Session, people: dict[str, Person]
 ) -> None:
@@ -249,7 +259,11 @@ def test_money_tool_without_approval_raises_and_does_not_execute(
 
     approval = session.get(Approval, out["approval_id"])
     assert approval is not None and approval.channel == "app_only"
-    assert approval.evidence == {"tool_call_id": "call-2", "input": {"amount_minor": 5000}}
+    assert approval.evidence == {
+        "tool_call_id": "call-2",
+        "input": {"amount_minor": 5000},
+        "risk": "money",
+    }
     co_owner = store.insert(
         session,
         Person(branch_id=branch.id, name="Otto Osakas", roles=["owner"]),

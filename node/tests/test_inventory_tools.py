@@ -226,6 +226,19 @@ def test_an_order_waits_for_the_owners_approval(session: Session, ferinos: Ferin
         )
 
 
+def test_an_owners_own_order_needs_the_pin_step_up(session: Session, ferinos: Ferinos) -> None:
+    _, people = ferinos  # a supplier order is money (app_only): D37 reaches it with a step-up
+    out = order_eggs(session, people["Rosa"])
+    rosa = Actor.person(people["Rosa"])
+    with pytest.raises(approvals.ApprovalError, match="made or triggered"):
+        approvals.decide(session, str(out["approval_id"]), rosa, "approved")
+    stale = approvals.utcnow() - approvals.STEP_UP_TTL - dt.timedelta(seconds=1)
+    with pytest.raises(approvals.ApprovalError, match="made or triggered"):
+        approvals.decide(session, str(out["approval_id"]), rosa, "approved", stepped_up_at=stale)
+    approval = session.get(Approval, str(out["approval_id"]))
+    assert approval is not None and approval.status == "pending"
+
+
 def test_a_requester_cannot_approve_their_own_order(session: Session, ferinos: Ferinos) -> None:
     _, people = ferinos  # a supervisor; the owner decides their own with step-up (D37)
     out = order_eggs(session, people["Marites"])

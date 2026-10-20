@@ -376,11 +376,17 @@ def test_generate_takes_the_write_lock_before_reading(
 def test_inbox_hides_the_actors_own_requests(
     session: Session, branch: Branch, people: dict[str, Person]
 ) -> None:
-    helena, sanna = Actor.person(people["Helena"]), Actor.person(people["Sanna"])
+    from mia.core import approvals
+
+    helena = Actor.person(people["Helena"])
     visit = _visit(session, branch, "Kamppi shop clean", offset=10)
-    out = scheduling.assign(session, sanna, visit, people["Liisa"])  # outside her hours
-    assert out.approval_id  # a supervisor's own (an owner's shows to the owner, D37)
-    assert out.approval_id not in {a.id for a in scheduling.inbox(session, sanna)}
+    out = scheduling.assign(session, helena, visit, people["Liisa"])  # outside her hours
+    assert out.approval_id  # the owner's own cover override: D37 is a money rule only
+    assert out.approval_id not in {a.id for a in scheduling.inbox(session, helena)}
+    with pytest.raises(approvals.ApprovalError, match="made or triggered"):
+        approvals.decide(
+            session, out.approval_id, helena, "approved", stepped_up_at=approvals.utcnow()
+        )
     aki = Actor.person(
         store.insert(
             session, Person(branch_id=branch.id, name="Aki Admin", roles=["admin"]), helena
@@ -467,7 +473,7 @@ def test_the_inbox_shows_an_owner_their_own_request_but_not_a_supervisor(
     def ask(person: Person) -> str:
         actor = Actor.person(person)
         return approvals.request(
-            session, "demo", ("visit", "V1"), "x", actor, ["supervisor", "owner"]
+            session, "demo", ("visit", "V1"), "x", actor, ["supervisor", "owner"], risk="money"
         ).id
 
     helena, sanna = Actor.person(people["Helena"]), Actor.person(people["Sanna"])

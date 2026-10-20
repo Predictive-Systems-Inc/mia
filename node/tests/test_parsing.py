@@ -6,6 +6,7 @@ from mia.agents.parsing import (
     find_prices,
     find_times,
     has_buy_word,
+    has_negation,
     menu_tokens,
     pre_parse,
     strip_times,
@@ -245,3 +246,21 @@ def test_times_and_dates_are_not_prices() -> None:
     assert find_prices("45 from May 5", "en") == [("p0", 4500)]  # an English date
     assert find_prices("may 5 pesos pa", "fil") == [("p0", 500)]  # Filipino "may": there is
     assert find_prices("sp50 ube", "fil") == []  # a digit inside a word is not an amount
+
+
+def test_a_count_is_never_a_price() -> None:
+    kape = menu_tokens([("Kape", [])])
+    assert find_prices("3 kape for 65", "en", kape) == [("p0", 6500)]
+    assert find_prices("40 classic for 44", "en", FERINOS) == [("p0", 4400)]  # inside 20 percent
+    assert find_prices("subukan natin 50 ang classic", "fil", FERINOS) == [("p0", 5000)]
+    assert find_prices("i-promo natin: 3 Classic sa 110", "fil", FERINOS) == [("p0", 11000)]
+    assert find_prices("170 na ang Box of 4", "fil", FERINOS) == [("p0", 17000)]
+    assert find_prices("2 box of 4 for 280", "en", FERINOS) == [("p0", 28000)]
+    assert find_prices("3 kape for 65", "en") == [("p0", 300), ("p1", 6500)]  # no menu given
+
+
+def test_a_negation_word_marks_the_message() -> None:
+    assert has_negation("dai, pundohon na an bagong presyo")
+    for text in ("huwag na", "wag na lang", "ayaw ko", "no, go back", "stop it", "hindi"):
+        assert has_negation(text), text
+    assert not has_negation("ituloy na natin, keep it")

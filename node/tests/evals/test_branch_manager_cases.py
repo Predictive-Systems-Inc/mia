@@ -10,7 +10,7 @@ import pytest
 
 from mia.agents.branch_manager.actions import ACTIONS, KINDS, code_candidates
 from mia.agents.branch_manager.tips import STRATEGIES
-from mia.agents.parsing import find_dates, find_prices
+from mia.agents.parsing import find_dates, find_prices, menu_tokens
 from mia.templates.retail.models import RetailItem
 from mia.templates.retail.seed import ITEMS
 from tests.conftest import BM_TODAY
@@ -79,11 +79,13 @@ def test_every_strategy_and_kind_has_a_typed_experiment() -> None:
 
 
 def test_prices_dates_and_codes_are_candidates() -> None:
-    """Code reads every value Jev picks (rule 7): the expected price is a find_prices candidate,
-    a price change names a find_dates day, and the short code is build_query's first word."""
+    """Code reads every value Jev picks (rule 7): the expected price is a find_prices candidate
+    (with the menu, as build_query reads it), a price change names a find_dates day, and the
+    short code is build_query's first word."""
+    menu = menu_tokens((i.name, i.short_codes) for i in MENU)
     for c in CASES:
         if "price" in c.expected:
-            assert c.expected["price"] in dict(find_prices(c.text, c.lang)).values(), c
+            assert c.expected["price"] in dict(find_prices(c.text, c.lang, menu)).values(), c
         if c.expected_action == "change_price":
             assert find_dates(c.text, TODAY, c.lang), c
         if "code" in c.expected:

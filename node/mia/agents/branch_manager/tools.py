@@ -510,7 +510,7 @@ class ExperimentOut(BaseModel):
 
 class ExperimentRefused(LookupError):
     """An experiment refused before any approval is asked; reason names why (no_strategy,
-    no_item, starts_too_soon, open_experiment, no_proposal, or a guard rail of
+    no_item, starts_too_soon, open_experiment, price_scheduled, no_proposal, or a guard rail of
     experiments.guard) for the reply to word."""
 
     def __init__(self, reason: str) -> None:
@@ -606,15 +606,26 @@ def check_experiment(deps: AgentDeps, args: ProposeExperimentInput, tool_call_id
 
 def _verify_experiment(deps: AgentDeps, args: ProposeExperimentInput, tool_call_id: str) -> None:
     """The checks that must still hold when the request is approved: a start after the
-    business date, no other open experiment at the branch, and the guard rails
-    (experiments.guard: the price in force on the start, the cost, the last PRICE_DAYS of
-    prices, the days since the item's last experiment; a new item against what it stands for
-    and the summed cost of its parts). Raises ExperimentRefused."""
-    if args.starts_on <= _business_day(deps, deps.branch, tool_call_id):
+    business date, no other open experiment at the branch, no price of the item at the branch
+    dated after the business date (the experiment's revert row would undo it, or it would
+    contaminate the test), and the guard rails (experiments.guard: the price in force on the
+    start, the cost, the last PRICE_DAYS of prices, the days since the item's last experiment;
+    a new item against what it stands for and the summed cost of its parts). Raises
+    ExperimentRefused."""
+    today = _business_day(deps, deps.branch, tool_call_id)
+    if args.starts_on <= today:
         raise ExperimentRefused("starts_too_soon")
     if _open_experiment(deps.session, deps.branch.id):
         raise ExperimentRefused("open_experiment")
     item = _sold_item(deps.session, deps.branch.id, args.item_id)
+    scheduled = deps.session.exec(
+        select(RetailItemPrice)
+        .where(RetailItemPrice.branch_id == deps.branch.id)
+        .where(RetailItemPrice.item_id == item.id)
+        .where(col(RetailItemPrice.effective_on) > today)
+    ).first()
+    if scheduled is not None:
+        raise ExperimentRefused("price_scheduled")
     if args.to_price is None:
         raise ExperimentRefused("no_proposal")
     new_item = args.rationale.get("new_item")
@@ -1015,7 +1026,8 @@ def check_price(deps: AgentDeps, args: ChangePriceInput, tool_call_id: str) -> N
 
 def _item_in_experiment(session: Session, branch_id: str, item_id: str) -> bool:
     """The item has a pending or escalated propose_experiment request, or an approved or
-    running experiment, at the branch (its revert row would undo a price set meanwhile)."""
+    running experiment, or a done one whose revert has not taken effect, at the branch (its
+    revert row would undo a price set meanwhile)."""
     asked = session.exec(
         select(Approval)
         .where(Approval.branch_id == branch_id)
@@ -1024,13 +1036,13 @@ def _item_in_experiment(session: Session, branch_id: str, item_id: str) -> bool:
     ).all()
     if any((a.evidence.get("input") or {}).get("item_id") == item_id for a in asked):
         return True
-    row = session.exec(
+    rows = session.exec(
         select(Experiment)
         .where(Experiment.branch_id == branch_id)
         .where(Experiment.item_id == item_id)
-        .where(col(Experiment.status).in_(["approved", "running"]))
-    ).first()
-    return row is not None
+        .where(col(Experiment.status).in_(["approved", "running", "done"]))
+    ).all()
+    return any(r.status != "done" or not _reverted(session, r) for r in rows)
 
 
 def change_price(deps: AgentDeps, args: ChangePriceInput, tool_call_id: str) -> PriceOut:

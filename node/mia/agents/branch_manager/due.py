@@ -31,7 +31,6 @@ from sqlmodel import Session, select
 from mia.agents.base import AgentDeps
 from mia.agents.branch_manager import MANIFEST, calc, replies, tools
 from mia.agents.branch_manager.models import Coaching, Experiment, Strategy, Tip
-from mia.agents.decider import Decision
 from mia.agents.sales_supervisor import due as sales_due
 from mia.agents.sales_supervisor import tools as sales_tools
 from mia.agents.shift_supervisor import alerts
@@ -334,12 +333,7 @@ def _ended(session: Session, branch: Branch, row: Experiment, person: Person) ->
     agent = Actor.person(person).as_agent(MANIFEST.roles.agent_role)
     if not get_rbac().check(agent, DECIDE, "execute"):
         return _send(session, branch, person, [TextBlock(text=text)])
-    options: replies.Options = {}
-    for keep, key, price in ((True, "keep", row.to_price), (False, "revert", row.from_price)):
-        money = format_money(price, row.currency, lang)
-        args = {"experiment_id": row.id, "keep": keep}
-        decision = Decision(action="decide_experiment_result", args=args, confidence=1.0)
-        options[t(f"bm.experiment.{key}", lang, price=money)] = decision.model_dump(mode="json")
+    options = replies.keep_or_revert(row, lang)
     blocks: list[Block] = [
         TextBlock(text=text),
         TextBlock(text=t("bm.experiment.decide", lang)),
