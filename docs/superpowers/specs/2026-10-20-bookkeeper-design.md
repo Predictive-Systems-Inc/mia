@@ -144,4 +144,18 @@ languages. 8. Evals, gates, docs.
 
 ## Carried over
 
-(filled by the reviews)
+- Two expense tools: `record_expense` (up to the owner's limit) and `record_large_expense`
+  (`risk: money`, the owner's approval card); code picks by the amount, and `record_expense`
+  refuses an amount over the limit, so no path writes a large expense without the card.
+- The `not_built` action: utang, suki credit, staff advances and money lent get the
+  capabilities reply naming them as not built (Q86); a later utang version replaces it.
+- Profit is on a cash basis (Q90 assumed): supplier spend is subtracted; cost of goods and waste
+  at cost are shown as lines only.
+- The petty cash floor (500 pesos) and the undeposited cash limit (20,000 pesos for two
+  business dates) are assumptions (Q90); the tax table is checked with the accountant (Q97).
+- Decider gate of 21 Oct failed (docs/research/2026-10-21-bookkeeper-gate.md): ceb and hil
+  read "pagsira" (closing) as a repair, so three closing counts became expenses at or above 0.6
+  (all over the expense limit, so the approval card would have caught them); the asks are
+  mostly the right action below 0.6. The router gate of 21 Oct failed on other agents' seeds
+  (the bookkeeper's route at 97.6%); with the bookkeeper active, "how are sales today" stays
+  with it in four languages. The next attempt needs fresh gate seeds and the developer's word.

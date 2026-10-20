@@ -64,7 +64,11 @@ mia/
                             pairing); its prices go through templates/retail/items.py
         bookkeeper/         Bookkeeper: the mia agent scaffold shape (turn.py, actions.py, ...)
                             plus models.py (cash counts, settlements, payouts, expenses,
-                            deposits, the tax figure)
+                            deposits, the tax figure), calc.py (pure: matching with fees and
+                            commissions, balances, profit), tax.py (the dated VAT and percentage
+                            tax table) and words.py (the fixed lists, the amount, receipt, VAT,
+                            period and bank readers); the four tables it reads from the HR
+                            officer and the inventory manager are core (1.6)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
       skills/               classifier runtime and per-turn routing (ADR 013)
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls),
@@ -102,7 +106,8 @@ mia/
                             customer_service_cases.py, test_customer_service_cases.py
                             (offline shape and scoring check) and
                             test_customer_service_evals.py for the real-Jev customer service
-                            decider eval;
+                            decider eval; bookkeeper_cases.py, test_bookkeeper_cases.py
+                            and test_bookkeeper_evals.py for the bookkeeper's;
                             <id>_cases.py and
                             test_<id>_evals.py from the scaffold)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,

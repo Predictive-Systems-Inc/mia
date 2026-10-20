@@ -65,7 +65,7 @@ PERIOD_NAMES = {
 assert tuple(PERIOD_NAMES) == words.PERIODS
 PETTY = {
     "spend": "Money taken out of the petty cash box and spent",
-    "refill": "Money put into the petty cash box (a refill, dagdag)",
+    "refill": "Money put into the petty cash box (a refill, top up, dagdag, lagay, butang)",
 }
 SOURCES = {"cash": "Paid from the cash drawer", "bank": "Paid from the bank or by transfer"}
 
@@ -84,21 +84,24 @@ ACTIONS: dict[str, Action] = {
         "cash_count",
         "record_cash_count",
         "The sender reports the cash counted in the drawer at closing (cash count 12,450, bilang"
-        " ng pera, kuwenta sa drawer, closing cash), or corrects the count just typed.",
+        " ng pera, ihap sa kwarta, isip sang kwarta, kuwenta sa drawer, closing cash), or"
+        " corrects the count just typed.",
         ("amount", "period"),
     ),
     "settlement": _tool(
         "settlement",
         "record_settlement",
-        "The sender reports a GCash or Maya settlement: the money the e-wallet paid in for a"
-        " day or a period (GCash settlement 3,210 for yesterday, pumasok na ang Maya).",
+        "The sender reports a GCash or Maya settlement: the money the e-wallet paid in, sent or"
+        " transferred for a day or a period, also told as money that reached the bank (GCash"
+        " settlement 3,210 for yesterday, pumasok na ang Maya, nagpadala ang GCash).",
         ("amount", "provider", "period"),
     ),
     "payout": _tool(
         "payout",
         "record_payout",
-        "The sender reports a Grab or Foodpanda payout: the money the delivery platform paid"
-        " for a week or a period (Grab payout 8,900 for the week, bayad ng Foodpanda).",
+        "The sender reports a Grab or Foodpanda payout: the money the delivery platform paid,"
+        " paid out or remitted for a week or a period, also a weekly payout (Grab payout 8,900"
+        " for the week, nag-remit ang GrabFood, bayad ng Foodpanda).",
         ("amount", "provider", "period"),
     ),
     "expense": _tool(
@@ -112,8 +115,9 @@ ACTIONS: dict[str, Action] = {
     "petty_cash": _tool(
         "petty_cash",
         "record_petty",
-        "The sender spends from or refills the petty cash box (petty cash 500 para sa yelo,"
-        " refill ng petty cash).",
+        "The sender spends from or refills the petty cash box: money taken out of it for"
+        " something, or money put into it (petty cash 500 para sa yelo, refill ng petty cash,"
+        " nibutang sa petty cash box).",
         ("amount", "petty", "category"),
     ),
     "deposit": _tool(
@@ -140,15 +144,16 @@ ACTIONS: dict[str, Action] = {
     "tax_quarter": _tool(
         "tax_quarter",
         "tax_quarter",
-        "The sender asks how much VAT or tax is due for a quarter (magkano ang VAT, quarterly"
-        " tax, 2550Q).",
+        "The sender asks how much VAT or tax is due or owed to BIR for a quarter, or asks Mia"
+        " to compute it (magkano ang VAT, quarterly tax, 2550Q, buwis, buhis, kwentaha ang"
+        " VAT).",
         ("period",),
     ),
     "profit": _tool(
         "profit",
         "monthly_profit",
-        "The sender asks for the profit of a month (kita last month, monthly profit, did we"
-        " make money).",
+        "The sender asks for the profit or loss of a month, of the kiosk or per branch (kita"
+        " last month, ganansya, lugi, monthly profit per branch, did we make money).",
         ("period",),
     ),
     "not_built": Action(

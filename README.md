@@ -268,6 +268,20 @@ half at the Q40 bar; `MIA_EVAL_HALVES=tune` or `gate` runs one half):
 `MIA_DECIDER=jev uv run pytest node/tests/evals/test_branch_manager_evals.py -m evals -s`
 (needs `MIA_TYPESAFE_KEY`; writes `docs/research/branch-manager-<date>-<HHMM>.raw.json`).
 
+The bookkeeper keeps the money straight for head staff and the owner: the closing cash count
+against the day's cash sales (short or over beyond the threshold tells the owner), GCash and Maya
+settlements and Grab and Foodpanda payouts matched with their fees and commissions, expenses by
+category with the receipt number and VAT amount (above the owner's limit through the approval
+card), petty cash, bank deposits, the petty and undeposited cash balances, the BIR sales
+journal, the quarterly VAT figure and the monthly profit per branch with payroll as payslip
+totals (owner and admin only). Every amount is typed and parsed by code; utang is not built in
+v1. It answers only with `MIA_DECIDER=jev`. Its decider eval (684 synthetic messages in six
+languages, gated on the gate half at the Q40 bar; `MIA_EVAL_HALVES=tune` or `gate` runs one
+half): `MIA_DECIDER=jev uv run pytest node/tests/evals/test_bookkeeper_evals.py -m evals -s`
+(needs `MIA_TYPESAFE_KEY`; writes `docs/research/bookkeeper-<date>-<HHMM>.raw.json`). The tax
+table in `agents/bookkeeper/tax.py` is written from memory and must be checked with an
+accountant before a real filing (Q97).
+
 To evaluate a model: `MIA_EVAL_MODEL=gateway/<route>` or `local/<model>`, then
 `uv run pytest node/tests/evals -m evals`.
 

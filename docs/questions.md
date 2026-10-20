@@ -676,3 +676,9 @@ Format for each entry:
 - Question: What petty cash balance triggers a refill reminder, how much undeposited cash for how long triggers a deposit reminder, and is profit on a cash basis (supplier spend) or on cost of goods?
 - Assumed answer: floor 500 pesos; 20,000 pesos undeposited for two days; profit subtracts fees, expenses, supplier spend and payroll, with cost of goods and waste at cost shown as lines (no double count).
 - Blocking: no.
+
+## Q97: The bookkeeper's tax table
+- Where: node/mia/agents/bookkeeper/tax.py (TABLES_AS_OF 2026-01)
+- Question: Are the dated rates (VAT 12 percent from February 2006; percentage tax 1 percent from July 2020 and 3 percent from July 2023), VAT as 12/112 of VAT-inclusive gross, and the deadline as the quarter's end plus 25 days (2550Q, 2551Q) right for Ferino's?
+- Assumed answer: yes, as written from memory; an accountant checks it before a real filing.
+- Blocking: no.
