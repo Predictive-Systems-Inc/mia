@@ -223,10 +223,6 @@ side and the due work (8, 10). 7. Ten languages. 8. Evals, gates, docs.
   text, the profile name, the address and any shared point.
 - `staff_resolve_complaint` (and its slot) came with the fix wave after both gate runs: it
   has tune cases only (`TUNE_STAFF_ONLY`) and is ungated until a run 3 writes fresh gate seeds.
-- An index on `customer_service_messages.at` (the budget count scans the hour's rows): in
-  `0000_initial` after the branch_manager Task 1 commit lands, not before.
-- A settings validator so one organisation never mixes currencies (item prices, delivery fees):
-  `orgconfig.py`, at the same time. Until then the order precheck refuses a mixed order.
 - A held address still grows the chain by three events per message (`channel.received`,
   `inbound_processing`, `inbound_done`), bounded only by the channel's own sender limits.
 - `cs.budget_alarm` is in en and fi only; the eight Philippine modules get it with the

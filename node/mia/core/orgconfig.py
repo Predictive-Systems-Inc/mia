@@ -6,7 +6,7 @@ from functools import lru_cache
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from mia.i18n import SUPPORTED
 from mia.settings import get_settings
@@ -112,6 +112,13 @@ class OrgSettings(BaseModel):
         if bad:
             raise ValueError(f"unsupported language code(s) {bad}; supported: {list(SUPPORTED)}")
         return value
+
+    @model_validator(mode="after")
+    def _one_currency(self) -> "OrgSettings":
+        """The delivery areas share one currency (an order totals items and fee in one)."""
+        if len({a.currency for a in self.delivery_areas}) > 1:
+            raise ValueError("delivery_areas must all use one currency")
+        return self
 
 
 @lru_cache

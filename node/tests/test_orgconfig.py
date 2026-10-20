@@ -57,3 +57,11 @@ def test_branch_manager_settings_load() -> None:
         experiment_days=14, nudge_after_misses=3
     )
     assert "branch_manager" in orgconfig.load("ferinos").agents
+
+
+def test_delivery_areas_in_two_currencies_fail_to_load() -> None:
+    areas = [{"name": "A", "fee": 1, "currency": "PHP"}, {"name": "B", "fee": 1, "currency": "USD"}]
+    with pytest.raises(ValidationError, match="one currency"):
+        orgconfig.OrgSettings.model_validate({"delivery_areas": areas})
+    same = [a | {"currency": "PHP"} for a in areas]
+    assert len(orgconfig.OrgSettings.model_validate({"delivery_areas": same}).delivery_areas) == 2

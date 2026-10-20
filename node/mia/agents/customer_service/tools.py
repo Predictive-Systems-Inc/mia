@@ -41,6 +41,7 @@ from mia.core.money import format_money
 from mia.core.rbac import Resource, get_rbac
 from mia.i18n import SUPPORTED, t
 from mia.templates.retail import hours as shop_hours
+from mia.templates.retail import items as retail_items
 from mia.templates.retail.models import RetailBranchHours, RetailItem
 
 PLACE_ORDER = f"{MANIFEST.id}.place_order"
@@ -176,7 +177,13 @@ def prices(deps: CustomerDeps, args: PricesInput, tool_call_id: str) -> PricesOu
     rows = _active_items(deps.session, deps.branch, args.item_ids or None)
     return PricesOutput(
         items=[
-            PriceOut(item_id=i.id, name=i.name, price=i.price, currency=i.currency) for i in rows
+            PriceOut(
+                item_id=i.id,
+                name=i.name,
+                price=retail_items.price_on(deps.session, i, deps.branch.id, deps.today),
+                currency=i.currency,
+            )
+            for i in rows
         ]
     )
 
@@ -232,7 +239,8 @@ def _order_precheck(deps: CustomerDeps, args: PlaceOrderInput, tool_call_id: str
     """The guard's precheck for place_order (after the permission check, before the approval):
     a new order_id, every item active at the customer's branch, at most max_order_quantity
     items, a pickup still ahead and within the opening hours, a delivery to a configured area,
-    every price and the fee in one currency, and no other order of the customer's still
+    every price and the fee in one currency (the settings validator already keeps the areas to
+    one, so the area half of that guard is a belt), and no other order of the customer's still
     waiting. Raises LookupError order, pending, item, currency, too_large, past, closed or
     area."""
     _require(deps.session, deps.actor, ITEMS, "read", tool_call_id)
@@ -325,12 +333,14 @@ def record_waiting(deps: CustomerDeps, args: PlaceOrderInput, approval_id: str) 
     branch = _order_branch(deps)
     items = {i.id: i for i in _active_items(session, branch, [ln.item_id for ln in args.lines])}
     area = _area(args.delivery_area) if args.fulfilment == "delivery" else None
+    day = shop_hours.business_date_at(branch, shop_hours.load(session, branch.id), args.pickup_at)
+    unit = {i: retail_items.price_on(session, items[i], branch.id, day) for i in items}
     lines = [
-        {"item_id": ln.item_id, "quantity": ln.quantity, "unit_price": items[ln.item_id].price}
+        {"item_id": ln.item_id, "quantity": ln.quantity, "unit_price": unit[ln.item_id]}
         for ln in args.lines
     ]
     total = calc.order_total(
-        [(ln.quantity, items[ln.item_id].price) for ln in args.lines], area.fee if area else 0
+        [(ln.quantity, unit[ln.item_id]) for ln in args.lines], area.fee if area else 0
     )
     order = store.insert(
         session,

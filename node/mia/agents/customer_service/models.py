@@ -64,7 +64,7 @@ class CustomerMessage(BranchScoped, table=True):
     direction: str
     text: str = ""
     blocks: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
-    at: dt.datetime = Field(sa_type=TZDateTime)
+    at: dt.datetime = Field(sa_type=TZDateTime, index=True)
     status: str = "sent"
     channel_message_id: str | None = None
     decision: dict[str, Any] | None = Field(default=None, sa_type=JSON)

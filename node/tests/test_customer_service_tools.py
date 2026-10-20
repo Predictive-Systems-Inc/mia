@@ -28,6 +28,7 @@ from mia.core.models import Actor, Approval, Branch, Event, Message, Person, Pri
 from mia.core.orgconfig import DeliveryArea
 from mia.core.rbac import PermissionDenied
 from mia.i18n import t
+from mia.templates.retail import items as retail_items
 from mia.templates.retail.models import RetailItem
 from tests.conftest import MNL, TODAY, Shop
 
@@ -287,6 +288,8 @@ def test_an_order_in_two_currencies_is_refused(
     store.update(session, ube, {"currency": "USD"}, Actor.system(cs.kiosk.id))
     assert place(cs, session, lines=lines)["message"] == "currency"
     area = DeliveryArea(name="Marikina", fee=5000, currency="USD")
+    # model_copy skips validation: OrgSettings refuses mixed area currencies, so only a test
+    # reaches the area half of the guard (the settings validator makes it unreachable).
     usd = orgconfig.load().model_copy(update={"delivery_areas": [area]})
     monkeypatch.setattr(orgconfig, "load", lambda org=None: usd)
     out = place(cs, session, fulfilment="delivery", delivery_area="Marikina")
@@ -428,3 +431,27 @@ def test_the_order_tools_are_sensitive_and_the_manifest_matches(cs: Shop, sessio
     sensitive = {t.name for t in MANIFEST.tools if t.sensitive}
     assert sensitive == {"place_order", "complain", "orders_today", "mark_ready", "mark_picked_up"}
     assert orgconfig.load().customer_service.max_order_quantity == 50
+
+
+def test_orders_and_prices_use_the_dated_price_per_branch(cs: Shop, session: Session) -> None:
+    item = classic(session)
+    old = retail_items.price_on(session, item, cs.kiosk.id, TODAY)
+    tomorrow = TODAY + dt.timedelta(days=1)
+    retail_items.schedule_price(
+        session, item, cs.kiosk.id, old + 500, tomorrow, Actor.system(cs.kiosk.id)
+    )
+    deps = customer_deps(cs, session)
+    shown = [p.price for p in tools.prices(deps, PricesInput(item_ids=[item.id]), "t1").items]
+    assert shown == [old]  # the prices reply is today's
+
+    def total(day: dt.date) -> int:
+        args = order_input(
+            session, quantity=2, pickup_at=dt.datetime.combine(day, dt.time(16), MNL)
+        )
+        out = call_tool(deps, BINDING[PLACE], args, new_id())
+        order = tools.record_waiting(deps, args, str(out["approval_id"]))
+        call_tool(deps, BINDING[CANCEL], EmptyInput(), new_id())
+        return order.total
+
+    assert total(TODAY) == 2 * old
+    assert total(tomorrow) == 2 * (old + 500)

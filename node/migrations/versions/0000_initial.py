@@ -1341,6 +1341,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("customer_service_messages", schema=None) as batch_op:
+        batch_op.create_index(batch_op.f("ix_customer_service_messages_at"), ["at"], unique=False)
         batch_op.create_index(
             batch_op.f("ix_customer_service_messages_branch_id"), ["branch_id"], unique=False
         )
@@ -1536,6 +1537,7 @@ def downgrade() -> None:
     with op.batch_alter_table("customer_service_messages", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_customer_service_messages_customer_id"))
         batch_op.drop_index(batch_op.f("ix_customer_service_messages_branch_id"))
+        batch_op.drop_index(batch_op.f("ix_customer_service_messages_at"))
 
     op.drop_table("customer_service_messages")
     with op.batch_alter_table("customer_service_orders", schema=None) as batch_op:
