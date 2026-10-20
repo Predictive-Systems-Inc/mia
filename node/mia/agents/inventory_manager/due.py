@@ -134,11 +134,11 @@ DUE: list[tuple[Callable[[Branch, Hours, dt.datetime], dt.date | None], str, Sen
 
 
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
-    hours = retail_hours.load(session, branch.id)
+    hours, closed = retail_hours.load(session, branch.id), retail_hours.closed(session, branch.id)
     count = 0
     for is_due, marker, send in DUE:
         day = is_due(branch, hours, now)
-        if day is None or alerts._marked(session, marker, branch.id, day):
+        if day is None or day in closed or alerts._marked(session, marker, branch.id, day):
             continue
         sent = send(session, branch, hours, day)
         if sent:  # the marker records a send; nothing sent is checked again on the next tick
@@ -150,8 +150,9 @@ def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
 
 def run_due(session: Session, now: dt.datetime) -> int:
     """Send the inventory work due at `now` for every branch; returns how many notifications
-    were sent. Each kind is sent at most once per branch and business date. Nothing runs when
-    the organisation does not use the inventory manager."""
+    were sent. Each kind is sent at most once per branch and business date, never for a closed
+    day (retail_closures). Nothing runs when the organisation does not use the inventory
+    manager."""
     if MANIFEST.id not in orgconfig.load().agents:
         return 0
     return alerts._each_branch(session, now, _branch_due)

@@ -103,6 +103,14 @@ class BookkeeperSettings(BaseModel):
     undeposited_limit: int = 2_000_000
 
 
+class ShiftSupervisorSettings(BaseModel):
+    """When the shift supervisor sends the next week's roster (retail, Q110): the local weekday
+    (0 is Monday) and time; the roster covers the Monday to Sunday that follows."""
+
+    weekly_roster_weekday: int = Field(6, ge=0, le=6)
+    weekly_roster_time: dt.time = dt.time(17, 0)
+
+
 class OrgSettings(BaseModel):
     # Which demo seed and industry tables the organisation uses.
     template: Literal["cleaning", "retail"] = "cleaning"
@@ -118,6 +126,7 @@ class OrgSettings(BaseModel):
     customer_service: CustomerServiceSettings = Field(default_factory=CustomerServiceSettings)
     branch_manager: BranchManagerSettings = Field(default_factory=BranchManagerSettings)
     bookkeeper: BookkeeperSettings = Field(default_factory=BookkeeperSettings)
+    shift_supervisor: ShiftSupervisorSettings = Field(default_factory=ShiftSupervisorSettings)
     # The agents this organisation runs, in routing order.
     agents: list[str] = Field(default_factory=lambda: ["shift_supervisor"])
 

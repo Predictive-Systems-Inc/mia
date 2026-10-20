@@ -244,7 +244,8 @@ def _morning(session: Session, branch: Branch, hours: Hours, day: dt.date) -> li
     """Yesterday against its target and today's target to the supervisors, and to the clerks
     unless the branch manager runs."""
     yesterday = day - dt.timedelta(days=1)
-    counted = retail_hours.open_days(hours)(yesterday) and _reporters(session, branch.id, yesterday)
+    is_open = retail_hours.open_days(hours, retail_hours.closed(session, branch.id))
+    counted = is_open(yesterday) and _reporters(session, branch.id, yesterday)
     total = _total(session, branch.id, yesterday)
     currency = tools._currency(session, branch.id)
     past = tools._share(session, branch.id, hours, yesterday)
@@ -297,11 +298,11 @@ DUE: list[tuple[Callable[[Branch, Hours, dt.datetime], dt.date | None], str, Sen
 
 
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
-    hours = retail_hours.load(session, branch.id)
+    hours, closed = retail_hours.load(session, branch.id), retail_hours.closed(session, branch.id)
     count = 0
     for is_due, marker, send in DUE:
         day = is_due(branch, hours, now)
-        if day is None or alerts._marked(session, marker, branch.id, day):
+        if day is None or day in closed or alerts._marked(session, marker, branch.id, day):
             continue
         sent = send(session, branch, hours, day)
         if sent:  # the marker records a send; nothing sent is checked again on the next tick
@@ -313,8 +314,9 @@ def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
 
 def run_due(session: Session, now: dt.datetime) -> int:
     """Send the sales work due at `now` for every branch; returns how many notifications were
-    sent. Each kind is sent at most once per branch and business date. Nothing runs when the
-    organisation does not use the sales supervisor (a cleaning node has no sales)."""
+    sent. Each kind is sent at most once per branch and business date, never for a closed day
+    (retail_closures). Nothing runs when the organisation does not use the sales supervisor (a
+    cleaning node has no sales)."""
     if MANIFEST.id not in orgconfig.load().agents:
         return 0
     return alerts._each_branch(session, now, _branch_due)

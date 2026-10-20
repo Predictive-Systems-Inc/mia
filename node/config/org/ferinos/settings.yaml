@@ -10,6 +10,8 @@ delivery_areas:
   - {name: Pasig, fee: 6000, currency: PHP}
 customer_service: {max_order_quantity: 50, messages_per_hour: 30, public_calls_per_hour: 600}
 branch_manager: {experiment_days: 14, nudge_after_misses: 3}
+# The next week's roster goes out on this local weekday (0 is Monday) and time (Q110).
+shift_supervisor: {weekly_roster_weekday: 6, weekly_roster_time: "17:00"}
 # Money in minor units (PHP), fees and commissions in integer percents (placeholders, Q90).
 bookkeeper:
   threshold: 10000

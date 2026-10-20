@@ -59,6 +59,13 @@ def test_branch_manager_settings_load() -> None:
     assert "branch_manager" in orgconfig.load("ferinos").agents
 
 
+def test_shift_supervisor_settings_load() -> None:
+    assert orgconfig.load("ferinos").shift_supervisor == orgconfig.ShiftSupervisorSettings(
+        weekly_roster_weekday=6, weekly_roster_time=dt.time(17, 0)
+    )
+    assert orgconfig.OrgSettings().shift_supervisor.weekly_roster_weekday == 6
+
+
 def test_bookkeeper_settings_load() -> None:
     assert orgconfig.load("ferinos").bookkeeper == orgconfig.BookkeeperSettings(
         threshold=10_000,
