@@ -115,6 +115,19 @@ def test_a_late_check_in_tells_head_staff(
     assert urgency[line] is True
 
 
+def test_a_missed_check_out_tells_head_staff_in_kiosk_words(
+    session: Session, rs: Ferinos, rs_pin: Pin
+) -> None:
+    ana, marites = rs[1]["Ana"], rs[1]["Marites"]
+    assert tools.check_in(deps_for(session, ana), CheckInInput(), "c").status == "ok"
+    session.commit()
+    key = replies.word_key("alert.missed_check_out_supervisor")
+    assert key == "retail.alert.missed_check_out_supervisor"
+    line = t(key, "fil", name=ana.name, location="Mall kiosk", time="17:00")
+    _tick(session, rs_pin, at(RS_TODAY, 17, 35))
+    assert texts(session, marites).count(line) == 1
+
+
 def test_the_weekly_roster_goes_out_once(
     session: Session, rs: Ferinos, rs_pin: Pin, urgency: dict[str, bool]
 ) -> None:

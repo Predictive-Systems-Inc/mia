@@ -612,7 +612,8 @@ def visit_details(
 class ReportProblemInput(BaseModel):
     kind: IncidentKind = Field(
         description="cannot_access: locked door, no key, wrong code, alarm; site_problem: the "
-        "site is unusable (no water or power, renovation, client still there)"
+        "site is unusable (no water or power, renovation, client still there); equipment, "
+        "no_delivery and customer are kiosk kinds, refused outside the retail template"
     )
     text: str = Field(max_length=500, description="The user's own words")
     location_name: str | None = Field(None, description="The site, when the user names it")
@@ -623,6 +624,7 @@ class ProblemOutput(BaseModel):
     reason: str | None = None
     visit: VisitInfo | None = None
     problem_id: str | None = None
+    location: str | None = None  # retail: the shift's kiosk, else the branch (no shift today)
 
 
 def _current_visit(deps: AgentDeps, location_name: str | None, now: dt.datetime) -> Visit | None:
@@ -731,7 +733,9 @@ def _report_at_kiosk(
             **extra,
         )
         notify(session, p, [TextBlock(text=text)], deps.actor, deps.manifest.id, urgent=True)
-    return ProblemOutput(status="ok", visit=info, problem_id=row.id if row else None)
+    return ProblemOutput(
+        status="ok", visit=info, problem_id=row.id if row else None, location=location
+    )
 
 
 def report_site_problem(
@@ -1051,7 +1055,10 @@ def set_roster(deps: AgentDeps, args: SetRosterInput, tool_call_id: str) -> Rost
     the whole input (`outside_hours`, nothing written). Else each person's jobs are kept, ended
     or inserted, visits generated, and each open visit of those jobs from today gets its person
     when scheduling finds no reason against it; a reason is a Clash and the visit stays
-    unfilled (never an approval). Another kiosk needs write_all on jobs."""
+    unfilled (never an approval); a closed date is left unassigned for enforce_closures. Another
+    kiosk needs write_all on jobs. Not offered outside retail (nothing read or written)."""
+    if not is_retail():
+        return RosterOut(status="invalid", reason="not_offered")
     session = deps.session
     branch, loc = _kiosk(deps, args.location_name, JOBS, tool_call_id)
     _check(deps, VISITS, "write", tool_call_id)
@@ -1085,17 +1092,21 @@ def set_roster(deps: AgentDeps, args: SetRosterInput, tool_call_id: str) -> Rost
         for pid, p in people.items()
     }
     scheduling.generate(session, deps.actor, branch, today=deps.today)
-    planned, clashes, wide = 0, dict[tuple[str, str], list[dt.date]](), is_retail()
+    planned, clashes, closed = (
+        0,
+        dict[tuple[str, str], list[dt.date]](),
+        retail_hours.closed(session, branch.id),
+    )
     for pid, rows in jobs.items():
         person = people[pid]
         for v in (v for job in rows for v in _open_visits(session, job, deps.today)):
-            if pid in v.assigned_person_ids:
+            if pid in v.assigned_person_ids or v.date in closed:
                 continue
-            reasons = scheduling.ineligibility(session, branch, v, person, org_wide=wide)
+            reasons = scheduling.ineligibility(session, branch, v, person, org_wide=True)
             for r in reasons:
                 clashes.setdefault((person.name, r), []).append(v.date)
             if not reasons:
-                scheduling.assign(session, deps.actor, v, person, org_wide=wide)
+                scheduling.assign(session, deps.actor, v, person, org_wide=True)
                 planned += 1
     return RosterOut(
         status="ok",
@@ -1116,13 +1127,17 @@ class RosterInput(BaseModel):
 class WeekOut(BaseModel):
     start: dt.date
     people: dict[str, list[VisitInfo]]
+    status: Literal["ok", "invalid"] = "ok"
+    reason: str | None = None  # not_offered
 
 
 def roster(deps: AgentDeps, args: RosterInput, tool_call_id: str) -> WeekOut:
     """Monday to Sunday of the week holding `start` (default today, the branch's local date) by
     first name: head staff the branch's shifts (or one person's), a clerk only her own (at
     either kiosk, so a covering clerk sees that one shift, never the other kiosk's roster).
-    Cancelled shifts are left out."""
+    Cancelled shifts are left out. Not offered outside retail (nothing read)."""
+    if not is_retail():
+        return WeekOut(start=deps.today, people={}, status="invalid", reason="not_offered")
     session = deps.session
     day = args.start or deps.today
     monday = day - dt.timedelta(days=day.weekday())
@@ -1181,7 +1196,10 @@ def swap_shifts(deps: AgentDeps, args: SwapShiftsInput, tool_call_id: str) -> Sw
     date: the ask (cover.ask_swap); the co-worker's shift is read by the swap itself and only
     its day and name come back. With accept: the answer to the newest ask of the user
     (cover.answer_swap): no tells the asker, yes asks head staff to confirm (`confirming`), or
-    the owner when a rule breaks (`override`). Nothing changes until it is approved."""
+    the owner when a rule breaks (`override`). Nothing changes until it is approved. Not
+    offered outside retail (nothing read or written)."""
+    if not is_retail():
+        return SwapOut(status="invalid", reason="not_offered")
     session = deps.session
     _check(
         deps,
@@ -1239,7 +1257,8 @@ class CorrectTimesheetInput(BaseModel):
 
 class TimesheetOut(BaseModel):
     status: Literal["ok", "invalid"]
-    reason: str | None = None  # no_time, no_timesheet, in_progress, approved, end_before_start
+    # no_time, no_timesheet, in_progress, approved, end_before_start, not_offered
+    reason: str | None = None
     date: dt.date | None = None
     start: str | None = None
     end: str | None = None
@@ -1248,10 +1267,11 @@ class TimesheetOut(BaseModel):
 
 def _sheet(
     deps: AgentDeps, person: Person, day: dt.date, end: dt.time | None, tool_call_id: str
-) -> Timesheet | Literal["in_progress"] | None:
+) -> Timesheet | Literal["in_progress", "end_before_start"] | None:
     """The person's timesheet of the day; a shift still in progress is checked out at the
-    stated `end` and drafted first ("in_progress", nothing changed, without an end), a
-    finished one without a draft drafted."""
+    stated `end` and drafted first, a finished one without a draft drafted. Nothing changes
+    for a running shift without an end or with an end after now ("in_progress": she is still
+    on it), or with an end before her check-in ("end_before_start")."""
     session = deps.session
     stmt = select(Timesheet).where(Timesheet.person_id == person.id).where(Timesheet.date == day)
     if (row := session.exec(stmt).first()) is not None:
@@ -1261,16 +1281,18 @@ def _sheet(
         if v.status == "in_progress":
             if end is None:
                 return "in_progress"  # a start alone never checks her out
+            until = dt.datetime.combine(day, end, ZoneInfo(deps.branch.timezone))
+            if until > utcnow():
+                return "in_progress"  # never a check-out in the future
+            if v.actual_start is not None and until < v.actual_start:
+                return "end_before_start"
             _check(
                 deps,
                 Resource(kind="data", name="core.visit", owner_id=person.id),
                 "write",
                 tool_call_id,
             )
-            zone = ZoneInfo(deps.branch.timezone)
-            scheduling.check_out(
-                session, deps.actor, v, person, dt.datetime.combine(day, end, zone)
-            )
+            scheduling.check_out(session, deps.actor, v, person, until)
         if v.status == "completed":
             sheets.draft(session, v)
     return session.exec(stmt).first()  # ponytail: one kiosk shift per clerk and day
@@ -1281,7 +1303,10 @@ def correct_timesheet(
 ) -> TimesheetOut:
     """Set the start or end of a day's time (timesheets.correct): the row goes back to draft
     with the correcting person as its enterer, so they never approve it. A clerk corrects only
-    her own draft; an approved row needs head staff (`approved`)."""
+    her own draft; an approved row needs head staff (`approved`). Not offered outside retail
+    (nothing read or written)."""
+    if not is_retail():
+        return TimesheetOut(status="invalid", reason="not_offered")
     session = deps.session
     person = deps.person
     if args.person_name:
@@ -1296,7 +1321,7 @@ def correct_timesheet(
     if args.start is None and args.end is None:
         return TimesheetOut(status="invalid", reason="no_time", date=day)
     row = _sheet(deps, person, day, args.end, tool_call_id)
-    if row is None or row == "in_progress":
+    if row is None or isinstance(row, str):
         return TimesheetOut(status="invalid", reason=row or "no_timesheet", date=day)
     zone = ZoneInfo(deps.branch.timezone)
     start = dt.datetime.combine(day, args.start, zone) if args.start else row.start
@@ -1337,7 +1362,10 @@ class CloseDayOut(BaseModel):
 def close_day(deps: AgentDeps, args: CloseDayInput, tool_call_id: str) -> CloseDayOut:
     """Close the kiosk on a date from today on: the closure row (`retail.closure_set`), the
     day's open shifts cancelled with their open cover asks, each clerk on them told. Another
-    kiosk needs write_all on closures; a past or already closed date is invalid."""
+    kiosk needs write_all on closures; a past or already closed date is invalid. Not offered
+    outside retail (nothing read or written)."""
+    if not is_retail():
+        return CloseDayOut(status="invalid", reason="not_offered")
     from mia.chat.blocks import TextBlock
     from mia.chat.channels import notify
     from mia.i18n import t

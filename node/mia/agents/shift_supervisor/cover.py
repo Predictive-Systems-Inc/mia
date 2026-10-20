@@ -624,8 +624,33 @@ def on_swap_approved(session: Session, approval: Approval, decider: Actor) -> No
         _tell(session, pid, "shift.swap.done", decider, _visit_text(session, mine, tz, lang))
 
 
+def on_swap_closed(session: Session, approval: Approval, decider: Actor) -> None:
+    """Reject handler (on_refused): both clerks told the swap did not happen, each naming the
+    other, once: rejected (shift.swap.rejected), timed out at the decision (shift.swap.expired)
+    or refused by on_swap_approved through close_refused, expired with its reason
+    (shift.swap.gone). The due work's expiry runs no handler and tells them itself."""
+    if approval.status == "rejected":
+        key = "shift.swap.rejected"
+    else:
+        key = "shift.swap.gone" if approval.reason else "shift.swap.expired"
+    ev = approval.evidence
+    a, b = str(ev["asker_id"]), str(ev["other_id"])
+    mine = session.get(Visit, str(ev["mine"]))
+    if mine is None:
+        return  # ponytail: visits are never deleted
+    tz = _branch(session, mine.branch_id).timezone
+    for who, other in ((a, b), (b, a)):
+        person, peer = session.get(Person, who), session.get(Person, other)
+        if person is None or peer is None or person.status != "active":
+            continue
+        params = _visit_text(session, mine, tz, person.language)
+        _tell(session, who, key, decider, {**params, "name": peer.name.split()[0]})
+
+
 approvals.register_handler(SWAP_TYPE, on_swap_approved)
 approvals.register_handler(SWAP_OVERRIDE_TYPE, on_swap_approved)
+approvals.register_reject_handler(SWAP_TYPE, on_swap_closed, on_refused=True)
+approvals.register_reject_handler(SWAP_OVERRIDE_TYPE, on_swap_closed, on_refused=True)
 
 
 def process_due(session: Session, now: dt.datetime) -> int:

@@ -188,7 +188,7 @@ def _missed_out_in(session: Session, branch: Branch, now: dt.datetime) -> int:
             _send(session, person, [TextBlock(text=text)], urgent=True)
         for sup in supervisors(session, branch.id):
             text = t(
-                "alert.missed_check_out_supervisor",
+                word_key("alert.missed_check_out_supervisor"),
                 sup.language,
                 name=", ".join(names) or "?",
                 location=info.location,

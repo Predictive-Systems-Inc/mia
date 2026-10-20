@@ -11,7 +11,7 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps, call_tool
 from mia.agents.inventory_manager import MANIFEST as INVENTORY
 from mia.agents.inventory_manager import tools as inventory
-from mia.agents.shift_supervisor import MANIFEST, cover, tools
+from mia.agents.shift_supervisor import MANIFEST, alerts, cover, replies, tools
 from mia.agents.shift_supervisor.rules import fmt_date
 from mia.agents.shift_supervisor.tools import (
     AssignCoverInput,
@@ -27,11 +27,13 @@ from mia.agents.shift_supervisor.tools import (
     ShiftIn,
     SwapShiftsInput,
 )
+from mia.chat.blocks import TextBlock
 from mia.core import approvals, orgconfig, scheduling, store
 from mia.core.models import (
     Actor,
     Approval,
     Branch,
+    Event,
     Incident,
     Job,
     Leave,
@@ -370,6 +372,103 @@ def test_a_full_kiosk_name_matches_its_location(session: Session, rs: Ferinos) -
         assert found == [name.capitalize()], name
 
 
+CLEANING_CALLS: list[tuple[str, BaseModel]] = [
+    (
+        "set_roster",
+        SetRosterInput(shifts=[ShiftIn(person_id="p", byday=["TU"], start=NINE, end=FIVE_PM)]),
+    ),
+    ("close_day", CloseDayInput(date=MONDAY)),
+    ("swap_shifts", SwapShiftsInput(person_name="Liza", date=SATURDAY)),
+    ("correct_timesheet", CorrectTimesheetInput(end=FIVE_PM)),
+    ("roster", RosterInput()),
+]
+
+
+@pytest.mark.parametrize(("tool", "args"), CLEANING_CALLS, ids=[c[0] for c in CLEANING_CALLS])
+def test_a_cleaning_org_is_not_offered_the_kiosk_tools(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, tool: str, args: BaseModel
+) -> None:
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings())
+    n = len(session.exec(select(Event)).all())
+    out = getattr(tools, tool)(deps_for(session, rs[1]["Marites"]), args, "c")
+    assert (out.status, out.reason) == ("invalid", "not_offered")
+    assert len(session.exec(select(Event)).all()) == n
+
+
+def test_a_future_end_on_shift_does_not_check_the_clerk_out(session: Session, rs: Ferinos) -> None:
+    ana = deps_for(session, rs[1]["Ana"])
+    assert tools.check_in(ana, CheckInInput(), "c").status == "ok"  # 10:00, the 09:00 shift
+    later = CorrectTimesheetInput(end=dt.time(21))
+    assert tools.correct_timesheet(ana, later, "t").reason == "in_progress"
+    assert visit_of(session, rs[1]["Ana"], RS_TODAY).status == "in_progress"
+
+
+def test_an_end_before_the_check_in_writes_nothing(session: Session, rs: Ferinos) -> None:
+    ana = deps_for(session, rs[1]["Ana"])
+    assert tools.check_in(ana, CheckInInput(), "c").status == "ok"  # 10:00
+    early = CorrectTimesheetInput(end=dt.time(9, 30))
+    assert tools.correct_timesheet(ana, early, "t").reason == "end_before_start"
+    assert visit_of(session, rs[1]["Ana"], RS_TODAY).status == "in_progress"
+    sheets = select(Timesheet).where(Timesheet.person_id == rs[1]["Ana"].id)
+    assert session.exec(sheets.where(Timesheet.date == RS_TODAY)).first() is None
+
+
+def _swap_said(session: Session, rs: Ferinos, key: str) -> dict[str, list[str]]:
+    """Each clerk's notifications after the ask that are the key's text naming the other."""
+    mine = visit_of(session, rs[1]["Ana"], SATURDAY)
+    out = {}
+    for who, other in (("Ana", "Liza"), ("Liza", "Ana")):
+        lang = rs[1][who].language
+        params = cover._visit_text(session, mine, rs[0].timezone, lang)
+        text = t(key, lang, **params, name=other)
+        out[who] = [m for m in told(session, rs[1][who]) if m == text]
+    return out
+
+
+def test_a_rejected_swap_tells_both_clerks(session: Session, rs: Ferinos) -> None:
+    approval = agree_swap(session, rs)
+    decide(session, approval.id, rs[1]["Marites"], "rejected")
+    said = _swap_said(session, rs, "shift.swap.rejected")
+    assert (len(said["Ana"]), len(said["Liza"])) == (1, 1)
+
+
+def test_a_swap_expired_by_the_due_work_tells_both_once(
+    session: Session, rs: Ferinos, rs_pin: Pin
+) -> None:
+    approval = agree_swap(session, rs)
+    session.commit()
+    assert alerts.close_undecided_swaps(session, rs_pin(at(SATURDAY, 9, 5))) == 1
+    with pytest.raises(approvals.ApprovalError):
+        decide(session, approval.id, rs[1]["Marites"], "approved")
+    said = _swap_said(session, rs, "shift.swap.expired")
+    assert (len(said["Ana"]), len(said["Liza"])) == (1, 1)
+
+
+def test_a_refused_swap_approval_tells_both_clerks(session: Session, rs: Ferinos) -> None:
+    approval = agree_swap(session, rs)
+    approvals.close_refused(session, approval.id, Actor.person(rs[1]["Marites"]), "changed")
+    said = _swap_said(session, rs, "shift.swap.gone")
+    assert (len(said["Ana"]), len(said["Liza"])) == (1, 1)
+
+
+def test_a_roster_skips_a_closed_date(session: Session, rs: Ferinos) -> None:
+    pao = rs[1]["Pao"]
+    shift = ShiftIn(person_id=pao.id, byday=["SU"], start=dt.time(7), end=dt.time(15))
+    out = tools.set_roster(
+        deps_for(session, rs[1]["Rosa"]),
+        SetRosterInput(shifts=[shift], location_name="Street stall"),
+        "s",
+    )
+    assert out.status == "ok"
+    on_nov_1 = session.exec(
+        select(Visit)
+        .where(Visit.branch_id == stall(session).id)
+        .where(Visit.date == NOV_1)
+        .where(Visit.status != "cancelled")  # the seed's shift, cancelled by the closure
+    ).all()
+    assert [(v.status, v.assigned_person_ids) for v in on_nov_1] == [("unfilled", [])]
+
+
 # ---- the flows -----------------------------------------------------------------------------
 
 
@@ -483,3 +582,7 @@ def test_an_incident_on_a_closed_day_is_told_and_not_written(
         n,
     )
     assert told(session, rs[1]["Rosa"])
+    words = replies.tool_reply("report_site_problem", out.model_dump(mode="json"), "fil")
+    assert [b.text for b in words if isinstance(b, TextBlock)] == [
+        t("retail.problem.reported", "fil", location=stall(session).name)
+    ]

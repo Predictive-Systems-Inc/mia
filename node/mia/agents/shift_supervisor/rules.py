@@ -211,9 +211,8 @@ def compose(part: ToolReturnPart, lang: str) -> list[Block]:
     if part.tool_name == "report_site_problem":
         if out.get("status") != "ok":
             return [TextBlock(text=t(word_key("problem.no_visit"), lang))]
-        return [
-            TextBlock(text=t(word_key("problem.reported"), lang, location=out["visit"]["location"]))
-        ]
+        where = out["visit"]["location"] if out.get("visit") else out.get("location") or ""
+        return [TextBlock(text=t(word_key("problem.reported"), lang, location=where))]
     if status == "invalid":
         return [TextBlock(text=out.get("message", ""))]
     if part.tool_name == "record_absence":
