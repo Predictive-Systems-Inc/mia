@@ -46,15 +46,20 @@ def _label(action: str) -> str:
 ACTIONS: dict[str, Action] = {
     "coaching_who": Action(
         "The sender asks how the sales staff are doing or who needs coaching or help selling:"
-        " a clerk's sales against their target, who is doing well or falling behind (sino ang"
-        " kailangan ng tulong, kumusta si Ana, how is my team doing, sino ang mahina).",
+        " a clerk's sales against their target, who is doing well or falling behind, who on"
+        " the team sells an item well or best (sino ang kailangan ng tulong, kumusta si Ana,"
+        " how is my team doing, sino ang mahina, sino magaling magbenta ng salted egg, who is"
+        " good at selling the ube). A question about people, not a tip for the sender.",
         "coaching",
         ("person",),
         _label("coaching_who"),
     ),
     "how_to_sell": Action(
         "The sender asks for a tip on how to sell an item or sell more (paano ko mabebenta ang"
-        " special, paano dagdagan ang benta, tips for selling, how do I sell more).",
+        " special, paano dagdagan ang benta, tips for selling, how do I sell more), also when"
+        " an item sells slowly or nobody buys it and the sender asks for advice or what to say"
+        " to customers (mabagal ang benta, walang bumibili, ano ang sasabihin ko, payo, tambag,"
+        " laygay, hatol). Never a question about who on the team sells well.",
         "how_to_sell",
         ("item",),
         _label("how_to_sell"),
@@ -62,8 +67,12 @@ ACTIONS: dict[str, Action] = {
     "propose_experiment": Action(
         "The sender wants to try a price, a promo or a bundle on an item for a while to see"
         " whether it sells better (subukan natin 49 ang classic, test a promo, i-try natin ang"
-        " 3 for 120, what can we promote, ano ang pwede nating i-promo). A trial, not a"
-        " permanent price change.",
+        " 3 for 120, what can we promote, ano ang pwede nating i-promo). Any message that"
+        " tests, tries or promotes an item at a price is this action: a price for a few weeks"
+        " (dalawang linggo, duha ka semana), a message starting with experiment, several pieces"
+        " for one price (3 Classic sa 110, 2 kape sa 45), a bundle or combo at a price, a"
+        " higher price for an item that sells out (subukan, sulayan, tilawan, testingan,"
+        " probaran, i-test, i-promo, i-trial). A trial, not a permanent price change.",
         "propose_experiment",
         ("item", "price", "start", "kind", "strategy"),
         _label("propose_experiment"),
@@ -77,7 +86,10 @@ ACTIONS: dict[str, Action] = {
     ),
     "decide_experiment_result": Action(
         "The sender decides what to do after an experiment: keep the tested price, or go back"
-        " to the old price (ituloy na natin, keep it, ibalik sa dati, go back to the old price).",
+        " to the old price (ituloy na natin, keep it, ibalik sa dati, go back to the old price,"
+        " panatilihin ang bagong presyo, ipabilin ang bag-ong presyo). When"
+        " `previous_mia_message` gives an experiment's result, keeping its new price is this"
+        " action, never change_price.",
         "decide_experiment",
         ("keep",),
         _label("decide_experiment_result"),
@@ -92,21 +104,24 @@ ACTIONS: dict[str, Action] = {
     ),
     "set_short_code": Action(
         "The sender wants a short code or nickname for an item, used when typing counts"
-        " (gawing sp ang code ng special, use cl for classic, short code).",
+        " (gawing sp ang code ng special, use cl for classic, short code, give the item the"
+        " code cho). The message names the item and one short code word.",
         "set_short_code",
         ("item", "code"),
         _label("set_short_code"),
     ),
     "weekly_summary": Action(
         "The sender asks for the week's sales summary for the branch (summary ng linggo,"
-        " weekly report, kumusta ang benta ngayong linggo).",
+        " weekly report, kumusta ang benta ngayong linggo, the week's numbers against target,"
+        " numbers ng linggo, semana).",
         "weekly_summary",
         (),
         _label("weekly_summary"),
     ),
     "monthly_letter": Action(
         "The sender asks for the month's numbers letter: sales, best sellers and experiments of"
-        " the month (monthly report, buwanang ulat, the numbers this month).",
+        " the month (monthly report, buwanang ulat, the numbers this month, binulan or"
+        " binulanang report, a report of the bulan).",
         "monthly_letter",
         (),
         _label("monthly_letter"),

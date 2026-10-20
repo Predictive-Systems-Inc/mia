@@ -257,6 +257,17 @@ gate half at the Q40 bar; `MIA_EVAL_HALVES=tune` runs the tune half only):
 `MIA_DECIDER=jev uv run pytest node/tests/evals/test_customer_service_evals.py -m evals -s`
 (needs `MIA_TYPESAFE_KEY`; writes `docs/research/customer-service-<date>-<HHMM>.raw.json`).
 
+The branch manager coaches the sales staff: a morning message to each clerk on shift (yesterday
+against the target, one tip, one quote with its source), cheers for a met target or a personal
+best and a kind nudge after three misses; for the owner and head staff, per-clerk coaching, tips
+from the branch's own notes then the curated list, price, promo and bundle experiments from a
+catalogue of pricing strategies, a price change on a date (both behind the owner's approval),
+short codes, the weekly summary and the monthly numbers letter. It answers only with
+`MIA_DECIDER=jev`. Its decider eval (540 synthetic messages in six languages, gated on the gate
+half at the Q40 bar; `MIA_EVAL_HALVES=tune` or `gate` runs one half):
+`MIA_DECIDER=jev uv run pytest node/tests/evals/test_branch_manager_evals.py -m evals -s`
+(needs `MIA_TYPESAFE_KEY`; writes `docs/research/branch-manager-<date>-<HHMM>.raw.json`).
+
 To evaluate a model: `MIA_EVAL_MODEL=gateway/<route>` or `local/<model>`, then
 `uv run pytest node/tests/evals -m evals`.
 

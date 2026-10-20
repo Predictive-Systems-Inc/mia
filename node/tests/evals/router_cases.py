@@ -927,6 +927,54 @@ GATE_SEEDS: list[tuple[str, str]] = [
     ("customer_service", "how many customer orders are waiting for confirmation"),
 ]
 
+# The built branch manager (spec 2026-10-19-branch-manager, section 10): its router description
+# says "coaching, tips, experiments and prices; not counts or targets". Ten seeds in the gated
+# languages only (en fil ceb hil war bcl), even seeds tune, odd seeds gate; the stub's twenty
+# branch_manager seeds above stay (out of v1 asks get the capabilities reply).
+BRANCH_MANAGER_SEEDS: list[tuple[str, str, str, str, str, str]] = [
+    ("who on my team needs coaching?", "sino sa team ko ang kailangan ng coaching?",
+     "kinsa sa akong team ang nanginahanglan og coaching?",
+     "sin-o sa akon team ang nagakinahanglan sang coaching?",
+     "hin-o ha akon team an nagkikinahanglan hin coaching?",
+     "siisay sa team ko an nangangaipo nin coaching?"),
+    ("give me a tip to sell more puto bumbong",
+     "bigyan mo ako ng tip para mas mabenta ang puto bumbong",
+     "hatagi ko og tip para mas mabaligya ang puto bumbong",
+     "hatagi ako sang tip para mas mabaligya ang puto bumbong",
+     "hatagi ako hin tip basi mas mabaligya an puto bumbong",
+     "tawi ako nin tip tanganing mas mabenta an puto bumbong"),
+    ("can we run a price test on Ube at 49?", "pwede ba tayong mag-price test sa Ube sa 49?",
+     "pwede ba ta mag-price test sa Ube sa 49?", "pwede bala kita mag-price test sa Ube sa 49?",
+     "puydi ba kita mag-price test ha Ube ha 49?", "pwede daw kitang mag-price test sa Ube sa 49?"),
+    ("how is the promo experiment going?", "kumusta ang promo experiment natin?",
+     "kumusta ang atong promo experiment?", "kamusta ang aton promo experiment?",
+     "kumusta an aton promo experiment?", "kumusta an satuyang promo experiment?"),
+    ("make Salted egg 52 from November 2", "gawing 52 ang Salted egg simula Nobyembre 2",
+     "himoa nga 52 ang Salted egg sugod Nobyembre 2", "himua nga 52 ang Salted egg umpisa Nobyembre 2",
+     "himoa nga 52 an Salted egg tikang Nobyembre 2", "gibohon na 52 an Salted egg poon Nobyembre 2"),
+    ("what can we promote this month?", "ano ang pwede nating i-promo ngayong buwan?",
+     "unsa ang pwede nato i-promo karong bulana?", "ano ang pwede naton i-promo subong nga bulan?",
+     "ano an puydi naton i-promo yana nga bulan?", "ano an pwede tang i-promo ngunyan na bulan?"),
+    ("keep the 49 price on Salted egg after the test",
+     "ituloy na ang 49 sa Salted egg pagkatapos ng test", "ipadayon ang 49 sa Salted egg human sa test",
+     "padayunon ang 49 sa Salted egg pagkatapos sang test",
+     "ipadayon an 49 ha Salted egg kahuman han test",
+     "ipadagos an 49 sa Salted egg pagkatapos kan test"),
+    ("send me the monthly numbers letter", "ipadala sa akin ang buwanang numbers letter",
+     "ipadala nako ang binulan nga numbers letter", "ipadala sa akon ang binulan nga numbers letter",
+     "ipadara ha akon an binulan nga numbers letter", "ipadara sako an binulanang numbers letter"),
+    ("how do I coach Liza to upsell?", "paano ko iko-coach si Liza sa pag-upsell?",
+     "unsaon nako pag-coach kang Liza sa pag-upsell?", "paano ko ma-coach si Liza sa pag-upsell?",
+     "paonan-o ko ma-coach hi Liza ha pag-upsell?", "paano ko matutukduan si Liza sa pag-upsell?"),
+    ("price test idea: Box of 4 at 150 as a bundle",
+     "idea sa price test: Box of 4 sa 150 bilang bundle",
+     "ideya sa price test: Box of 4 sa 150 isip bundle",
+     "ideya sa price test: Box of 4 sa 150 nga bundle",
+     "ideya ha price test: Box of 4 ha 150 sugad nga bundle",
+     "ideya sa price test: Box of 4 sa 150 bilang bundle kan kiosk"),
+]  # fmt: skip
+
+
 # One list per language, same length and order as GATE_SEEDS.
 GATE_TEXTS: dict[str, list[str]] = {
     "en": [text for _, text in GATE_SEEDS],
@@ -1786,7 +1834,8 @@ def _intent_cases() -> list[Case]:
 
 
 def _singles() -> list[Case]:
-    """Every seed in every language, with no active agent: SEEDS tune, GATE_SEEDS gate."""
+    """Every seed in every language, with no active agent: SEEDS tune, GATE_SEEDS gate, and
+    BRANCH_MANAGER_SEEDS in the gated languages by seed."""
     langs = GATED_LANGS + REPORTED_LANGS
     tune = [
         Case(lang, text, agent)
@@ -1798,7 +1847,12 @@ def _singles() -> list[Case]:
         for lang in langs
         for (agent, _), text in zip(GATE_SEEDS, GATE_TEXTS[lang], strict=True)
     ]
-    return tune + gate + _intent_cases()
+    built = [
+        Case(lang, text, "branch_manager", half="tune" if n % 2 == 0 else "gate")
+        for n, texts in enumerate(BRANCH_MANAGER_SEEDS)
+        for lang, text in zip(GATED_LANGS, texts, strict=True)
+    ]
+    return tune + gate + built + _intent_cases()
 
 
 def _follow_ups() -> list[Case]:

@@ -208,4 +208,12 @@ pricing, competitor prices.
 
 ## Carried over
 
-(filled by the reviews)
+- 20 Oct 2026, the gates (docs/research/2026-10-20-branch-manager-gate.md): the decider gate
+  failed on its gate half (wrong 0%, right 66.7% to 93.3%, ask up to 33.3%; only English passes)
+  and the router gate failed (wrong 3.2%, right 64.4% to 75.6%). Both gate halves are spent; a
+  rerun needs fresh gate seeds and the developer's word. Follow-ups: the experiment description
+  by what an experiment is rather than by listed forms; the short code question in
+  `actions.build_request` (the code is not stated at up to 0.97 for the right action); the
+  stub's out-of-v1 router seeds (menu, hours, people, permits) against the narrowed router
+  description; customer_service missing from `test_router_eval.ROSTER`; `cost_minor` in the
+  usage rows.
