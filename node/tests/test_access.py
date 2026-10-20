@@ -24,7 +24,8 @@ SIX = [
     "branch_manager",
 ]
 # The HR officer serves every employee (staff and up), so it joins each list below; the branch
-# manager coaches the sales staff, so clerks and supervisors get it too.
+# manager coaches the sales staff, so clerks and supervisors get it too. The bookkeeper serves
+# head staff and up (supervisor, owner, admin), never a clerk.
 SALES_SHIFT_STOCK = [
     "sales_supervisor",
     "shift_supervisor",
@@ -61,7 +62,7 @@ def test_by_default_everyone_has_only_the_shift_supervisor(
 
 def test_access_per_role(session: Session, people: dict[str, Person], all_enabled: None) -> None:
     assert _ids(session, people["Helena"]) == SIX  # owner: all six
-    assert _ids(session, people["Sanna"]) == SALES_SHIFT_STOCK
+    assert _ids(session, people["Sanna"]) == SIX  # supervisor: the clerk's five and the bookkeeper
     assert _ids(session, people["Juha"]) == STAFF_AGENTS  # staff
 
 

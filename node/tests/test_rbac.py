@@ -100,6 +100,7 @@ SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
         "admin": FULL,
         "agent.sales_supervisor": {"read", "write", "read_all"},
         "agent.branch_manager": {"read", "read_all"},
+        "agent.bookkeeper": {"read", "read_all"},
     },
     "sales_targets": {
         "clerk": {"read"},
@@ -124,12 +125,14 @@ SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
         "admin": FULL,
         "agent.inventory_manager": FULL,
         "agent.branch_manager": {"read", "read_all"},
+        "agent.bookkeeper": {"read", "read_all"},
     },
     "supplier_orders": {
         "supervisor": {"read", "write"},
         "owner": FULL,
         "admin": FULL,
         "agent.inventory_manager": FULL,
+        "agent.bookkeeper": {"read", "read_all"},
     },
     "contracts": {
         "staff": {"read_own"},
@@ -146,6 +149,7 @@ SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
         "owner": ADMIN_PAY,
         "admin": ADMIN_PAY,
         "agent.hr_officer": {"read", "read_all"},
+        "agent.bookkeeper": {"read_all"},
     },
     "leave": {
         "staff": OWN,

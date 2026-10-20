@@ -1267,6 +1267,189 @@ def upgrade() -> None:
         )
 
     op.create_table(
+        "bookkeeper_tax",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("regime", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("period_start", sa.Date(), nullable=False),
+        sa.Column("period_end", sa.Date(), nullable=False),
+        sa.Column("gross", sa.Integer(), nullable=False),
+        sa.Column("taxable", sa.Integer(), nullable=False),
+        sa.Column("rate", sa.Integer(), nullable=False),
+        sa.Column("input_tax", sa.Integer(), nullable=False),
+        sa.Column("due", sa.Integer(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("branch_id", "regime", "period_start"),
+    )
+    with op.batch_alter_table("bookkeeper_tax", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_bookkeeper_tax_branch_id"), ["branch_id"], unique=False
+        )
+
+    op.create_table(
+        "bookkeeper_cash_counts",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("business_date", sa.Date(), nullable=False),
+        sa.Column("counted", sa.Integer(), nullable=False),
+        sa.Column("expected", sa.Integer(), nullable=False),
+        sa.Column("difference", sa.Integer(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("counted_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("note", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["counted_by"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("bookkeeper_cash_counts", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_bookkeeper_cash_counts_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_bookkeeper_cash_counts_business_date"), ["business_date"], unique=False
+        )
+
+    op.create_table(
+        "bookkeeper_deposits",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("business_date", sa.Date(), nullable=False),
+        sa.Column("bank", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("amount", sa.Integer(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("reference", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("recorded_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["recorded_by"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("bookkeeper_deposits", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_bookkeeper_deposits_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_bookkeeper_deposits_business_date"), ["business_date"], unique=False
+        )
+
+    op.create_table(
+        "bookkeeper_expenses",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("business_date", sa.Date(), nullable=False),
+        sa.Column("category", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("amount", sa.Integer(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("vat_amount", sa.Integer(), nullable=True),
+        sa.Column("receipt_no", sqlmodel.sql.sqltypes.AutoString(length=32), nullable=True),
+        sa.Column("source", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("approval_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("recorded_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["approval_id"],
+            ["approval.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["recorded_by"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("bookkeeper_expenses", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_bookkeeper_expenses_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_bookkeeper_expenses_business_date"), ["business_date"], unique=False
+        )
+
+    op.create_table(
+        "bookkeeper_payouts",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("provider", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("period_start", sa.Date(), nullable=False),
+        sa.Column("period_end", sa.Date(), nullable=False),
+        sa.Column("amount", sa.Integer(), nullable=False),
+        sa.Column("expected", sa.Integer(), nullable=False),
+        sa.Column("commission", sa.Integer(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("recorded_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["recorded_by"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("bookkeeper_payouts", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_bookkeeper_payouts_branch_id"), ["branch_id"], unique=False
+        )
+
+    op.create_table(
+        "bookkeeper_settlements",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("provider", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("period_start", sa.Date(), nullable=False),
+        sa.Column("period_end", sa.Date(), nullable=False),
+        sa.Column("amount", sa.Integer(), nullable=False),
+        sa.Column("expected", sa.Integer(), nullable=False),
+        sa.Column("fee", sa.Integer(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("matched_by", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["matched_by"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("bookkeeper_settlements", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_bookkeeper_settlements_branch_id"), ["branch_id"], unique=False
+        )
+
+    op.create_table(
         "customer_service_customers",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -1560,6 +1743,33 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_customer_service_customers_branch_id"))
 
     op.drop_table("customer_service_customers")
+    with op.batch_alter_table("bookkeeper_settlements", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_bookkeeper_settlements_branch_id"))
+
+    op.drop_table("bookkeeper_settlements")
+    with op.batch_alter_table("bookkeeper_payouts", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_bookkeeper_payouts_branch_id"))
+
+    op.drop_table("bookkeeper_payouts")
+    with op.batch_alter_table("bookkeeper_expenses", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_bookkeeper_expenses_business_date"))
+        batch_op.drop_index(batch_op.f("ix_bookkeeper_expenses_branch_id"))
+
+    op.drop_table("bookkeeper_expenses")
+    with op.batch_alter_table("bookkeeper_deposits", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_bookkeeper_deposits_business_date"))
+        batch_op.drop_index(batch_op.f("ix_bookkeeper_deposits_branch_id"))
+
+    op.drop_table("bookkeeper_deposits")
+    with op.batch_alter_table("bookkeeper_cash_counts", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_bookkeeper_cash_counts_business_date"))
+        batch_op.drop_index(batch_op.f("ix_bookkeeper_cash_counts_branch_id"))
+
+    op.drop_table("bookkeeper_cash_counts")
+    with op.batch_alter_table("bookkeeper_tax", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_bookkeeper_tax_branch_id"))
+
+    op.drop_table("bookkeeper_tax")
     with op.batch_alter_table("branch_manager_coaching", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_branch_manager_coaching_person_id"))
         batch_op.drop_index(batch_op.f("ix_branch_manager_coaching_branch_id"))

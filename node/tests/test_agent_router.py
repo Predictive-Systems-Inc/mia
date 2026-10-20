@@ -210,13 +210,13 @@ def test_a_stale_route_button_is_routed_as_text(
 def test_an_agent_the_person_may_not_use_is_never_run(
     session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    three = ["shift_supervisor", "bookkeeper", "sales_supervisor"]
-    monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings(agents=three))
+    four = ["shift_supervisor", "bookkeeper", "sales_supervisor", "hr_officer"]
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings(agents=four))
     monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
     monkeypatch.setenv("MIA_DECIDER", "jev")  # the router's gate (D18)
     get_settings.cache_clear()
-    _router_answers(monkeypatch, [], "bookkeeper")  # Sanna (supervisor) may not use it
-    reply = _turn(session, people["Sanna"], "what were our expenses?")
+    _router_answers(monkeypatch, [], "bookkeeper")  # Juha (staff) may not use it
+    reply = _turn(session, people["Juha"], "what were our expenses?")
     assert reply.agent_id != "bookkeeper"
     assert session.exec(select(Event).where(Event.action == "chat.route_failed")).first()
 

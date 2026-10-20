@@ -87,6 +87,22 @@ class BranchManagerSettings(BaseModel):
     nudge_after_misses: int = 3
 
 
+class BookkeeperSettings(BaseModel):
+    """The bookkeeper's limits, money in minor units and percents as integers: one threshold
+    for the cash count, settlements and payouts (flagged only when the gap is over it), the
+    expense limit (over it waits for the owner), the e-wallet fees and platform commissions
+    (placeholders the owner corrects), the tax regime, the petty cash floor and the
+    undeposited cash limit (Q90)."""
+
+    threshold: int = 10_000
+    expense_limit: int = 500_000
+    fees: dict[str, int] = Field(default_factory=lambda: {"gcash": 2, "maya": 2})
+    commissions: dict[str, int] = Field(default_factory=lambda: {"grab": 25, "foodpanda": 28})
+    tax_regime: Literal["vat", "percentage"] = "vat"
+    petty_floor: int = 50_000
+    undeposited_limit: int = 2_000_000
+
+
 class OrgSettings(BaseModel):
     # Which demo seed and industry tables the organisation uses.
     template: Literal["cleaning", "retail"] = "cleaning"
@@ -101,6 +117,7 @@ class OrgSettings(BaseModel):
     delivery_areas: list[DeliveryArea] = Field(default_factory=list)
     customer_service: CustomerServiceSettings = Field(default_factory=CustomerServiceSettings)
     branch_manager: BranchManagerSettings = Field(default_factory=BranchManagerSettings)
+    bookkeeper: BookkeeperSettings = Field(default_factory=BookkeeperSettings)
     # The agents this organisation runs, in routing order.
     agents: list[str] = Field(default_factory=lambda: ["shift_supervisor"])
 

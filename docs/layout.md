@@ -62,6 +62,9 @@ mia/
                             experiments.py (pure: baseline, score, the strategy proposals and
                             guard rails) and calc.py (pure: tip rotation, nudge, best day,
                             pairing); its prices go through templates/retail/items.py
+        bookkeeper/         Bookkeeper: the mia agent scaffold shape (turn.py, actions.py, ...)
+                            plus models.py (cash counts, settlements, payouts, expenses,
+                            deposits, the tax figure)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
       skills/               classifier runtime and per-turn routing (ADR 013)
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls),

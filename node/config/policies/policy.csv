@@ -223,6 +223,28 @@ p, admin, *, tool:branch_manager.monthly_letter, execute, allow
 p, admin, *, data:branch_manager_*, read_all, allow
 p, admin, *, data:branch_manager_*, write_all, allow
 
+# supervisor (head staff): the closing count, settlements, payouts, expenses, petty cash, deposits
+# and balances of their branch; an expense over the limit waits for the owner; owner and admin
+# inherit
+p, supervisor, *, tool:bookkeeper.record_cash_count, execute, allow
+p, supervisor, *, tool:bookkeeper.record_settlement, execute, allow
+p, supervisor, *, tool:bookkeeper.record_payout, execute, allow
+p, supervisor, *, tool:bookkeeper.record_expense, execute, allow
+p, supervisor, *, tool:bookkeeper.record_petty, execute, allow
+p, supervisor, *, tool:bookkeeper.record_deposit, execute, allow
+p, supervisor, *, tool:bookkeeper.balances, execute, allow
+p, supervisor, *, tool:bookkeeper.record_large_expense, request, allow
+p, supervisor, *, data:bookkeeper_*, read, allow
+p, supervisor, *, data:bookkeeper_*, write, allow
+
+# admin: every branch, the journal, the tax figure and the monthly profit (payslip totals
+# through the admin's read_all on payslips, never the supervisor's); the owner inherits
+p, admin, *, tool:bookkeeper.sales_journal, execute, allow
+p, admin, *, tool:bookkeeper.tax_quarter, execute, allow
+p, admin, *, tool:bookkeeper.monthly_profit, execute, allow
+p, admin, *, data:bookkeeper_*, read_all, allow
+p, admin, *, data:bookkeeper_*, write_all, allow
+
 # agents a role may talk to (chat/access.py); owner inherits admin > supervisor > staff
 p, staff, *, agent:shift_supervisor, use, allow
 p, clerk, *, agent:sales_supervisor, use, allow
@@ -242,3 +264,5 @@ p, admin, *, agent:customer_service, use, allow
 p, clerk, *, agent:branch_manager, use, allow
 p, supervisor, *, agent:branch_manager, use, allow
 p, admin, *, agent:branch_manager, use, allow
+p, supervisor, *, agent:bookkeeper, use, allow
+p, admin, *, agent:bookkeeper, use, allow

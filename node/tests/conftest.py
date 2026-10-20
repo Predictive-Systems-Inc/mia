@@ -398,27 +398,66 @@ def bm(bm_shop: Shop) -> tuple[Branch, dict[str, Person]]:
     return bm_shop.kiosk, bm_shop.people
 
 
-@pytest.fixture
-def bm_en(bm_shop: Shop, session: Session) -> tuple[Branch, dict[str, Person]]:
-    """bm with every seeded person set to English (people.set_language), for English literals."""
+def _en(shop: Shop, session: Session) -> tuple[Branch, dict[str, Person]]:
+    """Every seeded person of the shop set to English (people.set_language), for English
+    literals; returns (the Mall kiosk, people by first name)."""
     from mia.core import people
 
     for person in session.exec(select(Person)).all():
-        people.set_language(session, Actor.system(bm_shop.kiosk.id), person, "en")
+        people.set_language(session, Actor.system(shop.kiosk.id), person, "en")
     session.commit()
-    return bm_shop.kiosk, {p.name.split()[0]: p for p in session.exec(select(Person)).all()}
+    return shop.kiosk, {p.name.split()[0]: p for p in session.exec(select(Person)).all()}
 
 
 Pin = Callable[[dt.datetime], dt.datetime]
 
 
-@pytest.fixture
-def pin(bm_shop: Shop) -> Pin:
-    """Move the bm_shop clock to an aware moment (bm_shop.pin at its Manila hour, minute and
-    days from BM_TODAY; the clock keeps running from there). Returns the local moment."""
+def _set_at(shop: Shop, today: dt.date) -> Pin:
+    """Move the shop clock to an aware moment (shop.pin at its Manila hour, minute and days
+    from today; the clock keeps running from there). Returns the local moment."""
 
     def set_at(at: dt.datetime) -> dt.datetime:
         local = at.astimezone(MNL)
-        return bm_shop.pin(local.hour, local.minute, (local.date() - BM_TODAY).days)
+        return shop.pin(local.hour, local.minute, (local.date() - today).days)
 
     return set_at
+
+
+@pytest.fixture
+def bm_en(bm_shop: Shop, session: Session) -> tuple[Branch, dict[str, Person]]:
+    """bm with every seeded person set to English (_en), for English literals."""
+    return _en(bm_shop, session)
+
+
+@pytest.fixture
+def pin(bm_shop: Shop) -> Pin:
+    """Move the bm_shop clock to an aware moment (_set_at from BM_TODAY)."""
+    return _set_at(bm_shop, BM_TODAY)
+
+
+BK_TODAY = dt.date(2026, 11, 3)  # a Tuesday; the seed's counts are 20 October to 2 November
+
+
+@pytest.fixture
+def bk_shop(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Shop]:
+    """The bookkeeper's shop: _ferinos_on BK_TODAY, the seed's languages kept (both seeded
+    payslip cutoffs are October's)."""
+    yield from _ferinos_on(monkeypatch, session, BK_TODAY)
+
+
+@pytest.fixture
+def bk(bk_shop: Shop) -> tuple[Branch, dict[str, Person]]:
+    """bk_shop as (the Mall kiosk, people by first name); bk_shop.pin moves the clock."""
+    return bk_shop.kiosk, bk_shop.people
+
+
+@pytest.fixture
+def bk_en(bk_shop: Shop, session: Session) -> tuple[Branch, dict[str, Person]]:
+    """bk with every seeded person set to English (_en), for English literals."""
+    return _en(bk_shop, session)
+
+
+@pytest.fixture
+def bk_pin(bk_shop: Shop) -> Pin:
+    """Move the bk_shop clock to an aware moment (_set_at from BK_TODAY)."""
+    return _set_at(bk_shop, BK_TODAY)

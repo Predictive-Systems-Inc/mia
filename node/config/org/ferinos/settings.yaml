@@ -1,6 +1,6 @@
 # Organisation settings for Ferino's Bibingka (kiosks in the Philippines). Times are local "HH:MM".
 template: retail
-agents: [sales_supervisor, shift_supervisor, inventory_manager, hr_officer, customer_service, branch_manager]
+agents: [sales_supervisor, shift_supervisor, inventory_manager, hr_officer, customer_service, branch_manager, bookkeeper]
 languages: [fil, ceb, en]
 quiet_hours: {start: "21:00", end: "06:00"}
 payroll: {cutoffs: semi_monthly, pay_lag_days: 5}
@@ -10,3 +10,12 @@ delivery_areas:
   - {name: Pasig, fee: 6000, currency: PHP}
 customer_service: {max_order_quantity: 50, messages_per_hour: 30, public_calls_per_hour: 600}
 branch_manager: {experiment_days: 14, nudge_after_misses: 3}
+# Money in minor units (PHP), fees and commissions in integer percents (placeholders, Q90).
+bookkeeper:
+  threshold: 10000
+  expense_limit: 500000
+  fees: {gcash: 2, maya: 2}
+  commissions: {grab: 25, foodpanda: 28}
+  tax_regime: vat
+  petty_floor: 50000
+  undeposited_limit: 2000000

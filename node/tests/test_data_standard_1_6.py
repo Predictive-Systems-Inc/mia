@@ -33,8 +33,8 @@ def test_the_promoted_hr_tables_keep_their_redactions() -> None:
     ] * 4
 
 
-def test_a_count_carries_its_tender(session: Session, bm: Ferinos) -> None:
-    deps, classic = sales_deps(session, bm[1]["Ana"]), item(session, "Classic").id
+def test_a_count_carries_its_tender(session: Session, bk: Ferinos) -> None:
+    deps, classic = sales_deps(session, bk[1]["Ana"]), item(session, "Classic").id
     paid = RecordCountsInput(items=[CountIn(item_id=classic, quantity=2)], tender="gcash")
     assert sales_tools.record_counts(deps, paid, "c1").recorded[0].tender == "gcash"
     fixed = sales_tools.correct_count(deps, CorrectCountInput(item_id=classic, quantity=3), "c2")

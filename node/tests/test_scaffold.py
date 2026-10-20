@@ -34,6 +34,26 @@ def tree(tmp_path: Path) -> Path:
     return tmp_path
 
 
+# Every roster stub is built now, so the stub tests add one to their copy: an id that sorts
+# before decider, with its router description and its en and fi labels, as a stub sits in the
+# repo before it is built.
+STUB = "auditor"
+STUB_TEXT = (
+    "Spot checks: a surprise cash or stock audit at a branch, what was found and what to fix"
+    " by when; not sales counts, not stock reports and not pay."
+)
+
+
+def _stub(root: Path) -> None:
+    stubs = root / "node/mia/agents/stubs.py"
+    empty = "DESCRIPTIONS: dict[str, str] = {}\n"
+    entry = f'DESCRIPTIONS = {{\n    "{STUB}": {scaffold._router_literal(STUB_TEXT)},\n}}\n'
+    assert empty in stubs.read_text()
+    stubs.write_text(stubs.read_text().replace(empty, entry))
+    strings = root / "node/mia/i18n/strings.py"
+    strings.write_text(scaffold.edit_strings(strings.read_text(), STUB, "Auditor", "Tarkastaja"))
+
+
 def _run(root: Path, agent_id: str = "quality_officer", **kw: bool) -> list[Path]:
     return scaffold.run(
         root,
@@ -133,18 +153,15 @@ def test_a_description_without_a_contrast_line_is_refused(tree: Path) -> None:
 
 
 def test_a_stub_is_built_with_its_router_description(tree: Path) -> None:
+    _stub(tree)
     stubs = (tree / "node/mia/agents/stubs.py").read_text()
-    text = scaffold.stub_description(stubs, "bookkeeper")
-    assert text is not None and text.startswith("Money: the cash count")
-    scaffold.run(
-        tree, "bookkeeper", label_en="Bookkeeper", label_fi="x", roles=["owner"], description=""
-    )
-    turn = (tree / "node/mia/agents/bookkeeper/turn.py").read_text()
-    assert '"Money: the cash count' in turn
+    assert scaffold.stub_description(stubs, STUB) == STUB_TEXT
+    scaffold.run(tree, STUB, label_en="Auditor", label_fi="x", roles=["owner"], description="")
+    turn = (tree / "node/mia/agents/auditor/turn.py").read_text()
+    assert '"Spot checks: a surprise' in turn
     assert max(len(line) for line in turn.splitlines()) <= 100
     ast.parse(turn)
-    assert "agent.bookkeeper.label" in (tree / "node/mia/i18n/strings.py").read_text()
-    assert (tree / "node/mia/i18n/strings.py").read_text().count("agent.bookkeeper.label") == 2
+    assert (tree / "node/mia/i18n/strings.py").read_text().count("agent.auditor.label") == 2
 
 
 def _ruff_imports(root: Path, files: list[Path]) -> subprocess.CompletedProcess[str]:
@@ -155,9 +172,10 @@ def _ruff_imports(root: Path, files: list[Path]) -> subprocess.CompletedProcess[
 def test_rendered_imports_are_sorted_for_ids_before_and_after_the_shared_modules(
     tree: Path,
 ) -> None:
-    """bookkeeper sorts before decider, warehouse_officer after shift_supervisor."""
+    """auditor sorts before decider, warehouse_officer after shift_supervisor."""
+    _stub(tree)
     written = scaffold.run(
-        tree, "bookkeeper", label_en="Bookkeeper", label_fi="x", roles=["owner"], description=""
+        tree, STUB, label_en="Auditor", label_fi="x", roles=["owner"], description=""
     )
     written += _run(tree, "warehouse_officer")
     done = _ruff_imports(tree, [p for p in written if p.suffix == ".py"])
@@ -199,12 +217,13 @@ def test_a_label_flag_on_a_promoted_stub_prints_the_kept_label(
 ) -> None:
     from mia import cli
 
+    _stub(tree)
     monkeypatch.setattr(cli, "NODE_DIR", tree / "node")
-    argv = ["agent", "scaffold", "bookkeeper", "--role", "owner", "--label-en", "Bookkeeper"]
-    args = cli.build_parser().parse_args([*argv, "--label-fi", "Kirjanpitäjä-x"])
+    argv = ["agent", "scaffold", STUB, "--role", "owner", "--label-en", "Auditor"]
+    args = cli.build_parser().parse_args([*argv, "--label-fi", "Tarkastaja-x"])
     assert args.func(args) == 0
     out = capsys.readouterr().out
-    assert "label for bookkeeper already set in fi: kept " in out
+    assert f"label for {STUB} already set in fi: kept " in out
     assert "already set in en" not in out
 
 
@@ -336,8 +355,9 @@ def test_scaffold_then_checks_in_a_temp_copy(tmp_path: Path) -> None:
     skip = (".git", ".venv", "data", "node_modules", ".superpowers", "__pycache__", "*_cache")
     shutil.copytree(REPO, copy, ignore=shutil.ignore_patterns(*skip))
     _run(copy, "demo_officer")  # brand new: no router cases yet (PENDING)
-    scaffold.run(  # a stub promoted: sorts before decider, keeps its router cases
-        copy, "bookkeeper", label_en="Bookkeeper", label_fi="x", roles=["owner"], description=""
+    _stub(copy)
+    scaffold.run(  # a stub promoted: sorts before decider, its labels kept
+        copy, STUB, label_en="Auditor", label_fi="x", roles=["owner"], description=""
     )
     env = {**os.environ, "PYTHONPATH": str(copy / "node")}
 
@@ -358,7 +378,7 @@ def test_scaffold_then_checks_in_a_temp_copy(tmp_path: Path) -> None:
     check(
         "pytest",
         "node/tests/test_demo_officer_chat.py",
-        "node/tests/test_bookkeeper_chat.py",
+        f"node/tests/test_{STUB}_chat.py",
         "node/tests/evals/test_router_cases.py",
         "node/tests/test_agent_router.py::test_router_descriptions_carry_a_contrast_line",
         "node/tests/test_architecture.py",

@@ -59,6 +59,19 @@ def test_branch_manager_settings_load() -> None:
     assert "branch_manager" in orgconfig.load("ferinos").agents
 
 
+def test_bookkeeper_settings_load() -> None:
+    assert orgconfig.load("ferinos").bookkeeper == orgconfig.BookkeeperSettings(
+        threshold=10_000,
+        expense_limit=500_000,
+        fees={"gcash": 2, "maya": 2},
+        commissions={"grab": 25, "foodpanda": 28},
+        tax_regime="vat",
+        petty_floor=50_000,
+        undeposited_limit=2_000_000,
+    )
+    assert "bookkeeper" in orgconfig.load("ferinos").agents
+
+
 def test_delivery_areas_in_two_currencies_fail_to_load() -> None:
     areas = [{"name": "A", "fee": 1, "currency": "PHP"}, {"name": "B", "fee": 1, "currency": "USD"}]
     with pytest.raises(ValidationError, match="one currency"):

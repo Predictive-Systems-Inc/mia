@@ -1,0 +1,55 @@
+id: bookkeeper
+name: "Bookkeeper"
+version: 0.1.0
+standard_version: "1.6"
+job_description: job.md
+instructions: {base: prompts/base.md}
+roles:
+  agent_role: agent.bookkeeper
+  grants:
+    - data:sales_counts:read
+    - data:sales_counts:read_all
+    - data:stock_events:read
+    - data:stock_events:read_all
+    - data:supplier_orders:read
+    - data:supplier_orders:read_all
+    - data:payslips:read_all
+    - data:retail_items:read
+    - data:retail_branch_hours:read
+    - data:core.person:read
+    - data:bookkeeper_cash_counts:read
+    - data:bookkeeper_cash_counts:write
+    - data:bookkeeper_cash_counts:read_all
+    - data:bookkeeper_settlements:read
+    - data:bookkeeper_settlements:write
+    - data:bookkeeper_settlements:read_all
+    - data:bookkeeper_payouts:read
+    - data:bookkeeper_payouts:write
+    - data:bookkeeper_payouts:read_all
+    - data:bookkeeper_expenses:read
+    - data:bookkeeper_expenses:write
+    - data:bookkeeper_expenses:read_all
+    - data:bookkeeper_deposits:read
+    - data:bookkeeper_deposits:write
+    - data:bookkeeper_deposits:read_all
+    - data:bookkeeper_tax:read
+    - data:bookkeeper_tax:write
+    - data:bookkeeper_tax:read_all
+    - tool:bookkeeper.record_cash_count:execute
+    - tool:bookkeeper.record_settlement:execute
+    - tool:bookkeeper.record_payout:execute
+    - tool:bookkeeper.record_expense:execute
+    - tool:bookkeeper.record_petty:execute
+    - tool:bookkeeper.record_deposit:execute
+    - tool:bookkeeper.balances:execute
+    - tool:bookkeeper.sales_journal:execute
+    - tool:bookkeeper.tax_quarter:execute
+    - tool:bookkeeper.monthly_profit:execute
+    - tool:bookkeeper.record_large_expense:request
+  denies: [tool:*:approve]
+  # An expense over the limit waits for the owner (or an admin), in the app with the PIN
+  # step-up; the owner's own large expense is decided by the owner with the step-up (D37).
+  approvers:
+    bookkeeper.record_large_expense: [owner, admin]
+tools: []
+tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

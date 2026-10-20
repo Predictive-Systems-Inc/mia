@@ -3,6 +3,7 @@
 from sqlalchemy import Engine
 from sqlmodel import SQLModel
 
+import mia.agents.bookkeeper.models
 import mia.agents.branch_manager.models
 import mia.agents.customer_service.models
 import mia.core.events
