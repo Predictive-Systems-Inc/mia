@@ -2,6 +2,7 @@
 and the tuning and gate halves are balanced. No model is called."""
 
 from collections import Counter, defaultdict
+from itertools import combinations
 from pathlib import Path
 
 from mia.agents.registry import AGENTS
@@ -38,18 +39,39 @@ def test_context_cases_name_an_active_agent() -> None:
 
 
 def test_halves_are_balanced_per_language_and_group() -> None:
+    """The tune half and the spent gate half are balanced; the fresh gate half has at least
+    five per gated language and group."""
     for (lang, group), cases in _grouped(CASES).items():
         halves = Counter(c.half for c in cases)
-        assert abs(halves["tune"] - halves["gate"]) <= 1, (lang, group, halves)
+        assert abs(halves["tune"] - halves["spent"]) <= 1, (lang, group, halves)
+        assert halves["gate"] >= 5 or lang not in GATED_LANGS, (lang, group, halves)
+
+
+def test_the_fresh_gate_half_covers_every_agent() -> None:
+    from tests.evals.test_router_eval import ROSTER
+
+    for lang in GATED_LANGS:
+        gate = Counter(c.expected for c in CASES if c.lang == lang and c.half == "gate")
+        assert all(gate[a] >= 5 for a in ROSTER if a not in PENDING), (lang, gate)
+    assert not any(c.half == "gate" for c in CASES if c.lang not in GATED_LANGS)
 
 
 def test_no_text_appears_in_both_halves() -> None:
-    """The gate half is fresh: no text (casefolded) of it is in the tune half, and every
-    language of one seed falls in one half."""
+    """The tune, spent and fresh gate halves share no text (casefolded), and every language of
+    one seed falls in one half."""
     halves: dict[str, set[str]] = defaultdict(set)
     for c in CASES:
         halves[c.half].add(c.text.casefold().strip())
-    assert not halves["tune"] & halves["gate"], halves["tune"] & halves["gate"]
+    for a, b in combinations(("tune", "spent", "gate"), 2):
+        assert not halves[a] & halves[b], (a, b, halves[a] & halves[b])
+
+
+def test_the_roster_is_every_agent_and_the_spent_half_is_never_run() -> None:
+    from tests.evals.test_router_eval import ROSTER, _selected
+
+    assert ROSTER == list(AGENTS)
+    assert {c.expected for c in CASES} - {"any", "small_talk"} <= set(ROSTER)
+    assert not any(c.half == "spent" for c in _selected(CASES))
 
 
 def test_gate_context_texts_are_not_singles() -> None:

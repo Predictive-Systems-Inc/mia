@@ -1,8 +1,13 @@
 """The branch manager decider eval set (spec 2026-10-19-branch-manager, scenarios 3 to 7, and the
 weekly summary, monthly letter, short code and keep asks): what Ferino's owner, head staff and
-clerks send, ten messages per scenario in each gated language, split into halves by seed (even
-seeds tune, odd seeds gate; a seed's languages share a half, so no text is in both). Data only;
-test_branch_manager_evals.py runs it.
+clerks send, ten messages per scenario in each gated language and five more for the gate.
+Data only; test_branch_manager_evals.py runs it.
+
+Three sets, no text in two of them: the tune half (the even seeds of the ten), the spent gate
+half (the odd seeds, scored in run 1, branch-manager-2026-10-20-2049.raw.json, which failed;
+kept so it is never written again and never scored again: the harness skips it) and the fresh
+gate half (the GATE_* lists, written before the second tuning edit and before any run of them).
+A seed's languages share a set.
 
 Synthetic, written by Claude, not native speakers (D18). English seeds come first; the five
 Philippine languages are drafts for an owner or a clerk texting on a phone, and Q28 to Q35
@@ -27,7 +32,7 @@ class Case:
     expected_action: str
     role: str  # a role of a seeded Ferino's person (clerk Ana, supervisor Marites, owner Rosa)
     previous: str = ""  # Mia's last message in the thread
-    half: Literal["tune", "gate"] = "tune"
+    half: Literal["tune", "spent", "gate"] = "tune"
     # item (a seeded item name), price (minor units), code, keep, strategy (a name_key's last
     # part, reported only), kind (price, promo or bundle, reported only)
     expected: dict[str, Any] = field(default_factory=dict)
@@ -490,6 +495,246 @@ RESULT = {
     " kaysa dati. Ipadagos an 50 o ibalik sa 45?",
 }
 
+# The fresh gate half (fix round 1), five seeds per scenario, written before any run of them.
+GATE_COACHING: list[Row] = [
+    (NONE, "who sold the most Ube this month?", "sino ang pinakamaraming nabentang Ube ngayong buwan?",
+     "kinsa ang pinakadaghan nakabaligya og Ube karong bulana?",
+     "sin-o ang pinakadamo nakabaligya sang Ube subong nga bulan?",
+     "hin-o an gidamoi nakabaligya hin Ube yana nga bulan?",
+     "siisay an pinakadakol nabentang Ube ngunyan na bulan?"),
+    (NONE, "how is Liza doing lately?", "kumusta si Liza nitong mga nakaraang araw?",
+     "kumusta si Liza niining bag-ohay?", "kamusta si Liza sining karon lang?",
+     "kumusta hi Liza han niyan la?", "kumusta si Liza kaidtong mga nakaaging aldaw?"),
+    (NONE, "which clerk should I help first?", "sinong clerk ang dapat kong tulungan muna?",
+     "kinsang clerk ang angay nakong tabangan una?", "sin-o nga clerk ang dapat ko buligan anay?",
+     "hin-o nga clerk an sadang ko buligan anay?", "siisay na clerk an dapat kong tabangan enot?"),
+    (NONE, "who has been missing the target lately?",
+     "sino ang laging hindi umaabot sa target nitong huli?",
+     "kinsa ang permi dili makaabot sa target karong bag-o?",
+     "sin-o ang pirme indi makaabot sa target sining ulihi?",
+     "hin-o an pirme diri nakakaabot ha target han urhi?",
+     "siisay an pirmi dai nakakaabot sa target kaidto?"),
+    (NONE, "compare Ana and Pao on salted egg sales", "ikumpara si Ana at Pao sa benta ng salted egg",
+     "ikumpara si Ana ug Pao sa baligya og salted egg",
+     "ikumpara si Ana kag Pao sa baligya sang salted egg",
+     "ikumpara hi Ana ngan Pao ha baligya hin salted egg",
+     "ikumpara si Ana asin Pao sa benta kan salted egg"),
+]  # fmt: skip
+
+GATE_HOW_TO_SELL: list[Row] = [
+    ({"item": "Kape"}, "what can I say so people buy kape with their order?",
+     "ano ang pwede kong sabihin para bumili sila ng kape kasama ng order?",
+     "unsay akong isulti aron mopalit sila og kape uban sa order?",
+     "ano ang mahambal ko para magbakal sila sang kape upod sa order?",
+     "ano an akon masisiring basi pumalit hira hin kape upod han order?",
+     "ano an pwede kong sabihon tanganing magbakal sinda nin kape kaiba kan order?"),
+    ({"item": "Box of 4"}, "Box of 4 is not moving, how do I push it?",
+     "hindi gumagalaw ang Box of 4, paano ko ito ibebenta?",
+     "wala nalihok ang Box of 4, unsaon nako pagbaligya?",
+     "wala nagahulag ang Box of 4, paano ko ini mabaligya?",
+     "diri naglilihok an Box of 4, paonan-o ko ini mabaligya?",
+     "dai naghihiro an Box of 4, paano ko ini mabenta?"),
+    ({"item": "Cheese overload"}, "teach me how to sell cheese overload",
+     "turuan mo ako paano magbenta ng cheese overload",
+     "tudloi ko unsaon pagbaligya sa cheese overload",
+     "tudlui ako paano magbaligya sang cheese overload",
+     "tutdui ako paonan-o magbaligya hin cheese overload",
+     "tukdui ako kun paano magbenta nin cheese overload"),
+    ({"item": "Classic"}, "a customer says Classic is too plain, what do I answer?",
+     "sabi ng customer masyadong simple ang Classic, ano ang isasagot ko?",
+     "ingon sa customer simple ra kaayo ang Classic, unsay akong itubag?",
+     "siling sang customer simple lang ang Classic, ano ang isabat ko?",
+     "siring han customer simple la an Classic, ano an akon isasabat?",
+     "sabi kan customer simple sana an Classic, ano an isimbag ko?"),
+    ({"item": "Puto bumbong"}, "best way to offer puto bumbong to new customers?",
+     "pinakamagandang paraan para ialok ang puto bumbong sa bagong customer?",
+     "labing maayong paagi sa pagtanyag sa puto bumbong sa bag-ong customer?",
+     "pinakamaayo nga paagi sa pagtanyag sang puto bumbong sa bag-o nga customer?",
+     "gimaopayi nga paagi ha pagtanyag han puto bumbong ha bag-o nga customer?",
+     "pinakamarhay na paagi sa pag-alok kan puto bumbong sa bagong customer?"),
+]  # fmt: skip
+
+GATE_EXPERIMENT_PRICE: list[Row] = [
+    (_x("Ube", 44, "price"), "let's see if Ube sells more at 44",
+     "tingnan natin kung mas mabenta ang Ube sa 44", "tan-awon nato kung mas mahalin ang Ube sa 44",
+     "tan-awon naton kon mas mabaligya ang Ube sa 44", "kitaon naton kun mas mabaligya an Ube ha 44",
+     "hilingon ta kun mas mabenta an Ube sa 44"),
+    (_x("Cheese overload", 59, "price", "charm"),
+     "two-week test: cheese overload at 59 instead of 60",
+     "dalawang linggong test: cheese overload sa 59 imbes na 60",
+     "duha ka semana nga test: cheese overload sa 59 imbes 60",
+     "duha ka semana nga test: cheese overload sa 59 imbes sang 60",
+     "duha ka semana nga test: cheese overload ha 59 imbes nga 60",
+     "duwang semanang test: cheese overload sa 59 imbes na 60"),
+    (_x("Puto bumbong", 38, "price", "increase"),
+     "puto bumbong is always gone by 3pm, try a higher price of 38",
+     "laging ubos ang puto bumbong bago mag-3pm, subukan ang mas mataas na 38",
+     "permi hurot ang puto bumbong una mag-3pm, sulayi ang mas taas nga 38",
+     "pirme ubos ang puto bumbong antes mag-3pm, tilawi ang mas mataas nga 38",
+     "pirme ubos an puto bumbong antes mag-3pm, testingi an mas hitaas nga 38",
+     "pirmi ubos an puto bumbong bago mag-3pm, probari an mas halangkaw na 38"),
+    (_x("Box of 4", 175, "price", "anchor"),
+     "trial a premium Box of 4 at 175 so the regular looks cheaper",
+     "i-trial ang premium na Box of 4 sa 175 para mas mukhang mura ang regular",
+     "i-trial ang premium nga Box of 4 sa 175 aron mas murag barato ang regular",
+     "i-trial ang premium nga Box of 4 sa 175 para mas daw barato ang regular",
+     "i-trial an premium nga Box of 4 ha 175 basi mas baga barato an regular",
+     "i-trial an premium na Box of 4 sa 175 tanganing mas garo barato an regular"),
+    (_x("Kape", 24, "price"), "I want to test kape at 24 for a couple of weeks",
+     "gusto kong i-test ang kape sa 24 ng ilang linggo",
+     "gusto nako i-test ang kape sa 24 sulod sa pipila ka semana",
+     "gusto ko i-test ang kape sa 24 sa pila ka semana",
+     "karuyag ko i-test an kape ha 24 ha pipira ka semana",
+     "gusto kong i-test an kape sa 24 sa nagkapirang semana"),
+]  # fmt: skip
+
+GATE_EXPERIMENT_PROMO: list[Row] = [
+    (_x("Ube", 160, "promo", "volume"), "promo idea: 4 Ube for 160", "promo idea: 4 Ube sa 160",
+     "ideya sa promo: 4 ka Ube sa 160", "ideya sa promo: 4 ka Ube sa 160 lang",
+     "ideya ha promo: 4 nga Ube ha 160", "ideya sa promo: 4 na Ube sa 160"),
+    (_x("Box of 4", 145, "bundle", "bundle"), "let's run Box of 4 as a family bundle at 145",
+     "i-try natin ang Box of 4 bilang family bundle sa 145",
+     "sulayan nato ang Box of 4 isip family bundle sa 145",
+     "tilawan naton ang Box of 4 nga family bundle sa 145",
+     "testingan naton an Box of 4 sugad nga family bundle ha 145",
+     "probaran ta an Box of 4 bilang family bundle sa 145"),
+    (_x("Salted egg", 42, "promo", "markdown"),
+     "cut salted egg to 42 near closing for two weeks to clear leftovers",
+     "ibaba ang salted egg sa 42 malapit nang magsara ng dalawang linggo para maubos ang tira",
+     "ipaubos ang salted egg sa 42 duol na magsira sulod duha ka semana aron mahurot ang salin",
+     "panubua ang salted egg sa 42 malapit na magsira sa duha ka semana para maubos ang nabilin",
+     "paubsa an salted egg ha 42 hirani na magsira ha duha ka semana basi mahurot an nahibilin",
+     "pababaon an salted egg sa 42 harani nang magsara sa duwang semana tanganing maubos an tada"),
+    (_x("Special", 42, "promo", "seasonal"), "holiday promo: Special at 42 for the Christmas rush",
+     "holiday promo: Special sa 42 para sa Christmas rush", "holiday promo: Special sa 42 para sa Pasko",
+     "holiday promo: Special sa 42 para sa Paskwa", "holiday promo: Special ha 42 para ha Pasko",
+     "holiday promo: Special sa 42 ngonyan na Pasko"),
+    (_x("Kape", 65, "promo", "volume"), "can we try 3 kape for 65 as a promo?",
+     "pwede bang i-try ang 3 kape sa 65 bilang promo?",
+     "pwede ba sulayan ang 3 ka kape sa 65 isip promo?",
+     "pwede bala tilawan ang 3 ka kape sa 65 nga promo?",
+     "puydi ba testingan an 3 nga kape ha 65 sugad nga promo?",
+     "pwede daw probaran an 3 na kape sa 65 bilang promo?"),
+]  # fmt: skip
+
+GATE_CHANGE_PRICE: list[Row] = [
+    (_p("Ube", 46), "Ube will cost 46 from Thursday on", "46 na ang Ube simula Huwebes",
+     "46 na ang Ube sugod Huwebes", "46 na ang Ube umpisa Huwebes", "46 na an Ube tikang Huwebes",
+     "46 na an Ube poon Huwebes"),
+    (_p("Kape", 28), "please change kape to 28 from Nov 5, not a test",
+     "pakipalitan ang kape sa 28 simula Nov 5, hindi test",
+     "palihug usba ang kape sa 28 sugod Nov 5, dili test",
+     "palihog bag-uha ang kape sa 28 umpisa Nov 5, indi test",
+     "alayon bag-oha an kape ha 28 tikang Nov 5, diri test",
+     "paki-baguhon an kape sa 28 poon Nov 5, bakong test"),
+    (_p("Box of 4", 170), "from Monday, Box of 4 is 170", "simula Lunes, 170 na ang Box of 4",
+     "sugod Lunes, 170 na ang Box of 4", "umpisa Lunes, 170 na ang Box of 4",
+     "tikang Lunes, 170 na an Box of 4", "poon Lunes, 170 na an Box of 4"),
+    (_p("Puto bumbong", 40), "raise puto bumbong to 40 from tomorrow",
+     "itaas sa 40 ang puto bumbong simula bukas", "ipataas sa 40 ang puto bumbong sugod ugma",
+     "pataasa sa 40 ang puto bumbong umpisa buwas", "pataasa ha 40 an puto bumbong tikang buwas",
+     "pataason sa 40 an puto bumbong poon sa aga"),
+    (_p("Salted egg", 48), "the new regular price of salted egg is 48 starting Nov 10",
+     "ang bagong regular na presyo ng salted egg ay 48 simula Nov 10",
+     "ang bag-ong regular nga presyo sa salted egg kay 48 sugod Nov 10",
+     "ang bag-o nga regular nga presyo sang salted egg 48 umpisa Nov 10",
+     "an bag-o nga regular nga presyo han salted egg 48 tikang Nov 10",
+     "an bagong regular na presyo kan salted egg 48 poon Nov 10"),
+]  # fmt: skip
+
+GATE_SHORT_CODE: list[Row] = [
+    ({"item": "Ube", "code": "uv"}, "use uv for Ube when we type counts",
+     "gamitin ang uv para sa Ube sa pag-type ng bilang",
+     "gamita ang uv para sa Ube sa pag-type sa ihap",
+     "gamita ang uv para sa Ube sa pag-type sang isip",
+     "gamita an uv para ha Ube ha pag-type han ihap",
+     "gamiton an uv para sa Ube sa pag-type kan bilang"),
+    ({"item": "Kape", "code": "kf"}, "short code kf for kape please", "short code na kf para sa kape po",
+     "short code nga kf para sa kape palihug", "short code nga kf para sa kape palihog",
+     "short code nga kf para ha kape alayon", "short code na kf para sa kape tabi"),
+    ({"item": "Puto bumbong", "code": "pbb"}, "change the code of puto bumbong to pbb",
+     "palitan ang code ng puto bumbong ng pbb", "usba ang code sa puto bumbong ngadto sa pbb",
+     "bag-uha ang code sang puto bumbong sa pbb", "bag-oha an code han puto bumbong ngadto ha pbb",
+     "baguhon an code kan puto bumbong sa pbb"),
+    ({"item": "Box of 4", "code": "bo4"}, "Box of 4 gets the code bo4",
+     "ang code ng Box of 4 ay bo4", "ang code sa Box of 4 kay bo4",
+     "bo4 ang code sang Box of 4 halin subong", "bo4 an code han Box of 4",
+     "bo4 an code kan Box of 4 tabi"),
+    ({"item": "Special", "code": "sx"}, "add sx as another code for Special",
+     "idagdag ang sx bilang isa pang code ng Special", "idugang ang sx isip laing code sa Special",
+     "idugang ang sx nga isa pa ka code sang Special",
+     "idugang an sx sugad nga usa pa nga code han Special",
+     "idagdag an sx bilang saro pang code kan Special"),
+]  # fmt: skip
+
+GATE_WEEKLY: list[Row] = [
+    (NONE, "how was the week for the kiosk?", "kumusta ang linggong ito para sa kiosk?",
+     "kumusta ang semana para sa kiosk?", "kamusta ang semana para sa kiosk?",
+     "kumusta an semana para ha kiosk?", "kumusta an semana para sa kiosk?"),
+    (NONE, "week in review please", "review ng linggo po", "review sa semana palihug",
+     "review sang semana palihog", "review han semana alayon", "review kan semana tabi"),
+    (NONE, "this week's sales, waste and the experiment, all in one",
+     "benta, nasayang at experiment ngayong linggo, sa isang summary",
+     "baligya, nausik ug experiment karong semanaha, sa usa ka summary",
+     "baligya, nausik kag experiment subong nga semana, sa isa ka summary",
+     "baligya, nausik ngan experiment yana nga semana, ha usa nga summary",
+     "benta, nasayang asin experiment ngunyan na semana, sa sarong summary"),
+    (NONE, "send the weekly to me and Jun", "ipadala ang weekly sa akin at kay Jun",
+     "ipadala ang weekly kanako ug kang Jun", "ipadala ang weekly sa akon kag kay Jun",
+     "ipadara an weekly ha akon ngan kan Jun", "ipadara an weekly sako asin ki Jun"),
+    (NONE, "weekly numbers for the street stall", "weekly numbers ng street stall",
+     "weekly numbers sa street stall", "weekly numbers sang street stall",
+     "weekly numbers han street stall", "weekly numbers kan street stall"),
+]  # fmt: skip
+
+GATE_MONTHLY: list[Row] = [
+    (NONE, "October in numbers please", "Oktubre sa numbers po", "Oktubre sa numero palihug",
+     "Oktubre sa numero palihog", "Oktubre ha numero alayon", "Oktubre sa numero tabi"),
+    (NONE, "monthly letter for the owner", "monthly letter para sa may-ari",
+     "monthly letter para sa tag-iya", "monthly letter para sa tag-iya sang tindahan",
+     "monthly letter para ha tag-iya", "monthly letter para sa kagsadiri"),
+    (NONE, "what were our best days this month?", "ano ang mga best days natin ngayong buwan?",
+     "unsa ang atong best days karong bulana?", "ano ang aton best days subong nga bulan?",
+     "ano an aton best days yana nga bulan?", "ano an satong best days ngunyan na bulan?"),
+    (NONE, "how did the month end against target?", "paano nagtapos ang buwan laban sa target?",
+     "giunsa pagtapos sa bulan batok sa target?", "paano nagtapos ang bulan kontra sa target?",
+     "paonan-o natapos an bulan kontra ha target?", "paano natapos an bulan kontra sa target?"),
+    (NONE, "the monthly report with the experiments decided",
+     "ang monthly report kasama ang mga experiment na napagpasyahan",
+     "ang monthly report apil ang mga experiment nga nadesisyonan",
+     "ang monthly report upod ang mga experiment nga gindesisyunan",
+     "an monthly report upod an mga experiment nga gindesisyonan",
+     "an monthly report kaiba an mga experiment na pinagdesisyonan"),
+]  # fmt: skip
+
+GATE_KEEP: list[Row] = [
+    (KEEP_YES, "ok, we keep 50", "sige, 50 na tayo", "sige, 50 na ta", "sige, 50 na kita",
+     "sige, 50 na kita yana", "sige, 50 na kita digdi"),
+    (KEEP_NO, "revert to 45 please", "ibalik na sa 45 po", "ibalik na sa 45 palihug",
+     "ibalik na sa 45 palihog", "ibalik na ha 45 alayon", "ibalik na sa 45 tabi"),
+    (KEEP_YES, "make the test price permanent", "gawin nang permanente ang test price",
+     "himoa nang permanente ang test price", "himua na nga permanente ang test price",
+     "himoa na nga permanente an test price", "gibohon nang permanente an test price"),
+    (KEEP_NO, "no, stop the new price", "hindi, itigil na ang bagong presyo",
+     "dili, hunonga na ang bag-ong presyo", "indi, untati na ang bag-o nga presyo",
+     "diri, untata na an bag-o nga presyo", "dai, pundohon na an bagong presyo"),
+    (KEEP_YES, "yes, go with the tested price", "oo, ang tested price na",
+     "oo, ang gi-test nga presyo na", "huo, ang gin-test nga presyo na",
+     "oo, an gin-test nga presyo na", "iyo, an tinest na presyo na"),
+]  # fmt: skip
+
+GATE_SEEDS: dict[str, list[Row]] = {
+    "coaching": GATE_COACHING,
+    "how_to_sell": GATE_HOW_TO_SELL,
+    "experiment_price": GATE_EXPERIMENT_PRICE,
+    "experiment_promo": GATE_EXPERIMENT_PROMO,
+    "change_price": GATE_CHANGE_PRICE,
+    "short_code": GATE_SHORT_CODE,
+    "weekly": GATE_WEEKLY,
+    "monthly": GATE_MONTHLY,
+    "keep": GATE_KEEP,
+}
+
 # scenario: (expected action, rows)
 SEEDS: dict[str, tuple[str, list[Row]]] = {
     "coaching": ("coaching_who", COACHING),
@@ -505,29 +750,43 @@ SEEDS: dict[str, tuple[str, list[Row]]] = {
 SCENARIOS = tuple(SEEDS)
 
 
-def _role(scenario: str, seed: int) -> str:
-    """Ana asks how to sell; Marites sets short codes, asks most weekly summaries, the last
-    four coaching questions and the last two experiments; Rosa the rest."""
+def _role(scenario: str, seed: int, *, fresh: bool = False) -> str:
+    """Ana asks how to sell; Marites sets short codes and asks most weekly summaries, the last
+    coaching questions and the last experiments of each experiment scenario; Rosa the rest. In
+    the fresh gate half (five seeds) the last two coaching seeds, the last experiment and the
+    first four weekly seeds are Marites's."""
     if scenario == "how_to_sell":
         return "clerk"
-    late = {"coaching": 6, "experiment_price": 8, "experiment_promo": 8}
-    if scenario == "short_code" or (scenario == "weekly" and seed < 8):
+    late = (
+        {"coaching": 3, "experiment_price": 4, "experiment_promo": 4}
+        if fresh
+        else {"coaching": 6, "experiment_price": 8, "experiment_promo": 8}
+    )
+    if scenario == "short_code" or (scenario == "weekly" and seed < (4 if fresh else 8)):
         return "supervisor"
     return "supervisor" if seed >= late.get(scenario, 10) else "owner"
 
 
+def _cases(seeds: dict[str, list[Row]], fresh: bool) -> list[Case]:
+    """The cases of one seed table: SEEDS by seed (even tune, odd spent), GATE_SEEDS all gate."""
+    return [
+        Case(
+            lang=lang,
+            scenario=scenario,
+            text=text,
+            expected_action=SEEDS[scenario][0],
+            role=_role(scenario, i, fresh=fresh),
+            previous=RESULT[lang] if scenario == "keep" else "",
+            half="gate" if fresh else "tune" if i % 2 == 0 else "spent",
+            expected=expected,
+        )
+        for scenario, rows in seeds.items()
+        for i, (expected, *texts) in enumerate(rows)
+        for lang, text in zip(GATED_LANGS, texts, strict=True)
+    ]
+
+
 CASES: list[Case] = [
-    Case(
-        lang=lang,
-        scenario=scenario,
-        text=text,
-        expected_action=action,
-        role=_role(scenario, i),
-        previous=RESULT[lang] if scenario == "keep" else "",
-        half="tune" if i % 2 == 0 else "gate",
-        expected=expected,
-    )
-    for scenario, (action, rows) in SEEDS.items()
-    for i, (expected, *texts) in enumerate(rows)
-    for lang, text in zip(GATED_LANGS, texts, strict=True)
+    *_cases({s: rows for s, (_, rows) in SEEDS.items()}, fresh=False),
+    *_cases(GATE_SEEDS, fresh=True),
 ]

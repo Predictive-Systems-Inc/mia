@@ -19,7 +19,7 @@ class Case:
     active: str | None = None
     previous: str = ""
     group: str = "single"  # single | follow_up | switch
-    half: Literal["tune", "gate"] = "tune"
+    half: Literal["tune", "spent", "gate"] = "tune"
 
 
 GATED_LANGS = ("en", "fil", "ceb", "hil", "war", "bcl")
@@ -975,6 +975,193 @@ BRANCH_MANAGER_SEEDS: list[tuple[str, str, str, str, str, str]] = [
 ]  # fmt: skip
 
 
+# The fresh gate half (20 Oct, branch manager fix round 1), written before any run of it, in
+# the gated languages only: five singles per agent (customer_service on the staff side), two
+# greetings, five follow-ups and five switches per language. Every earlier gate text (GATE_*,
+# the odd BRANCH_MANAGER_SEEDS, the odd Finnish rows) is the spent half of router-2026-10-20-2050
+# and is never run again. (agent, en, fil, ceb, hil, war, bcl)
+FRESH_SEEDS: list[tuple[str, str, str, str, str, str, str]] = [
+    ("sales_supervisor", "4 classic 3 ube 2 kape so far", "4 classic 3 ube 2 kape na po",
+     "4 classic 3 ube 2 kape na karon", "4 classic 3 ube 2 kape na subong",
+     "4 classic 3 ube 2 kape na yana", "4 classic 3 ube 2 kape na ngunyan"),
+    ("sales_supervisor", "correction: 7 salted egg, not 9", "correction: 7 ang salted egg, hindi 9",
+     "sayop: 7 ang salted egg, dili 9", "sala: 7 ang salted egg, indi 9",
+     "sayop: 7 an salted egg, diri 9", "sala: 7 an salted egg, bako 9"),
+    ("sales_supervisor", "are we on track for today's target?", "aabot ba tayo sa target ngayon?",
+     "makaabot ba ta sa target karon?", "makaabot bala kita sa target subong?",
+     "makakaabot ba kita ha target yana?", "maabot daw ta an target ngunyan?"),
+    ("sales_supervisor", "how much did the stall sell yesterday?",
+     "magkano ang benta ng stall kahapon?", "pila ang halin sa stall gahapon?",
+     "pila ang baligya sang stall kahapon?", "pira an baligya han stall kahapon?",
+     "magkano an benta kan stall kahapon?"),
+    ("sales_supervisor", "closing: 5 special 6 classic 1 box of 4",
+     "pagsara: 5 special 6 classic 1 box of 4", "pagsira: 5 special 6 classic 1 box of 4",
+     "sa pagsira: 5 special 6 classic 1 box of 4", "han pagsira: 5 special 6 classic 1 box of 4",
+     "pagsara: 5 special 6 classic 1 box of 4 po"),
+    ("shift_supervisor", "my child is sick, I can't come tomorrow",
+     "may sakit ang anak ko, hindi ako makakapasok bukas",
+     "masakiton akong anak, dili ko makasulod ugma",
+     "may sakit ang bata ko, indi ako makasulod buwas",
+     "may sakit an akon anak, diri ako makakasulod buwas",
+     "may helang an aki ko, dai ako makakalaog sa aga"),
+    ("shift_supervisor", "who is closing tonight?", "sino ang magsasara mamayang gabi?",
+     "kinsa ang mosira karong gabii?", "sin-o ang magasira karon gab-i?",
+     "hin-o an magsisira yana nga gab-i?", "siisay an masara ngunyan na banggi?"),
+    ("shift_supervisor", "the stove gas is leaking", "tumatagas ang gas ng kalan",
+     "nag-leak ang gas sa kalan", "naga-leak ang gas sang kalan", "nag-leleak an gas han kalan",
+     "nagtutulo an gas kan kalan"),
+    ("shift_supervisor", "can Pao take my Sunday shift?",
+     "pwede bang si Pao ang pumalit sa shift ko sa Linggo?",
+     "pwede ba si Pao mopuli sa akong shift sa Dominggo?",
+     "pwede bala si Pao ang magpuli sa akon shift sa Domingo?",
+     "puydi ba hi Pao an pumuli ha akon shift ha Domingo?",
+     "pwede daw si Pao an magsalida sa shift ko sa Domingo?"),
+    ("shift_supervisor", "I'm here at the kiosk, clocking in",
+     "nandito na ako sa kiosk, mag-clock in na", "ania na ko sa kiosk, mag-clock in na",
+     "ari na ako sa kiosk, mag-clock in na", "aadi na ako ha kiosk, mag-clock in na",
+     "yaon na ako sa kiosk, mag-clock in na"),
+    ("inventory_manager", "no more puto bumbong left", "wala nang puto bumbong",
+     "wala nay puto bumbong", "wala na sang puto bumbong", "waray na puto bumbong",
+     "mayo nang puto bumbong"),
+    ("inventory_manager", "4 trays of classic left at closing",
+     "4 trays ng classic ang natira pagsara", "4 ka trays sa classic ang nabilin pagsira",
+     "4 ka trays sang classic ang nabilin pagsira", "4 nga trays han classic an nahibilin pagsira",
+     "4 na trays nin classic an natada pagsara"),
+    ("inventory_manager", "we need more cheese before Saturday",
+     "kailangan pa natin ng keso bago Sabado", "kinahanglan pa ta og keso una sa Sabado",
+     "kinahanglan pa naton sang keso antes sang Sabado",
+     "kinahanglan pa naton hin keso antes han Sabado", "kaipuhan pa ta nin keso bago an Sabado"),
+    ("inventory_manager", "the rice flour delivery is short by 2 sacks",
+     "kulang ng 2 sako ang dumating na rice flour", "kulang og 2 ka sako ang niabot nga rice flour",
+     "kulang sang 2 ka sako ang nag-abot nga rice flour",
+     "kulang hin 2 nga sako an inabot nga rice flour",
+     "kulang nin 2 na sako an nag-abot na rice flour"),
+    ("inventory_manager", "how much ube should we bake for Sunday?",
+     "ilan ang dapat naming lutuin na ube para sa Linggo?",
+     "pila ka ube ang angay namong lutoon para sa Dominggo?",
+     "pila ka ube ang dapat namon lutuon para sa Domingo?",
+     "pira nga ube an sadang namon lutuon para ha Domingo?",
+     "pirang ube an dapat mi lutuon para sa Domingo?"),
+    ("bookkeeper", "cash in the drawer is 3,950", "3,950 ang cash sa drawer",
+     "3,950 ang cash sa drawer karon", "3,950 ang cash sa drawer subong",
+     "3,950 an cash ha drawer yana", "3,950 an cash sa drawer ngunyan"),
+    ("bookkeeper", "paid 450 for jeep delivery of supplies",
+     "nagbayad ng 450 sa jeep para sa delivery ng supplies",
+     "nibayad og 450 sa jeep para sa delivery sa supplies",
+     "nagbayad sang 450 sa jeep para sa delivery sang supplies",
+     "nagbayad hin 450 ha jeep para ha delivery han supplies",
+     "nagbayad nin 450 sa jeep para sa delivery kan supplies"),
+    ("bookkeeper", "GCash total today is 1,780", "GCash total ngayon 1,780",
+     "GCash total karon 1,780", "GCash total subong 1,780", "GCash total yana 1,780",
+     "GCash total ngunyan 1,780"),
+    ("bookkeeper", "we are short 90 in the cash count", "kulang ng 90 ang cash count natin",
+     "kulang og 90 ang cash count nato", "kulang sang 90 ang cash count naton",
+     "kulang hin 90 an cash count naton", "kulang nin 90 an cash count ta"),
+    ("bookkeeper", "record the water bill, 650", "i-record ang bayad sa tubig, 650",
+     "i-record ang bayad sa tubig, 650 tanan", "i-record ang bayad sa tubig, 650 lang",
+     "i-record an bayad ha tubig, 650", "i-record an bayad sa tubig, 650 tabi"),
+    ("hr_officer", "when is the next payday?", "kailan ang susunod na sweldo?",
+     "kanus-a ang sunod nga sweldo?", "san-o ang masunod nga sweldo?", "san-o an sunod nga sweldo?",
+     "noarin an sunod na sweldo?"),
+    ("hr_officer", "how many vacation days do I still have?",
+     "ilang vacation days pa ang natitira sa akin?", "pila pa ka vacation days ang nabilin nako?",
+     "pila pa ka vacation days ang nabilin sa akon?",
+     "pira pa ka vacation days an nahibilin ha akon?", "pira pa an vacation days ko?"),
+    ("hr_officer", "my SSS deduction looks too big", "parang sobra ang kaltas sa SSS ko",
+     "murag sobra ang kaltas sa akong SSS", "daw sobra ang kaltas sang akon SSS",
+     "baga sobra an kaltas han akon SSS", "garo sobra an kaltas kan SSS ko"),
+    ("hr_officer", "I want to take leave on Friday", "gusto kong mag-leave sa Biyernes",
+     "gusto ko mo-leave sa Biyernes", "gusto ko mag-leave sa Biyernes",
+     "karuyag ko mag-leave ha Biyernes", "gusto kong mag-leave sa Biyernes tabi"),
+    ("hr_officer", "can I see my payslip for this cutoff?",
+     "pwede ko bang makita ang payslip ko ngayong cutoff?",
+     "pwede ba nako makita akong payslip karong cutoff?",
+     "pwede ko bala makita ang akon payslip subong nga cutoff?",
+     "puydi ko ba makita an akon payslip yana nga cutoff?",
+     "pwede ko daw mahiling an payslip ko ngunyan na cutoff?"),
+    ("branch_manager", "who on my team is selling the most salted egg?",
+     "sino sa team ko ang pinakamaraming nabentang salted egg?",
+     "kinsa sa akong team ang pinakadaghan nakabaligya og salted egg?",
+     "sin-o sa akon team ang pinakadamo nakabaligya sang salted egg?",
+     "hin-o ha akon team an gidamoi nakabaligya hin salted egg?",
+     "siisay sa team ko an pinakadakol nabentang salted egg?"),
+    ("branch_manager", "let's test Kape at 29 for two weeks",
+     "subukan natin 29 ang Kape ng dalawang linggo",
+     "sulayan nato og 29 ang Kape sulod duha ka semana",
+     "tilawan naton sang 29 ang Kape sa duha ka semana",
+     "testingan naton hin 29 an Kape ha duha ka semana", "probaran ta 29 an Kape sa duwang semana"),
+    ("branch_manager", "what time do we open on holidays?",
+     "anong oras tayo magbubukas kapag holiday?", "unsang orasa ta moabli kung holiday?",
+     "ano oras kita magabukas kon holiday?", "ano nga oras kita magbubukas kun holiday?",
+     "anong oras kita mabukas pag holiday?"),
+    ("branch_manager", "make Ube 47 from November 3", "gawin nating 47 ang Ube simula Nobyembre 3",
+     "himoon nato nga 47 ang Ube sugod Nobyembre 3", "himuon naton nga 47 ang Ube umpisa Nobyembre 3",
+     "himoon naton nga 47 an Ube tikang Nobyembre 3", "gibohon tang 47 an Ube poon Nobyembre 3"),
+    ("branch_manager", "when do we renew the sanitary permit?",
+     "kailan natin ire-renew ang sanitary permit?", "kanus-a nato i-renew ang sanitary permit?",
+     "san-o naton i-renew ang sanitary permit?", "san-o naton i-renew an sanitary permit?",
+     "noarin ta i-renew an sanitary permit?"),
+    ("customer_service", "any pickup orders for this afternoon?",
+     "may pickup order ba ngayong hapon?", "naa bay pickup order karong hapon?",
+     "may pickup order bala subong nga hapon?", "may-ada ba pickup order yana nga kulop?",
+     "igwa daw pickup order ngunyan na hapon?"),
+    ("customer_service", "the order for Mark is ready", "handa na ang order ni Mark",
+     "andam na ang order ni Mark", "handa na ang order ni Mark subong", "andam na an order ni Mark",
+     "lista na an order ni Mark"),
+    ("customer_service", "the customer got her order already",
+     "nakuha na ng customer ang order niya", "nakuha na sa customer iyang order",
+     "nakuha na sang customer ang iya order", "nakuha na han customer an iya order",
+     "nakua na kan customer an order niya"),
+    ("customer_service", "show me the customer complaints", "ipakita ang mga reklamo ng customer",
+     "ipakita ang mga reklamo sa customer", "ipakita ang mga reklamo sang customer",
+     "ipakita an mga reklamo han customer", "ipahiling an mga reklamo kan customer"),
+    ("customer_service", "how many customer orders are for tomorrow?",
+     "ilan ang order ng customer para bukas?", "pila ka order sa customer para ugma?",
+     "pila ka order sang customer para buwas?", "pira nga order han customer para buwas?",
+     "pirang order kan customer para sa aga?"),
+    ("any", "good evening po", "magandang gabi po", "maayong gabii po", "maayong gab-i po",
+     "maupay nga gab-i po", "marhay na banggi po"),
+    ("any", "thank you Mia", "salamat Mia!", "daghang salamat Mia", "salamat gid Mia",
+     "damo nga salamat Mia", "dios mabalos Mia"),
+]  # fmt: skip
+
+# (group, expected, active, index into GATE_PREVIOUS or None, en, fil, ceb, hil, war, bcl)
+FRESH_CONTEXT: list[tuple[str, str, str, int | None, str, str, str, str, str, str]] = [
+    ("follow_up", "sales_supervisor", "sales_supervisor", 0, "the jeepneys were on strike today",
+     "may welga ng jeep ngayon", "naay welga sa jeep karon", "may welga sang jeep subong",
+     "may welga han jeep yana", "igwang welga kan jeep ngunyan"),
+    ("follow_up", "shift_supervisor", "shift_supervisor", 1, "maybe Wednesday", "baka Miyerkules",
+     "basin Miyerkules", "basi Miyerkoles", "bangin ha Miyerkoles", "baka sa Miyerkoles"),
+    ("follow_up", "inventory_manager", "inventory_manager", 2, "about 3 trays", "mga 3 trays",
+     "mga 3 ka trays", "mga 3 ka trays lang", "mga 3 nga trays", "mga 3 na trays"),
+    ("follow_up", "shift_supervisor", "sales_supervisor", 0, "the freezer stopped working",
+     "huminto ang freezer", "nihunong ang freezer", "nag-untat ang freezer",
+     "tumigil an freezer", "nagpundo an freezer"),
+    ("follow_up", "bookkeeper", "sales_supervisor", 0, "by the way the drawer is short 120",
+     "siya nga pala, kulang ng 120 ang drawer", "sa laing bahin, kulang og 120 ang drawer",
+     "sa iban nga bahin, kulang sang 120 ang drawer", "ha iba nga bahin, kulang hin 120 an drawer",
+     "sa ibang bagay, kulang nin 120 an drawer"),
+    ("switch", "sales_supervisor", "shift_supervisor", None, "sold 8 cheese overload today",
+     "nakabenta ng 8 cheese overload ngayon", "nakabaligya og 8 cheese overload karon",
+     "nakabaligya sang 8 cheese overload subong", "nakabaligya hin 8 cheese overload yana",
+     "nakabenta nin 8 cheese overload ngunyan"),
+    ("switch", "sales_supervisor", "shift_supervisor", None, "how far are we from today's target?",
+     "gaano pa tayo kalayo sa target ngayon?", "unsa pa kalayo ta sa target karon?",
+     "daw ano pa kalayo kita sa target subong?", "pira pa kahirayo kita ha target yana?",
+     "gurano pa kaharayo kita sa target ngunyan?"),
+    ("switch", "shift_supervisor", "sales_supervisor", None, "running late, about 25 minutes",
+     "late ako, mga 25 minuto", "late ko, mga 25 minutos", "late ako, mga 25 minutos",
+     "late ako, mga 25 minutos la", "huri ako, mga 25 minutos"),
+    ("switch", "shift_supervisor", "sales_supervisor", None, "who covers Ana tomorrow?",
+     "sino ang papalit kay Ana bukas?", "kinsa ang mopuli kang Ana ugma?",
+     "sin-o ang magpuli kay Ana buwas?", "hin-o an pupuli kan Ana buwas?",
+     "siisay an masalida ki Ana sa aga?"),
+    ("switch", "inventory_manager", "sales_supervisor", None, "we ran out of paper bags",
+     "naubusan tayo ng paper bag", "nahurtan ta og paper bag", "naubusan kita sang paper bag",
+     "nahurotan kita hin paper bag", "naubusan kita nin paper bag"),
+]  # fmt: skip
+
+
 # One list per language, same length and order as GATE_SEEDS.
 GATE_TEXTS: dict[str, list[str]] = {
     "en": [text for _, text in GATE_SEEDS],
@@ -1818,7 +2005,7 @@ def _intent_cases() -> list[Case]:
     """Finnish single cases from the intent test split: shift supervisor and conversation rows.
     The in-flow replies (the cover_reply and absence_scope intents) are left out, and so is the
     one row that names Tagalog (the language is Filipino). Each row is its own seed: even rows
-    tune, odd rows gate."""
+    tune, odd rows spent."""
     cases = []
     for line in INTENTS.read_text(encoding="utf-8").splitlines():
         row = json.loads(line)
@@ -1830,34 +2017,39 @@ def _intent_cases() -> list[Case]:
             cases.append(Case("fi", row["text"], "shift_supervisor"))
         elif row["intent"].startswith("conversation."):
             cases.append(Case("fi", row["text"], "any"))
-    return [replace(c, half="tune" if n % 2 == 0 else "gate") for n, c in enumerate(cases)]
+    return [replace(c, half="tune" if n % 2 == 0 else "spent") for n, c in enumerate(cases)]
 
 
 def _singles() -> list[Case]:
-    """Every seed in every language, with no active agent: SEEDS tune, GATE_SEEDS gate, and
-    BRANCH_MANAGER_SEEDS in the gated languages by seed."""
+    """Every seed in every language, with no active agent: SEEDS tune, GATE_SEEDS spent,
+    BRANCH_MANAGER_SEEDS in the gated languages by seed (tune or spent), FRESH_SEEDS gate."""
     langs = GATED_LANGS + REPORTED_LANGS
     tune = [
         Case(lang, text, agent)
         for lang in langs
         for (agent, _), text in zip(SEEDS, TEXTS[lang], strict=True)
     ]
-    gate = [
-        Case(lang, text, agent, half="gate")
+    spent = [
+        Case(lang, text, agent, half="spent")
         for lang in langs
         for (agent, _), text in zip(GATE_SEEDS, GATE_TEXTS[lang], strict=True)
     ]
     built = [
-        Case(lang, text, "branch_manager", half="tune" if n % 2 == 0 else "gate")
+        Case(lang, text, "branch_manager", half="tune" if n % 2 == 0 else "spent")
         for n, texts in enumerate(BRANCH_MANAGER_SEEDS)
         for lang, text in zip(GATED_LANGS, texts, strict=True)
     ]
-    return tune + gate + built + _intent_cases()
+    fresh = [
+        Case(lang, text, agent, half="gate")
+        for agent, *texts in FRESH_SEEDS
+        for lang, text in zip(GATED_LANGS, texts, strict=True)
+    ]
+    return tune + spent + built + fresh + _intent_cases()
 
 
 def _follow_ups() -> list[Case]:
     """Ten per gated language and half: seven replies to Mia's question and three subject
-    changes. The tune half reuses tune seeds; the gate half has its own texts."""
+    changes. The tune half reuses tune seeds; the spent half has its own texts."""
     cases = []
     for lang in GATED_LANGS:
         prev = PREVIOUS[lang]
@@ -1870,12 +2062,12 @@ def _follow_ups() -> list[Case]:
             )
         gate_prev = GATE_PREVIOUS[lang]
         for (agent, p), text in zip(REPLY_FLOW, GATE_REPLIES[lang], strict=True):
-            cases.append(Case(lang, text, agent, agent, gate_prev[p], "follow_up", "gate"))
+            cases.append(Case(lang, text, agent, agent, gate_prev[p], "follow_up", "spent"))
         for (group, expected, active), text in zip(
             GATE_CONTEXT, GATE_CONTEXT_TEXTS[lang], strict=True
         ):
             if group == "follow_up":
-                cases.append(Case(lang, text, expected, active, gate_prev[0], group, "gate"))
+                cases.append(Case(lang, text, expected, active, gate_prev[0], group, "spent"))
     return cases
 
 
@@ -1894,7 +2086,7 @@ def _switches() -> list[Case]:
             for i in SHIFT_MESSAGES
         ]
         cases += [
-            Case(lang, text, expected, active, group=group, half="gate")
+            Case(lang, text, expected, active, group=group, half="spent")
             for (group, expected, active), text in zip(
                 GATE_CONTEXT, GATE_CONTEXT_TEXTS[lang], strict=True
             )
@@ -1903,4 +2095,15 @@ def _switches() -> list[Case]:
     return cases
 
 
-CASES: list[Case] = [*_singles(), *_follow_ups(), *_switches()]
+def _fresh_context() -> list[Case]:
+    """The fresh gate half's follow-ups and switches (FRESH_CONTEXT), gated languages only."""
+    return [
+        Case(
+            lang, text, expected, active, "" if p is None else GATE_PREVIOUS[lang][p], group, "gate"
+        )
+        for group, expected, active, p, *texts in FRESH_CONTEXT
+        for lang, text in zip(GATED_LANGS, texts, strict=True)
+    ]
+
+
+CASES: list[Case] = [*_singles(), *_follow_ups(), *_switches(), *_fresh_context()]

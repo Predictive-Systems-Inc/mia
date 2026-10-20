@@ -208,12 +208,14 @@ pricing, competitor prices.
 
 ## Carried over
 
-- 20 Oct 2026, the gates (docs/research/2026-10-20-branch-manager-gate.md): the decider gate
-  failed on its gate half (wrong 0%, right 66.7% to 93.3%, ask up to 33.3%; only English passes)
-  and the router gate failed (wrong 3.2%, right 64.4% to 75.6%). Both gate halves are spent; a
-  rerun needs fresh gate seeds and the developer's word. Follow-ups: the experiment description
-  by what an experiment is rather than by listed forms; the short code question in
-  `actions.build_request` (the code is not stated at up to 0.97 for the right action); the
-  stub's out-of-v1 router seeds (menu, hours, people, permits) against the narrowed router
-  description; customer_service missing from `test_router_eval.ROSTER`; `cost_minor` in the
-  usage rows.
+- 20 Oct 2026, the gates (docs/research/2026-10-20-branch-manager-gate.md): run 1 failed both
+  gates (decider: only English passed; router: wrong 3.2%). Fix round 1 (the developer's
+  decision): the router harness routes to every registered agent, the router description names
+  the catalogue's subjects, short code candidates ranked in code, one more description edit,
+  fresh gate seeds; run 2 failed both again (decider wrong 0.4%, en and fil pass, ceb, hil, war
+  and bcl ask 20.0% to 35.6%; router wrong 3.5%, en, ceb and hil pass). Stopped there; every
+  gate half so far is spent. Open: the asks just under 0.6 in the four Visayan and Bikol
+  languages (threshold is Q40, drafts are Q28 to Q35); the seed "who on my team is selling the
+  most salted egg?" (sales_supervisor at 0.85 to 1.0 in six languages); "stop the new price"
+  read as keep once (bcl, 0.66); a count read as the promo price ("3 kape for 65");
+  `cost_minor` in the usage rows.

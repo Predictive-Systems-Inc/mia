@@ -1,6 +1,6 @@
 """Real-Jev router evaluation (spec 2026-10-18, Testing). Run:
 MIA_TYPESAFE_KEY=... uv run pytest node/tests/evals/test_router_eval.py -m evals -s
-Synthetic data only (D18). Prints per language, agent, group and half: right at >= 0.6, wrong
+Synthetic data only (D18). The spent gate half is never run. Prints per language, agent, group and half: right at >= 0.6, wrong
 at >= 0.6, ask-back rate, real messages answered as small talk, p50 and p95 latency, and cost
 (tokens) per message. The gate asserts run over the gate half only; the tune half is for tuning
 descriptions and thresholds."""
@@ -32,14 +32,7 @@ from tests.evals.router_cases import CASES, GATED_LANGS, Case
 
 pytestmark = pytest.mark.evals
 
-ROSTER = [
-    "sales_supervisor",
-    "shift_supervisor",
-    "inventory_manager",
-    "bookkeeper",
-    "hr_officer",
-    "branch_manager",
-]
+ROSTER = list(AGENTS)  # every agent the node can route to, so a new one is never missed
 SCORES = ("right", "wrong", "ask", "small_talk", "other")
 PURPOSE = "chat.route.eval"
 CONCURRENCY = 4
@@ -53,6 +46,11 @@ def _report_path(now: dt.datetime, folder: Path = RESEARCH) -> Path:
     if path.exists():
         raise FileExistsError(f"refusing to overwrite {path}")
     return path
+
+
+def _selected(cases: list[Case]) -> list[Case]:
+    """The cases a run scores: the tune half and the fresh gate half, never the spent half."""
+    return [c for c in cases if c.half != "spent"]
 
 
 def _needs_key() -> None:
@@ -161,10 +159,11 @@ def _print(title: str, table: dict[str, Any]) -> None:
 def test_router(engine: Engine, branch: Branch) -> None:
     _needs_key()
     report = _report_path(dt.datetime.now().astimezone())  # before the run, not after it
+    cases = _selected(CASES)
 
     async def run() -> list[dict[str, Any]]:
         sem = asyncio.Semaphore(CONCURRENCY)
-        return await asyncio.gather(*(_one(i, c, engine, branch, sem) for i, c in enumerate(CASES)))
+        return await asyncio.gather(*(_one(i, c, engine, branch, sem) for i, c in enumerate(cases)))
 
     results = asyncio.run(run())
     with Session(engine) as session:

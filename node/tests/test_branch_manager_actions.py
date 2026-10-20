@@ -139,3 +139,30 @@ def test_an_action_outside_the_list_is_clarify(session: Session, bm: Ferinos) ->
     answers["action"] = choice("record_counts")
     d = decider.parse(answers, q)
     assert (d.action, d.raw_action) == ("clarify", "record_counts")
+
+
+def test_code_candidates_put_the_code_first_and_never_part_of_an_item_name(
+    session: Session, bm: Ferinos
+) -> None:
+    rows = session.exec(select(RetailItem).where(col(RetailItem.active))).all()
+    assert actions.code_candidates("make seg the short code of salted egg", rows) == ["seg"]
+    kl = "pirme gina-type sang clerk ang kl para sa Classic, himua na nga code"
+    assert actions.code_candidates(kl, rows)[0] == "kl"
+    spc = actions.code_candidates("bag-o nga short code nga spc para sa Special", rows)
+    assert spc == ["spc"]  # "bag-o" is one token, not "bag"
+    assert "egg" not in actions.code_candidates("gawing egg ang code ng salted egg", rows)
+    many = actions.code_candidates("aa bbb cccc ddddd eeeeee ff", rows)
+    assert many == ["aa", "ff", "bbb", "cccc"]  # shortest first, at most MAX_CODES
+    assert actions.code_candidates("ang code ng special 45", rows) == []
+
+
+def test_the_code_question_offers_the_ranked_candidates(session: Session, bm: Ferinos) -> None:
+    q = actions.build_query(
+        deps_for(session, bm[1]["Marites"]), "gawin nating seg ang short code ng salted egg", ""
+    )
+    assert q.codes["c0"] == "seg"
+    assert actions.build_request(q, "jev")["state"]["codes"][0] == "seg"
+    args, missing = decider._args(
+        "set_short_code", reader(q, item=item(session, "Salted egg"), code="c0")
+    )
+    assert (args["code"], missing) == ("seg", None)

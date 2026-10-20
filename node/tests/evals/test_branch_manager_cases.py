@@ -3,19 +3,22 @@ test_branch_manager_evals.py)."""
 
 import datetime as dt
 from collections import Counter
+from itertools import combinations
 from pathlib import Path
 
 import pytest
 
-from mia.agents.branch_manager.actions import ACTIONS, CODE_WORD, KINDS
+from mia.agents.branch_manager.actions import ACTIONS, KINDS, code_candidates
 from mia.agents.branch_manager.tips import STRATEGIES
 from mia.agents.parsing import find_dates, find_prices
+from mia.templates.retail.models import RetailItem
 from mia.templates.retail.seed import ITEMS
 from tests.conftest import BM_TODAY
 from tests.evals.branch_manager_cases import CASES, GATED_LANGS, SCENARIOS, TODAY
 
 NAMES = {name.casefold() for name, _, _ in ITEMS}
-TAKEN = {code for _, codes, _ in ITEMS for code in codes}
+MENU = [RetailItem(name=n, short_codes=c, price=p, currency="PHP") for n, c, p in ITEMS]
+HALVES = ("tune", "spent", "gate")
 STRATEGY_NAMES = {key.rsplit(".", 1)[1] for key, *_ in STRATEGIES}
 WRITES = {
     "how_to_sell": {"item"},
@@ -27,18 +30,18 @@ WRITES = {
 
 
 def test_ten_cases_per_language_scenario_and_half() -> None:
-    """Five per language, scenario and half (ten per scenario and language)."""
+    """Per language and scenario: ten seeds (five tune, five in the spent gate half of run 1)
+    and five fresh gate seeds."""
     counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
-    assert set(counts) == {
-        (lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in ("tune", "gate")
-    }
+    assert set(counts) == {(lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in HALVES}
     assert set(counts.values()) == {5}
 
 
 def test_no_text_appears_in_both_halves() -> None:
-    tune = {c.text.casefold().strip() for c in CASES if c.half == "tune"}
-    gate = {c.text.casefold().strip() for c in CASES if c.half == "gate"}
-    assert not tune & gate, tune & gate
+    """The tune half, the spent gate half and the fresh gate half share no text (casefolded)."""
+    sets = {h: {c.text.casefold().strip() for c in CASES if c.half == h} for h in HALVES}
+    for a, b in combinations(HALVES, 2):
+        assert not sets[a] & sets[b], (a, b, sets[a] & sets[b])
 
 
 def test_no_pair_repeats_and_the_actions_are_the_planned_ones() -> None:
@@ -77,15 +80,14 @@ def test_every_strategy_and_kind_has_a_typed_experiment() -> None:
 
 def test_prices_dates_and_codes_are_candidates() -> None:
     """Code reads every value Jev picks (rule 7): the expected price is a find_prices candidate,
-    a price change names a find_dates day, and the short code is one of build_query's words."""
+    a price change names a find_dates day, and the short code is build_query's first word."""
     for c in CASES:
         if "price" in c.expected:
             assert c.expected["price"] in dict(find_prices(c.text, c.lang)).values(), c
         if c.expected_action == "change_price":
             assert find_dates(c.text, TODAY, c.lang), c
         if "code" in c.expected:
-            words = set(CODE_WORD.findall(c.text.casefold())) - TAKEN
-            assert c.expected["code"] in words, c
+            assert code_candidates(c.text, MENU)[:1] == [c.expected["code"]], c
 
 
 def test_the_run_day_is_the_bm_fixtures_monday() -> None:
@@ -121,12 +123,12 @@ def test_scoring() -> None:
     assert _score(weekly | {"expected": {}, "args": {}, "item": None}) == "right"
 
 
-def test_the_halves_are_selected_by_name() -> None:
+def test_the_halves_are_selected_by_name_and_the_spent_half_never() -> None:
     from tests.evals.test_branch_manager_evals import _selected
 
     assert {c.half for c in _selected(CASES, "tune")} == {"tune"}
     assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
-    assert len(_selected(CASES, "tune,gate")) == len(CASES)
+    assert not any(c.half == "spent" for c in _selected(CASES, "tune,gate,spent"))
 
 
 def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:

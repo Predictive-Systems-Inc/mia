@@ -5,7 +5,7 @@ decider.decide on Ferino's seeded demo (the bm_shop fixture, seeded on the case 
 through egress (pseudonymised, rule 6), with today pinned to TODAY, never the run date. A case
 acts as the agent for a seeded person with the case's role (clerk Ana, supervisor Marites, owner
 Rosa). MIA_EVAL_HALVES picks the halves (default "tune,gate"; "tune" for a tuning run, "gate"
-for the gate run). Each result keeps Jev's own pick (raw_action), the item by name, the
+for the gate run); the spent gate half of run 1 is never run. Each result keeps Jev's own pick (raw_action), the item by name, the
 strategy's name key, the seconds and the usage-row tokens. The gate reads the gate half only;
 the tune half is for tuning the action descriptions."""
 
@@ -53,8 +53,8 @@ def _report_path(now: dt.datetime, folder: Path = RESEARCH) -> Path:
 
 
 def _selected(cases: list[Case], halves: str) -> list[Case]:
-    """The cases of the named halves (comma-separated)."""
-    wanted = set(halves.split(","))
+    """The cases of the named halves (comma-separated); the spent gate half never."""
+    wanted = set(halves.split(",")) - {"spent"}
     return [c for c in cases if c.half in wanted]
 
 

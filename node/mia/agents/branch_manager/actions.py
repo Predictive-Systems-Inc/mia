@@ -7,6 +7,7 @@ database in build_query and nothing after it."""
 
 import datetime as dt
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -35,7 +36,101 @@ KINDS = {
     NOT_STATED: "The message does not say.",
 }
 LEADS = {"supervisor", "owner", "admin"}  # the senders who are offered the branch's people
-CODE_WORD = re.compile(r"\b\w{2,6}\b")
+CODE_WORD = re.compile(r"\w{2,6}")  # a whole token: "bag-o" and "i-set" are no code
+MAX_CODES = 4
+# Words that are never a new short code: the short function words of the six gated languages and
+# the words that ask for a code. ponytail: a fixed list, a longer word loses on length instead;
+# a per-language word list if a real code ever collides with one.
+NOT_CODES = frozenset(
+    [
+        "an",
+        "as",
+        "at",
+        "be",
+        "by",
+        "do",
+        "for",
+        "go",
+        "if",
+        "in",
+        "is",
+        "it",
+        "me",
+        "my",
+        "no",
+        "of",
+        "on",
+        "or",
+        "so",
+        "the",
+        "to",
+        "up",
+        "us",
+        "we",
+        "use",
+        "set",
+        "new",
+        "add",
+        "get",
+        "let",
+        "put",
+        "can",
+        "and",
+        "are",
+        "not",
+        "our",
+        "you",
+        "give",
+        "make",
+        "should",
+        "ang",
+        "ng",
+        "sa",
+        "si",
+        "ni",
+        "na",
+        "at",
+        "ay",
+        "ko",
+        "mo",
+        "ka",
+        "kay",
+        "para",
+        "po",
+        "ba",
+        "pa",
+        "din",
+        "rin",
+        "mga",
+        "nga",
+        "ito",
+        "nang",
+        "og",
+        "ug",
+        "ta",
+        "mi",
+        "isip",
+        "sang",
+        "kag",
+        "han",
+        "hin",
+        "ha",
+        "ngan",
+        "hi",
+        "kan",
+        "nin",
+        "asin",
+        "code",
+        "codes",
+        "short",
+        "nickname",
+        "palayaw",
+        "angga",
+        "type",
+        "item",
+        "items",
+    ]
+)
 
 
 def _label(action: str) -> str:
@@ -66,13 +161,17 @@ ACTIONS: dict[str, Action] = {
     ),
     "propose_experiment": Action(
         "The sender wants to try a price, a promo or a bundle on an item for a while to see"
-        " whether it sells better (subukan natin 49 ang classic, test a promo, i-try natin ang"
-        " 3 for 120, what can we promote, ano ang pwede nating i-promo). Any message that"
-        " tests, tries or promotes an item at a price is this action: a price for a few weeks"
-        " (dalawang linggo, duha ka semana), a message starting with experiment, several pieces"
-        " for one price (3 Classic sa 110, 2 kape sa 45), a bundle or combo at a price, a"
-        " higher price for an item that sells out (subukan, sulayan, tilawan, testingan,"
-        " probaran, i-test, i-promo, i-trial). A trial, not a permanent price change.",
+        " whether it sells better: a changed price or offer on one item for some days, with or"
+        " without the word test (subukan natin 49 ang classic, test a promo, i-try natin ang"
+        " 3 for 120, what can we promote, ano ang pwede nating i-promo). The typed shapes:"
+        " <verb> <price> <item> or <verb> <item> at <price>, the verb being try, test, trial,"
+        " experiment (subukan natin <price> ang <item>, sulayan nato og <price> ang <item>,"
+        " tilawan naton sang <price> ang <item>, testingan naton hin <price> an <item>,"
+        " probaran ta <price> an <item>, i-test ang <item> sa <price>, i-trial); several"
+        " pieces for one price (i-promo natin: 3 Classic sa 110, 2 kape sa 45); a bundle or"
+        " combo at a price; a higher price for an item that sells out; a price for a few weeks"
+        " (dalawang linggo, duha ka semana)."
+        " A trial, not a permanent price change.",
         "propose_experiment",
         ("item", "price", "start", "kind", "strategy"),
         _label("propose_experiment"),
@@ -97,7 +196,12 @@ ACTIONS: dict[str, Action] = {
     "change_price": Action(
         "The sender wants an item's price changed for good from a date (gawin nating 48 ang"
         " classic simula Lunes, change the price of special to 50 from November 1, taasan ang"
-        " presyo). A permanent change, not a trial.",
+        " presyo). The typed shapes: <make> <price> <item> from <date> or <item> <price> from"
+        " <date>, with no trial word (gawin nating <price> ang <item> simula <date>, himoon"
+        " nato nga <price> ang <item> sugod <date>, himuon naton nga <price> ang <item> umpisa"
+        " <date>, himoon naton nga <price> an <item> tikang <date>, gibohon tang <price> an"
+        " <item> poon <date>, new price for <item>: <price> from <date>). A permanent change,"
+        " not a trial.",
         "change_price",
         ("item", "price", "date"),
         _label("change_price"),
@@ -168,6 +272,23 @@ def _next_open_day(deps: AgentDeps) -> dt.date:
     return day
 
 
+def code_candidates(message: str, items: Sequence[RetailItem]) -> list[str]:
+    """The message's words that may be a new short code, most likely first, at most MAX_CODES:
+    a whole token of 2 to 6 letters or digits, not a number, not an item's code, not a word or part of an item's name
+    ("egg" of Salted egg), not a function word or a code word (NOT_CODES); shorter words first
+    (codes are short), then message order. Pure; Jev picks among them."""
+    taken = {c.casefold() for i in items for c in i.short_codes}
+    names = [i.name.casefold() for i in items]
+    tokens = (t.strip(".,:;!?\"'()") for t in message.casefold().split())
+    words = dict.fromkeys(t for t in tokens if CODE_WORD.fullmatch(t) and not t.isdigit())
+    kept = [
+        w
+        for w in words
+        if w not in taken and w not in NOT_CODES and not any(w in name for name in names)
+    ]
+    return sorted(kept, key=len)[:MAX_CODES]  # sorted is stable: message order within a length
+
+
 def build_query(
     deps: AgentDeps, message: str, previous_mia_message: str, *, message_id: str | None = None
 ) -> Query:
@@ -178,9 +299,7 @@ def build_query(
     rows = session.exec(
         select(RetailItem).where(RetailItem.active).where(here).order_by(col(RetailItem.sort_order))
     ).all()
-    taken = {c.casefold() for i in rows for c in i.short_codes}
-    words = [w for w in CODE_WORD.findall(message.casefold()) if not w.isdigit()]
-    codes = [w for w in dict.fromkeys(words) if w not in taken]
+    codes = code_candidates(message, rows)
     people: dict[str, str] = {}
     if set(deps.person.roles) & LEADS:
         staff = session.exec(
@@ -261,8 +380,10 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
             {**q.strategies, **unsaid},
         ),
         "code": _choice(
-            "Which word of `codes` in the state is the new short code? Each option is a"
-            " position in `codes`, the first being 1.",
+            "Which word of `codes` in the state is the new short code the sender gives the"
+            " item? Each option is a position in `codes`, the first being 1; the most likely"
+            " word is listed first. When the sender asks for a short code, one of these words"
+            " is it: answer not stated only when the message names no new code.",
             {**{c: f"Word {i + 1} of `codes`" for i, c in enumerate(q.codes)}, **unsaid},
         ),
         "keep": {
