@@ -12,15 +12,17 @@ TaxFigure row per branch, regime and quarter; each is written with its send, and
 leaves no marker (checked again on the next tick). Only the count reminder is urgent; the rest
 wait out quiet hours in deliver. The profit and the tax figure run the tools as each lead, so
 rbac decides what they read (the payslip totals need read_all) and a denied lead is skipped.
-Each branch commits alone (alerts._each_branch). The short-or-over alert is sent by
+Each branch commits alone (alerts._each_branch), and each sender inside it is isolated
+(_isolated: an error is logged as {id}.due_failed, the other senders' work is kept). The short-or-over alert is sent by
 tools.record_cash_count when the count is typed.
 """
 
 import datetime as dt
+import logging
+from collections.abc import Callable
 
 from sqlmodel import Session, col, select
 
-from mia.agents.base import AgentDeps
 from mia.agents.bookkeeper import MANIFEST, calc, replies, tax, tools
 from mia.agents.bookkeeper.models import CashCount, TaxFigure
 from mia.agents.sales_supervisor import due as sales_due
@@ -28,7 +30,7 @@ from mia.agents.sales_supervisor.tools import _currency
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import Block, TextBlock
 from mia.chat.channels import notify
-from mia.core import approvals, orgconfig, store
+from mia.core import approvals, events, orgconfig, store
 from mia.core.db import utcnow
 from mia.core.ids import new_id
 from mia.core.models import Actor, Approval, Branch, Message, Person
@@ -44,6 +46,8 @@ COUNT_REMINDED = f"{MANIFEST.id}.count_reminded"
 PETTY_REMINDED = f"{MANIFEST.id}.petty_reminded"
 UNDEPOSITED_REMINDED = f"{MANIFEST.id}.undeposited_reminded"
 PROFIT_SENT = f"{MANIFEST.id}.profit_sent"
+DUE_FAILED = f"{MANIFEST.id}.due_failed"
+log = logging.getLogger(__name__)
 Hours = retail_hours.Hours
 
 # ---- what is due (pure) ---------------------------------------------------------------------
@@ -106,25 +110,8 @@ def _once_each(people: list[Person]) -> list[Person]:
     return list({p.id: p for p in people}.values())
 
 
-def _deps(session: Session, person: Person, day: dt.date) -> AgentDeps | None:
-    """The lead acting from their own branch on day, so the tools' rbac checks apply (another
-    branch needs read_all); None when their branch row is gone (the lead is skipped)."""
-    branch = session.get(Branch, person.branch_id)
-    if branch is None:
-        return None
-    return AgentDeps(
-        session=session,
-        actor=Actor.person(person).as_agent(MANIFEST.roles.agent_role),
-        person=person,
-        branch=branch,
-        organisation_id=branch.organisation_id,
-        today=day,
-        lang=_lang(person),
-        manifest=MANIFEST,
-    )
-
-
-def _names(session: Session, organisation_id: str) -> replies.Names:
+def names(session: Session, organisation_id: str) -> replies.Names:
+    """The organisation's branch names by id."""
     stmt = select(Branch).where(Branch.organisation_id == organisation_id)
     return {b.id: b.name for b in session.exec(stmt)}
 
@@ -211,17 +198,17 @@ def _profit(session: Session, branch: Branch, day: dt.date) -> list[Message]:
     checked) to the leads, sensitive: the payroll total never reaches the chain."""
     month = (day.replace(day=1) - ONE_DAY).replace(day=1)
     args = tools.ProfitInput(month=month, branch_id=branch.id)
-    names = _names(session, branch.organisation_id)
+    by_id = names(session, branch.organisation_id)
     sent = []
     for person in alerts.leads(session, branch.organisation_id):
-        deps = _deps(session, person, day)
+        deps = tools.person_deps(session, person, day)
         if deps is None:
             continue
         try:
             out = tools.monthly_profit(deps, args, new_id())
         except PermissionDenied:
             continue
-        text = replies.profit_text(out, names, _lang(person))
+        text = replies.profit_text(out, by_id, _lang(person))
         sent.append(_send(session, branch, person, text, sensitive=True))
     return sent
 
@@ -238,11 +225,11 @@ def _quarter(session: Session, branch: Branch, day: dt.date, start: dt.date) -> 
     )
     if session.exec(stmt).first() is not None:
         return 0
-    names = _names(session, branch.organisation_id)
+    by_id = names(session, branch.organisation_id)
     figure: tools.TaxOut | None = None
     sent = 0
     for person in alerts.leads(session, branch.organisation_id):
-        deps = _deps(session, person, day)
+        deps = tools.person_deps(session, person, day)
         if deps is None:
             continue
         try:
@@ -252,7 +239,7 @@ def _quarter(session: Session, branch: Branch, day: dt.date, start: dt.date) -> 
         mine = [b for b in out.branches if b.branch_id == branch.id]
         if not mine:
             continue
-        text = replies.tax_text(tools.TaxOutput(branches=mine), names, _lang(person))
+        text = replies.tax_text(tools.TaxOutput(branches=mine), by_id, _lang(person))
         _send(session, branch, person, text)
         figure, sent = mine[0], sent + 1
     if figure is not None:
@@ -294,25 +281,57 @@ def close_undecided(session: Session, branch: Branch, now: dt.datetime) -> int:
 # ---- the tick -------------------------------------------------------------------------------
 
 
+def _isolated(session: Session, branch: Branch, sender: str, send: Callable[[], int]) -> int:
+    """send()'s count; an error is logged (event {id}.due_failed with the sender and the error)
+    and counts 0, so one sender's error keeps the other senders' sends and markers in the
+    branch's transaction. A sender that failed after a send leaves no marker and is tried
+    again on the next tick."""
+    try:
+        return send()
+    except Exception as exc:
+        log.exception("%s failed for branch %s", sender, branch.id)
+        after = {"sender": sender, "error": repr(exc)}
+        events.emit(
+            session, DUE_FAILED, ("branch", branch.id), None, after, Actor.system(branch.id)
+        )
+        return 0
+
+
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
     hours = retail_hours.load(session, branch.id)
-    count = close_undecided(session, branch, now)
+    count = _isolated(
+        session, branch, "close_undecided", lambda: close_undecided(session, branch, now)
+    )
     day = closing(branch, hours, now)
     if day is not None and not alerts._marked(session, COUNT_REMINDED, branch.id, day):
-        sent = _count_reminder(session, branch, day)
-        count += _marked_send(session, branch, COUNT_REMINDED, day, sent)
+        closed = day
+        count += _isolated(
+            session,
+            branch,
+            "count_reminder",
+            lambda: _marked_send(
+                session, branch, COUNT_REMINDED, closed, _count_reminder(session, branch, closed)
+            ),
+        )
     today = morning(branch, hours, now)
     if today is None:
         return count
-    count += _balance_reminders(session, branch, today)
+    on = today
+    count += _isolated(session, branch, "balances", lambda: _balance_reminders(session, branch, on))
     month = today.replace(day=1)
     if second_open_day(branch, hours, now) and not alerts._marked(
         session, PROFIT_SENT, branch.id, month
     ):
-        count += _marked_send(session, branch, PROFIT_SENT, month, _profit(session, branch, today))
+        count += _isolated(
+            session,
+            branch,
+            "profit",
+            lambda: _marked_send(session, branch, PROFIT_SENT, month, _profit(session, branch, on)),
+        )
     quarter = quarter_due(branch, hours, now)
     if quarter is not None:
-        count += _quarter(session, branch, today, quarter[0])
+        first = quarter[0]
+        count += _isolated(session, branch, "quarter", lambda: _quarter(session, branch, on, first))
     return count
 
 

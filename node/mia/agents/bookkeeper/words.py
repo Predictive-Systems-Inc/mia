@@ -14,21 +14,20 @@ PLATFORMS = ("grab", "foodpanda")
 CATEGORIES = ("utilities", "rent", "supplies", "transport", "repairs", "other")
 BANKS = (
     "bdo", "bpi", "metrobank", "landbank", "unionbank", "security_bank", "chinabank", "pnb",
-    "rcbc", "petty",
-)  # fmt: skip
+    "rcbc",
+)  # fmt: skip  # a petty refill is record_petty kind refill, never a deposit
 PERIODS = (
     "today", "yesterday", "this_week", "last_week", "this_month", "last_month", "this_quarter",
     "last_quarter",
 )  # fmt: skip
 
-# The words that name a bank, folded to its BANKS value. "petty" is the petty box (a refill is a
-# deposit into it).
+# The words that name a bank, folded to its BANKS value.
 BANK_WORDS = {
     "bdo": "bdo", "banco de oro": "bdo", "bpi": "bpi", "metrobank": "metrobank",
     "metro bank": "metrobank", "landbank": "landbank", "land bank": "landbank", "lbp": "landbank",
     "unionbank": "unionbank", "union bank": "unionbank", "security bank": "security_bank",
     "secbank": "security_bank", "chinabank": "chinabank", "china bank": "chinabank",
-    "pnb": "pnb", "rcbc": "rcbc", "petty": "petty",
+    "pnb": "pnb", "rcbc": "rcbc",
 }  # fmt: skip
 _BANK = re.compile(
     r"\b(" + "|".join(sorted(map(re.escape, BANK_WORDS), key=len, reverse=True)) + r")\b",
@@ -116,6 +115,33 @@ def corrected(text: str, lang: str) -> bool:
     first = text.strip().split(maxsplit=1)[:1]
     opens = bool(first) and first[0].strip(".,!?;:").casefold() in NEGATION_WORDS
     return _drop_negated(text)[1] or (opens and bool(amounts(text, lang)))
+
+
+# The words that name a closing cash count, per language (the default for any other). In ceb
+# and hil "pagsira" and "sirado" are the closing; in fil "pagsira" means breaking, so it is not
+# one there.
+_COUNT_COMMON = frozenset(
+    [
+        "cash count",
+        "closing",
+        "bilang ng pera",
+        "ihap sa kwarta",
+        "isip sang kwarta",
+        "kuwenta sa drawer",
+    ]
+)
+COUNT_WORDS: dict[str, frozenset[str]] = {
+    "ceb": _COUNT_COMMON | {"pagsira", "sirado"},
+    "hil": _COUNT_COMMON | {"pagsira", "sirado"},
+}
+
+
+def says_count(text: str, lang: str) -> bool:
+    """True when the text holds a COUNT_WORDS word or phrase of the language, whole words."""
+    folded = " ".join(w.strip(".,!?;:").casefold() for w in text.split())
+    return any(
+        re.search(rf"\b{re.escape(w)}\b", folded) for w in COUNT_WORDS.get(lang, _COUNT_COMMON)
+    )
 
 
 REFILL_WORDS = frozenset(["refill", "replenish", "dagdag", "lagay", "nilagay", "punan"])

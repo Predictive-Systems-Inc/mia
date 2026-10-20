@@ -282,3 +282,29 @@ def test_nothing_runs_when_the_org_does_not_use_the_bookkeeper(
 ) -> None:
     assert _tick(session, bk_pin, at(BK_TODAY, 22, 5)) == 0
     assert notifications(session, bk_en[1]["Marites"]) == []
+
+
+def test_the_closing_count_reminder_is_in_filipino(
+    session: Session, bk: Ferinos, bk_pin: Pin
+) -> None:
+    marites = bk[1]["Marites"]
+    assert marites.language == "fil"
+    _tick(session, bk_pin, at(BK_TODAY, 22, 5))
+    assert texts(session, marites) == [t("bk.count.reminder", "fil")]
+    assert t("bk.count.reminder", "fil") != t("bk.count.reminder", EN)
+
+
+def test_one_senders_error_keeps_the_other_sends_and_markers(
+    session: Session, bk_en: Ferinos, bk_pin: Pin, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(session: Session, branch: Branch, day: dt.date) -> int:
+        raise LookupError("no currency")
+
+    monkeypatch.setattr(due, "_balance_reminders", broken)
+    _tick(session, bk_pin, at(dt.date(2026, 11, 2), 9, 10))  # the month's second open day
+    head = t("bk.profit.head", EN, month="2026-10")
+    assert any(head in m for m in texts(session, bk_en[1]["Rosa"]))
+    assert alerts._marked(session, due.PROFIT_SENT, bk_en[0].id, dt.date(2026, 11, 1))
+    failed = session.exec(select(Event).where(Event.action == due.DUE_FAILED)).all()
+    assert {(e.after or {}).get("sender") for e in failed} == {"balances"}
+    assert all("no currency" in (e.after or {})["error"] for e in failed)

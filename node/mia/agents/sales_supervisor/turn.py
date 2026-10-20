@@ -174,6 +174,8 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     item_missing = (decision.missing or "").startswith("item_")
     if action == "clarify" and item_missing and decision.confidence >= THRESHOLD:
         action = decision.raw_action  # the action is clear, one count's item is not
+    if action == "clarify" and decision.missing == "tender":
+        return reply_text(session, deps, thread, t("sales.ask.tender", deps.lang))
     if action == "clarify":
         return _did_you_mean(session, deps, thread, decision)
     spec = actions.ACTIONS.get(action)

@@ -78,3 +78,12 @@ def test_quarterly_vat_is_computed_from_the_journal_and_receipts() -> None:
         dt.date(2027, 1, 25),
     )
     assert tax.quarter_tax("vat", OCT_1, 112_000, input_tax=20_000).due == -8_000  # carried over
+
+
+def test_a_vat_excess_is_input_of_the_next_quarter() -> None:
+    q3 = tax.quarter_tax("vat", dt.date(2026, 7, 1), 112_000, input_tax=20_000)
+    assert q3.due == -8_000
+    q4 = tax.quarter_tax("vat", OCT_1, 224_000, input_tax=5_000, carried=-q3.due)
+    assert (q4.output_tax, q4.input_tax, q4.due) == (24_000, 13_000, 11_000)
+    assert tax.quarter_tax("vat", OCT_1, 224_000, 5_000, carried=-1).input_tax == 5_000
+    assert tax.quarter_tax("percentage", OCT_1, 100_000, 0, carried=8_000).due == 3_000

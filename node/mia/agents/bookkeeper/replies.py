@@ -114,7 +114,7 @@ def expense_waiting(
     approval_id: str, summary: str, args: ExpenseInput, currency: str, lang: str
 ) -> list[Block]:
     """The requester's reply: the large expense waits for the owner, with its card (amount,
-    category, receipt, status)."""
+    category, receipt, business date, source, status)."""
     card = ApprovalCardBlock(
         approval_id=approval_id, title=t("bk.expense.approval_title", lang), summary=summary
     )
@@ -122,6 +122,8 @@ def expense_waiting(
         "amount": money(args.amount, currency, lang),
         "category": t(f"bk.category.{args.category}", lang),
         "receipt": args.receipt_no or "",
+        "date": args.business_date.isoformat() if args.business_date else "",
+        "source": t(f"bk.source.{args.source}", lang),
     }
     card.fields = [
         CardField(label=t(f"bk.field.{k}", lang), value=v) for k, v in facts.items() if v

@@ -179,3 +179,45 @@ def test_the_expense_source_default_is_in_the_args(session: Session, bk: Ferinos
     q = query(session, bk[1]["Marites"], "paid 300 for ice")
     args, _ = decider._args("expense", reader(q, amount="p0", category="supplies"))
     assert args["source"] == "cash"
+
+
+def test_the_fixed_lists_match_their_descriptions_and_the_tool_literals() -> None:
+    from typing import get_args
+
+    from mia.agents.bookkeeper import tools
+
+    assert tuple(actions.PROVIDERS) == (*words.SETTLERS, *words.PLATFORMS)
+    assert tuple(actions.CATEGORIES) == words.CATEGORIES == get_args(tools.Category)
+    assert tuple(actions.BANK_NAMES) == words.BANKS == get_args(tools.Bank)
+    assert tuple(actions.PERIOD_NAMES) == words.PERIODS
+    assert tools.PETTY not in words.BANKS  # a refill is record_petty kind refill only
+
+
+def in_language(session: Session, who: Person, text: str, lang: str) -> actions.Query:
+    deps = dataclasses.replace(deps_for(session, who), lang=lang)
+    return actions.build_query(deps, text, "")
+
+
+def test_pagsira_with_an_amount_asks_count_or_expense_in_cebuano(
+    session: Session, bk: Ferinos
+) -> None:
+    q = in_language(session, bk[1]["Marites"], "Ihap sa pagsira 12,450", "ceb")
+    body = actions.build_request(q, "jev")
+    answers = answers_for(body, "expense", amount="p0", category="repairs")
+    d = decider.parse(answers, q)
+    assert (d.action, d.raw_action, d.missing) == ("clarify", "expense", None)
+    by_action = {a.action: a for a in d.alternatives}
+    assert set(by_action) == {"cash_count", "expense"}
+    assert by_action["cash_count"].args["counted"] == 1_245_000
+    assert by_action["expense"].args["amount"] == 1_245_000
+    assert all(a.missing is None for a in d.alternatives)
+
+
+def test_pagsira_in_filipino_stays_an_expense(session: Session, bk: Ferinos) -> None:
+    q = in_language(session, bk[1]["Marites"], "nagbayad ng 1,500 sa pagsira ng pinto", "fil")
+    answers = answers_for(
+        actions.build_request(q, "jev"), "expense", amount="p0", category="repairs"
+    )
+    d = decider.parse(answers, q)
+    assert (d.action, d.args["amount"], d.args["category"]) == ("expense", 150_000, "repairs")
+    assert not words.says_count("pagsira ng pinto", "fil") and words.says_count("sirado na", "hil")

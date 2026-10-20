@@ -122,6 +122,25 @@ def test_a_closing_count_compares_with_cash_sales(
     )
 
 
+def test_a_closing_count_is_answered_in_filipino(
+    session: Session, bk: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, bk_pin: Pin
+) -> None:
+    marites = bk[1]["Marites"]
+    assert marites.language == "fil"
+    bk_pin(at(BK_TODAY, 21, 20))
+    expected = counted_today(session, bk)
+    _answers(monkeypatch, "cash_count", amount="p0")
+    text = _turn(session, marites, f"bilang ng pera {(expected + 5_000) // 100}").text()
+    fil = functools.partial(replies.money, currency="PHP", lang="fil")
+    assert text == t(
+        "bk.count.within",
+        "fil",
+        counted=fil(expected + 5_000),
+        expected=fil(expected),
+        difference=fil(5_000),
+    )
+
+
 def test_a_short_beyond_the_threshold_tells_the_owner(
     session: Session, bk_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, bk_pin: Pin
 ) -> None:
@@ -381,6 +400,9 @@ def test_a_large_expense_needs_the_owner(
         == card.summary
         == t("bk.expense.summary", EN, amount=money(750_000), category=t("bk.category.repairs", EN))
     )
+    fields = {f.label: f.value for f in card.fields}
+    assert fields[t("bk.field.date", EN)] == approval.evidence["input"]["business_date"]
+    assert fields[t("bk.field.source", EN)] == t("bk.source.cash", EN)
     with pytest.raises(approvals.ApprovalError):
         decide(session, approval.id, bk_en[1]["Marites"], "approved")
     decide(session, approval.id, bk_en[1]["Rosa"], "approved")

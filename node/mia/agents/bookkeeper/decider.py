@@ -19,7 +19,7 @@ from mia.agents.bookkeeper.actions import (
     build_request,
     providers,
 )
-from mia.agents.decider import Decision, Reader
+from mia.agents.decider import Alternative, Decision, Reader
 
 
 def _amount(r: Reader) -> int | None:
@@ -109,13 +109,34 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     return {}, None  # balances, not_built, clarify
 
 
+COUNT_OR_EXPENSE = ("cash_count", "expense")
+
+
+def _count_or_expense(answers: dict[str, Any], q: Query, d: Decision) -> Decision:
+    """An expense pick in a message with a count word of its language and an amount: clarify
+    with the cash count and the expense as the alternatives, each with Jev's picked amount (an
+    alternative missing an input is not offered as a button)."""
+    probabilities = answers["action"].get("probabilities") or {}
+    alternatives = []
+    for action in COUNT_OR_EXPENSE:
+        args, missing = _args(action, Reader(answers, q))
+        p = float(probabilities.get(action, 0.0))
+        alternatives.append(Alternative(action=action, args=args, probability=p, missing=missing))
+    return d.model_copy(update={"action": "clarify", "missing": None, "alternatives": alternatives})
+
+
 def parse(answers: dict[str, Any], q: Query) -> Decision:
     """shared.parse; an action outside ACTIONS becomes clarify, keeping Jev's pick as
-    raw_action."""
+    raw_action. An expense pick with a count word of the message's language (words.says_count:
+    "pagsira" is the closing in ceb and hil) and an amount asks cash count or expense, never
+    writes."""
     top = answers.get("action")
     raw = str(top.get("choice")) if isinstance(top, dict) else ""
     if not isinstance(top, dict) or raw in ACTIONS:
-        return shared.parse(answers, q, actions=ACTIONS, args=_args)
+        d = shared.parse(answers, q, actions=ACTIONS, args=_args)
+        if d.raw_action == "expense" and q.amounts and words.says_count(q.message, q.lang):
+            return _count_or_expense(answers, q, d)
+        return d
     d = shared.parse(
         {**answers, "action": {**top, "choice": "clarify"}}, q, actions=ACTIONS, args=_args
     )

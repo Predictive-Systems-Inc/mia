@@ -11,6 +11,7 @@ from mia.agents.parsing import (
     menu_tokens,
     pre_parse,
     strip_times,
+    tenders_in,
     was_corrected,
 )
 from mia.templates.retail.seed import ITEMS as MENU
@@ -280,3 +281,5 @@ def test_the_count_parser_reads_a_tender_word() -> None:
         "foodpanda",
     )
     assert [g.words for g in pre_parse("g-cash 3 classic", {"classic"})[0]] == ["classic"]
+    assert tenders_in("gcash 2 grab 1 G-Cash") == ["gcash", "grab"]
+    assert tenders_in("3 classic") == []

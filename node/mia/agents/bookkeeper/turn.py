@@ -31,7 +31,7 @@ from mia.core import events, orgconfig
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
-from mia.core.models import Branch, Event, Message, Thread
+from mia.core.models import Event, Message, Thread
 from mia.core.rbac import get_rbac
 from mia.i18n import t
 from mia.settings import get_settings
@@ -141,11 +141,6 @@ def _clarify(session: Session, deps: AgentDeps, thread: Thread, decision: Decisi
     return _did_you_mean(session, deps, thread, decision)
 
 
-def _names(session: Session, deps: AgentDeps) -> replies.Names:
-    stmt = select(Branch).where(Branch.organisation_id == deps.organisation_id)
-    return {b.id: b.name for b in session.exec(stmt)}
-
-
 def _result(deps: AgentDeps, tool: str, inp: BaseModel, out: dict[str, Any]) -> str:
     """The reply text of one successful tool result (tool is the name without the agent
     prefix)."""
@@ -171,11 +166,11 @@ def _result(deps: AgentDeps, tool: str, inp: BaseModel, out: dict[str, Any]) -> 
         text = replies.journal_text(tools.JournalOut.model_validate(out), lang)
     elif tool == "tax_quarter":
         text = replies.tax_text(
-            tools.TaxOutput.model_validate(out), _names(deps.session, deps), lang
+            tools.TaxOutput.model_validate(out), due.names(deps.session, deps.organisation_id), lang
         )
     else:  # monthly_profit
         profit = tools.ProfitOutput.model_validate(out)
-        text = replies.profit_text(profit, _names(deps.session, deps), lang)
+        text = replies.profit_text(profit, due.names(deps.session, deps.organisation_id), lang)
     return text
 
 
@@ -237,13 +232,13 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
 
 
 def _todays_count(session: Session, deps: AgentDeps, args: dict[str, Any]) -> CashCount | None:
-    """The latest count of the decision's day (the stated day, else the branch's business
-    date when the message was said, as record_cash_count dates it) when the sender may read
-    counts, else None."""
+    """The latest count of the decision's day (the stated day, else tools.closing_date when
+    the message was said, as record_cash_count dates it) when the sender may read counts, else
+    None."""
     if not get_rbac().check(deps.actor, tools.CASH, "read"):
         return None
     said = _reported_at(deps, args.get("source_message_id"))
-    day = args.get("business_date") or retail_hours.business_date_at(
+    day = args.get("business_date") or tools.closing_date(
         deps.branch, retail_hours.load(session, deps.branch.id), said
     )
     stmt = (

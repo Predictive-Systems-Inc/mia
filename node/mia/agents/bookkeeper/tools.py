@@ -22,15 +22,21 @@ import datetime as dt
 from calendar import monthrange
 from collections import defaultdict
 from dataclasses import asdict
-from typing import Literal, get_args
+from typing import Literal
 
 from pydantic import BaseModel, Field
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, or_, select
 
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.bookkeeper import MANIFEST, calc, tax
-from mia.agents.bookkeeper.models import CashCount, Deposit, Expense, Payout, Settlement
-from mia.agents.bookkeeper.words import BANKS, CATEGORIES
+from mia.agents.bookkeeper.models import (
+    CashCount,
+    Deposit,
+    Expense,
+    Payout,
+    Settlement,
+    TaxFigure,
+)
 from mia.agents.sales_supervisor.tools import (
     COUNTS,
     ITEMS,
@@ -39,7 +45,9 @@ from mia.agents.sales_supervisor.tools import (
     _check,
     _count_day,
     _currency,
+    _hours,
     _live_counts,
+    _reported_at,
 )
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import TextBlock
@@ -73,13 +81,28 @@ def tender_sales(
     return sum(r.amount for r in rows if tender is None or r.tender == tender)
 
 
+def drawer_out(session: Session, branch_id: str) -> dict[dt.date, int]:
+    """The cash taken from the drawer per business date other than a bank deposit: cash spends
+    and petty refills (Q99 assumed: staff pay bills from the drawer). A closing count already
+    holds what left before it, so the count's expected cash and the undeposited balance both
+    use this one rule."""
+    out: dict[dt.date, int] = defaultdict(int)
+    for d in session.exec(select(Deposit).where(Deposit.branch_id == branch_id)):
+        if d.bank == PETTY:
+            out[d.business_date] += d.amount
+    for e in session.exec(select(Expense).where(Expense.branch_id == branch_id)):
+        if e.source == "cash":
+            out[e.business_date] += e.amount
+    return dict(out)
+
+
 def balance_days(
     session: Session, branch_id: str, upto: dt.date
 ) -> tuple[dict[dt.date, int], dict[dt.date, int]]:
     """The petty and undeposited cash balances after each business date with a movement up to
     upto (calc.running). Petty: refills (deposits to bank petty) less petty spends.
-    Undeposited: counted cash (the latest count of a date wins) less every deposit, petty
-    refills included, less cash spends."""
+    Undeposited: counted cash (the latest count of a date wins) less every bank deposit, less
+    drawer_out on a date without a count (a count already holds what left before it)."""
     counts = session.exec(
         select(CashCount)
         .where(CashCount.branch_id == branch_id)
@@ -90,14 +113,17 @@ def balance_days(
     out_cash: dict[dt.date, int] = defaultdict(int)
     out_petty: dict[dt.date, int] = defaultdict(int)
     for d in session.exec(select(Deposit).where(Deposit.branch_id == branch_id)):
-        out_cash[d.business_date] += d.amount
         if d.bank == PETTY:
             refills[d.business_date] += d.amount
+        else:
+            out_cash[d.business_date] += d.amount
     for e in session.exec(select(Expense).where(Expense.branch_id == branch_id)):
-        if e.source == "cash":
-            out_cash[e.business_date] += e.amount
-        elif e.source == PETTY:
+        if e.source == PETTY:
             out_petty[e.business_date] += e.amount
+    # ponytail: what leaves the drawer after a date's count is missed; a timestamp cut if it matters
+    for day, amount in drawer_out(session, branch_id).items():
+        if day not in counted:
+            out_cash[day] += amount
     return calc.running(refills, out_petty, upto), calc.running(counted, out_cash, upto)
 
 
@@ -123,9 +149,8 @@ def expenses_by_category(
 Category = Literal["utilities", "rent", "supplies", "transport", "repairs", "other"]
 Bank = Literal[
     "bdo", "bpi", "metrobank", "landbank", "unionbank", "security_bank", "chinabank", "pnb",
-    "rcbc", "petty",
-]  # fmt: skip
-assert get_args(Category) == CATEGORIES and get_args(Bank) == BANKS  # the fixed lists, once
+    "rcbc",
+]  # fmt: skip  # a petty refill is record_petty kind refill, never a deposit
 
 LARGE_EXPENSE = f"{MANIFEST.id}.record_large_expense"
 CASH = Resource(kind="data", name=CashCount.__tablename__)
@@ -136,6 +161,7 @@ DEPOSITS = Resource(kind="data", name=Deposit.__tablename__)
 PAYSLIPS = Resource(kind="data", name=Payslip.__tablename__)
 ORDERS = Resource(kind="data", name=SupplierOrder.__tablename__)
 STOCK = Resource(kind="data", name=StockEvent.__tablename__)
+TAX = Resource(kind="data", name=TaxFigure.__tablename__)
 DEFAULT_LANGUAGE = "en"
 
 
@@ -226,17 +252,45 @@ class CashCountOut(BaseModel):
     currency: str
 
 
+def closing_date(branch: Branch, hours: retail_hours.Hours, said: dt.datetime) -> dt.date:
+    """The business date of a closing count said at `said`: the closing's date from its close
+    until the next opening (retail_hours.after_close, the window the count reminder asks in),
+    else the branch's business date (the late-report rule)."""
+    day = retail_hours.after_close(branch, hours, said, dt.timedelta(0))
+    return day or retail_hours.business_date_at(branch, hours, said)
+
+
+def _closing_day(deps: AgentDeps, args: CashCountInput, tool_call_id: str) -> dt.date:
+    """closing_date when no day is stated (after the branch-hours read check), else
+    _count_day's stated today or yesterday."""
+    if args.business_date is not None:
+        return _count_day(deps, args.business_date, args.source_message_id, tool_call_id)
+    said = _reported_at(deps, args.source_message_id)
+    return closing_date(deps.branch, _hours(deps, deps.branch.id, tool_call_id), said)
+
+
 def record_cash_count(deps: AgentDeps, args: CashCountInput, tool_call_id: str) -> CashCountOut:
-    """Store the closing count of the business date (the branch's clock, or a stated today or
-    yesterday; event bookkeeper.cash_counted) against the date's cash sales. A difference over
-    the threshold tells the owners and admins, urgent. Raises LookupError("business_date")
-    for another stated day."""
+    """Store the closing count of the business date (closing_date, or a stated today or
+    yesterday; event bookkeeper.cash_counted) against the date's cash sales less drawer_out.
+    A difference over the threshold tells the owners and admins, urgent; a count that replaces
+    a flagged one tells them first that the earlier alert is withdrawn. Raises
+    LookupError("business_date") for another stated day."""
     _check(deps, CASH, "write", tool_call_id)
     _check(deps, COUNTS, "read", tool_call_id)
-    day = _count_day(deps, args.business_date, args.source_message_id, tool_call_id)
-    expected = tender_sales(deps.session, deps.branch.id, "cash", day, day)
-    m = calc.match(args.counted, expected, 0, _settings().threshold)
+    _read(deps, [deps.branch], [CASH, EXPENSES, DEPOSITS], tool_call_id)
+    day = _closing_day(deps, args, tool_call_id)
+    expected = tender_sales(deps.session, deps.branch.id, "cash", day, day) - drawer_out(
+        deps.session, deps.branch.id
+    ).get(day, 0)
+    threshold = _settings().threshold
+    m = calc.match(args.counted, expected, 0, threshold)
     currency = _currency(deps.session, deps.branch.id)
+    earlier = deps.session.exec(
+        select(CashCount)
+        .where(CashCount.branch_id == deps.branch.id)
+        .where(CashCount.business_date == day)
+        .order_by(col(CashCount.created_at).desc(), col(CashCount.id).desc())
+    ).first()
     row = store.insert(
         deps.session,
         CashCount(
@@ -252,6 +306,16 @@ def record_cash_count(deps: AgentDeps, args: CashCountInput, tool_call_id: str) 
         action=f"{MANIFEST.id}.cash_counted",
         tool_call_id=tool_call_id,
     )
+    if earlier is not None and abs(earlier.difference) > threshold:
+        for lead in alerts.leads(deps.session, deps.organisation_id):
+            _tell(
+                deps.session,
+                lead,
+                "bk.count.withdrawn",
+                branch=deps.branch.name,
+                date=day.isoformat(),
+                counted=_money(args.counted, currency, lead),
+            )
     if m.flagged:
         key, side = (
             ("bk.count.short_owner", "short") if m.gap < 0 else ("bk.count.over_owner", "over")
@@ -496,10 +560,17 @@ def record_expense(deps: AgentDeps, args: ExpenseInput, tool_call_id: str) -> Ex
 
 
 def _approved(deps: AgentDeps) -> Approval | None:
-    """The approved record_large_expense approval among deps.approved, if any."""
+    """The approved record_large_expense approval among deps.approved that this person asked
+    for on this branch, if any."""
     for approval_id in sorted(deps.approved):
         row = deps.session.get(Approval, approval_id)
-        if row is not None and row.type == LARGE_EXPENSE and row.status == "approved":
+        if (
+            row is not None
+            and row.type == LARGE_EXPENSE
+            and row.status == "approved"
+            and row.requester_on_behalf_of == deps.person.id
+            and row.branch_id == deps.branch.id
+        ):
             return row
     return None
 
@@ -520,6 +591,28 @@ def record_large_expense(deps: AgentDeps, args: ExpenseInput, tool_call_id: str)
     return _expense_out(deps, row)
 
 
+def person_deps(
+    session: Session, person: Person, day: dt.date, approved: frozenset[str] = frozenset()
+) -> AgentDeps | None:
+    """The person acting from their own branch on day as the bookkeeper's agent role, so the
+    tools' rbac checks apply (another branch needs read_all); None when their branch row is
+    gone."""
+    branch = session.get(Branch, person.branch_id)
+    if branch is None:
+        return None
+    return AgentDeps(
+        session=session,
+        actor=Actor.person(person).as_agent(MANIFEST.roles.agent_role),
+        person=person,
+        branch=branch,
+        organisation_id=branch.organisation_id,
+        today=day,
+        lang=person.language or DEFAULT_LANGUAGE,
+        manifest=MANIFEST,
+        approved=set(approved),
+    )
+
+
 def _requester_deps(session: Session, approval: Approval) -> AgentDeps:
     """The requester's deps on their branch's business date now, with the approval approved."""
     person = session.get(Person, approval.requester_on_behalf_of or "")
@@ -527,17 +620,9 @@ def _requester_deps(session: Session, approval: Approval) -> AgentDeps:
     if person is None or branch is None:
         raise LookupError("the requester")
     today = retail_hours.business_date_at(branch, retail_hours.load(session, branch.id), utcnow())
-    return AgentDeps(
-        session=session,
-        actor=Actor.person(person).as_agent(MANIFEST.roles.agent_role),
-        person=person,
-        branch=branch,
-        organisation_id=branch.organisation_id,
-        today=today,
-        lang=person.language or DEFAULT_LANGUAGE,
-        manifest=MANIFEST,
-        approved={approval.id},
-    )
+    deps = person_deps(session, person, today, frozenset([approval.id]))
+    assert deps is not None  # the branch row was read above
+    return deps
 
 
 def _requested(approval: Approval) -> ExpenseInput:
@@ -560,7 +645,7 @@ def apply_expense_approval(session: Session, approval: Approval, decider: Actor)
     them. Raises LookupError (nothing is written; the decide route answers 409)."""
     deps = _requester_deps(session, approval)
     args = _requested(approval)
-    tool_call_id = str(approval.evidence.get("tool_call_id"))
+    tool_call_id = str(approval.evidence.get("tool_call_id") or approval.id)
     if args.amount <= _settings().expense_limit:
         raise LookupError("under_limit")
     if args.business_date is None or args.business_date > _business_day(
@@ -695,9 +780,9 @@ class DepositOut(BaseModel):
 
 
 def record_deposit(deps: AgentDeps, args: DepositInput, tool_call_id: str) -> DepositOut:
-    """Cash taken from the drawer to a bank (or to the petty box) on the business date (the
-    branch's clock, or a stated today or yesterday; event bookkeeper.deposit_recorded), with
-    the undeposited cash after it. Raises LookupError("business_date") for another day."""
+    """Cash taken from the drawer to a bank (a petty refill is record_petty) on the business
+    date (the branch's clock, or a stated today or yesterday; event bookkeeper.deposit_recorded),
+    with the undeposited cash after it. Raises LookupError("business_date") for another day."""
     _check(deps, DEPOSITS, "write", tool_call_id)
     _read(deps, [deps.branch], [CASH, EXPENSES, DEPOSITS], tool_call_id)
     day = _count_day(deps, args.business_date, None, tool_call_id)
@@ -813,18 +898,34 @@ def _input_vat(session: Session, branch_id: str, start: dt.date, end: dt.date) -
     return sum(v or 0 for v in session.exec(stmt))
 
 
+def _carried(session: Session, branch_id: str, regime: str, start: dt.date) -> int:
+    """The excess of the quarter before `start`: minus the due of its TaxFigure row (written by
+    the due work) when negative, else 0."""
+    previous = tax.quarter_of(start - dt.timedelta(days=1))[0]
+    stmt = (
+        select(TaxFigure.due)
+        .where(TaxFigure.branch_id == branch_id)
+        .where(TaxFigure.regime == regime)
+        .where(TaxFigure.period_start == previous)
+    )
+    due = session.exec(stmt).first()
+    return max(0, -due) if due is not None else 0
+
+
 def tax_quarter(deps: AgentDeps, args: TaxInput, tool_call_id: str) -> TaxOutput:
     """The quarter's VAT or percentage tax figure (the regime from settings, tax.quarter_tax)
     per branch: every branch the person may read_all, else their own. Input VAT comes from the
-    quarter's expenses."""
-    branches = _all_or_own(deps, [COUNTS, EXPENSES], tool_call_id)
+    quarter's expenses plus the previous quarter's excess (_carried)."""
+    branches = _all_or_own(deps, [COUNTS, EXPENSES, TAX], tool_call_id)
     day = args.quarter_start or _business_day(deps, deps.branch, tool_call_id)
     start, end = tax.quarter_of(day)
     regime = _settings().tax_regime
     out = []
     for branch in branches:
         gross = tender_sales(deps.session, branch.id, None, start, end)
-        q = tax.quarter_tax(regime, start, gross, _input_vat(deps.session, branch.id, start, end))
+        typed = _input_vat(deps.session, branch.id, start, end)
+        carried = _carried(deps.session, branch.id, regime, start)
+        q = tax.quarter_tax(regime, start, gross, typed, carried)
         out.append(
             TaxOut(
                 branch_id=branch.id,
@@ -896,7 +997,8 @@ def _at_cost(
 ) -> tuple[int | None, int]:
     """Cost of goods (units sold times cost; None while any sold item has no cost) and item
     waste at cost (an item without a cost adds nothing)."""
-    costs = {i.id: i.cost for i in session.exec(select(RetailItem))}
+    mine = or_(col(RetailItem.branch_id) == branch_id, col(RetailItem.branch_id).is_(None))
+    costs = {i.id: i.cost for i in session.exec(select(RetailItem).where(mine))}
     sold = [(r.item_id, r.quantity) for r in _live_counts(session, [branch_id], start, end)]
     known = all(costs.get(i) is not None for i, q in sold if q)
     goods = sum(q * (costs.get(i) or 0) for i, q in sold) if known else None

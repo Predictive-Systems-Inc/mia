@@ -91,11 +91,16 @@ def _tender(tok: str) -> str | None:
     return TENDER_WORDS.get(tok.strip(".!?;:\"'()"))
 
 
+def tenders_in(text: str) -> list[str]:
+    """The tenders the text names (TENDER_WORDS folded to its tender), in text order, each
+    once. Pure."""
+    return list(dict.fromkeys(t for tok in _tokens(text) if (t := _tender(tok)) is not None))
+
+
 def find_tender(text: str) -> str | None:
-    """The one tender the text names (TENDER_WORDS folded to its tender), None when it names
-    none or two different ones. Pure."""
-    named = {t for tok in _tokens(text) if (t := _tender(tok)) is not None}
-    return named.pop() if len(named) == 1 else None
+    """The one tender the text names, None when it names none or two different ones. Pure."""
+    named = tenders_in(text)
+    return named[0] if len(named) == 1 else None
 
 
 def was_corrected(text: str) -> bool:

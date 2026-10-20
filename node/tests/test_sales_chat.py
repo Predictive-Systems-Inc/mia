@@ -121,6 +121,21 @@ def test_a_count_is_recorded_and_echoed(
     } >= {said.id}
 
 
+def test_two_tenders_in_one_count_ask_and_record_nothing(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    sp, cl = _item(session, "Special"), _item(session, "Classic")
+    _answers(monkeypatch, "report_sales", item_0=sp, item_1=cl, conversation="other")
+    before = len(_counted(session))
+    reply = _turn(session, people["Ana"], "3 sp gcash 5 cl cash")
+    assert reply.text() == t("sales.ask.tender", people["Ana"].language or "en")
+    assert len(_counted(session)) == before  # never booked as cash
+    _turn(session, people["Ana"], "3 sp gcash")
+    stmt = select(SalesCount).where(SalesCount.reported_by == people["Ana"].id)
+    assert any(r.tender == "gcash" for r in session.exec(stmt))  # one tender still records
+
+
 def test_today_so_far_is_the_running_total(
     session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

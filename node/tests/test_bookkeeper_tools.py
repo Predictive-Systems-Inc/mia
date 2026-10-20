@@ -13,7 +13,14 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, call_tool
 from mia.agents.bookkeeper import MANIFEST, calc, tools
-from mia.agents.bookkeeper.models import CashCount, Deposit, Expense, Payout, Settlement
+from mia.agents.bookkeeper.models import (
+    CashCount,
+    Deposit,
+    Expense,
+    Payout,
+    Settlement,
+    TaxFigure,
+)
 from mia.agents.bookkeeper.tools import (
     BalancesInput,
     CashCountInput,
@@ -25,7 +32,8 @@ from mia.agents.bookkeeper.tools import (
     SettlementInput,
     TaxInput,
 )
-from mia.core import approvals, orgconfig
+from mia.core import approvals, orgconfig, store
+from mia.core.db import utcnow
 from mia.core.models import (
     Actor,
     Approval,
@@ -37,7 +45,9 @@ from mia.core.models import (
     SalesCount,
     Thread,
 )
+from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied
+from mia.i18n import t
 from tests.conftest import BK_TODAY, Pin
 from tests.test_sales_tools import stall
 
@@ -293,6 +303,30 @@ def test_the_approval_checks_the_limit_again(
     assert len(told(session, bk[1]["Marites"])) == 1  # bk.expense.expired
 
 
+def test_a_large_expense_expiring_at_the_decision_tells_the_requester(
+    session: Session, bk: Ferinos
+) -> None:
+    out = expense(session, bk[1]["Marites"], 750_000)
+    row = session.get(Approval, out["approval_id"])
+    assert row is not None
+    system, past = Actor.system(row.branch_id), {"expires_at": utcnow() - dt.timedelta(seconds=1)}
+    row = approvals.expire_if_due(session, store.update(session, row, past, system), system)
+    assert row.status == "escalated"
+    store.update(session, row, past, system)  # past the escalation's TTL too
+    with pytest.raises(approvals.ApprovalError, match="expired"):
+        decide(session, row.id, bk[1]["Rosa"], "approved")
+    marites = bk[1]["Marites"]
+    lang = marites.language or "en"
+    expired = t(
+        "bk.expense.expired",
+        lang,
+        amount=format_money(750_000, "PHP", lang),
+        category=t("bk.category.repairs", lang),
+    )
+    assert told(session, marites) == [expired]
+    assert session.exec(select(Expense).where(Expense.approval_id == row.id)).all() == []
+
+
 def test_a_rejected_large_expense_writes_nothing_and_tells_the_requester(
     session: Session, bk: Ferinos
 ) -> None:
@@ -305,11 +339,53 @@ def test_a_rejected_large_expense_writes_nothing_and_tells_the_requester(
 def test_a_closing_count_uses_the_branch_business_date(
     session: Session, bk: Ferinos, bk_pin: Pin
 ) -> None:
-    bk_pin(at(BK_TODAY, 7, 30))
+    bk_pin(at(BK_TODAY, 15, 0))  # open: today's count
     out = tools.record_cash_count(
         deps_for(session, bk[1]["Marites"]), CashCountInput(counted=100_000), "c1"
     )
     assert out.business_date == BK_TODAY
+
+
+def test_a_count_after_midnight_belongs_to_the_closing_date(
+    session: Session, bk: Ferinos, bk_pin: Pin
+) -> None:
+    """The Mall kiosk closes at 21:00; a count at 00:40 (the reminder still asks until the next
+    opening) is Monday's, against Monday's cash sales: no false alert."""
+    monday = BK_TODAY - ONE_DAY
+    cash = tools.tender_sales(session, bk[0].id, "cash", monday, monday)
+    assert cash > 0
+    bk_pin(at(BK_TODAY, 0, 40))
+    out = tools.record_cash_count(
+        deps_for(session, bk[1]["Marites"]), CashCountInput(counted=cash), "c1"
+    )
+    assert (out.business_date, out.expected, out.flagged) == (monday, cash, False)
+    assert told(session, bk[1]["Rosa"]) == []
+    bk_pin(at(BK_TODAY, 8, 59))  # still before the opening
+    late = tools.record_cash_count(
+        deps_for(session, bk[1]["Marites"]), CashCountInput(counted=cash), "c2"
+    )
+    assert late.business_date == monday
+
+
+def test_a_bill_paid_from_the_drawer_before_closing_is_no_short(
+    session: Session, bk: Ferinos, bk_pin: Pin
+) -> None:
+    """Expected cash is the day's cash sales less the cash spends and petty refills of the
+    date (tools.drawer_out, Q99), and the undeposited balance does not take them out again."""
+    bk_pin(at(BK_TODAY, 15, 0))
+    deps = deps_for(session, bk[1]["Marites"])
+    before = tools.balances(deps, BalancesInput(), "b0").undeposited
+    tools.record_expense(deps, ExpenseInput(category="utilities", amount=15_000), "e1")
+    tools.record_petty(deps, tools.PettyInput(kind="refill", amount=5_000), "p1")
+    from tests.test_bookkeeper_chat import counted_today
+
+    cash = counted_today(session, bk)
+    bk_pin(at(BK_TODAY, 21, 30))
+    out = tools.record_cash_count(deps, CashCountInput(counted=cash - 20_000), "c1")
+    assert (out.expected, out.difference, out.flagged) == (cash - 20_000, 0, False)
+    assert told(session, bk[1]["Rosa"]) == []
+    after = tools.balances(deps, BalancesInput(), "b1").undeposited
+    assert after == before + cash - 20_000  # the count holds what is left, once
 
 
 def test_a_short_count_tells_the_leads_urgent(session: Session, bk: Ferinos, bk_pin: Pin) -> None:
@@ -320,7 +396,15 @@ def test_a_short_count_tells_the_leads_urgent(session: Session, bk: Ferinos, bk_
     assert (out.difference, out.flagged) == (20_000, True)
     assert len(told(session, bk[1]["Rosa"])) == 1 and told(session, bk[1]["Ana"]) == []
     within = tools.record_cash_count(deps, CashCountInput(counted=expected + 10_000), "c2")
-    assert not within.flagged and len(told(session, bk[1]["Rosa"])) == 1
+    assert not within.flagged
+    _, withdrawn = told(session, bk[1]["Rosa"])  # the corrected count withdraws the alert
+    assert withdrawn == t(
+        "bk.count.withdrawn",
+        bk[1]["Rosa"].language or "en",
+        branch=bk[0].name,
+        date=BK_TODAY.isoformat(),
+        counted=format_money(expected + 10_000, "PHP", bk[1]["Rosa"].language or "en"),
+    )
 
 
 def test_a_settlement_and_a_payout_are_matched_with_the_cut(session: Session, bk: Ferinos) -> None:
@@ -371,6 +455,29 @@ def test_the_journal_and_the_quarter_tax_come_from_the_counts(
         deps_for(session, bk[1]["Marites"]), BINDING[f"{MANIFEST.id}.tax_quarter"], TaxInput(), "t2"
     )
     assert denied["status"] == "denied"
+
+
+def test_the_previous_quarters_vat_excess_carries_into_the_next(
+    session: Session, bk: Ferinos
+) -> None:
+    rosa = deps_for(session, bk[1]["Rosa"])
+    kiosk = bk[0].id
+    plain = next(
+        b for b in tools.tax_quarter(rosa, TaxInput(quarter_start=OCTOBER), "t0").branches
+        if b.branch_id == kiosk
+    )  # fmt: skip
+    july = dt.date(2026, 7, 1)
+    excess = TaxFigure(
+        branch_id=kiosk, regime="vat", period_start=july, period_end=dt.date(2026, 9, 30),
+        gross=112_000, taxable=100_000, rate=12, input_tax=20_000, due=-8_000, currency="PHP",
+    )  # fmt: skip
+    store.insert(session, excess, Actor.system(kiosk), action=f"{MANIFEST.id}.tax_figured")
+    carried = next(
+        b for b in tools.tax_quarter(rosa, TaxInput(quarter_start=OCTOBER), "t1").branches
+        if b.branch_id == kiosk
+    )  # fmt: skip
+    assert (carried.input_tax, carried.due) == (plain.input_tax + 8_000, plain.due - 8_000)
+    assert carried.due == carried.output_tax - carried.input_tax
 
 
 def test_monthly_profit_sums_payslip_totals_off_the_chain(session: Session, bk: Ferinos) -> None:

@@ -8,7 +8,7 @@ group; with groups, a period question reads its item from `item_0` (ruling 7).
 
 import calendar
 import datetime as dt
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlmodel import col, or_, select
@@ -23,6 +23,7 @@ from mia.agents.parsing import (
     find_tender,
     menu_tokens,
     pre_parse,
+    tenders_in,
     was_corrected,
 )
 from mia.agents.sales_supervisor import MANIFEST
@@ -150,6 +151,7 @@ class Query:
     message_id: str | None = None  # the user message, kept as a count's source
     previous_id: str | None = None  # Mia's previous message, kept when it is the why question
     tender: str | None = None  # the one tender the message names (parsing.find_tender)
+    tenders: list[str] = field(default_factory=list)  # every tender named (parsing.tenders_in)
 
 
 def _periods(lang: str) -> dict[str, str]:
@@ -268,6 +270,7 @@ def build_query(
         message_id=message_id,
         previous_id=previous_id if why_asked else None,
         tender=find_tender(message),
+        tenders=tenders_in(message),
     )
 
 

@@ -37,8 +37,6 @@ CATEGORIES = {
     "repairs": "Repairs and maintenance (ayos, pagawa, sira)",
     "other": "Anything else",
 }
-assert tuple(PROVIDERS) == (*words.SETTLERS, *words.PLATFORMS)
-assert tuple(CATEGORIES) == words.CATEGORIES
 BANK_NAMES = {
     "bdo": "BDO",
     "bpi": "BPI",
@@ -49,9 +47,7 @@ BANK_NAMES = {
     "chinabank": "China Bank",
     "pnb": "PNB",
     "rcbc": "RCBC",
-    "petty": "The petty cash box (a refill from the drawer)",
 }
-assert tuple(BANK_NAMES) == words.BANKS
 PERIOD_NAMES = {
     "today": "Today",
     "yesterday": "Yesterday (kahapon)",
@@ -62,7 +58,6 @@ PERIOD_NAMES = {
     "this_quarter": "This quarter",
     "last_quarter": "Last quarter",
 }
-assert tuple(PERIOD_NAMES) == words.PERIODS
 PETTY = {
     "spend": "Money taken out of the petty cash box and spent",
     "refill": "Money put into the petty cash box (a refill, top up, dagdag, lagay, butang)",

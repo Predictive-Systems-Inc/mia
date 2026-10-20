@@ -81,15 +81,20 @@ class QuarterTax:
     due: int
 
 
-def quarter_tax(regime: str, start: dt.date, gross: int, input_tax: int) -> QuarterTax:
+def quarter_tax(
+    regime: str, start: dt.date, gross: int, input_tax: int, carried: int = 0
+) -> QuarterTax:
     """The figure of the quarter starting on start at the rate in force on start. VAT: output
-    is half up gross times rate over 100 plus rate, taxable gross less output, due output less
-    input. Percentage: output and due are half up gross times rate over 100, taxable is gross."""
+    is half up gross times rate over 100 plus rate, taxable gross less output, input the typed
+    input plus `carried` (the previous quarter's excess, never negative) and due output less
+    input. Percentage: output and due are half up gross times rate over 100, taxable is gross,
+    nothing carried."""
     first, end = quarter_of(start)
     rate = rate_on(regime, first)
     if regime == "vat":
         output = half_up(Fraction(gross * rate, 100 + rate))
-        due = output - input_tax
-        return QuarterTax(regime, first, end, gross, gross - output, rate, output, input_tax, due)
+        total_input = input_tax + max(0, carried)
+        due = output - total_input
+        return QuarterTax(regime, first, end, gross, gross - output, rate, output, total_input, due)
     output = half_up(Fraction(gross * rate, 100))
     return QuarterTax(regime, first, end, gross, gross, rate, output, 0, output)
