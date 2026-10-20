@@ -430,3 +430,39 @@ def test_expire_closes_an_open_request_with_its_reason_and_runs_no_handler(
         approvals.decide(session, row.id, Actor.person(people["Sanna"]), "approved")
     with pytest.raises(ApprovalError):  # no longer open
         approvals.expire(session, row, Actor.system(row.branch_id), "again")
+
+
+def _timed_out(session: Session, requester: Actor, subject: str) -> Approval:
+    """A demo_late request escalated once and past its new TTL (the next check expires it)."""
+    row = approvals.request(
+        session, "demo_late", ("visit", subject), "x", requester, ["owner"],
+        ttl=dt.timedelta(seconds=-1),
+    )  # fmt: skip
+    row = approvals.expire_if_due(session, row, requester)
+    return store.update(session, row, {"expires_at": utcnow() - dt.timedelta(seconds=1)}, requester)
+
+
+def test_a_request_expiring_at_the_decision_runs_the_opted_in_reject_handler(
+    session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    told: list[str] = []
+
+    def handler(s: Session, a: Approval, d: Actor) -> None:
+        told.append(a.status)
+
+    monkeypatch.setitem(approvals._reject_handlers, "demo_late", handler)
+    monkeypatch.setattr(approvals, "_on_refused", {"demo_late"})
+    sanna, helena = Actor.person(people["Sanna"]), Actor.person(people["Helena"])
+    late = _timed_out(session, sanna, "V1")
+    with pytest.raises(ApprovalError, match="expired"):
+        approvals.decide(session, late.id, helena, "approved")
+    session.rollback()  # the caller's rollback keeps the expiry, committed before the raise
+    assert session.get(Approval, late.id).status == "expired" and told == ["expired"]
+    with pytest.raises(ApprovalError, match="expired"):  # told once: already expired now
+        approvals.decide(session, late.id, helena, "approved")
+    assert told == ["expired"]
+    monkeypatch.setattr(approvals, "_on_refused", set())  # not opted in: nobody is told
+    quiet = _timed_out(session, sanna, "V2")
+    with pytest.raises(ApprovalError, match="expired"):
+        approvals.decide(session, quiet.id, helena, "approved")
+    assert told == ["expired"]

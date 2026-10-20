@@ -12,6 +12,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields
 from fractions import Fraction
 
+from mia.agents.bookkeeper.calc import half_up
+
 TABLES_AS_OF = "2026-01"
 
 # SSS: 5% employee share of the monthly salary credit (MSC), MSC 5,000 to 35,000 pesos in
@@ -58,11 +60,6 @@ NIGHT_END = dt.time(6)
 MONTHLY_DIVISOR = 26
 
 
-def _half_up(value: Fraction) -> int:
-    """The nearest integer, a half rounded up (values here are never negative)."""
-    return int((value * 2 + 1) // 2)
-
-
 def monthly_basic(daily_rate: int) -> int:
     """The monthly basic for the contribution tables: daily rate times MONTHLY_DIVISOR."""
     return daily_rate * MONTHLY_DIVISOR
@@ -81,14 +78,14 @@ def philhealth_employee(monthly_basic: int) -> int:
     """The employee's monthly PhilHealth share in centavos: 2.5% of the pay between the floor
     and the ceiling, rounded half up."""
     base = min(max(monthly_basic, PHILHEALTH_FLOOR), PHILHEALTH_CEILING)
-    return _half_up(Fraction(base * PHILHEALTH_PERMILLE_EMPLOYEE, 1000))
+    return half_up(Fraction(base * PHILHEALTH_PERMILLE_EMPLOYEE, 1000))
 
 
 def pagibig_employee(monthly_basic: int) -> int:
     """The employee's monthly Pag-IBIG share in centavos: 1% of a pay up to 1,500 pesos, else
     2% of the pay capped at 10,000 pesos, rounded half up."""
     percent = 1 if monthly_basic <= PAGIBIG_LOW_PAY else 2
-    return _half_up(Fraction(min(monthly_basic, PAGIBIG_CAP) * percent, 100))
+    return half_up(Fraction(min(monthly_basic, PAGIBIG_CAP) * percent, 100))
 
 
 @dataclass(frozen=True)
@@ -179,7 +176,7 @@ def payslip(
         minutes = sum(getattr(day, f.name) for day in minutes_by_day)
         if minutes:
             rate = RATES[f.name]
-            amount = _half_up(Fraction(daily_rate * minutes, 8 * 60) * rate)
+            amount = half_up(Fraction(daily_rate * minutes, 8 * 60) * rate)
             lines.append(Line(f.name, minutes, int(rate * 100), amount))
     for kind, days in ((PAID_LEAVE, leave_days), (UNWORKED_HOLIDAY, holidays)):
         if days:
@@ -197,7 +194,7 @@ def payslip(
     # the gross; the fuller rule reads the month's actual earnings (Q65).
     deductions, left = [], gross
     for kind, monthly_share in monthly.items():
-        amount = min(left, _half_up(Fraction(monthly_share, 2)))
+        amount = min(left, half_up(Fraction(monthly_share, 2)))
         deductions.append(Line(kind, 0, 0, amount))
         left -= amount
     return PayslipCalc(lines, gross, deductions, left)

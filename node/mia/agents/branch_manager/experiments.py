@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Any
 
+from mia.agents.bookkeeper.calc import half_up
 from mia.agents.branch_manager import calc
 from mia.agents.branch_manager.models import Strategy
 from mia.templates.retail.models import RetailItem
@@ -58,14 +59,10 @@ def baseline(daily: Mapping[dt.date, Day], starts_on: dt.date, days: int) -> Bas
     return Baseline(len(picked), sum(u for u, _ in picked), sum(a for _, a in picked))
 
 
-def _half_up(x: Fraction) -> int:
-    return math.floor(x + Fraction(1, 2))
-
-
 def _pct(total: int, days: int, base_total: int, base_days: int) -> int | None:
     if not days or not base_total:
         return None
-    return _half_up(Fraction(total * base_days, days * base_total) * 100 - 100)
+    return half_up(Fraction(total * base_days, days * base_total) * 100 - 100)
 
 
 def score(base: Baseline, during: Mapping[dt.date, Day]) -> Score:
@@ -307,8 +304,8 @@ def _markdown(
             continue
         rationale = {
             "leftover_days": len(left),
-            "mean_leftover": _half_up(mean_left),
-            "mean_units": _half_up(mean_units),
+            "mean_leftover": half_up(mean_left),
+            "mean_units": half_up(mean_units),
             "off_percent": off,
         }
         out.append(Candidate(i.id, price, to, i.cost, rationale))

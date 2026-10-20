@@ -4,7 +4,8 @@ import pytest
 from sqlmodel import Session
 
 from mia import i18n
-from mia.agents.base import Turn
+from mia.agents import stubs
+from mia.agents.base import AgentSpec, Turn
 from mia.agents.registry import AGENTS, BUILT
 from mia.agents.stubs import STUBS
 from mia.chat import service
@@ -83,16 +84,21 @@ def test_an_agent_the_org_does_not_run_is_never_offered(
 
 
 def test_a_stub_answers_that_it_is_not_available(
-    session: Session, people: dict[str, Person]
+    session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     assert {s.id for s in STUBS} == set(ROSTER) - {s.id for s in BUILT}
     assert all(s.router_description and s.run_due is None for s in STUBS)
-    if not STUBS:
-        pytest.skip("every roster agent is built")
+    test_stub = AgentSpec(  # every roster agent is built: a test stub in STUBS
+        manifest=stubs._manifest("test_stub"),
+        label_key="agent.test_stub.label",
+        router_description="A test stub",
+        handle_turn=stubs._not_built,
+    )
+    monkeypatch.setattr(stubs, "STUBS", [*STUBS, test_stub])
 
     person = people["Juha"]
     thread, past, deps, ctx = service._prepare(session, person, "how many did we sell?", None)
-    stub = STUBS[0]
+    stub = stubs.STUBS[-1]
     deps.manifest = stub.manifest
     reply = asyncio.run(stub.handle_turn(Turn(session, deps, thread, "hi", past, ctx)))
     assert reply.text() == t("reply.not_built", person.language) != t("reply.not_built", "en")

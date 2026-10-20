@@ -56,7 +56,8 @@ def test_the_importer_accepts_a_clerk_and_checks_the_language() -> None:
 
 def test_the_branch_managers_numbers_come_only_through_placeholders() -> None:
     """The guard's and the windows' fixed numbers are constants fed to t() (tools.WORDED), so a
-    string never carries a number the code could change without it."""
+    string never carries a number the code could change without it. The bookkeeper's strings
+    too: every amount, date and rate is a placeholder."""
     import re
 
     from mia.agents.branch_manager import tools
@@ -64,7 +65,7 @@ def test_the_branch_managers_numbers_come_only_through_placeholders() -> None:
     assert set(i18n.STRINGS) == set(i18n.SUPPORTED)
     for lang, strings in i18n.STRINGS.items():
         for key, value in strings.items():
-            if not key.startswith(("bm.", "intent.branch_manager.")):
+            if not key.startswith(("bm.", "intent.branch_manager.", "bk.", "intent.bookkeeper.")):
                 continue
             for text in [value] if isinstance(value, str) else value:
                 assert not re.search(r"\d", re.sub(r"\{[^}]*\}", "", text)), (lang, key)
