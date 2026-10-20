@@ -204,7 +204,7 @@ def test_agent_tables_carry_the_agent_prefix_and_shared_tables_live_in_core() ->
     ]
     assert offenders == []
     shared = ("sales_counts", "sales_targets", "sales_notes", "stock_events")
-    for name in (*shared, "supplier_orders", "contracts", "payslips", "leave"):
+    for name in (*shared, "supplier_orders", "contracts", "payslips", "leave", "customer_orders"):
         assert homes.get(name) == "mia.core.models", name
 
 

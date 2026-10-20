@@ -1,14 +1,14 @@
 id: customer_service
 name: "Customer Service"
 version: 0.1.0
-standard_version: "1.5"
+standard_version: "1.8"
 job_description: job.md
 instructions: {base: prompts/base.md}
 roles:
   agent_role: agent.customer_service
   grants:
-    - data:customer_service_orders:read
-    - data:customer_service_orders:write
+    - data:customer_orders:read
+    - data:customer_orders:write
     - data:customer_service_customers:read
     - data:customer_service_customers:write
     - data:customer_service_complaints:read
@@ -34,13 +34,13 @@ tools:
   - {id: customer_service.hours, kind: agent, risk: read, approval: never, reads: [retail_branch_hours]}
   - {id: customer_service.prices, kind: agent, risk: read, approval: never, reads: [retail_items]}
   - {id: customer_service.delivery_area, kind: agent, risk: read, approval: never, reads: [branch]}
-  - {id: customer_service.place_order, kind: agent, risk: money, sensitive: true, approval: always, reads: [retail_items, retail_branch_hours], writes: [customer_service_orders, approval, message]}
-  - {id: customer_service.order_status, kind: agent, risk: read, approval: never, reads: [customer_service_orders]}
-  - {id: customer_service.cancel_order, kind: agent, risk: write_internal, approval: never, reads: [customer_service_orders], writes: [customer_service_orders, message]}
+  - {id: customer_service.place_order, kind: agent, risk: money, sensitive: true, approval: always, reads: [retail_items, retail_branch_hours], writes: [customer_orders, approval, message]}
+  - {id: customer_service.order_status, kind: agent, risk: read, approval: never, reads: [customer_orders]}
+  - {id: customer_service.cancel_order, kind: agent, risk: write_internal, approval: never, reads: [customer_orders], writes: [customer_orders, message]}
   - {id: customer_service.complain, kind: agent, risk: write_internal, sensitive: true, approval: never, writes: [customer_service_complaints, message]}
   - {id: customer_service.set_language, kind: agent, risk: write_internal, approval: never, reads: [customer_service_customers], writes: [customer_service_customers]}
-  - {id: customer_service.orders_today, kind: agent, risk: read, sensitive: true, approval: never, reads: [customer_service_orders, customer_service_customers, retail_items]}
-  - {id: customer_service.mark_ready, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [customer_service_orders], writes: [customer_service_orders, customer_service_messages]}
-  - {id: customer_service.mark_picked_up, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [customer_service_orders], writes: [customer_service_orders]}
+  - {id: customer_service.orders_today, kind: agent, risk: read, sensitive: true, approval: never, reads: [customer_orders, customer_service_customers, retail_items]}
+  - {id: customer_service.mark_ready, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [customer_orders], writes: [customer_orders, customer_service_messages]}
+  - {id: customer_service.mark_picked_up, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [customer_orders], writes: [customer_orders]}
   - {id: customer_service.resolve_complaint, kind: agent, risk: write_internal, approval: never, reads: [customer_service_complaints], writes: [customer_service_complaints]}
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

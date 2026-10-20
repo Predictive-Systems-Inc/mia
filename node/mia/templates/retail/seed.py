@@ -20,7 +20,7 @@ from mia.agents.bookkeeper.models import CashCount, Deposit, Expense, Payout, Se
 from mia.agents.branch_manager import experiments
 from mia.agents.branch_manager import tips as bm_tips
 from mia.agents.branch_manager.models import Experiment, Strategy, Tip
-from mia.agents.customer_service.models import Complaint, Customer, Order
+from mia.agents.customer_service.models import Complaint, Customer
 from mia.agents.hr_officer import calc, calendar
 from mia.agents.shift_supervisor import roster
 from mia.core import events, orgconfig, scheduling, store
@@ -30,6 +30,7 @@ from mia.core.models import (
     Branch,
     Client,
     Contract,
+    CustomerOrder,
     Incident,
     Job,
     Leave,
@@ -441,9 +442,9 @@ def _seed_customers(
         )
         return store.insert(session, row, actor)
 
-    def order(who: Customer, quantity: int, pickup: dt.datetime, status: str) -> Order:
+    def order(who: Customer, quantity: int, pickup: dt.datetime, status: str) -> CustomerOrder:
         line = {"item_id": classic.id, "quantity": quantity, "unit_price": classic.price}
-        row = Order(
+        row = CustomerOrder(
             branch_id=branch.id,
             customer_id=who.id,
             lines=[line],

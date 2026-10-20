@@ -27,13 +27,12 @@ from sqlmodel import Session, col, select
 
 from mia.agents.customer_service import MANIFEST, public, replies, tools
 from mia.agents.customer_service.actions import open_orders
-from mia.agents.customer_service.models import Order
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
 from mia.core import events, orgconfig
 from mia.core.db import utcnow
-from mia.core.models import Actor, Branch, Event, Message
+from mia.core.models import Actor, Branch, CustomerOrder, Event, Message
 from mia.i18n import t
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailItem
@@ -56,7 +55,7 @@ def digest_due(branch: Branch, hours: Hours, now: dt.datetime) -> dt.date | None
     return local.date() if on else None
 
 
-def reminder_due(order: Order, now: dt.datetime, quiet: bool) -> bool:
+def reminder_due(order: CustomerOrder, now: dt.datetime, quiet: bool) -> bool:
     """True from an hour before the pickup until the pickup, outside quiet hours."""
     return not quiet and order.pickup_at - REMIND_BEFORE <= now < order.pickup_at
 
@@ -102,7 +101,7 @@ def opening_digest(session: Session, branch: Branch, day: dt.date) -> list[Messa
     ]
 
 
-def _reminded(session: Session, order: Order) -> bool:
+def _reminded(session: Session, order: CustomerOrder) -> bool:
     """True when the order has a reminder sent or skipped for its current pickup time."""
     rows = session.exec(
         select(Event)

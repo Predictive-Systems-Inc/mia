@@ -31,12 +31,12 @@ from sqlmodel import Session, col, or_, select
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.customer_service import MANIFEST, calc, public
 from mia.agents.customer_service.actions import STAFF_ORDER_STATUSES, open_orders
-from mia.agents.customer_service.models import Complaint, Customer, Order
+from mia.agents.customer_service.models import Complaint, Customer
 from mia.agents.customer_service.public import CustomerDeps
 from mia.chat.blocks import ApprovalCardBlock, Block, CardField, TextBlock
 from mia.chat.channels import notify
 from mia.core import approvals, db, orgconfig, store
-from mia.core.models import Actor, Approval, Branch, Person
+from mia.core.models import Actor, Approval, Branch, CustomerOrder, Person
 from mia.core.money import format_money
 from mia.core.rbac import Resource, get_rbac
 from mia.i18n import SUPPORTED, t
@@ -45,7 +45,7 @@ from mia.templates.retail import items as retail_items
 from mia.templates.retail.models import RetailBranchHours, RetailItem
 
 PLACE_ORDER = f"{MANIFEST.id}.place_order"
-ORDERS = Resource(kind="data", name=Order.__tablename__)
+ORDERS = Resource(kind="data", name=CustomerOrder.__tablename__)
 CUSTOMERS = Resource(kind="data", name=Customer.__tablename__)
 COMPLAINTS = Resource(kind="data", name=Complaint.__tablename__)
 ITEMS = Resource(kind="data", name=RetailItem.__tablename__)
@@ -245,7 +245,7 @@ def _order_precheck(deps: CustomerDeps, args: PlaceOrderInput, tool_call_id: str
     area."""
     _require(deps.session, deps.actor, ITEMS, "read", tool_call_id)
     _require(deps.session, deps.actor, HOURS, "read", tool_call_id)
-    if deps.session.get(Order, args.order_id) is not None:
+    if deps.session.get(CustomerOrder, args.order_id) is not None:
         raise LookupError("order")
     if _latest(deps, ("waiting",), "read", tool_call_id) is not None:
         raise LookupError("pending")  # each waiting order asks every clerk and supervisor
@@ -269,10 +269,10 @@ def _order_precheck(deps: CustomerDeps, args: PlaceOrderInput, tool_call_id: str
         raise LookupError("area")
 
 
-def read_order(deps: CustomerDeps, order_id: str, tool_call_id: str) -> Order:
+def read_order(deps: CustomerDeps, order_id: str, tool_call_id: str) -> CustomerOrder:
     """One of the customer's orders. Checked with the row's customer_id as the owner before
     anything is returned, so another customer's (or a missing) order is PermissionDenied."""
-    row = deps.session.get(Order, order_id)
+    row = deps.session.get(CustomerOrder, order_id)
     owner = row.customer_id if row else None
     _require(deps.session, deps.actor, _owned(ORDERS, owner), "read", tool_call_id)
     if row is None:
@@ -288,7 +288,7 @@ def place_order(deps: CustomerDeps, args: PlaceOrderInput, tool_call_id: str) ->
 
 
 def _order_card(
-    session: Session, order: Order, customer: Customer, branch: Branch, lang: str
+    session: Session, order: CustomerOrder, customer: Customer, branch: Branch, lang: str
 ) -> list[Block]:
     """The clerks' and supervisors' approval card: items, total, pickup time, the customer's
     first name and the last four digits of their number."""
@@ -312,7 +312,7 @@ def _order_card(
     return [TextBlock(text=t("cs.staff.order_waiting", lang, who=who)), card]
 
 
-def record_waiting(deps: CustomerDeps, args: PlaceOrderInput, approval_id: str) -> Order:
+def record_waiting(deps: CustomerDeps, args: PlaceOrderInput, approval_id: str) -> CustomerOrder:
     """Write the order `waiting` (event customer_service.order_placed) for the pending
     place_order approval the guard just made for exactly this input and customer, and send its
     card to the branch's clerks and supervisors (sensitive). Raises LookupError for any other
@@ -344,7 +344,7 @@ def record_waiting(deps: CustomerDeps, args: PlaceOrderInput, approval_id: str) 
     )
     order = store.insert(
         session,
-        Order(
+        CustomerOrder(
             id=args.order_id,
             branch_id=branch.id,
             customer_id=customer.id,
@@ -373,14 +373,14 @@ def record_waiting(deps: CustomerDeps, args: PlaceOrderInput, approval_id: str) 
 
 def _latest(
     deps: CustomerDeps, statuses: tuple[str, ...], action: str, tool_call_id: str
-) -> Order | None:
+) -> CustomerOrder | None:
     customer = _customer(deps)
     _require(deps.session, deps.actor, _owned(ORDERS, customer.id), action, tool_call_id)
     return deps.session.exec(
-        select(Order)
-        .where(Order.customer_id == customer.id)
-        .where(col(Order.status).in_(statuses))
-        .order_by(col(Order.id).desc())
+        select(CustomerOrder)
+        .where(CustomerOrder.customer_id == customer.id)
+        .where(col(CustomerOrder.status).in_(statuses))
+        .order_by(col(CustomerOrder.id).desc())
     ).first()
 
 
@@ -535,9 +535,9 @@ class OrderRef(BaseModel):
     order_id: str
 
 
-def _branch_order(deps: AgentDeps, order_id: str, tool_call_id: str) -> Order:
+def _branch_order(deps: AgentDeps, order_id: str, tool_call_id: str) -> CustomerOrder:
     _require(deps.session, deps.actor, ORDERS, "write", tool_call_id)
-    row = deps.session.get(Order, order_id)
+    row = deps.session.get(CustomerOrder, order_id)
     if row is None or row.branch_id != deps.branch.id:
         raise LookupError("order")
     return row
@@ -599,7 +599,9 @@ def resolve_complaint(deps: AgentDeps, args: ComplaintRef, tool_call_id: str) ->
 # ---- the order approval -----------------------------------------------------------------
 
 
-def _decided(session: Session, approval: Approval, decider: Actor) -> tuple[Order, Customer, Actor]:
+def _decided(
+    session: Session, approval: Approval, decider: Actor
+) -> tuple[CustomerOrder, Customer, Actor]:
     """The order and customer of a place_order approval, and the agent acting for the decider
     (checked: the agent and the decider may write orders). The customer is the approval's
     on_behalf_of (a customer row, never a Person); the order is the evidence's order_id, and
@@ -607,7 +609,7 @@ def _decided(session: Session, approval: Approval, decider: Actor) -> tuple[Orde
     public.ensure_role()  # decide runs outside any turn: no agent has loaded the role
     customer = session.get(Customer, approval.requester_on_behalf_of or "")
     raw = approval.evidence.get("input")
-    order = session.get(Order, str(raw.get("order_id"))) if isinstance(raw, dict) else None
+    order = session.get(CustomerOrder, str(raw.get("order_id"))) if isinstance(raw, dict) else None
     if customer is None or order is None:
         raise LookupError("order")
     if order.approval_id != approval.id or order.customer_id != customer.id:
@@ -661,7 +663,7 @@ def apply_order_rejection(session: Session, approval: Approval, decider: Actor) 
 
 def _reject(
     session: Session,
-    order: Order,
+    order: CustomerOrder,
     customer: Customer,
     actor: Actor,
     reason: str,

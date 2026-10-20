@@ -151,6 +151,14 @@ SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
         "agent.hr_officer": {"read", "read_all"},
         "agent.bookkeeper": {"read_all"},
     },
+    "customer_orders": {
+        "customer": OWN,
+        "clerk": {"read", "write"},
+        "supervisor": {"read", "write"},
+        "owner": FULL,
+        "admin": FULL,
+        "agent.customer_service": {"read", "write"},
+    },
     "leave": {
         "staff": OWN,
         "clerk": OWN,
@@ -163,19 +171,19 @@ SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
 
 
 def test_shared_tables_keep_exactly_the_rights_they_had() -> None:
-    """Data standard 1.5 (the sales and stock tables) and 1.6 (supplier orders and the HR
-    tables) renamed the tables; the role-by-action table equals the one before each rename (no
-    right dropped, none added). A new reader changes this table with its agent."""
+    """Data standard 1.5 (the sales and stock tables), 1.6 (supplier orders and the HR tables)
+    and 1.8 (customer orders) renamed the tables; the role-by-action table equals the one before
+    each rename (no right dropped, none added). A new reader changes this table with its agent."""
     from mia.agents.base import Manifest
 
     rbac = Rbac(get_settings().config_dir / "policies")
-    roles = ["staff", "clerk", "supervisor", "owner", "admin", "viewer", "accountant"]
+    roles = ["customer", "staff", "clerk", "supervisor", "owner", "admin", "viewer", "accountant"]
     agents = Path(__file__).resolve().parent.parent / "mia" / "agents"
     for path in sorted(agents.glob("*/manifest.yaml")):
         spec = Manifest.load(path).roles
         rbac.load_agent_role(spec.agent_role, spec.grants, spec.denies)
         roles.append(spec.agent_role)
-    assert len(roles) == 7 + len(list(agents.glob("*/manifest.yaml")))  # every agent role
+    assert len(roles) == 8 + len(list(agents.glob("*/manifest.yaml")))  # every agent role
     got = {
         table: {
             role: {a for a in ACTIONS if rbac.enforcer.enforce(role, "B", f"data:{table}", a)}

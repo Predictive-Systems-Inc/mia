@@ -18,7 +18,7 @@ from sqlmodel import Session, col, or_, select
 
 from mia.agents.customer_service import MANIFEST
 from mia.agents.customer_service.calc import fold
-from mia.agents.customer_service.models import Complaint, Customer, Order
+from mia.agents.customer_service.models import Complaint, Customer
 from mia.agents.decider import NOT_STATED, Action
 from mia.agents.parsing import (
     Group,
@@ -30,7 +30,7 @@ from mia.agents.parsing import (
     was_corrected,
 )
 from mia.core import orgconfig
-from mia.core.models import Branch
+from mia.core.models import Branch, CustomerOrder
 from mia.core.orgconfig import DeliveryArea
 from mia.i18n import SUPPORTED, t
 from mia.templates.retail.models import RetailItem
@@ -197,16 +197,16 @@ def open_orders(
     branch: Branch,
     statuses: tuple[str, ...] = STAFF_ORDER_STATUSES,
     day: dt.date | None = None,
-) -> list[tuple[Order, Customer]]:
+) -> list[tuple[CustomerOrder, Customer]]:
     """The branch's orders in `statuses` with their customers, by pickup time; only those picked
     up on `day` (the branch's local date) when it is given. Reads, unchecked: callers check
     first (tools) or are the system tick."""
     tz = ZoneInfo(branch.timezone)
     rows = session.exec(
-        select(Order, Customer)
-        .where(Order.customer_id == Customer.id)
-        .where(Order.branch_id == branch.id)
-        .where(col(Order.status).in_(statuses))
+        select(CustomerOrder, Customer)
+        .where(CustomerOrder.customer_id == Customer.id)
+        .where(CustomerOrder.branch_id == branch.id)
+        .where(col(CustomerOrder.status).in_(statuses))
     ).all()
     # pickup_at is an ISO string with its own offset, so the day is compared here, not in SQL
     kept = [(o, c) for o, c in rows if day is None or o.pickup_at.astimezone(tz).date() == day]

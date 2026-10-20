@@ -14,7 +14,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
 from mia.agents.customer_service import MANIFEST, actions, decider, due, replies, tools
-from mia.agents.customer_service.models import Customer, Order
+from mia.agents.customer_service.models import Customer
 from mia.agents.decider import Decision
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
@@ -23,7 +23,7 @@ from mia.core import events
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
-from mia.core.models import Event, Message, Thread
+from mia.core.models import CustomerOrder, Event, Message, Thread
 from mia.i18n import t
 from mia.settings import get_settings
 
@@ -103,7 +103,7 @@ def _names(session: Session, out: dict[str, Any]) -> dict[str, str]:
     ids = [o["order_id"] for o in out.get("orders", [])] or [out.get("order_id")]
     names = {}
     for order_id in ids:
-        order = session.get(Order, order_id or "")
+        order = session.get(CustomerOrder, order_id or "")
         customer = session.get(Customer, order.customer_id) if order else None
         if order is not None and customer is not None:
             names[order.id] = replies.short_name(customer.name)

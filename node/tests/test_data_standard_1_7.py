@@ -14,7 +14,6 @@ from mia.agents.shift_supervisor.tools import ReportProblemInput
 from mia.core import scheduling
 from mia.core.models import (
     INCIDENT_KINDS,
-    STANDARD_VERSION,
     Availability,
     Branch,
     Job,
@@ -60,7 +59,8 @@ def test_an_unknown_incident_kind_is_refused() -> None:
 
 def test_incident_kinds_are_the_code_list_of_1_7() -> None:
     kinds = ("cannot_access", "site_problem", "equipment", "no_delivery", "customer")
-    assert (STANDARD_VERSION, INCIDENT_KINDS, MANIFEST.standard_version) == ("1.7", kinds, "1.7")
+    # STANDARD_VERSION is 1.8 since customer orders (test_data_standard_1_8)
+    assert (INCIDENT_KINDS, MANIFEST.standard_version) == (kinds, "1.7")
 
 
 def test_a_clerk_is_staff_by_inheritance(session: Session, rs: Ferinos) -> None:

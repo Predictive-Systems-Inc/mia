@@ -179,8 +179,8 @@ p, customer, *, tool:customer_service.set_language, execute, allow
 p, customer, *, tool:customer_service.place_order, request, allow
 p, customer, *, data:retail_items, read, allow
 p, customer, *, data:retail_branch_hours, read, allow
-p, customer, *, data:customer_service_orders, read_own, allow
-p, customer, *, data:customer_service_orders, write_own, allow
+p, customer, *, data:customer_orders, read_own, allow
+p, customer, *, data:customer_orders, write_own, allow
 p, customer, *, data:customer_service_complaints, write_own, allow
 p, customer, *, data:customer_service_customers, write_own, allow
 
@@ -188,8 +188,8 @@ p, customer, *, data:customer_service_customers, write_own, allow
 p, clerk, *, tool:customer_service.orders_today, execute, allow
 p, clerk, *, tool:customer_service.mark_ready, execute, allow
 p, clerk, *, tool:customer_service.mark_picked_up, execute, allow
-p, clerk, *, data:customer_service_orders, read, allow
-p, clerk, *, data:customer_service_orders, write, allow
+p, clerk, *, data:customer_orders, read, allow
+p, clerk, *, data:customer_orders, write, allow
 p, clerk, *, data:customer_service_customers, read, allow
 
 # supervisor: the same, plus resolve a complaint (owner and admin inherit)
@@ -197,15 +197,18 @@ p, supervisor, *, tool:customer_service.orders_today, execute, allow
 p, supervisor, *, tool:customer_service.mark_ready, execute, allow
 p, supervisor, *, tool:customer_service.mark_picked_up, execute, allow
 p, supervisor, *, tool:customer_service.resolve_complaint, execute, allow
-p, supervisor, *, data:customer_service_orders, read, allow
-p, supervisor, *, data:customer_service_orders, write, allow
+p, supervisor, *, data:customer_orders, read, allow
+p, supervisor, *, data:customer_orders, write, allow
 p, supervisor, *, data:customer_service_customers, read, allow
 p, supervisor, *, data:customer_service_complaints, read, allow
 p, supervisor, *, data:customer_service_complaints, write, allow
 
-# admin: customer orders, customers and complaints of every branch; owner inherits
+# admin: customer orders (core since data standard 1.8), customers and complaints of every
+# branch; owner inherits
 p, admin, *, data:customer_service_*, read_all, allow
 p, admin, *, data:customer_service_*, write_all, allow
+p, admin, *, data:customer_orders, read_all, allow
+p, admin, *, data:customer_orders, write_all, allow
 
 # clerk: their own coaching and how to sell (own branch; how_to_sell logs the tips given as
 # their own coaching rows). sales_notes read_own gives the note themes only; read_own gates by

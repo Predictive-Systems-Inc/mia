@@ -17,7 +17,7 @@ from mia.core import db
 from mia.core.db import TZDateTime
 from mia.core.ids import new_id
 
-STANDARD_VERSION = "1.7"
+STANDARD_VERSION = "1.8"
 
 
 def _now() -> datetime:
@@ -355,6 +355,29 @@ class Leave(BranchScoped, table=True):
     status: str
     approval_id: str | None = None
     reason: str = ""
+
+
+# shared since data standard 1.8 (ADR 020); the customers stay with the customer service
+class CustomerOrder(BranchScoped, table=True):
+    """A customer order. lines carry item_id, quantity and unit_price (minor units); total is
+    the lines plus any delivery fee. fulfilment pickup or delivery; status waiting, confirmed,
+    ready, picked_up, cancelled or rejected; decided_by is the person who approved or rejected."""
+
+    __redact__: ClassVar[frozenset[str]] = frozenset({"delivery_note"})
+    __tablename__: ClassVar[str] = "customer_orders"
+
+    customer_id: str = Field(foreign_key="customer_service_customers.id", index=True)
+    lines: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    total: int
+    currency: str = Field(max_length=3)
+    fulfilment: str
+    pickup_at: dt.datetime = Field(sa_type=TZDateTime)
+    delivery_area: str | None = None
+    delivery_note: str | None = None
+    status: str
+    approval_id: str | None = None
+    decided_by: str | None = None
+    source_message_id: str | None = None
 
 
 class Approval(BranchScoped, table=True):

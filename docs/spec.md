@@ -192,6 +192,7 @@ The shared data every agent and template relies on; industry-specific fields liv
 | contract (data standard 1.6) | id, branch\_id, person\_id, employment\_type, daily\_rate, currency, rest\_day, start\_date, position, set\_by | End date; daily\_rate stays off the chain |
 | payslip (data standard 1.6) | id, branch\_id, person\_id, cutoff\_start, cutoff\_end, pay\_date, lines, gross, deductions, net, currency, issued\_at | One per person and cutoff; the amounts stay off the chain |
 | leave (data standard 1.6) | id, branch\_id, person\_id, kind, start\_date, end\_date, days, status | approval\_id, reason; kind and reason stay off the chain |
+| customer\_order (data standard 1.8) | id, branch\_id, customer\_id, lines, total, currency, fulfilment, pickup\_at, status | delivery\_area, delivery\_note, approval\_id, decided\_by, source\_message\_id; delivery\_note stays off the chain; the customer stays with the customer service |
 
 Formats: IDs are ULIDs; dates and times are ISO 8601 with time zone; money is an integer in minor units with a currency code; phone numbers are E.164; languages are BCP 47 codes. Code lists (engagement\_type, visit status, day type) are versioned with the standard.
 

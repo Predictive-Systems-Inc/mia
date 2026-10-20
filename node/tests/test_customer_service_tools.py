@@ -8,7 +8,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, call_tool
 from mia.agents.customer_service import MANIFEST, public, tools
-from mia.agents.customer_service.models import Complaint, Customer, CustomerMessage, Order
+from mia.agents.customer_service.models import Complaint, Customer, CustomerMessage
 from mia.agents.customer_service.public import CustomerDeps
 from mia.agents.customer_service.tools import (
     AreaInput,
@@ -24,7 +24,16 @@ from mia.chat.blocks import ApprovalCardBlock
 from mia.core import approvals, orgconfig, store
 from mia.core.approvals import ApprovalError
 from mia.core.ids import new_id
-from mia.core.models import Actor, Approval, Branch, Event, Message, Person, Principal
+from mia.core.models import (
+    Actor,
+    Approval,
+    Branch,
+    CustomerOrder,
+    Event,
+    Message,
+    Person,
+    Principal,
+)
 from mia.core.orgconfig import DeliveryArea
 from mia.core.rbac import PermissionDenied
 from mia.i18n import t
@@ -39,7 +48,10 @@ CANCEL = f"{MANIFEST.id}.cancel_order"
 
 def test_seed_customer_service_data(cs: Shop, session: Session) -> None:
     assert sorted(c.language for c in session.exec(select(Customer))) == ["en", "fil"]
-    assert sorted(o.status for o in session.exec(select(Order))) == ["confirmed", "picked_up"]
+    assert sorted(o.status for o in session.exec(select(CustomerOrder))) == [
+        "confirmed",
+        "picked_up",
+    ]
     assert [c.status for c in session.exec(select(Complaint))] == ["open"] and [
         a.fee for a in orgconfig.load().delivery_areas
     ] == [5000, 8000, 6000]
@@ -49,7 +61,7 @@ def test_the_seeded_pickup_is_today_at_three_and_milas_window_is_closed(
     cs: Shop, session: Session
 ) -> None:
     mila = session.exec(select(Customer).where(Customer.name == "Mila Reyes")).one()
-    order = session.exec(select(Order).where(Order.customer_id == mila.id)).one()
+    order = session.exec(select(CustomerOrder).where(CustomerOrder.customer_id == mila.id)).one()
     assert order.pickup_at.astimezone(MNL) == dt.datetime.combine(TODAY, dt.time(15), MNL)
     assert order.lines[0]["quantity"] == 10 and order.total == 10 * order.lines[0]["unit_price"]
     assert mila.last_inbound_at is not None
@@ -162,14 +174,16 @@ def customer_of(a: Approval) -> Customer:
     return row
 
 
-def order_of(a: Approval) -> Order:
-    return _session(a).exec(select(Order).where(Order.approval_id == a.id)).one()
+def order_of(a: Approval) -> CustomerOrder:
+    return _session(a).exec(select(CustomerOrder).where(CustomerOrder.approval_id == a.id)).one()
 
 
-def seeded_order(session: Session, lang: str) -> Order:
+def seeded_order(session: Session, lang: str) -> CustomerOrder:
     customer = customer_by_lang(session, lang)
     return session.exec(
-        select(Order).where(Order.customer_id == customer.id).order_by(col(Order.id))
+        select(CustomerOrder)
+        .where(CustomerOrder.customer_id == customer.id)
+        .order_by(col(CustomerOrder.id))
     ).first() or pytest.fail("no seeded order")
 
 
@@ -315,7 +329,7 @@ def test_record_waiting_refuses_an_approval_for_another_input(cs: Shop, session:
     other = customer_deps(cs, session, lang="en")
     with pytest.raises(LookupError):
         tools.record_waiting(other, order_input(session), str(out["approval_id"]))
-    assert not session.exec(select(Order).where(Order.status == "waiting")).all()
+    assert not session.exec(select(CustomerOrder).where(CustomerOrder.status == "waiting")).all()
 
 
 def test_an_order_outside_the_hours_or_area_or_menu_is_refused(cs: Shop, session: Session) -> None:

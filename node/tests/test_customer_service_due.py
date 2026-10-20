@@ -10,10 +10,9 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import call_tool
 from mia.agents.customer_service import due, tools
-from mia.agents.customer_service.models import Order
 from mia.core import orgconfig, store
 from mia.core.ids import new_id
-from mia.core.models import Actor, Approval, Branch, Event, Message, Person, Thread
+from mia.core.models import Actor, Approval, Branch, CustomerOrder, Event, Message, Person, Thread
 from mia.i18n import t
 from tests.conftest import MNL, TODAY, Shop
 from tests.test_customer_service_tools import (
@@ -151,7 +150,7 @@ def test_no_reminder_for_an_order_not_open(cs: Shop, session: Session) -> None:
     cancel_seeded(session)
     assert due.run_due(session, cs.pin(14, 30)) == 0
     assert not markers(session, due.REMINDER) and not markers(session, due.SKIPPED)
-    assert session.exec(select(Order).where(Order.status == "cancelled")).first()
+    assert session.exec(select(CustomerOrder).where(CustomerOrder.status == "cancelled")).first()
 
 
 def test_nothing_runs_for_an_organisation_without_the_customer_service(

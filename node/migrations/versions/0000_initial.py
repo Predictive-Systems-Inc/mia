@@ -1501,7 +1501,7 @@ def upgrade() -> None:
         )
 
     op.create_table(
-        "customer_service_orders",
+        "customer_orders",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
         sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
         sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
@@ -1528,12 +1528,12 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    with op.batch_alter_table("customer_service_orders", schema=None) as batch_op:
+    with op.batch_alter_table("customer_orders", schema=None) as batch_op:
         batch_op.create_index(
-            batch_op.f("ix_customer_service_orders_branch_id"), ["branch_id"], unique=False
+            batch_op.f("ix_customer_orders_branch_id"), ["branch_id"], unique=False
         )
         batch_op.create_index(
-            batch_op.f("ix_customer_service_orders_customer_id"), ["customer_id"], unique=False
+            batch_op.f("ix_customer_orders_customer_id"), ["customer_id"], unique=False
         )
 
     op.create_table(
@@ -1591,7 +1591,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["order_id"],
-            ["customer_service_orders.id"],
+            ["customer_orders.id"],
         ),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -1760,11 +1760,11 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_customer_service_messages_at"))
 
     op.drop_table("customer_service_messages")
-    with op.batch_alter_table("customer_service_orders", schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f("ix_customer_service_orders_customer_id"))
-        batch_op.drop_index(batch_op.f("ix_customer_service_orders_branch_id"))
+    with op.batch_alter_table("customer_orders", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_customer_orders_customer_id"))
+        batch_op.drop_index(batch_op.f("ix_customer_orders_branch_id"))
 
-    op.drop_table("customer_service_orders")
+    op.drop_table("customer_orders")
     with op.batch_alter_table("customer_service_customers", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_customer_service_customers_branch_id"))
 

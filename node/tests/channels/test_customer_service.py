@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, col, select
 
 from mia.agents.customer_service import MANIFEST, public, tools
-from mia.agents.customer_service.models import Complaint, Customer, CustomerMessage, Order
+from mia.agents.customer_service.models import Complaint, Customer, CustomerMessage
 from mia.agents.decider import Decision
 from mia.api.main import app
 from mia.channels import linking, outbox
@@ -28,6 +28,7 @@ from mia.core.models import (
     Actor,
     Approval,
     ChannelInbound,
+    CustomerOrder,
     EgressLog,
     Event,
     Message,
@@ -307,10 +308,10 @@ def the_customer(session: Session) -> Customer:
     return session.exec(select(Customer).where(Customer.address == ADDR)).one()
 
 
-def new_order(session: Session) -> Order:
+def new_order(session: Session) -> CustomerOrder:
     session.expire_all()
     customer = session.exec(select(Customer).where(Customer.address == ADDR)).one()
-    return session.exec(select(Order).where(Order.customer_id == customer.id)).one()
+    return session.exec(select(CustomerOrder).where(CustomerOrder.customer_id == customer.id)).one()
 
 
 def order(
@@ -348,7 +349,7 @@ def decide_last(
     outcome: str,
     reason: str | None = None,
 ) -> None:
-    """Order, then Ana (a Mall kiosk clerk) decides it in the app; the reply is sent."""
+    """CustomerOrder, then Ana (a Mall kiosk clerk) decides it in the app; the reply is sent."""
     order(client, sim, monkeypatch)
     approval = one(session, Approval)
     ana = Actor.person(shop.people["Ana"])
@@ -635,7 +636,9 @@ def test_a_refused_order_says_why(
     assert got == [t("cs.refused.too_large", "fil")]
     got = order(client, sim, monkeypatch, text="pa-order 10 bibingka, pickup bukas 7am")
     assert got == [t("cs.refused.closed", "fil")]
-    assert not session.exec(select(Order).where(col(Order.approval_id).is_not(None))).all()
+    assert not session.exec(
+        select(CustomerOrder).where(col(CustomerOrder.approval_id).is_not(None))
+    ).all()
 
 
 def test_jev_down_or_egress_off_queues_unavailable(
@@ -683,7 +686,7 @@ def test_a_tapped_time_from_another_day_is_a_plain_message(
     assert say(client, sim, "10:00") == [t("cs.menu", "fil")]  # no items: nothing to order
     session.expire_all()
     assert not session.exec(
-        select(Order).where(Order.customer_id == the_customer(session).id)
+        select(CustomerOrder).where(CustomerOrder.customer_id == the_customer(session).id)
     ).all()
 
 

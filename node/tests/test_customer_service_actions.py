@@ -14,9 +14,9 @@ from mia.agents.customer_service.actions import (
     build_request,
 )
 from mia.agents.customer_service.decider import parse
-from mia.agents.customer_service.models import Complaint, Customer, Order
+from mia.agents.customer_service.models import Complaint, Customer
 from mia.core import store
-from mia.core.models import Actor
+from mia.core.models import Actor, CustomerOrder
 from mia.templates.retail.models import RetailItem
 from tests.conftest import TODAY, Shop
 from tests.jev_fake import answers_for
@@ -114,7 +114,7 @@ def test_an_action_of_the_other_side_becomes_clarify(cs: Shop, session: Session)
 
 def test_staff_mark_ready_finds_the_named_customers_order(cs: Shop, session: Session) -> None:
     mila = session.exec(select(Customer).where(Customer.name == "Mila Reyes")).one()
-    order = session.exec(select(Order).where(Order.customer_id == mila.id)).one()
+    order = session.exec(select(CustomerOrder).where(CustomerOrder.customer_id == mila.id)).one()
     q = build(session, cs, "ready na yung kay Mila", side="staff")
     assert list(q.orders) == [order.id] and "Mila" not in json.dumps(q.orders)
     d = decide(q, "staff_mark_ready")
