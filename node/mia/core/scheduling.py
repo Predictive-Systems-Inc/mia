@@ -533,7 +533,8 @@ def week(
 
 def inbox(session: Session, actor: Actor) -> list[Approval]:
     """Pending and escalated approvals the actor may decide (approver roles, or the escalation
-    roles once escalated; their own request only as an owner of its branch, D37), oldest first. Roles inherit through policy.csv (owner > admin > ...)."""
+    roles once escalated; their own request only as an owner of its branch, D37), oldest
+    first. Roles inherit through policy.csv (owner > admin > ...)."""
     from mia.core.rbac import get_rbac
 
     enforcer = get_rbac().enforcer

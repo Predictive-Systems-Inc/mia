@@ -91,8 +91,8 @@ async def _ticker(seconds: int) -> None:
 
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Load the agents' roles, register configured channels, then run due work (cover, outbox) every MIA_TICK_SECONDS
-    (a stand-in for the Huey worker)."""
+    """Load the agents' roles, register configured channels, then run due work (cover,
+    outbox) every MIA_TICK_SECONDS (a stand-in for the Huey worker)."""
     check_mode(get_settings())
     load_roles()  # agent roles for approvals decided outside any turn
     register_configured(get_settings())
@@ -200,7 +200,12 @@ def decide(
     except PermissionDenied as exc:  # a handler re-ran a tool the requester may not run
         raise HTTPException(403, str(exc)) from exc
     except LookupError as exc:  # the handler refused: its row changed since the request
-        raise HTTPException(409, str(exc)) from exc
+        reason = str(getattr(exc, "reason", None) or exc)
+        session.rollback()  # the decision and any handler write
+        with contextlib.suppress(approvals.ApprovalError):  # no open request to close
+            approvals.close_refused(session, approval_id, auth.actor, reason)
+            session.commit()  # before the 409, so the request is closed with its reason
+        raise HTTPException(409, reason) from exc
     return DecideResponse(approval_id=row.id, status=row.status, decided_by=row.decided_by)
 
 

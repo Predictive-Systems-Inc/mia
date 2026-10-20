@@ -3,6 +3,7 @@ invite, channels, backup, verify-db, keys, auth, skills, agent."""
 
 import argparse
 import asyncio
+import contextlib
 import datetime as dt
 import os
 from pathlib import Path
@@ -135,10 +136,16 @@ def chat(args: argparse.Namespace) -> int:
 
 
 def decide(args: argparse.Namespace) -> int:
+    """Decide an approval as a person. Prints "refused: <reason>" and returns 1 when a rule
+    refuses it, the permission check fails, or the handler refuses (the request is then closed
+    as expired with the reason, as the API does)."""
+    from mia.agents.registry import load_roles
     from mia.core import approvals
     from mia.core.db import session_scope, utcnow
     from mia.core.models import Actor
+    from mia.core.rbac import PermissionDenied
 
+    load_roles()  # a handler re-runs an agent's tool outside any turn
     with session_scope() as session:
         person = _find_person(session, args.as_person)
         try:
@@ -151,8 +158,16 @@ def decide(args: argparse.Namespace) -> int:
                 args.reason,
                 stepped_up_at=utcnow(),
             )
-        except approvals.ApprovalError as exc:
+        except (approvals.ApprovalError, PermissionDenied) as exc:
+            session.rollback()
             print(f"refused: {exc}")
+            return 1
+        except LookupError as exc:
+            reason = str(getattr(exc, "reason", None) or exc)
+            session.rollback()
+            with contextlib.suppress(approvals.ApprovalError):  # no open request to close
+                approvals.close_refused(session, args.approval_id, Actor.person(person), reason)
+            print(f"refused: {reason}")
             return 1
     print(f"approval {row.id}: {row.status} by {person.name}")
     return 0

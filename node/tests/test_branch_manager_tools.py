@@ -671,3 +671,75 @@ def test_a_handler_finds_the_agent_role_after_startup(
     session.expire_all()
     stmt = select(RetailItemPrice).where(RetailItemPrice.approval_id == approval_id)
     assert session.exec(stmt).one().price == 4800
+
+
+# ---- fix round 2: refusals at approval time ---------------------------------------------------
+
+
+def test_a_new_item_is_guarded_against_the_base_price_at_approval(
+    session: Session, bm: Ferinos
+) -> None:
+    kiosk, people = bm
+    end_seeded_experiment(session)
+    approval_id = propose(session, people["Marites"], None, key="bm.strategy.anchor", name="Ube")[
+        "approval_id"
+    ]
+    items.schedule_price(
+        session, item(session, "Ube"), kiosk.id, 4400, TODAY, Actor.system(kiosk.id)
+    )
+    with pytest.raises(LookupError, match="too_far"):  # 54 pesos is 23 percent above 44
+        decide(session, approval_id, people["Rosa"], "approved")
+
+
+def test_a_refused_approval_is_closed_with_its_reason(session: Session, bm: Ferinos) -> None:
+    from fastapi.testclient import TestClient
+
+    from mia.api.main import app
+
+    kiosk, people = bm
+    end_seeded_experiment(session)
+    menu = len(session.exec(select(RetailItem)).all())
+    approval_id = propose(session, people["Marites"], None, key="bm.strategy.anchor", name="Ube")[
+        "approval_id"
+    ]
+    items.schedule_price(
+        session, item(session, "Ube"), kiosk.id, 4400, TODAY, Actor.system(kiosk.id)
+    )
+    session.commit()
+    url, rosa = f"/approvals/{approval_id}/decide", {"X-Mia-Actor": people["Rosa"].id}
+    res = TestClient(app).post(url, json={"outcome": "approved"}, headers=rosa)
+    assert (res.status_code, res.json()["detail"]) == (409, "too_far")
+    session.expire_all()
+    approval = session.get(Approval, approval_id)
+    assert approval is not None and (approval.status, approval.reason) == ("expired", "too_far")
+    assert len(session.exec(select(RetailItem)).all()) == menu
+    assert session.exec(select(Experiment).where(Experiment.approval_id == approval_id)).all() == []
+    stmt = select(RetailItemPrice).where(RetailItemPrice.approval_id == approval_id)
+    assert session.exec(stmt).all() == []
+    chain = session.exec(
+        select(Event.action).where(Event.entity_id == approval_id).order_by(col(Event.id))
+    ).all()
+    assert [a for a in chain if a.startswith("approval.")][-2:] == [
+        "approval.approved",
+        "approval.expired",
+    ]
+    assert t("bm.experiment_refused.too_far", "fil") in told(session, people["Marites"])
+    res = TestClient(app).post(url, json={"outcome": "approved"}, headers=rosa)
+    assert res.status_code == 403  # closed: no retry loop
+
+
+def test_the_cli_says_refused_and_closes_the_request(
+    session: Session, bm: Ferinos, pin: Pin, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from mia.cli import main
+
+    args = ChangePriceInput(item_id=item(session, "Classic").id, price=4200, effective_on=TODAY)
+    deps = deps_for(session, bm[1]["Marites"])
+    approval_id = call_tool(deps, BINDING[tools.CHANGE_PRICE], args, "p1")["approval_id"]
+    pin(at(TODAY + ONE_DAY, 9, 30))
+    assert main(["decide", approval_id, "approved", "--as", "Rosa"]) == 1
+    assert "refused: in_the_past" in capsys.readouterr().out
+    session.expire_all()
+    approval = session.get(Approval, approval_id)
+    assert approval is not None and (approval.status, approval.reason) == ("expired", "in_the_past")
+    assert t("bm.price_refused.in_the_past", "fil") in told(session, bm[1]["Marites"])

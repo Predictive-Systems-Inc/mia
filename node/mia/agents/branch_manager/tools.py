@@ -619,8 +619,10 @@ def _verify_experiment(deps: AgentDeps, args: ProposeExperimentInput, tool_call_
         raise ExperimentRefused("no_proposal")
     new_item = args.rationale.get("new_item")
     if new_item is not None:
-        cost = items.variant_cost(deps.session, item, list(new_item["components"]))
-        refused = experiments.guard(int(new_item["from_price"]), cost, args.to_price, (), None)
+        parts = list(new_item["components"])
+        cost = items.variant_cost(deps.session, item, parts)
+        against = _reference(deps.session, item, deps.branch.id, parts, args.starts_on)
+        refused = experiments.guard(against, cost, args.to_price, (), None)
     else:
         past = _past_experiments(deps.session, deps.branch.id)
         last = max((e.ends_on for e in past if e.item_id == item.id), default=None)
@@ -633,6 +635,19 @@ def _verify_experiment(deps: AgentDeps, args: ProposeExperimentInput, tool_call_
         )
     if refused is not None:
         raise ExperimentRefused(refused)
+
+
+def _reference(
+    session: Session, base: RetailItem, branch_id: str, parts: list[str], day: dt.date
+) -> int:
+    """What a new item stands against, read now (never the request's copy): the base item's
+    price in force on day for a premium variant (no parts), else its parts bought singly.
+    ponytail: a decoy box is held against its pieces, not the engine's two smaller boxes; the
+    seed's boxes cost their pieces, a discounted box needs the engine's reference here."""
+    if not parts:
+        return items.price_on(session, base, branch_id, day)
+    found = {i.id: i for i in session.exec(select(RetailItem).where(col(RetailItem.id).in_(parts)))}
+    return sum(items.price_on(session, found[c], branch_id, day) for c in parts)
 
 
 def _variant_name(session: Session, base: RetailItem, components: list[str]) -> str:
@@ -676,7 +691,7 @@ def propose_experiment(
             deps.session, item, name, args.to_price, components, deps.actor, tool_call_id
         )
         rationale["new_item"] = {**new, "item_id": variant.id}
-        from_price = int(new["from_price"])
+        from_price = _reference(deps.session, item, deps.branch.id, components, args.starts_on)
     else:
         from_price = items.price_on(deps.session, item, deps.branch.id, args.starts_on)
         for price, on in (
@@ -753,10 +768,15 @@ def apply_experiment_approval(session: Session, approval: Approval, decider: Act
 
 def apply_experiment_rejection(session: Session, approval: Approval, decider: Actor) -> None:
     """Reject handler: an experiment row with status rejected (event
-    branch_manager.experiment_rejected; no price row, no new item) and the requester told.
-    Raises LookupError when the requester or the input cannot be found."""
+    branch_manager.experiment_rejected; no price row, no new item) and the requester told. An
+    approval closed as expired after the approve handler refused it (approvals.close_refused)
+    writes no row: the requester is told the reason (bm.experiment_refused.<reason>). Raises
+    LookupError when the requester or the input cannot be found."""
     deps = _requester_deps(session, approval)
     args: ProposeExperimentInput = _requested(approval, ProposeExperimentInput)
+    if approval.status == "expired":
+        _tell(session, deps.person, f"bm.experiment_refused.{approval.reason}")
+        return
     _check(deps, EXPERIMENTS, "write", str(approval.evidence.get("tool_call_id")))
     item = session.get(RetailItem, args.item_id)
     if item is None or args.to_price is None or args.strategy_id is None:
@@ -1081,9 +1101,14 @@ def apply_price_approval(session: Session, approval: Approval, decider: Actor) -
 
 def apply_price_rejection(session: Session, approval: Approval, decider: Actor) -> None:
     """Reject handler: event branch_manager.price_rejected with the item, price and date (no
-    row) and the requester told."""
+    row) and the requester told. An approval closed as expired after the approve handler
+    refused it (approvals.close_refused): the requester is told the reason
+    (bm.price_refused.<reason>), no event."""
     person, _ = _requester(session, approval)
     args: ChangePriceInput = _requested(approval, ChangePriceInput)
+    if approval.status == "expired":
+        _tell(session, person, f"bm.price_refused.{approval.reason}")
+        return
     after = {"item_id": args.item_id, "price": args.price, "effective_on": str(args.effective_on)}
     events.emit(
         session,

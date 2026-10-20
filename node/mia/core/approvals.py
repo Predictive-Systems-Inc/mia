@@ -228,6 +228,26 @@ def decide(
     return approval
 
 
+def close_refused(session: Session, approval_id: str, decider: Actor, reason: str) -> Approval:
+    """After an approve handler refused (raised LookupError) and the caller rolled the
+    decision back: record the decision (event approval.approved by the decider, the status
+    unchanged), then close the request as expired with the reason (system actor, expire), so it
+    is no dead end that every retry refuses, and run the type's reject handler, which tells the
+    requester (it sees status expired and the reason). Raises ApprovalError when the request is
+    no longer open."""
+    approval = session.get(Approval, approval_id)
+    if approval is None or approval.status not in ("pending", "escalated"):
+        raise ApprovalError("approval is not open")
+    after = {"decided_by": decider.principal.id, "refused": reason}
+    events.emit(
+        session, "approval.approved", approval, None, after, decider, approval_id=approval.id
+    )
+    approval = expire(session, approval, Actor.system(approval.branch_id), reason)
+    if approval.type in _reject_handlers:
+        _reject_handlers[approval.type](session, approval, decider)
+    return approval
+
+
 def withdraw(session: Session, approval: Approval, actor: Actor, reason: str) -> Approval:
     """Close an open (pending or escalated) request without a decision: status `withdrawn`,
     event `approval.withdrawn` with the reason, no handler runs. Only the requester (its
