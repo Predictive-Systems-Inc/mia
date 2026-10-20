@@ -829,6 +829,8 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "dev.jev_back": (
             "Jev is back. {count} queued turn(s) answered; the longest waited {minutes} min."
         ),
+        # production planner (Task 4): the packed dispatch list, until Task 5's dispatch_text
+        "pp.dispatch.packed": "Packed for {kiosk}: {lines}",
     },
     "fi": {
         "absence.recorded": [
@@ -1650,5 +1652,6 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "dev.jev_back": (
             "Jev vastaa taas. {count} jonossa ollutta viestiä vastattu; pisin odotus {minutes} min."
         ),
+        "pp.dispatch.packed": "Pakattu kohteeseen {kiosk}: {lines}",
     },
 }

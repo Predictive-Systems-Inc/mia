@@ -1,12 +1,13 @@
 """Demo data for Ferino's Bibingka, a Philippine chain of kiosks.
 
-Two branches (a mall kiosk and a street stall), eight items with short codes, opening hours,
-an owner, two supervisors, three clerks, a commissary branch (no hours) with its head and
-driver, the production planner's recipes and yesterday's production day (a confirmed plan, its
-batches, one dispatch per kiosk, one matched and one short), 14 days of sales counts and a
-month target per branch, HR data, a shift Job per clerk with availability, hour limits and shifts planned from today (the
-stall closed on the next holiday), two customer service customers with their orders and a
-complaint, and the branch manager's tips, quotes and pricing strategies. All rows are written through mia.core.store, so seeding appears in the events log.
+Two branches (a mall kiosk and a street stall), eight items with short codes, opening hours, an
+owner, two supervisors, three clerks, a commissary branch (no hours) with its head and driver, the
+production planner's recipes and yesterday's production day (a confirmed plan, its batches, one
+dispatch per kiosk, one matched and one short), 14 days of sales counts and a month target per
+branch, HR data, a shift Job per clerk with availability, hour limits and shifts planned from today
+(the stall closed on the next holiday), two customer service customers with their orders and a
+complaint, and the branch manager's tips, quotes and pricing strategies. All rows are written
+through mia.core.store, so seeding appears in the events log.
 """
 
 import datetime as dt

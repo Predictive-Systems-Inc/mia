@@ -60,6 +60,7 @@ def test_the_surplus_goes_to_the_larger_forecast_or_evenly_without_any() -> None
     assert pieces(k("a", 5, 0, 0), k("b", 10, 0, 0)) == [5, 43]
     assert pieces(k("a", None, 0, 0), k("b", None, 0, 0), batches=3) == [72, 72]
     assert pieces(k("a", None, 30, 0), k("b", None, 0, 0), batches=1) == [39, 9]
+    assert pieces(k("a", None, 0, 0), k("b", 10, 0, 0)) == [0, 48]  # one None: not even
     assert pieces(k("a", 40, 0, 0), k("b", 30, 0, 0), batches=1) == [18, 30]  # fewer than asked
     assert pieces(k("a", None, 0, 0), batches=0) == [0]
 

@@ -1,26 +1,41 @@
 """The production planner's data on the Ferino's seed (pp, PP_TODAY a Tuesday): the commissary
 is a branch without retail hours with its head and driver, who is offered the planner, the
 rights on the kiosks' counts, stock and orders (the agent alone reads across branches), and the
-kiosk agents' due work skipping the commissary (negative tests first; the clock pinned through
-pp_pin, never the wall clock)."""
+kiosk agents' due work skipping the commissary, and the nine tools behind rbac with their
+prechecks (negative tests first; the clock pinned through pp_pin, never the wall clock)."""
 
 import datetime as dt
 from collections import Counter
+from collections.abc import Callable
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+from pydantic import BaseModel
 from sqlmodel import Session, col, select
 
-from mia.agents.base import AgentDeps
+from mia.agents.base import AgentDeps, call_tool
 from mia.agents.bookkeeper import due as bk_due
 from mia.agents.branch_manager import due as bm_due
 from mia.agents.customer_service import due as cs_due
 from mia.agents.inventory_manager import due as inventory_due
 from mia.agents.production_planner import MANIFEST, capacity, forecast, tools
 from mia.agents.production_planner.models import Batch, Dispatch, Plan, Recipe
+from mia.agents.production_planner.tools import (
+    BatchInput,
+    BatchSheetInput,
+    CapacityInput,
+    ChangePlanInput,
+    ConfirmPlanInput,
+    DeliveredInput,
+    DispatchInput,
+    PlanInput,
+    RecipeInput,
+    RecipeLine,
+)
 from mia.agents.sales_supervisor import due as sales_due
 from mia.chat.access import agents_for
-from mia.core import orgconfig, store
+from mia.core import orgconfig, people, store
 from mia.core.models import Actor, Branch, Event, Message, Person, StockEvent, Thread
 from mia.core.rbac import get_rbac
 from mia.templates.retail import hours as retail_hours
@@ -311,3 +326,296 @@ def test_a_repeated_batch_corrects_and_pack_and_match_are_once(
         == "matched"
     )
     assert {x["item_id"]: x["quantity"] for x in mall.received or []} == sent
+
+
+# ---- the tools ----------------------------------------------------------------------------
+
+
+def ing(session: Session, name: str) -> str:
+    return session.exec(select(RetailIngredient).where(RetailIngredient.name == name)).one().id
+
+
+def recipe(session: Session, item_id: str) -> Recipe:
+    """The item's active recipe."""
+    return next(r for r in tools.recipes(session, comm(session).id) if r.item_id == item_id)
+
+
+def plan_row(session: Session) -> Plan:
+    """Tomorrow's plan row, fresh from the database."""
+    row = tools.plan_for(session, comm(session).id, PP_TOMORROW)
+    assert row is not None
+    session.refresh(row)
+    return row
+
+
+def plan_batches(session: Session, item_id: str) -> int:
+    return int(next(x["batches"] for x in plan_row(session).lines if x["item_id"] == item_id))
+
+
+REFUSED = {"denied", "invalid", "approval_required"}
+
+
+def run(session: Session, person: Person, tool: str, args: BaseModel) -> dict[str, Any]:
+    """The tool's JSON result through call_tool (the guard, the precheck, the log)."""
+    return call_tool(deps_for(session, person), BINDING[f"{MANIFEST.id}.{tool}"], args, tool)
+
+
+def outcome(out: dict[str, Any]) -> str:
+    """A refusal's status, else ok (a plan or dispatch output carries its own status field)."""
+    return str(out["status"]) if out.get("status") in REFUSED else "ok"
+
+
+def caller(session: Session, pp: Ferinos) -> Callable[[str, str, BaseModel], str]:
+    """call(who, tool, args): the outcome of the tool run as that person."""
+    return lambda who, tool, args: outcome(run(session, pp[1][who], tool, args))
+
+
+def packed(session: Session, people: dict[str, Person], pin: Pin) -> Plan:
+    """Drafted at 14:05 on PP_TODAY, Classic set to 3 batches and confirmed by Nonoy, then at
+    04:00 on PP_TOMORROW every batch recorded at full yield, which packs."""
+    pin(at(PP_TODAY, 14, 5))
+    draft(session)
+    classic, head = item(session, "Classic").id, people["Nonoy"]
+    change = ChangePlanInput(item_id=classic, batches=3)
+    assert outcome(run(session, head, "change_plan", change)) == "ok"
+    assert outcome(run(session, head, "confirm_plan", ConfirmPlanInput())) == "ok"
+    pin(at(PP_TOMORROW, 4, 0))
+    for line in plan_row(session).lines:
+        full = recipe(session, line["item_id"]).batch_yield
+        for n in range(1, line["batches"] + 1):
+            args = BatchInput(item_id=line["item_id"], batch_no=n, good=full)
+            assert outcome(run(session, head, "record_batch", args)) == "ok"
+    return plan_row(session)
+
+
+def test_a_supervisor_cannot_set_a_recipe(session: Session, pp: Ferinos) -> None:
+    call = caller(session, pp)
+    args = RecipeInput(
+        item_id=item(session, "Classic").id,
+        batch_yield=50,
+        oven_minutes=45,
+        lines=[RecipeLine(ingredient_id=ing(session, "Eggs"), quantity_milli=1000)],
+    )
+    assert [call(w, "set_recipe", args) for w in ("Nonoy", "Marites", "Berto")] == ["denied"] * 3
+    assert recipe(session, args.item_id).batch_yield == 48
+
+
+def test_a_kiosk_supervisor_cannot_change_the_plan(session: Session, pp: Ferinos) -> None:
+    call = caller(session, pp)
+    draft(session)
+    before = plan_row(session).lines
+    change = ChangePlanInput(
+        item_id=item(session, "Classic").id, batches=9, production_date=PP_TOMORROW
+    )
+    assert call("Marites", "change_plan", change) == "denied"
+    assert plan_row(session).lines == before
+    assert call("Marites", "dispatch_list", DispatchInput(kiosk_id=stall(session).id)) == "denied"
+
+
+def test_a_driver_only_confirms(session: Session, pp: Ferinos, pp_pin: Pin) -> None:
+    call = caller(session, pp)
+    packed(session, pp[1], pp_pin)
+    classic = item(session, "Classic").id
+    for tool, args in (
+        ("plan", PlanInput()),
+        ("change_plan", ChangePlanInput(item_id=classic, batches=1)),
+        ("record_batch", BatchInput(item_id=classic, batch_no=1, good=48)),
+        ("batch_sheet", BatchSheetInput(item_id=classic)),
+        ("capacity", CapacityInput(day=PP_TOMORROW)),
+    ):
+        assert call("Berto", tool, args) == "denied"
+    assert call("Berto", "confirm_delivery", DeliveredInput(kiosk_id=pp[0].id)) == "ok"
+
+
+def test_a_staff_without_the_driver_skill_cannot_confirm(
+    session: Session, pp: Ferinos, pp_pin: Pin
+) -> None:
+    call = caller(session, pp)
+    packed(session, pp[1], pp_pin)
+    helper = people.add_person(
+        session,
+        Actor.system(comm(session).id),
+        branch_id=comm(session).id,
+        name="Jojo",
+        roles=["staff"],
+        language="fil",
+    )
+    out = call_tool(
+        deps_for(session, helper),
+        BINDING[f"{MANIFEST.id}.confirm_delivery"],
+        DeliveredInput(kiosk_id=pp[0].id),
+        "d",
+    )
+    assert out["status"] == "invalid" and "not_driver" in out["message"]
+    assert call("Marites", "confirm_delivery", DeliveredInput(kiosk_id=pp[0].id)) == "invalid"
+
+
+def test_the_capacity_precheck_refuses_a_change_past_the_ovens(
+    session: Session, pp: Ferinos
+) -> None:
+    call = caller(session, pp)
+    draft(session)
+    ube = item(session, "Ube").id
+    free = capacity.free(session, comm(session).id, PP_TOMORROW).minutes_free
+    too_many = plan_batches(session, ube) + free // 45 + 1
+    change = ChangePlanInput(item_id=ube, batches=too_many, production_date=PP_TOMORROW)
+    assert call("Nonoy", "change_plan", change) == "invalid"
+    assert capacity.free(session, comm(session).id, PP_TOMORROW).minutes_free == free
+
+
+def test_a_past_plan_cannot_change(session: Session, pp: Ferinos) -> None:
+    call = caller(session, pp)
+    change = ChangePlanInput(
+        item_id=item(session, "Classic").id, batches=1, production_date=PP_TODAY - ONE_DAY
+    )
+    assert call("Nonoy", "change_plan", change) == "invalid"
+
+
+def test_a_batch_beyond_twice_the_yield_is_refused(
+    session: Session, pp: Ferinos, pp_pin: Pin
+) -> None:
+    call = caller(session, pp)
+    draft(session)
+    pp_pin(at(PP_TOMORROW, 4, 0))
+    classic = item(session, "Classic").id
+    assert [
+        call("Nonoy", "record_batch", BatchInput(item_id=classic, batch_no=1, good=g, waste=w))
+        for g, w in ((90, 7), (90, 6))
+    ] == ["invalid", "ok"]
+
+
+def test_kiosk_counts_are_read_by_the_agent_alone(session: Session, pp: Ferinos) -> None:
+    draft(session)
+    reads = [
+        e
+        for e in session.exec(select(Event).where(Event.action == "rbac.allow"))
+        if (e.after or {}).get("resource")
+        in {"data:sales_counts", "data:stock_events", "data:customer_orders"}
+    ]
+    assert len({(e.after or {})["resource"] for e in reads}) == 3
+    assert all((e.actor_id, e.on_behalf_of) == (MANIFEST.roles.agent_role, None) for e in reads)
+    with pytest.raises(LookupError, match="not_served"):
+        tools.kiosk_data(session, comm(session), comm(session), PP_TOMORROW)
+
+
+def test_the_last_batch_packs_the_dispatch(session: Session, pp: Ferinos, pp_pin: Pin) -> None:
+    plan = packed(session, pp[1], pp_pin)
+    rows = session.exec(select(Dispatch).where(Dispatch.plan_id == plan.id)).all()
+    assert {d.branch_id for d in rows} == {pp[0].id, stall(session).id}
+    assert {d.status for d in rows} == {"packed"}
+    assert {d.from_branch_id for d in rows} == {comm(session).id}
+    for who in ("Nonoy", "Berto"):  # the head and the driver, urgent, one list per kiosk
+        assert len(notifications(session, pp[1][who])) == 2
+    assert notifications(session, pp[1]["Marites"]) == []
+
+
+def test_the_driver_and_the_kiosk_see_their_own_dispatches(
+    session: Session, pp: Ferinos, pp_pin: Pin
+) -> None:
+    packed(session, pp[1], pp_pin)
+    mall = run(session, pp[1]["Marites"], "dispatch_list", DispatchInput())
+    assert [d["branch_id"] for d in mall["dispatches"]] == [pp[0].id]
+    sent = run(session, pp[1]["Berto"], "dispatch_list", DispatchInput())
+    assert {d["branch_id"] for d in sent["dispatches"]} == {pp[0].id, stall(session).id}
+    done = run(session, pp[1]["Berto"], "confirm_delivery", DeliveredInput(kiosk_id=pp[0].id))
+    row = session.exec(select(Dispatch).where(Dispatch.branch_id == pp[0].id)).all()
+    got = next(d for d in row if d.business_date == PP_TOMORROW)
+    assert (done["status"], got.status, got.delivered_by) == (
+        "delivered",
+        "delivered",
+        pp[1]["Berto"].id,
+    )
+
+
+def test_a_kiosk_supervisor_reads_the_plan_of_their_kiosk_only(
+    session: Session, pp: Ferinos
+) -> None:
+    assert run(session, pp[1]["Nonoy"], "plan", PlanInput())["status"] == "invalid"  # no_plan
+    draft(session)
+    out = run(session, pp[1]["Marites"], "plan", PlanInput())
+    kiosks = {k["branch_id"] for x in out["lines"] for k in x["kiosks"]}
+    assert kiosks == {pp[0].id}
+    full = run(session, pp[1]["Nonoy"], "plan", PlanInput())
+    assert {k["branch_id"] for x in full["lines"] for k in x["kiosks"]} == {
+        pp[0].id,
+        stall(session).id,
+    }
+
+
+def test_the_owner_sets_a_recipe_and_the_old_one_retires(session: Session, pp: Ferinos) -> None:
+    classic = item(session, "Classic").id
+    args = RecipeInput(
+        item_id=classic,
+        batch_yield=50,
+        oven_minutes=40,
+        lines=[RecipeLine(ingredient_id=ing(session, "Eggs"), quantity_milli=1000)],
+    )
+    box = args.model_copy(update={"item_id": item(session, "Box of 4").id})
+    assert run(session, pp[1]["Rosa"], "set_recipe", box)["status"] == "invalid"  # a bundle
+    assert outcome(run(session, pp[1]["Rosa"], "set_recipe", args)) == "ok"
+    rows = session.exec(select(Recipe).where(Recipe.item_id == classic)).all()
+    assert sorted((r.active, r.batch_yield) for r in rows) == [(False, 48), (True, 50)]
+
+
+def test_the_batch_sheet_and_capacity(session: Session, pp: Ferinos) -> None:
+    draft(session)
+    classic = item(session, "Classic").id
+    sheet = run(session, pp[1]["Nonoy"], "batch_sheet", BatchSheetInput(item_id=classic))
+    batches = plan_batches(session, classic)
+    eggs = next(x for x in sheet["lines"] if x["ingredient_id"] == ing(session, "Eggs"))
+    assert (sheet["batches"], eggs["quantity_milli"]) == (batches, 1000 * batches)
+    free = capacity.free(session, comm(session).id, PP_TOMORROW)
+    out = run(
+        session,
+        pp[1]["Nonoy"],
+        "capacity",
+        CapacityInput(day=PP_TOMORROW, item_id=classic, pieces=free.per_item[classic] + 1),
+    )
+    assert (out["minutes_free"], out["fits"]) == (free.minutes_free, False)
+    kape = CapacityInput(day=PP_TOMORROW, item_id=item(session, "Kape").id)
+    assert run(session, pp[1]["Nonoy"], "capacity", kape)["status"] == "invalid"  # no_recipe
+
+
+def test_a_batch_number_beyond_the_plan_is_not_planned(session: Session, pp: Ferinos) -> None:
+    plan, classic, head = draft(session), item(session, "Classic").id, pp[1]["Nonoy"]
+    over = plan_batches(session, classic) + 1
+    with pytest.raises(LookupError, match="not_planned"):
+        tools.save_batch(
+            session,
+            plan,
+            BatchInput(item_id=classic, batch_no=over, good=1),
+            head,
+            Actor.person(head),
+        )
+
+
+def test_only_the_commissary_drafts_and_the_leftover_is_the_day_befores(
+    session: Session, pp: Ferinos
+) -> None:
+    with pytest.raises(LookupError, match="not_commissary"):
+        tools.draft_plan(session, pp[0], PP_TOMORROW)
+    classic = item(session, "Classic").id
+    old = recipe(session, classic)
+    keeps = RecipeInput(
+        item_id=classic,
+        batch_yield=old.batch_yield,
+        oven_minutes=old.oven_minutes,
+        lines=[RecipeLine.model_validate(x) for x in old.lines],
+        keeps_overnight=True,
+    )
+    assert outcome(run(session, pp[1]["Rosa"], "set_recipe", keeps)) == "ok"
+    for day, quantity in ((PP_TODAY - ONE_DAY, 7), (PP_TODAY, 5)):
+        row = StockEvent(
+            branch_id=pp[0].id,
+            kind="leftover",
+            item_id=classic,
+            quantity=quantity,
+            unit="pcs",
+            at=at(day, 21),
+            reported_by=pp[1]["Marites"].id,
+            business_date=day,
+        )
+        store.insert(session, row, Actor.system(pp[0].id))
+    left = tools.kiosk_data(session, comm(session), pp[0], PP_TOMORROW).leftovers
+    assert left == {classic: 5}
+    assert tools.kiosk_data(session, comm(session), pp[0], PP_TODAY + 2 * ONE_DAY).leftovers == {}
