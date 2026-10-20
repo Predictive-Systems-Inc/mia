@@ -829,8 +829,6 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "dev.jev_back": (
             "Jev is back. {count} queued turn(s) answered; the longest waited {minutes} min."
         ),
-        # production planner (Task 4): the packed dispatch list, until Task 5's dispatch_text
-        "pp.dispatch.packed": "Packed for {kiosk}: {lines}",
         # production planner (Task 6): the short receipt flagged on the match tick
         "pp.short.head": "Short deliveries on {date}:",
         "pp.short.line": "{kiosk}: {item} sent {sent}, received {received}",
@@ -1760,7 +1758,6 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "dev.jev_back": (
             "Jev vastaa taas. {count} jonossa ollutta viestiä vastattu; pisin odotus {minutes} min."
         ),
-        "pp.dispatch.packed": "Pakattu kohteeseen {kiosk}: {lines}",
         "pp.short.head": "Vajaat toimitukset {date}:",
         "pp.short.line": "{kiosk}: {item} lähetetty {sent}, vastaanotettu {received}",
         # production planner (Task 5): chat replies, cards and buttons

@@ -53,6 +53,7 @@ def test_a_batch_message_is_read_by_code() -> None:
         words.BatchParse(1, 36, 0, None),
     )
     assert words.batch("45 ok 3 sunog") is None  # no batch number
+    assert words.batch("batch 1 ube 40 ok 2 napuoran") == words.BatchParse(1, 40, 2, "burnt")
 
 
 def test_a_recipe_message_is_read_by_code(session: Session, pp: Ferinos) -> None:

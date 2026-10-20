@@ -29,16 +29,26 @@ NUMBER_WORDS: dict[str, dict[str, int]] = {
     "pam": _COMMON | {"metung": 1, "adwa": 2, "atlu": 3},
     "pag": _COMMON | {"sakey": 1, "duara": 2, "talo": 3},
 }
-REASONS = {
-    "sunog": "burnt",
-    "burnt": "burnt",
-    "hilaw": "undercooked",
-    "undercooked": "undercooked",
-    "nahulog": "dropped",
-    "dropped": "dropped",
-    "iba": "other",
-    "other": "other",
+_REASONS_EN_FIL = {
+    "sunog": "burnt", "burnt": "burnt", "hilaw": "undercooked", "undercooked": "undercooked",
+    "nahulog": "dropped", "dropped": "dropped", "iba": "other", "other": "other",
+}  # fmt: skip
+# The waste reason words per language, en and fil in every one; beyond en and fil machine drafts
+# (Q28 to Q35, the stock.reason.* drafts). words.batch reads a reason only right after a count.
+REASON_WORDS: dict[str, dict[str, str]] = {
+    "en": _REASONS_EN_FIL,
+    "fil": _REASONS_EN_FIL,
+    "ceb": _REASONS_EN_FIL | {"nasunog": "burnt", "uban": "other"},
+    "ilo": _REASONS_EN_FIL | {"napuoran": "burnt", "naata": "undercooked", "natinag": "dropped"},
+    "hil": _REASONS_EN_FIL | {"nasunog": "burnt", "iban": "other"},
+    "war": _REASONS_EN_FIL | {"nasunog": "burnt"},
+    "bcl": _REASONS_EN_FIL | {"nasunog": "burnt"},
+    "pam": _REASONS_EN_FIL | {"sinunug": "burnt", "mialag": "dropped", "aliwa": "other"},
+    "pag": _REASONS_EN_FIL | {"nasunog": "burnt", "nandugay": "dropped", "arum": "other"},
 }
+# ponytail: one table of every language's words, since words.batch takes no language; split it
+# per language when a reason word of one language means something else in another.
+REASONS = {word: reason for words in REASON_WORDS.values() for word, reason in words.items()}
 GOOD_WORDS = ("ok", "good", "maayos")
 PIECE_WORDS = ("piraso", "pcs", "pc", "pieces", "piece")
 MINUTE_WORDS = ("min", "mins", "minutes", "minute", "minuto", "minutos")
