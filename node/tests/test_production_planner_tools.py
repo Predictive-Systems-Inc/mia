@@ -450,6 +450,35 @@ def test_a_staff_without_the_driver_skill_cannot_confirm(
     assert call("Marites", "confirm_delivery", DeliveredInput(kiosk_id=pp[0].id)) == "invalid"
 
 
+def test_the_owner_confirms_a_delivery_from_any_branch(
+    session: Session, pp: Ferinos, pp_pin: Pin
+) -> None:
+    call = caller(session, pp)
+    packed(session, pp[1], pp_pin)
+    assert pp[1]["Rosa"].branch_id != comm(session).id
+    assert call("Marites", "confirm_delivery", DeliveredInput(kiosk_id=pp[0].id)) == "invalid"
+    assert call("Rosa", "confirm_delivery", DeliveredInput(kiosk_id=pp[0].id)) == "ok"
+    assert call("Berto", "confirm_delivery", DeliveredInput(kiosk_id=stall(session).id)) == "ok"
+    rows = session.exec(select(Dispatch).where(Dispatch.business_date == PP_TOMORROW)).all()
+    by = {d.branch_id: d.delivered_by for d in rows}
+    assert by == {pp[0].id: pp[1]["Rosa"].id, stall(session).id: pp[1]["Berto"].id}
+
+
+def test_a_plan_is_confirmed_once_and_never_in_the_past(session: Session, pp: Ferinos) -> None:
+    call = caller(session, pp)
+    draft(session)
+    for _ in range(2):
+        assert call("Nonoy", "confirm_plan", ConfirmPlanInput()) == "ok"
+    confirmed = session.exec(
+        select(Event)
+        .where(Event.action == f"{MANIFEST.id}.plan_confirmed")
+        .where(Event.entity_id == plan_row(session).id)
+    ).all()
+    assert len(confirmed) == 1 and plan_row(session).status == "confirmed"
+    past = ConfirmPlanInput(production_date=PP_TODAY - ONE_DAY)
+    assert call("Nonoy", "confirm_plan", past) == "invalid"
+
+
 def test_the_capacity_precheck_refuses_a_change_past_the_ovens(
     session: Session, pp: Ferinos
 ) -> None:

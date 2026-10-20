@@ -143,12 +143,9 @@ class Query:
 
 
 def commissary(session: Session, organisation_id: str) -> Branch | None:
-    """The organisation's commissary by the settings' name; None when the planner is off."""
-    name = orgconfig.load().production_planner.commissary
-    if not name:
-        return None
-    stmt = select(Branch).where(Branch.organisation_id == organisation_id)
-    return session.exec(stmt.where(Branch.name == name)).first()
+    """The organisation's commissary by the settings' name; None when the planner is off
+    (tools.commissary)."""
+    return tools.commissary(session, organisation_id)
 
 
 def _named(row: RetailItem | RetailIngredient) -> str:

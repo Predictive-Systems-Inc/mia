@@ -30,7 +30,14 @@ from mia.agents.inventory_manager import tools as inventory_tools
 from mia.agents.production_planner import MANIFEST, forecast
 from mia.agents.production_planner import capacity as oven
 from mia.agents.production_planner.models import Batch, Dispatch, Plan, Recipe
-from mia.agents.sales_supervisor.tools import ITEMS, _as_reporter, _check, _currency, _live_counts
+from mia.agents.sales_supervisor.tools import (
+    ITEMS,
+    _as_reporter,
+    _check,
+    _currency,
+    _is_lead,
+    _live_counts,
+)
 from mia.agents.shift_supervisor import alerts
 from mia.chat.channels import notify
 from mia.core import store
@@ -204,7 +211,9 @@ def _line_json(
 
 
 def plan_for(session: Session, commissary_id: str, day: dt.date) -> Plan | None:
-    """The commissary's plan row of production date day, if any."""
+    """The commissary's plan row of production date day, if any, read by the agent alone after
+    its plans read check (PermissionDenied without it)."""
+    get_rbac().require(agent_actor(commissary_id), PLANS, "read", session=session)
     stmt = select(Plan).where(Plan.branch_id == commissary_id).where(Plan.production_date == day)
     return session.exec(stmt).first()
 
@@ -423,18 +432,31 @@ def day_yield(session: Session, commissary: Branch, day: dt.date) -> YieldOut:
 # ---- shared helpers of the tools ----------------------------------------------------------
 
 
-def _commissary(deps: AgentDeps) -> Branch:
-    """The settings' commissary of the person's organisation; LookupError("no_commissary")
-    when the planner has none."""
+def commissary(session: Session, organisation_id: str) -> Branch | None:
+    """The organisation's commissary by the settings' name; None when the planner is off."""
     name = load_settings().production_planner.commissary
-    row = deps.session.exec(
-        select(Branch)
-        .where(Branch.organisation_id == deps.organisation_id)
-        .where(Branch.name == name)
-    ).first()
-    if not name or row is None:
+    if not name:
+        return None
+    stmt = select(Branch).where(Branch.organisation_id == organisation_id)
+    return session.exec(stmt.where(Branch.name == name)).first()
+
+
+def _commissary(deps: AgentDeps) -> Branch:
+    """The person's organisation's commissary; LookupError("no_commissary") when it has none."""
+    row = commissary(deps.session, deps.organisation_id)
+    if row is None:
         raise LookupError("no_commissary")
     return row
+
+
+def _day(commissary: Branch, given: dt.date | None) -> dt.date:
+    """The given production date, or the production day; a date before the production day
+    raises LookupError("past")."""
+    today = _today(commissary)
+    day = given or today
+    if day < today:
+        raise LookupError("past")
+    return day
 
 
 def _at_commissary(
@@ -561,10 +583,7 @@ def check_change(deps: AgentDeps, args: ChangePlanInput, tool_call_id: str) -> N
     (`capacity`)."""
     commissary = _commissary(deps)
     _at_commissary(deps, commissary, [PLANS, RECIPES], "write", tool_call_id)
-    today = _today(commissary)
-    args.production_date = args.production_date or today
-    if args.production_date < today:
-        raise LookupError("past")
+    args.production_date = _day(commissary, args.production_date)
     old = _line(_plan(deps, commissary, args.production_date), args.item_id)["batches"]
     recipe = _recipe(deps.session, commissary.id, args.item_id)
     free = oven.free(deps.session, commissary.id, args.production_date).minutes_free
@@ -590,12 +609,14 @@ class ConfirmPlanInput(BaseModel):
 
 def confirm_plan(deps: AgentDeps, args: ConfirmPlanInput, tool_call_id: str) -> PlanOut:
     """The plan of the production date confirmed by the person (event
-    `<agent>.plan_confirmed`). Raises LookupError("no_plan")."""
+    `<agent>.plan_confirmed`); a confirmed plan is returned unchanged, no second event.
+    Raises LookupError("past") before the production day, LookupError("no_plan")."""
     commissary = _commissary(deps)
     _at_commissary(deps, commissary, [PLANS], "write", tool_call_id)
     _check(deps, RECIPES, "read", tool_call_id)
-    day = args.production_date or _today(commissary)
-    row = confirm(deps.session, _plan(deps, commissary, day), deps.person, deps.actor)
+    row = _plan(deps, commissary, _day(commissary, args.production_date))
+    if row.status != "confirmed":
+        row = confirm(deps.session, row, deps.person, deps.actor)
     return plan_out(deps.session, row)
 
 
@@ -681,8 +702,10 @@ class RecipeOut(BaseModel):
 
 
 def check_recipe(deps: AgentDeps, args: RecipeInput, tool_call_id: str) -> None:
-    """The precheck of set_recipe: the item exists (`item`) and is a single item, never a
-    bundle (`bundle`); every ingredient exists (`ingredient`)."""
+    """The precheck of set_recipe: the rights first (write on recipes, write_all away from the
+    commissary), then the item exists (`item`) and is a single item, never a bundle
+    (`bundle`); every ingredient exists (`ingredient`)."""
+    _at_commissary(deps, _commissary(deps), [RECIPES], "write", tool_call_id)
     _check(deps, ITEMS, "read", tool_call_id)
     _check(deps, INGREDIENTS, "read", tool_call_id)
     found = deps.session.get(RetailItem, args.item_id)
@@ -781,11 +804,12 @@ def record_batch(deps: AgentDeps, args: BatchInput, tool_call_id: str) -> BatchO
     ).all()
     percent = forecast.yield_percent(sum(b.good for b in rows), sum(b.planned_yield for b in rows))
     last = _all_recorded(deps.session, plan)
-    packed = deps.session.exec(select(Dispatch).where(Dispatch.plan_id == plan.id)).first()
-    if last and packed is None:
+    if last:
         agent = agent_actor(commissary.id)
         get_rbac().require(agent, DISPATCHES, "write_all", session=deps.session)
-        send_dispatch(deps.session, commissary, pack(deps.session, plan, agent))
+        packed = deps.session.exec(select(Dispatch).where(Dispatch.plan_id == plan.id)).first()
+        if packed is None:
+            send_dispatch(deps.session, commissary, pack(deps.session, plan, agent))
     return BatchOut(
         id=row.id,
         item_id=row.item_id,
@@ -891,8 +915,11 @@ class DeliveredInput(BaseModel):
 
 
 def check_driver(deps: AgentDeps, args: DeliveredInput, tool_call_id: str) -> None:
-    """The precheck of confirm_delivery: the person is at the commissary and has the driver
-    skill or is its supervisor (`not_driver`)."""
+    """The precheck of confirm_delivery: an owner or admin passes at any branch (they hold
+    write_all, spec section 3); anyone else is at the commissary and has the driver skill or
+    the supervisor role, else `not_driver`."""
+    if _is_lead(deps.person):
+        return
     at_commissary = deps.branch.id == _commissary(deps).id
     if not at_commissary or not (DRIVER in deps.person.skills or "supervisor" in deps.person.roles):
         raise LookupError("not_driver")
