@@ -20,7 +20,7 @@ from pydantic import ValidationError
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
-from mia.agents.bookkeeper import MANIFEST, actions, calc, decider, replies, tools
+from mia.agents.bookkeeper import MANIFEST, actions, calc, decider, due, replies, tools
 from mia.agents.bookkeeper.models import CashCount
 from mia.agents.decider import Decision
 from mia.agents.sales_supervisor.tools import _currency
@@ -310,6 +310,6 @@ SPEC = AgentSpec(
         " sales total and not pay."
     ),
     handle_turn=handle_turn,
-    run_due=None,
+    run_due=due.run_due,
     stream_agent=None,
 )
