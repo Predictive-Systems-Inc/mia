@@ -207,7 +207,7 @@ def build_query(
         banks=words.banks_in(message),
         receipt_no=receipt_no,
         vat_amount=vat_amount,
-        corrected=words.corrected(message),
+        corrected=words.corrected(message, deps.lang),
         lang=deps.lang,
         message_id=message_id,
     )

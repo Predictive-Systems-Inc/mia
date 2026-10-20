@@ -150,3 +150,32 @@ def test_an_unknown_action_is_clarify(session: Session, bk: Ferinos) -> None:
     answers["action"] = {**answers["action"], "choice": "change_price"}
     d = decider.parse(answers, q)
     assert (d.action, d.raw_action) == ("clarify", "change_price")
+
+
+def test_petty_cash_without_a_kind_asks(session: Session, bk: Ferinos) -> None:
+    q = query(session, bk[1]["Marites"], "petty 500")
+    assert decider._args("petty_cash", reader(q, amount="p0"))[1] == "kind"
+    q = query(session, bk[1]["Marites"], "refill petty 500 for the week")
+    assert decider._args("petty_cash", reader(q, amount="p0"))[1] == "kind"
+    q = query(session, bk[1]["Marites"], "petty 500 para sa yelo")
+    assert decider._args("petty_cash", reader(q, amount="p0")) == (
+        {"kind": "spend", "amount": 50_000, "category": "supplies"},
+        None,
+    )
+
+
+def test_an_opening_negation_corrects_only_with_an_amount() -> None:
+    assert words.corrected("wag, 2,500 pala", "fil")
+    assert not words.corrected("no cash count yet", "en")
+
+
+def test_a_percent_is_no_amount() -> None:
+    assert words.find_vat("vat 12% 120", "en")[0] == 12_000
+    assert words.amounts("bayad 1,120 vat 12% 120", "en") == {"p0": 112_000}
+    assert words.amounts("12% ng 1,000", "en") == {"p0": 100_000}
+
+
+def test_the_expense_source_default_is_in_the_args(session: Session, bk: Ferinos) -> None:
+    q = query(session, bk[1]["Marites"], "paid 300 for ice")
+    args, _ = decider._args("expense", reader(q, amount="p0", category="supplies"))
+    assert args["source"] == "cash"

@@ -85,12 +85,13 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         return args, "amount" if amount is None else None if category else "category"
     if action == "petty_cash":
         amount = _amount(r)
+        kind = r.pick("petty", set(PETTY)) or ("spend" if words.says_spend(q.message) else None)
         args = {
-            "kind": r.pick("petty", set(PETTY)) or "spend",
+            "kind": kind,
             "amount": amount,
             "category": r.pick("category", set(CATEGORIES)) or "supplies",
         }
-        return args, None if amount is not None else "amount"
+        return args, "amount" if amount is None else None if kind else "kind"
     if action == "deposit":
         amount, bank = _amount(r), r.pick("bank", set(q.banks or words.BANKS))
         args = {"bank": bank, "amount": amount, "reference": None}

@@ -41,7 +41,32 @@ _RECEIPT = re.compile(
     r"\s*(?i:(?:no\.?|number|blg\.?)\s*)?[:#]?\s*(?P<n>\d[\w-]{0,31})"
 )
 _AMOUNT = r"(?:₱\s?|php\s?|p)?(?:\d{1,3}(?:,\d{3})+(?!\d)|\d+)(?:\.\d{1,2})?"
-_VAT = re.compile(rf"\bvat\b\s*(?:of\s+)?[:=]?\s*(?P<a>{_AMOUNT})(?![\d.,]*\s*%)", re.IGNORECASE)
+# A percent ("12%") is a rate, never an amount: the VAT reader skips it, amounts drops it.
+_PERCENT = re.compile(r"(?<![\w.,])\d+(?:[.,]\d+)?\s*%")
+_VAT = re.compile(
+    rf"\bvat\b\s*(?:\d+(?:[.,]\d+)?\s*%\s*)?(?:of\s+)?[:=]?\s*(?P<a>{_AMOUNT})(?![\d.,]*\s*%)",
+    re.IGNORECASE,
+)
+# The words that mark petty cash as spent ("para sa yelo", "pambili", "binili"); without one and
+# without Jev's pick the kind is asked, never assumed.
+SPEND_WORDS = frozenset(
+    [
+        "para",
+        "pambili",
+        "bili",
+        "binili",
+        "bumili",
+        "gastos",
+        "ginastos",
+        "bayad",
+        "binayad",
+        "spent",
+        "spend",
+        "paid",
+        "bought",
+        "for",
+    ]
+)
 _NEGATED = re.compile(
     rf"\b(?:{'|'.join(NEGATIONS)})\b[\s,:]*(?:(?:{'|'.join(FILLER)})\s+)*{_AMOUNT}",
     re.IGNORECASE,
@@ -78,18 +103,28 @@ def _drop_negated(text: str) -> tuple[str, bool]:
 
 def amounts(text: str, lang: str) -> dict[str, int]:
     """The money amounts of the message as {"p0": minor units, ...}: parsing.find_prices after
-    the receipt number, the VAT amount and every negated amount are taken out, so none of them,
-    no date and no clock time is an amount."""
-    text = find_vat(find_receipt(text)[1], lang)[1]
+    the receipt number, the VAT amount, every percent and every negated amount are taken out, so
+    none of them, no date and no clock time is an amount."""
+    text = _PERCENT.sub(" ", find_vat(find_receipt(text)[1], lang)[1])
     return dict(find_prices(_drop_negated(text)[0], lang))
 
 
-def corrected(text: str) -> bool:
+def corrected(text: str, lang: str) -> bool:
     """True when the message corrects an amount: a negated amount was dropped ("hindi 12,450,
-    12,540") or the message opens with a negation word ("wag, 2,500 pala", "no, 12,540")."""
+    12,540") or the message opens with a negation word and carries an amount ("wag, 2,500
+    pala", "no, 12,540"; never "no cash count yet")."""
     first = text.strip().split(maxsplit=1)[:1]
     opens = bool(first) and first[0].strip(".,!?;:").casefold() in NEGATION_WORDS
-    return opens or _drop_negated(text)[1]
+    return _drop_negated(text)[1] or (opens and bool(amounts(text, lang)))
+
+
+REFILL_WORDS = frozenset(["refill", "replenish", "dagdag", "lagay", "nilagay", "punan"])
+
+
+def says_spend(text: str) -> bool:
+    """True when a word of the text is a SPEND_WORDS word and none is a REFILL_WORDS word."""
+    said = {w.strip(".,!?;:").casefold() for w in text.split()}
+    return bool(said & SPEND_WORDS) and not said & REFILL_WORDS
 
 
 def banks_in(text: str) -> list[str]:
