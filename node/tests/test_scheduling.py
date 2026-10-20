@@ -376,11 +376,11 @@ def test_generate_takes_the_write_lock_before_reading(
 def test_inbox_hides_the_actors_own_requests(
     session: Session, branch: Branch, people: dict[str, Person]
 ) -> None:
-    helena = Actor.person(people["Helena"])
+    helena, sanna = Actor.person(people["Helena"]), Actor.person(people["Sanna"])
     visit = _visit(session, branch, "Kamppi shop clean", offset=10)
-    out = scheduling.assign(session, helena, visit, people["Liisa"])  # outside her hours
-    assert out.approval_id
-    assert out.approval_id not in {a.id for a in scheduling.inbox(session, helena)}
+    out = scheduling.assign(session, sanna, visit, people["Liisa"])  # outside her hours
+    assert out.approval_id  # a supervisor's own (an owner's shows to the owner, D37)
+    assert out.approval_id not in {a.id for a in scheduling.inbox(session, sanna)}
     aki = Actor.person(
         store.insert(
             session, Person(branch_id=branch.id, name="Aki Admin", roles=["admin"]), helena
@@ -457,3 +457,21 @@ def test_generate_prefers_the_same_weekday_however_far_back(
     new = scheduling.generate(session, actor, branch, days=14)
     mondays = [v for v in new if v.job_id == job.id and v.date.weekday() == 0]
     assert mondays and all(v.assigned_person_ids == [people["Aino"].id] for v in mondays)
+
+
+def test_the_inbox_shows_an_owner_their_own_request_but_not_a_supervisor(
+    session: Session, branch: Branch, people: dict[str, Person]
+) -> None:
+    from mia.core import approvals
+
+    def ask(person: Person) -> str:
+        actor = Actor.person(person)
+        return approvals.request(
+            session, "demo", ("visit", "V1"), "x", actor, ["supervisor", "owner"]
+        ).id
+
+    helena, sanna = Actor.person(people["Helena"]), Actor.person(people["Sanna"])
+    owners, supervisors = ask(people["Helena"]), ask(people["Sanna"])
+    assert owners in {a.id for a in scheduling.inbox(session, helena)}  # D37
+    assert supervisors not in {a.id for a in scheduling.inbox(session, sanna)}
+    assert supervisors in {a.id for a in scheduling.inbox(session, helena)}

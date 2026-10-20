@@ -106,7 +106,8 @@ def create_variant(
 ) -> RetailItem:
     """A new item beside `base` (a premium variant, a bundle or a larger box) sold only at the
     actor's branch at `price` in base's currency, after it in the menu, inactive until its
-    experiment starts (event retail.item_created). components lists a bundle's item ids."""
+    experiment starts (event retail.item_created). components lists a bundle's item ids; its
+    cost is variant_cost."""
     item = RetailItem(
         branch_id=actor.branch_id,
         name=name,
@@ -115,7 +116,18 @@ def create_variant(
         active=False,
         sort_order=base.sort_order,
         components=components,
+        cost=variant_cost(session, base, components),
     )
     return store.insert(
         session, item, actor, action="retail.item_created", tool_call_id=tool_call_id
     )
+
+
+def variant_cost(session: Session, base: RetailItem, components: list[str]) -> int | None:
+    """A new item's cost: the sum of its parts' costs (a part once per piece), None when a part
+    has none; base's cost for a variant without parts (a premium of the same item)."""
+    if not components:
+        return base.cost
+    costs = {i.id: i.cost for i in session.exec(select(RetailItem))}
+    parts = [costs.get(c) for c in components]
+    return None if None in parts else sum(c for c in parts if c is not None)

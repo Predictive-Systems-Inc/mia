@@ -9,6 +9,7 @@ from mia.agents.inventory_manager.turn import SPEC as INVENTORY_MANAGER
 from mia.agents.sales_supervisor.turn import SPEC as SALES_SUPERVISOR
 from mia.agents.shift_supervisor.turn import SPEC as SHIFT_SUPERVISOR
 from mia.agents.stubs import STUBS
+from mia.core.rbac import get_rbac
 
 BUILT = [
     SHIFT_SUPERVISOR,
@@ -20,3 +21,13 @@ BUILT = [
 ]
 AGENTS: dict[str, AgentSpec] = {s.id: s for s in [*BUILT, *STUBS]}
 DEFAULT = SHIFT_SUPERVISOR.id  # ponytail: the agent of a new thread until routing (Task 6)
+
+
+def load_roles() -> None:
+    """Load every built agent's manifest roles into the node's enforcer, so an approval decided
+    outside any turn (its handler re-runs the agent's tool) finds the agent role's grants.
+    Idempotent: a grant already loaded is skipped. Called at app startup."""
+    rbac = get_rbac()
+    for spec in BUILT:
+        roles = spec.manifest.roles
+        rbac.load_agent_role(roles.agent_role, roles.grants, roles.denies)

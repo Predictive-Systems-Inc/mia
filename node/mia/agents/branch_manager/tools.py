@@ -29,6 +29,7 @@ from dataclasses import asdict
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, ToolBinding
@@ -486,9 +487,9 @@ class ProposeExperimentInput(BaseModel):
     starts_on: dt.date
     kind: Literal["price", "promo", "bundle"] = "price"
     strategy_id: str | None = None
-    rationale: dict[str, Any] = Field(
-        default_factory=dict, description="Filled by code from the strategy engine; pass {}"
-    )
+    # Code's only (check_experiment replaces whatever comes in with the engine's), hidden from
+    # the model's schema; it rides in the approval's evidence to the handler.
+    rationale: SkipJsonSchema[dict[str, Any]] = Field(default_factory=dict)
 
 
 class ExperimentOut(BaseModel):
@@ -573,13 +574,11 @@ def _proposal_for(
 def check_experiment(deps: AgentDeps, args: ProposeExperimentInput, tool_call_id: str) -> None:
     """The guard's precheck for propose_experiment (after the permission check, before the
     approval). Refuses (ExperimentRefused) a request naming no active strategy, an item the
-    branch does not sell, a start not after the business date, a second open experiment at the
-    branch, a strategy with no proposal for the item when no price was typed, or a price a
-    guard rail refuses (experiments.guard: the price in force on the start, the cost, the last
-    PRICE_DAYS of prices, the days since the item's last experiment; a new item is guarded
-    against what it stands for only). Completes the input in place, so the approval carries
-    it: kind from the strategy row, to_price from the engine when none was typed, the
-    rationale from the engine (with new_item: its components and from_price) when empty."""
+    branch does not sell, a strategy with no proposal for the item when no price was typed, and
+    whatever _verify_experiment refuses. Completes the input in place, so the approval carries
+    it: kind from the strategy row, to_price from the engine when none was typed, and the
+    rationale always from the engine's proposal (with new_item: its components and from_price;
+    {} without one), never from the input."""
     _engine_reads(deps, tool_call_id)
     strategy = deps.session.get(Strategy, args.strategy_id or "")
     if strategy is None or not strategy.active:
@@ -588,10 +587,6 @@ def check_experiment(deps: AgentDeps, args: ProposeExperimentInput, tool_call_id
         item = _sold_item(deps.session, deps.branch.id, args.item_id)
     except LookupError:
         raise ExperimentRefused("no_item") from None
-    if args.starts_on <= _business_day(deps, deps.branch, tool_call_id):
-        raise ExperimentRefused("starts_too_soon")
-    if _open_experiment(deps.session, deps.branch.id):
-        raise ExperimentRefused("open_experiment")
     numbers = branch_numbers(deps.session, deps.branch, deps.today)
     catalog = _catalog(deps.session, deps.branch.id)
     proposal = _proposal_for(numbers, catalog, item, strategy, args.starts_on)
@@ -599,15 +594,33 @@ def check_experiment(deps: AgentDeps, args: ProposeExperimentInput, tool_call_id
         if proposal is None:
             raise ExperimentRefused("no_proposal")
         args.to_price = proposal.to_price
-    if not args.rationale and proposal is not None:
-        args.rationale = dict(proposal.rationale)
-        if proposal.new_item is not None:
-            new = {"components": proposal.new_item, "from_price": proposal.from_price}
-            args.rationale["new_item"] = new
+    args.rationale = dict(proposal.rationale) if proposal is not None else {}
+    if proposal is not None and proposal.new_item is not None:
+        args.rationale["new_item"] = {
+            "components": proposal.new_item,
+            "from_price": proposal.from_price,
+        }
     args.kind = strategy.kind  # type: ignore[assignment]  # a seeded kind: price, promo, bundle
+    _verify_experiment(deps, args, tool_call_id)
+
+
+def _verify_experiment(deps: AgentDeps, args: ProposeExperimentInput, tool_call_id: str) -> None:
+    """The checks that must still hold when the request is approved: a start after the
+    business date, no other open experiment at the branch, and the guard rails
+    (experiments.guard: the price in force on the start, the cost, the last PRICE_DAYS of
+    prices, the days since the item's last experiment; a new item against what it stands for
+    and the summed cost of its parts). Raises ExperimentRefused."""
+    if args.starts_on <= _business_day(deps, deps.branch, tool_call_id):
+        raise ExperimentRefused("starts_too_soon")
+    if _open_experiment(deps.session, deps.branch.id):
+        raise ExperimentRefused("open_experiment")
+    item = _sold_item(deps.session, deps.branch.id, args.item_id)
+    if args.to_price is None:
+        raise ExperimentRefused("no_proposal")
     new_item = args.rationale.get("new_item")
     if new_item is not None:
-        refused = experiments.guard(new_item["from_price"], None, args.to_price, (), None)
+        cost = items.variant_cost(deps.session, item, list(new_item["components"]))
+        refused = experiments.guard(int(new_item["from_price"]), cost, args.to_price, (), None)
     else:
         past = _past_experiments(deps.session, deps.branch.id)
         last = max((e.ends_on for e in past if e.item_id == item.id), default=None)
@@ -615,7 +628,7 @@ def check_experiment(deps: AgentDeps, args: ProposeExperimentInput, tool_call_id
             items.price_on(deps.session, item, deps.branch.id, args.starts_on),
             item.cost,
             args.to_price,
-            numbers.last_prices_90d.get(item.id, ()),
+            _last_prices(deps.session, item, deps.branch.id, deps.today),
             (args.starts_on - last).days if last is not None else None,
         )
     if refused is not None:
@@ -714,12 +727,17 @@ def _requested(approval: Approval, model: type[BaseModel]) -> Any:
 
 
 def apply_experiment_approval(session: Session, approval: Approval, decider: Actor) -> None:
-    """Approval handler: re-run propose_experiment as the requester (their permissions, the
+    """Approval handler: check again as the requester that the start is still ahead, no other
+    experiment opened and the guard rails still pass (the price in force may have moved since
+    the request), then re-run propose_experiment as the requester (their permissions, the
     approval in deps.approved, the evidence input) and tell the requester. Raises LookupError
+    (ExperimentRefused with the reason: nothing is written, the decide route answers 409) or
     when the requester or the input cannot be found."""
     deps = _requester_deps(session, approval)
     args: ProposeExperimentInput = _requested(approval, ProposeExperimentInput)
-    out = propose_experiment(deps, args, str(approval.evidence.get("tool_call_id")))
+    tool_call_id = str(approval.evidence.get("tool_call_id"))
+    _verify_experiment(deps, args, tool_call_id)
+    out = propose_experiment(deps, args, tool_call_id)
     item = session.get(RetailItem, out.new_item_id or out.item_id)
     _tell(
         session,
@@ -970,6 +988,29 @@ def check_price(deps: AgentDeps, args: ChangePriceInput, tool_call_id: str) -> N
         raise PriceRefused("in_the_past")
     if args.price == items.price_on(deps.session, item, deps.branch.id, args.effective_on):
         raise PriceRefused("unchanged")
+    _check(deps, EXPERIMENTS, "read", tool_call_id)
+    if _item_in_experiment(deps.session, deps.branch.id, item.id):
+        raise PriceRefused("open_experiment")
+
+
+def _item_in_experiment(session: Session, branch_id: str, item_id: str) -> bool:
+    """The item has a pending or escalated propose_experiment request, or an approved or
+    running experiment, at the branch (its revert row would undo a price set meanwhile)."""
+    asked = session.exec(
+        select(Approval)
+        .where(Approval.branch_id == branch_id)
+        .where(Approval.type == PROPOSE)
+        .where(col(Approval.status).in_(OPEN))
+    ).all()
+    if any((a.evidence.get("input") or {}).get("item_id") == item_id for a in asked):
+        return True
+    row = session.exec(
+        select(Experiment)
+        .where(Experiment.branch_id == branch_id)
+        .where(Experiment.item_id == item_id)
+        .where(col(Experiment.status).in_(["approved", "running"]))
+    ).first()
+    return row is not None
 
 
 def change_price(deps: AgentDeps, args: ChangePriceInput, tool_call_id: str) -> PriceOut:
@@ -1017,11 +1058,16 @@ def change_price(deps: AgentDeps, args: ChangePriceInput, tool_call_id: str) -> 
 
 
 def apply_price_approval(session: Session, approval: Approval, decider: Actor) -> None:
-    """Approval handler: re-run change_price as the requester with the approval in
-    deps.approved and the evidence input, then tell the requester."""
+    """Approval handler: run check_price again as the requester (the date may have passed, the
+    price in force moved or an experiment opened on the item since the request; PriceRefused,
+    a LookupError: nothing is written, the decide route answers 409), then re-run change_price
+    as the requester with the approval in deps.approved and the evidence input, and tell the
+    requester."""
     deps = _requester_deps(session, approval)
     args: ChangePriceInput = _requested(approval, ChangePriceInput)
-    out = change_price(deps, args, str(approval.evidence.get("tool_call_id")))
+    tool_call_id = str(approval.evidence.get("tool_call_id"))
+    check_price(deps, args, tool_call_id)
+    out = change_price(deps, args, tool_call_id)
     item = session.get(RetailItem, out.item_id)
     _tell(
         session,
@@ -1203,7 +1249,7 @@ def weekly_summary(deps: AgentDeps, args: WeeklyInput, tool_call_id: str) -> Wee
         for resource in (TARGETS, STOCK, EXPERIMENTS):
             _check(deps, resource, "read_all", tool_call_id)
     for resource in (COUNTS, TARGETS, STOCK, EXPERIMENTS):
-        _check(deps, _as_reporter(resource, deps), "read", tool_call_id)
+        _check(deps, resource, "read", tool_call_id)  # the plain read: every reporter's rows
     day = _business_day(deps, deps.branch, tool_call_id)
     start = args.week_start or day - dt.timedelta(days=day.weekday() + 7)
     end = start + dt.timedelta(days=6)
@@ -1237,8 +1283,8 @@ def monthly_letter(deps: AgentDeps, args: MonthlyInput, tool_call_id: str) -> Mo
     the summed day targets, the BEST_DAYS_SHOWN best days by amount (earlier on a tie), the
     amount per reporter and the experiments that ended in the month (done, kept or rejected).
     Default month: the one before the business date's."""
-    for resource in (COUNTS, TARGETS, EXPERIMENTS):
-        _check(deps, _as_reporter(resource, deps), "read", tool_call_id)
+    for resource in (COUNTS, TARGETS, EXPERIMENTS, PEOPLE):
+        _check(deps, resource, "read", tool_call_id)  # the plain read: every reporter's rows
     day = _business_day(deps, deps.branch, tool_call_id)
     month = args.month or (day.replace(day=1) - dt.timedelta(days=1))
     start = month.replace(day=1)

@@ -533,7 +533,7 @@ def week(
 
 def inbox(session: Session, actor: Actor) -> list[Approval]:
     """Pending and escalated approvals the actor may decide (approver roles, or the escalation
-    roles once escalated), oldest first. Roles inherit through policy.csv (owner > admin > ...)."""
+    roles once escalated; their own request only as an owner of its branch, D37), oldest first. Roles inherit through policy.csv (owner > admin > ...)."""
     from mia.core.rbac import get_rbac
 
     enforcer = get_rbac().enforcer
@@ -542,8 +542,9 @@ def inbox(session: Session, actor: Actor) -> list[Approval]:
         mine.update(enforcer.get_implicit_roles_for_user(role, "*"))
     out = []
     for approval in approvals.pending(session, actor.branch_id):
-        if actor.ids & approvals.requester_ids(approval):
-            continue  # nobody approves a request they made or triggered
+        own = actor.ids & approvals.requester_ids(approval)
+        if own and not approvals.owner_of_own(session, approval, actor):
+            continue  # nobody approves a request they made or triggered, but an owner (D37)
         roles = set(approval.approver_roles)
         if approval.status == "escalated":
             roles |= set(approval.escalate_to)

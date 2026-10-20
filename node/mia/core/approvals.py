@@ -109,21 +109,21 @@ def _triggered(approval: Approval) -> set[str]:
     return set(triggered if isinstance(triggered, list) else [triggered])
 
 
+def owner_of_own(session: Session, approval: Approval, actor: Actor) -> bool:
+    """D37: the actor made (not triggered) the request and holds the owner role in the
+    approval's branch (their person row's branch), so they may decide it with a step-up."""
+    if not actor.ids & requester_ids(approval) or actor.ids & _triggered(approval):
+        return False
+    person = session.get(Person, actor.person_id or "")
+    return person is not None and person.branch_id == approval.branch_id and "owner" in person.roles
+
+
 def _owner_deciding_own(
     session: Session, approval: Approval, decider: Actor, stepped_up_at: datetime | None
 ) -> bool:
-    """D37: the decider made (not triggered) the request, holds the owner role in the
-    approval's branch (their person row's branch) and stepped up in the last five minutes."""
-    if decider.ids & _triggered(approval):
-        return False
-    person = session.get(Person, decider.person_id or "")
+    """owner_of_own with a step-up in the last five minutes."""
     fresh = stepped_up_at is not None and utcnow() - stepped_up_at <= STEP_UP_TTL
-    return (
-        fresh
-        and person is not None
-        and person.branch_id == approval.branch_id
-        and "owner" in person.roles
-    )
+    return fresh and owner_of_own(session, approval, decider)
 
 
 def _holds_role(decider: Actor, roles: list[str]) -> bool:

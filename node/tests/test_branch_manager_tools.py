@@ -26,7 +26,7 @@ from mia.agents.branch_manager.tools import (
 )
 from mia.agents.sales_supervisor import tools as sales_tools
 from mia.agents.sales_supervisor.tools import CountIn, RecordCountsInput
-from mia.core import approvals, store
+from mia.core import approvals, scheduling, store
 from mia.core.models import Actor, Approval, Branch, Event, Message, Person, SalesNote, Thread
 from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied, get_rbac
@@ -545,3 +545,129 @@ def test_a_short_code_needs_no_approval_and_never_clashes(session: Session, bm: 
         "s4",
     )
     assert clerk["status"] == "denied"
+
+
+# ---- fix round 1: trust boundaries ----------------------------------------------------------
+
+
+def test_a_forged_rationale_is_ignored(session: Session, bm: Ferinos) -> None:
+    end_seeded_experiment(session)
+    menu = len(session.exec(select(RetailItem)).all())
+    args = ProposeExperimentInput(
+        item_id=item(session, "Classic").id,
+        to_price=9000,
+        starts_on=TODAY + ONE_DAY,
+        strategy_id=strategy(session, "bm.strategy.increase").id,
+        rationale={"new_item": {"components": [], "from_price": 9000}},
+    )
+    out = call_tool(deps_for(session, bm[1]["Marites"]), BINDING[tools.PROPOSE], args, "e1")
+    assert (out["status"], out["message"]) == ("invalid", "too_far")
+    assert proposals_asked(session) == [] and len(session.exec(select(RetailItem)).all()) == menu
+    assert "rationale" not in ProposeExperimentInput.model_json_schema()["properties"]
+
+
+def test_a_price_change_on_an_item_in_an_experiment_is_refused(
+    session: Session, bm: Ferinos
+) -> None:
+    deps, binding = deps_for(session, bm[1]["Rosa"]), BINDING[tools.CHANGE_PRICE]
+    special = ChangePriceInput(
+        item_id=item(session, "Special").id, price=4800, effective_on=TODAY + ONE_DAY
+    )
+    assert call_tool(deps, binding, special, "p1")["message"] == "open_experiment"  # running
+    end_seeded_experiment(session)
+    assert propose(session, bm[1]["Marites"])["status"] == "approval_required"
+    assert change(session, bm[1]["Rosa"], 4800, "p2")["message"] == "open_experiment"  # pending
+    assert call_tool(deps, binding, special, "p3")["status"] == "approval_required"
+
+
+def test_an_experiment_approved_after_its_price_moved_is_refused(
+    session: Session, bm: Ferinos
+) -> None:
+    kiosk, people = bm
+    end_seeded_experiment(session)
+    approval_id = propose(session, people["Marites"])["approval_id"]
+    classic = item(session, "Classic")
+    items.schedule_price(session, classic, kiosk.id, 3500, TODAY, Actor.system(kiosk.id))
+    with pytest.raises(LookupError, match="too_far"):  # 44 pesos is 26 percent above 35
+        decide(session, approval_id, people["Rosa"], "approved")
+    assert session.exec(select(Experiment).where(Experiment.approval_id == approval_id)).all() == []
+
+
+def test_an_experiment_approved_after_its_start_is_refused(
+    session: Session, bm: Ferinos, pin: Pin
+) -> None:
+    end_seeded_experiment(session)
+    approval_id = propose(session, bm[1]["Marites"])["approval_id"]
+    pin(at(TODAY + ONE_DAY, 9, 30))  # the start is today now
+    with pytest.raises(LookupError, match="starts_too_soon"):
+        decide(session, approval_id, bm[1]["Rosa"], "approved")
+    stmt = select(RetailItemPrice).where(RetailItemPrice.approval_id == approval_id)
+    assert session.exec(stmt).all() == []
+
+
+def test_a_price_approved_after_its_date_is_refused(
+    session: Session, bm: Ferinos, pin: Pin
+) -> None:
+    args = ChangePriceInput(item_id=item(session, "Classic").id, price=4200, effective_on=TODAY)
+    deps = deps_for(session, bm[1]["Marites"])
+    approval_id = call_tool(deps, BINDING[tools.CHANGE_PRICE], args, "p1")["approval_id"]
+    pin(at(TODAY + ONE_DAY, 9, 30))
+    with pytest.raises(LookupError, match="in_the_past"):
+        decide(session, approval_id, bm[1]["Rosa"], "approved")
+
+
+def test_a_new_item_costs_the_sum_of_its_parts(session: Session, bm: Ferinos) -> None:
+    kiosk, _ = bm
+    classic, ube, actor = item(session, "Classic"), item(session, "Ube"), Actor.system(kiosk.id)
+    box = items.create_variant(session, classic, "Classic x8", 30000, [classic.id] * 8, actor, "v1")
+    assert box.cost == 8 * 2400
+    assert (
+        items.create_variant(
+            session, classic, "C + U", 8000, [classic.id, ube.id], actor, "v2"
+        ).cost
+        is None
+    )
+    assert (
+        items.create_variant(session, classic, "Classic Premium", 4800, [], actor, "v3").cost
+        == 2400
+    )
+
+
+def test_a_clerk_calling_the_lead_tools_directly_is_denied(session: Session, bm: Ferinos) -> None:
+    _, people = bm
+    deps = deps_for(session, people["Ana"])
+    with pytest.raises(PermissionDenied):
+        tools.weekly_summary(deps, WeeklyInput(), "d1")
+    with pytest.raises(PermissionDenied):
+        tools.monthly_letter(deps, MonthlyInput(), "d2")
+    with pytest.raises(PermissionDenied):
+        tools.coaching(deps, CoachingInput(person_id=people["Liza"].id), "d3")
+
+
+def test_the_owner_sees_her_own_price_change_in_her_inbox(session: Session, bm: Ferinos) -> None:
+    _, people = bm
+    own = change(session, people["Rosa"], 4800)["approval_id"]
+    assert own in {a.id for a in scheduling.inbox(session, Actor.person(people["Rosa"]))}
+
+
+def test_a_handler_finds_the_agent_role_after_startup(
+    session: Session, bm: Ferinos, fresh_rbac: None
+) -> None:
+    from fastapi.testclient import TestClient
+
+    from mia.api.main import app
+
+    _, people = bm
+    roles = MANIFEST.roles
+    get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)  # for the request
+    approval_id = change(session, people["Marites"], 4800)["approval_id"]
+    get_rbac.cache_clear()  # a node that ran no turn: no agent role loaded
+    url, rosa = f"/approvals/{approval_id}/decide", {"X-Mia-Actor": people["Rosa"].id}
+    res = TestClient(app).post(url, json={"outcome": "approved"}, headers=rosa)
+    assert res.status_code == 403, res.text
+    with TestClient(app) as client:  # the lifespan loads every built agent's roles
+        res = client.post(url, json={"outcome": "approved"}, headers=rosa)
+    assert res.status_code == 200, res.text
+    session.expire_all()
+    stmt = select(RetailItemPrice).where(RetailItemPrice.approval_id == approval_id)
+    assert session.exec(stmt).one().price == 4800

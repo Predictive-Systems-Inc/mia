@@ -15,7 +15,7 @@ from sqlmodel import Session, col, select
 
 import mia
 from mia.agents.customer_service import public
-from mia.agents.registry import AGENTS
+from mia.agents.registry import AGENTS, load_roles
 from mia.api.auth import router as auth_router
 from mia.api.deps import DbSession, PersonAuth, check_mode
 from mia.api.schedule import router as schedule_router
@@ -32,6 +32,7 @@ from mia.core import approvals, scheduling
 from mia.core.db import session_scope, utcnow
 from mia.core.events import verify_chain
 from mia.core.models import ChannelOutbox, Message, Person, Thread
+from mia.core.rbac import PermissionDenied
 from mia.settings import get_settings
 from mia.skills import runtime
 
@@ -90,9 +91,10 @@ async def _ticker(seconds: int) -> None:
 
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Register configured channels, then run due work (cover, outbox) every MIA_TICK_SECONDS
+    """Load the agents' roles, register configured channels, then run due work (cover, outbox) every MIA_TICK_SECONDS
     (a stand-in for the Huey worker)."""
     check_mode(get_settings())
+    load_roles()  # agent roles for approvals decided outside any turn
     register_configured(get_settings())
     seconds = get_settings().MIA_TICK_SECONDS
     task = asyncio.create_task(_ticker(seconds)) if seconds > 0 else None
@@ -194,6 +196,8 @@ def decide(
     except approvals.StepUpRequired as exc:
         raise HTTPException(403, "step_up_required") from exc
     except approvals.ApprovalError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except PermissionDenied as exc:  # a handler re-ran a tool the requester may not run
         raise HTTPException(403, str(exc)) from exc
     except LookupError as exc:  # the handler refused: its row changed since the request
         raise HTTPException(409, str(exc)) from exc
