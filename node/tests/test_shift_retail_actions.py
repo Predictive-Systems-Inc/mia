@@ -145,3 +145,17 @@ def test_retail_without_jev_is_unavailable(
     get_settings.cache_clear()
     reply = asyncio.run(run_turn(session, None, rs[1]["Ana"], "may sakit ako bukas", None))
     assert reply.text() == t("reply.unavailable", rs[1]["Ana"].language or "en")
+
+
+def test_a_correction_can_name_a_past_day(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A forgotten check-out is about a day gone by: retail offers the past 7 days, cleaning
+    still starts today."""
+    dates = query(session, rs[1]["Ana"], "9pm ako umalis kahapon").dates
+    yesterday, week_ago = (RS_TODAY - dt.timedelta(days=n) for n in (1, 7))
+    assert dates[yesterday.isoformat()].startswith("yesterday")
+    assert dates[week_ago.isoformat()].startswith("7 days ago")
+    assert (RS_TODAY - dt.timedelta(days=8)).isoformat() not in dates
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings())
+    assert min(actions._dates(RS_TODAY)) == RS_TODAY.isoformat()

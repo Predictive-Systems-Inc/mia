@@ -291,10 +291,14 @@ class Query:
 
 
 def _dates(today: dt.date) -> dict[str, str]:
+    """The days Jev may pick: today and the next 13; in retail also the past 7 (a forgotten
+    check-out is always about a day gone by). Cleaning's list is unchanged."""
     out: dict[str, str] = {}
-    for n in range(14):
+    for n in range(-7 if is_retail() else 0, 14):
         d = today + dt.timedelta(days=n)
-        when = {0: "today", 1: "tomorrow"}.get(n, f"in {n} days")
+        when = {0: "today", 1: "tomorrow", -1: "yesterday"}.get(
+            n, f"in {n} days" if n > 0 else f"{-n} days ago"
+        )
         weekday = d.weekday()
         out[d.isoformat()] = (
             f"{when}, {EN_WEEKDAYS[weekday]} {d.day}.{d.month}. ({FI_WEEKDAYS[weekday]})"

@@ -16,12 +16,13 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
+from mia.agents.parsing import has_negation
 from mia.agents.shift_supervisor import MANIFEST, actions, alerts, cover, decider, replies
 from mia.agents.shift_supervisor.agent import get_agent
 from mia.agents.shift_supervisor.classifier import classify
 from mia.agents.shift_supervisor.rules import is_retail
 from mia.agents.shift_supervisor.tools import BINDINGS
-from mia.chat.blocks import ChatReply, QuickRepliesBlock, TextBlock
+from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import (
     USAGE_LIMITS,
     finish,
@@ -217,8 +218,9 @@ def _jev_tapped(
         return None
     chosen = ((asked.after or {}).get("options") or {}).get(text.strip())
     decision = decider.Decision.model_validate(chosen) if chosen else None
-    offered = {*actions.actions_for(), "clarify"}  # a stored action the template no longer offers
-    return decision if decision is not None and decision.action in offered else None
+    if decision is not None and decision.action not in {*actions.actions_for(), "clarify"}:
+        return decider.Decision(action="clarify", confidence=1.0)  # not offered: ask to rephrase
+    return decision
 
 
 def _jev_query(
@@ -314,6 +316,7 @@ async def _jev_turn(
     DB work runs in worker threads; the Jev request runs with no write lock held."""
     decision, query = await asyncio.to_thread(_jev_query, session, deps, thread, text)
     if decision is None and query is not None:
+        await asyncio.to_thread(session.commit)  # no write lock held while Jev answers
         try:
             with egress_context(replace(ctx, provider="typesafe", purpose=f"{MANIFEST.id}.decide")):
                 decision = await decider.decide(query)
@@ -322,7 +325,30 @@ async def _jev_turn(
         except JevError as exc:
             return await asyncio.to_thread(_jev_failed, session, deps, thread, str(exc))
     assert decision is not None
+    if query is not None and _negated_yes(decision, text):
+        return await asyncio.to_thread(_ask_yes_or_no, session, deps, thread, decision)
     return await asyncio.to_thread(_jev_act, session, deps, thread, decision)
+
+
+def _negated_yes(decision: decider.Decision, text: str) -> bool:
+    """A typed yes to a swap or cover ask at the kiosk whose text holds a negation word: never
+    run as yes (parsing.has_negation). Cleaning is unchanged."""
+    answers = decision.action in ("swap_reply", "respond_to_cover")
+    return is_retail() and answers and decision.args.get("accept") is True and has_negation(text)
+
+
+def _ask_yes_or_no(
+    session: Session, deps: AgentDeps, thread: Thread, decision: decider.Decision
+) -> ChatReply:
+    """Log Jev's decision, then ask with the accept and decline buttons instead of acting."""
+    after = decision.model_dump(mode="json")
+    events.emit(session, "decision.made", ("thread", thread.id), None, after, deps.actor)
+    options = [t("cover.reply_accept", deps.lang), t("cover.reply_decline", deps.lang)]
+    blocks: list[Block] = [
+        TextBlock(text=t("shift.answer.ask", deps.lang)),
+        QuickRepliesBlock(options=options),
+    ]
+    return store_reply(session, deps, thread, blocks)
 
 
 def _template_text(decided: Route, lang: str) -> str | None:
