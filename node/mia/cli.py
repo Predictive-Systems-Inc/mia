@@ -208,8 +208,11 @@ def inbox(args: argparse.Namespace) -> int:
 
 
 def tick(_args: argparse.Namespace) -> int:
+    """One round of due work, as the server's ticker runs it (the agent roles loaded first)."""
+    from mia.agents.registry import load_roles
     from mia.api.main import run_due_work
 
+    load_roles()  # due work runs agents' tools outside any turn, as `serve` loads them
     advanced, sent = asyncio.run(run_due_work())
     print(f"advanced {advanced} cover request(s), sent {sent} channel message(s)")
     return 0

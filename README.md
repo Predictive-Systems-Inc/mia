@@ -90,8 +90,10 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run ruff check . && uv run ruff format --check . && uv run mypy node/mia` | Lint and types |
 | `uv run pre-commit install` | Run ruff, mypy and detect-secrets on every commit |
 
-The actor for HTTP calls is the `X-Mia-Actor: <person id>` header. There is no real login yet;
-do not expose a node built from this milestone to a network.
+In `MIA_AUTH_MODE=dev` the actor for HTTP calls is the `X-Mia-Actor: <person id>` header, honoured
+from loopback only; a server runs `required` (ADR 011, see Authentication below). To try the
+Ferino's agents locally, and for what a staff phone test on a server needs, see
+docs/testing-ferinos.md.
 
 ## Role skill models
 

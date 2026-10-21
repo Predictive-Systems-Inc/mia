@@ -194,3 +194,19 @@ def test_forget_an_unknown_key_says_so_and_emits_nothing(
     assert "no routes" in capsys.readouterr().out
     with session_scope() as session:
         assert not session.exec(select(Event).where(Event.action == route_memory.FORGOTTEN)).all()
+
+
+def test_tick_loads_the_agent_roles_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mia.agents import registry
+    from mia.api import main as api_main
+
+    calls: list[str] = []
+
+    async def due() -> tuple[int, int]:
+        calls.append("due")
+        return 0, 0
+
+    monkeypatch.setattr(registry, "load_roles", lambda: calls.append("roles"))
+    monkeypatch.setattr(api_main, "run_due_work", due)
+    assert main(["tick"]) == 0
+    assert calls == ["roles", "due"]

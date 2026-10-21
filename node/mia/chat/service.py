@@ -238,6 +238,9 @@ def _route_tapped(
     return (str(agent_id), after.get("original_message_id"), after) if agent_id else None
 
 
+MAX_ROUTE_BUTTONS = 6  # QuickRepliesBlock allows six options
+
+
 def _ask_route(
     session: Session,
     deps: AgentDeps,
@@ -249,7 +252,12 @@ def _ask_route(
 ) -> ChatReply:
     """ "Is this about" with one button per agent of the person; the tap answers the message
     (`original_id`, by default the thread's latest user message). The event keeps Jev's pick
-    and confidence (None without Jev) for the route memory."""
+    and confidence (None without Jev) for the route memory. Over MAX_ROUTE_BUTTONS agents: that many
+    buttons, the agent Jev leaned to first (an owner of eight agents asked with all eight was a 500)."""
+    if len(agents) > MAX_ROUTE_BUTTONS:
+        # ponytail: the rest keep the organisation's order and the tail is dropped; a typed
+        # message is routed again, a ranked list from Jev if the dropped ones are missed
+        agents = sorted(agents, key=lambda a: a.id != picked)[:MAX_ROUTE_BUTTONS]
     options = {t(a.label_key, deps.lang): a.id for a in agents}
     reply = store_reply(
         session,

@@ -3,6 +3,9 @@ template: retail
 agents: [sales_supervisor, shift_supervisor, inventory_manager, hr_officer, customer_service, branch_manager, bookkeeper, production_planner]
 languages: [fil, ceb, en]
 quiet_hours: {start: "21:00", end: "06:00"}
+channels:                      # messaging channels (ADR 007); off unless enabled
+  sim: {enabled: true}         # simulated channel for local trials: uv run mia channels sim
+  whatsapp: {enabled: false}  # needs the MIA_WA_* settings, see docs/whatsapp-setup.md
 payroll: {cutoffs: semi_monthly, pay_lag_days: 5}
 delivery_areas:
   - {name: Marikina, fee: 5000, currency: PHP}

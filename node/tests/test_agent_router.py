@@ -167,6 +167,23 @@ def test_with_no_active_agent_an_unsure_answer_asks_and_a_tap_answers(
     assert len(two_agents) == 1  # the tap made no second router request
 
 
+def test_an_owner_of_eight_agents_is_asked_with_six_buttons_jevs_pick_first(
+    session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    eight = orgconfig.load("ferinos").agents
+    assert len(eight) == 8
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings(agents=eight))
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")
+    get_settings.cache_clear()
+    _router_answers(monkeypatch, [], "production_planner", 0.4)
+    asked = _turn(session, people["Helena"], "hmm")
+    buttons = next(b.options for b in asked.blocks if isinstance(b, QuickRepliesBlock))
+    assert len(buttons) == 6
+    tapped = _turn(session, people["Helena"], buttons[0], asked.thread_id)
+    assert tapped.agent_id == "production_planner"
+
+
 def test_a_pending_question_keeps_its_agent_without_routing(
     session: Session,
     people: dict[str, Person],

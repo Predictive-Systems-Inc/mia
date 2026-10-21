@@ -128,7 +128,8 @@ mia/
                             <id>_cases.py and
                             test_<id>_evals.py from the scaffold)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,
-                            research/ (research notes and dated evaluation reports, ADR 012)
+                            research/ (research notes and dated evaluation reports, ADR 012),
+                            testing-ferinos.md (the local test and staff phone test runbook)
 ```
 
 Files beyond the brief's layout, and why, are listed in docs/adr/001-stack.md, 005 and 010.
