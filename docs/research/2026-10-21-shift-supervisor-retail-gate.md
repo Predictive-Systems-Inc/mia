@@ -266,3 +266,62 @@ measured tokens, not a billed amount.
 - Record `cost_minor` in the usage rows.
 
 Under D40 (21 Oct 2026) this run reads: no language passes; bcl fails (right 56%, ask 43%), ceb (wrong 4.0%, right 60%, ask 36%), en (ask 19%), fil (wrong 4.0%, right 72%, ask 24%), hil (wrong 2.7%, ask 32%), war (wrong 5.3%, right 52%, ask 43%). Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.
+
+## D40 rerun on the fresh gate half (21 Oct 2026, `2056`, once)
+
+Raw file `docs/research/shift-supervisor-retail-2026-10-21-2056.raw.json`. The fresh gate half of
+`shift_retail_cases.py` (half "gate"; the rows scored in the earlier 21 Oct runs, the three
+SCORED files, are spent and were not run), 450 rows, 75 per gated language, run once with
+`MIA_EVAL_HALVES=gate MIA_DECIDER=jev`. No agent, description, case or harness changed before or
+during the run. The printed summary and a recount from the raw file agree; no error rows.
+
+| Language | n | Right | Wrong | Ask | D40 |
+| --- | --- | --- | --- | --- | --- |
+| en | 75 | 82.7% (62) | 0.0% (0) | **17.3%** (13) | **fail** (ask) |
+| fil | 75 | **66.7%** (50) | 1.3% (1) | **32.0%** (24) | **fail** (right, ask) |
+| ceb | 75 | **53.3%** (40) | 1.3% (1) | **45.3%** (34) | **fail** (right, ask) |
+| hil | 75 | **56.0%** (42) | **4.0%** (3) | **40.0%** (30) | **fail** (wrong, right, ask) |
+| war | 75 | **50.7%** (38) | **4.0%** (3) | **45.3%** (34) | **fail** (wrong, right, ask) |
+| bcl | 75 | **52.0%** (39) | **4.0%** (3) | **44.0%** (33) | **fail** (wrong, right, ask) |
+| **all** | 450 | 60.2% (271) | **2.4%** (11) | 37.3% (168) | **fail** (wrong) |
+
+**Verdict under D40: fail**, in every language and on `all` (wrong 2.4%, 11 rows). Only en
+fails on a near row (ask 13 against the 11 that 15% allows). fil and ceb wrong pass (one row
+each, 1.3% at 75 rows); hil, war and bcl fail wrong on three rows each. Right and ask miss by
+many rows in every non-English language.
+
+**The eleven wrongs.** All tools below are write_internal with `approval: never`.
+- check_out read as check_in (ceb "mobiya na ko sa Mall kiosk karon" 0.86, bcl "mahali na ako
+  sa Mall kiosk ngunyan" 0.98). Writes only if the sender is not checked in yet: check_in
+  returns invalid "already" when the visit is in progress, the usual state of someone leaving.
+  A partial guard (state, not words).
+- record_absence read as check_in (hil "indi ako kaabot sa opening, 11 na ako maabot" 0.70, war
+  "diri ako umabot ha opening, 11 na ako maabot" 0.77). A late notice checks the sender in when
+  the visit's window holds now; otherwise check_in refuses (too early, no visit). **May write**
+  a check-in for someone not there; no word guard.
+- record_absence with the wrong date (hil "sorry, isa ka oras ako ma-late subong" 0.78: 29 Oct
+  morning instead of today 28 Oct). **Writes** an absence on the wrong day.
+- correct_time with the wrong date (bcl "kasuhapon dai ako naka-check out, naghali ako nin 9pm"
+  0.97: 28 Oct instead of 27 Oct, "kasuhapon" read as today). **Writes** a timesheet correction
+  on the wrong day.
+- report_site_problem read as reply_only (war "gin-uraan han customer an clerk" 0.70). No write;
+  the incident is lost.
+- close_day read as report_site_problem (war "waray abri ha Biyernes, may brownout an mall"
+  0.76). **Writes** an equipment incident instead of closing Friday.
+- close_day read as record_absence (fil, hil, bcl "sarado sa Nobyembre 6, may company outing"
+  0.61 to 0.82). **Writes** the sender's absence on 6 Nov instead of a closure. No guard: a
+  rule 7 check would be a closure word (sarado, sirado, walang bukas, waray abri) with a date
+  asking close_day or absence instead of writing either.
+None of the eleven is caught by the existing word guards (STOCK_WORDS, CORRECTION_WORDS, the
+check-out time check); the check-in state check covers the two check_out picks in practice.
+
+**The asks by cause (168).** Right action below 0.6: 121 (record_absence 38, the late notices
+"can't make it at opening, I'll be in at 11"; check_out 12, "naka-lock na ang kiosk, uuwi na";
+report_site_problem 12; correct_time 10; week_roster 10; check_in 8; find_replacements 8; swap
+7; reply_only 7; close_day 5; assign_cover 4). A missing input: 22 (find_replacements date 5
+and visit 2, swap visit 4 and date 2, correct_time time 3, report_site_problem visit 2,
+week_roster pattern 2 and visit 1, check_in visit 1). Another pick under 0.6: 25
+(assign_cover read as record_absence 5, clarify 2, reply_only 2, respond_to_cover 1: "kaya ni
+Ana yan"; check_out read as record_absence 4, check_in 2, reply_only 1: "pumalit na si Liza,
+aalis na ako"; close_day read as record_absence 2 and report_site_problem 1; report_site_problem
+read as reply_only 2; record_absence, check_in and reply_only read as another action, 1 each).

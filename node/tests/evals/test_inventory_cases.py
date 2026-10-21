@@ -39,8 +39,12 @@ def test_no_text_appears_in_both_halves() -> None:
 
 
 def test_no_fresh_text_was_ever_scored() -> None:
-    """No fresh text is in any earlier inventory manager run (every raw report's results)."""
-    raws = sorted(RESEARCH.glob("inventory-manager-*.raw.json"))
+    """No fresh text is in any earlier inventory manager run (the spent raw files, named)."""
+    # The spent runs, named (a later run's file scores the fresh rows).
+    raws = [
+        RESEARCH / f"inventory-manager-2026-10-19-{t}.raw.json"
+        for t in ("0554", "0558", "0653", "0656")
+    ]
     assert raws
     scored = {
         r["text"].casefold().strip()

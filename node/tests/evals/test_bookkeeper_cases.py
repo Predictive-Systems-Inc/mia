@@ -49,8 +49,9 @@ def test_no_text_appears_in_both_halves_and_no_pair_repeats() -> None:
 
 
 def test_no_fresh_text_was_ever_scored() -> None:
-    """A fresh text is in no recorded bookkeeper run (every docs/research raw file)."""
-    raws = sorted(RESEARCH.glob("bookkeeper-*.raw.json"))
+    """A fresh text is in no earlier bookkeeper run (the spent raw files, named)."""
+    # The spent runs, named (a later run's file scores the fresh rows).
+    raws = [RESEARCH / f"bookkeeper-2026-10-21-{t}.raw.json" for t in ("0052", "0053", "0054")]
     assert raws
     scored = {
         r["text"].casefold().strip()

@@ -242,3 +242,48 @@ most $0.19 (4.41 million tokens): a price applied to measured tokens, not a bill
 - Record `cost_minor` in the usage rows.
 
 Under D40 (21 Oct 2026) this run reads: bcl, ceb, en and war pass; fil fails (ask 16%, above 15%), hil fails (wrong 3.6%, above 2%). Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.
+
+## D40 rerun on the fresh gate half (21 Oct 2026, `2048`, once)
+
+Raw file `docs/research/bookkeeper-2026-10-21-2048.raw.json`. The fresh gate half of
+`bookkeeper_cases.py` (the plain-named rows, half "gate"; every SPENT_* row is spent and was not
+run), 330 rows, 55 per gated language, run once with `MIA_EVAL_HALVES=gate MIA_DECIDER=jev`.
+No agent, description, case or harness changed before or during the run. The printed summary
+and a recount from the raw file agree.
+
+| Language | n | Right | Wrong | Ask | D40 |
+| --- | --- | --- | --- | --- | --- |
+| en | 55 | 92.7% (51) | 0.0% (0) | 7.3% (4) | pass |
+| fil | 55 | **78.2%** (43) | 1.8% (1) | **20.0%** (11) | **fail** (right, ask) |
+| ceb | 55 | 81.8% (45) | 0.0% (0) | 18.2% (10) | pass |
+| hil | 55 | 70.9% (39) | 0.0% (0) | 29.1% (16) | pass |
+| war | 55 | 80.0% (44) | 0.0% (0) | 20.0% (11) | pass |
+| bcl | 55 | 80.0% (44) | 0.0% (0) | 20.0% (11) | pass |
+| **all** | 330 | 80.6% (266) | 0.3% (1) | 19.1% (63) | wrong passes |
+
+**Verdict under D40: fail**, on fil alone (right 78.2%, one row under 80%: 44 of 55 would be
+80.0%; ask 20.0%, three rows over 15%). Wrong passes everywhere; hil passes the drafted bar with
+one ask to spare (29.1% against 30%).
+
+**The one wrong (it would write).** fil "pinunan ko ang petty cash, ₱3,500": expected a petty
+refill, Jev picked petty_cash at 0.72 with kind spend, category supplies. This records a 3,500
+peso petty spend (an Expense with source petty) instead of a refill. No guard catches it: the
+expense limit (5,000 pesos, over_limit) does not reach 3,500, and `words.says_spend` is used only
+when Jev leaves the kind slot empty; "pinunan" is not in REFILL_WORDS ("punan" is, matched as a
+whole word). The rule 7 fix would be code: a refill word (with its inflections, pinunan,
+ginpuno, pinuno) in the message overrides a picked spend, or makes the kind an ask.
+
+**The asks by cause (63).** Right action below 0.6: 42 (cash count 8, settlement 8, payout 5,
+not built 5, expense 4, tax quarter 4, petty cash refills 3 in hil, war, bcl, journal 2, deposit
+1, balances 1, profit 1). A missing input reported on a read action: 14 (balances "how much do I
+take to the bank tomorrow?" 7 with missing amount, profit 5, journal 1, expense category 1).
+Another pick: 7 (the closing count "sulod sa kaha pagsira ₱8,065.50" read as an expense in ceb,
+hil, war, 3, all under 0.6 so asks; an expense read as not built 1; a late count read as clarify
+1; not built and profit read as reply only 2). fil's 11 asks are settlement and payout
+confidences, the utang (not built) seed, the profit seeds and the bank-tomorrow balance.
+
+The closing count read as an expense is the "pagsira" finding of the first gate again. In ceb
+and hil the guard in `decider.parse` (`words.says_count`, "pagsira" a count word there) already
+turns a confident expense pick into the count-or-expense ask; war has no such word in
+COUNT_WORDS ("han pagsira"), so there only the confidence under 0.6 made it an ask, and a
+confident pick would write an expense under the limit.

@@ -36,7 +36,11 @@ def test_no_text_appears_in_both_halves() -> None:
 
 def test_no_fresh_text_was_ever_scored() -> None:
     """No fresh text (casefolded) is in any earlier sales supervisor run's raw file."""
-    raws = sorted(RESEARCH.glob("sales-supervisor-*.raw.json"))
+    # The spent runs, named (a later run's file scores the fresh rows).
+    raws = [
+        RESEARCH / f"sales-supervisor-2026-10-19-{t}.raw.json"
+        for t in ("0243", "0245", "0349", "0353")
+    ]
     assert raws
     scored = {
         r["text"].casefold().strip()

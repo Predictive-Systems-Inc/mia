@@ -238,3 +238,37 @@ applied to measured tokens, not a billed amount.
   (spec, Carried over).
 
 Under D40 (21 Oct 2026) this run reads: en and war pass; bcl fails (wrong 4.0%), ceb (wrong 6.0%, right 66%), fil (right 78%, ask 22%), hil (right 62%, ask 36%). Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.
+
+## D40 rerun on the fresh gate half (21 Oct 2026, `2055`, once)
+
+Raw file `docs/research/production-planner-2026-10-21-2055.raw.json`. The fresh gate half of
+`production_planner_cases.py` (half "gate"; the rows scored by the 0747 and 0748 runs are spent
+and were not run), 300 rows, 50 per gated language, run once with
+`MIA_EVAL_HALVES=gate MIA_DECIDER=jev`. No agent, description, case or harness changed before or
+during the run. The printed summary and a recount from the raw file agree; no error rows.
+
+| Language | n | Right | Wrong | Ask | D40 |
+| --- | --- | --- | --- | --- | --- |
+| en | 50 | 88.0% (44) | 0.0% (0) | 12.0% (6) | pass |
+| fil | 50 | 80.0% (40) | 0.0% (0) | **20.0%** (10) | **fail** (ask) |
+| ceb | 50 | **64.0%** (32) | 0.0% (0) | **36.0%** (18) | **fail** (right, ask) |
+| hil | 50 | **64.0%** (32) | 0.0% (0) | **36.0%** (18) | **fail** (right, ask) |
+| war | 50 | 76.0% (38) | 0.0% (0) | 24.0% (12) | pass |
+| bcl | 50 | **64.0%** (32) | 0.0% (0) | **36.0%** (18) | **fail** (right, ask) |
+| **all** | 300 | 72.7% (218) | 0.0% (0) | 27.3% (82) | wrong passes |
+
+**Verdict under D40: fail, on asks only; no wrong row.** fil ask 20.0% (10 against the 7 that
+15% allows); ceb, hil and bcl right 64.0% (32 of 50, one row under: 33 would be 66%) and ask
+36.0% (18 against the 15 that 30% allows, three rows over). en and war pass. No wrong, so
+nothing would write a wrong row.
+
+**The asks by cause (82).** Right action below 0.6: 53 (plan 17, "itao an production plan sa
+aga"; dispatch 9, several near 0 such as bcl "ano an ide-deliver kan commissary sa Mall kiosk"
+at 0.02; capacity 8; batch_sheet 7; change_plan 5; delivered 4; confirm_plan 3). A missing
+input: 8 (change_plan direction 7: "kunhori og 2 ka batch ang classic" at 0.63 asks the
+direction, the rule 7 check that a change names more or less; batch_sheet recipe 1). Another
+pick under 0.6: 21 (delivered read as reply_only 6, "nadawat na sa street stall ang mga tray";
+plan read as clarify 4 and as dispatch 2, the orders share of tomorrow's batches; batch_sheet
+read as clarify 3 and reply_only 1, the banana leaves of puto bumbong; confirm_plan read as plan
+2 and clarify 1, "ituloy ang draft"; dispatch read as reply_only 1; delivered read as dispatch
+1).

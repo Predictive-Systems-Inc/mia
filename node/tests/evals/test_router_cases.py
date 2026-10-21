@@ -66,7 +66,20 @@ def test_no_fresh_text_was_ever_scored() -> None:
     """No gate text (casefolded) is in any recorded router run, so the rerun reads fresh seeds."""
     from tests.evals.test_router_eval import RESEARCH
 
-    raws = sorted(RESEARCH.glob("router-*.raw.json"))
+    # The spent runs, named (a later run's file scores the fresh rows).
+    spent = (
+        "2026-10-18",
+        "2026-10-19-0341",
+        "2026-10-19-0345",
+        "2026-10-19-run1",
+        "2026-10-19",
+        "2026-10-20-2050",
+        "2026-10-20-2121",
+        "2026-10-21-0113",
+        "2026-10-21-0301",
+        "2026-10-21-0749",
+    )
+    raws = [RESEARCH / f"router-{n}.raw.json" for n in spent]
     assert raws
     scored = {
         r["text"].casefold().strip()

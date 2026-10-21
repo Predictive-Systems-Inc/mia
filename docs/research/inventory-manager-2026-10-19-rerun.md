@@ -173,3 +173,43 @@ million input tokens about $0.19, $0.00016 per message.
 5. The chat scenarios have not been run against real Jev.
 
 Under D40 (21 Oct 2026) this run reads: bcl, en, hil and war pass; ceb fails (right 62%, ask 37%), fil fails (right 79%, ask 19%). Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.
+
+## D40 rerun on the fresh gate half (21 Oct 2026, `2052`, once)
+
+Raw file `docs/research/inventory-manager-2026-10-21-2052.raw.json`. The fresh gate half of
+`inventory_manager_cases.py` (half "gate"; the 19 Oct rows are spent and were not run), 360
+rows, 60 per gated language, run once with `MIA_EVAL_HALVES=gate MIA_DECIDER=jev`. No agent,
+description, case or harness changed before or during the run. The printed summary and a
+recount from the raw file agree; no error rows.
+
+| Language | n | Right | Wrong | Wrong items | Ask | D40 |
+| --- | --- | --- | --- | --- | --- | --- |
+| en | 60 | 91.7% (55) | 0.0% (0) | 0.0% (0) | 8.3% (5) | pass |
+| fil | 60 | **75.0%** (45) | 0.0% (0) | 0.0% (0) | **25.0%** (15) | **fail** (right, ask) |
+| ceb | 60 | 66.7% (40) | 0.0% (0) | 0.0% (0) | **33.3%** (20) | **fail** (ask) |
+| hil | 60 | 71.7% (43) | 0.0% (0) | 0.0% (0) | 28.3% (17) | pass |
+| war | 60 | 65.0% (39) | 0.0% (0) | 1.7% (1) | **33.3%** (20) | **fail** (ask) |
+| bcl | 60 | **60.0%** (36) | 0.0% (0) | 0.0% (0) | **40.0%** (24) | **fail** (right, ask) |
+| **all** | 360 | 71.7% (258) | 0.0% (0) | 0.3% (1) | 28.1% (101) | wrong passes |
+
+**Verdict under D40: fail**, on asks, in fil, ceb, war and bcl (none on one row: fil 15 asks
+against the 9 that 15% allows, ceb and war 20 against 18, bcl 24 against 18; fil and bcl also
+fail right). No wrong action anywhere; wrong passes. The harness scores wrong_items apart (a
+wrong write of the expected action) and `gate.py` does not count it as wrong.
+
+**The one wrong write (wrong_items, it writes).** war "4 nga classic ginlabog" (4 classic
+thrown away): Jev picked report_stock at 0.62 with kind count, so record_events
+(write_internal, `approval: never`) would record an end-of-day count of 4 classic instead of a
+waste of 4. "ginlabog" is in the waste description; no code guard checks the kind against the
+message's words. A rule 7 fix would be a waste-word check in code (a waste word with a picked
+count asks the kind).
+
+**The asks by cause (101).** report_stock right action below 0.6: 32 (leftovers, "co left how
+many?", "tira pagkatapos ng shift"). report_stock read as reply_only under 0.6: 12 (fil "1 se
+ang tira pagsara", "4 classic itinapon", ceb "hapit na mahurot ang dahon"). A missing input
+asked on report_stock: 22 (reason 7, quantity 5, lines 4, kind 3, item 3; the waste without a
+reason or a number scores right only when Mia asks that, so these are the other missing
+slots). reply_only below 0.6: 9 ("salamat gid", "sige, mopauli na ko"). whats_low: 12 (missing
+item 8, low confidence 4). report_stock read as clarify: 3 ("pila na lang co?"). The rest, 11:
+bake_plan 4, place_order 3, a count read as place_order 1, "how does this work?" read as
+clarify 1, whats_low missing lines 1, receive 1. bcl's 24 asks spread over the same causes.

@@ -175,3 +175,42 @@ input tokens about $0.15, $0.00014 per message.
 4. The chat scenarios have still not been run against real Jev.
 
 Under D40 (21 Oct 2026) this run reads: bcl, ceb and en pass; fil fails (ask 17%, above 15%), hil fails (wrong 3.3%), war fails (wrong 3.3%). Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.
+
+## D40 rerun on the fresh gate half (21 Oct 2026, `2053`, once)
+
+Raw file `docs/research/sales-supervisor-2026-10-21-2053.raw.json`. The fresh gate half of
+`sales_cases.py` (half "gate"; the rows scored in the earlier runs are spent and were not run),
+270 rows, 45 per gated language, run once with `MIA_EVAL_HALVES=gate MIA_DECIDER=jev`. No agent,
+description, case or harness changed before or during the run. The printed summary and a
+recount from the raw file agree; no error rows, no wrong items.
+
+| Language | n | Right | Wrong | Ask | D40 |
+| --- | --- | --- | --- | --- | --- |
+| en | 45 | 97.8% (44) | 0.0% (0) | 2.2% (1) | pass |
+| fil | 45 | 82.2% (37) | **2.2%** (1) | **15.6%** (7) | **fail** (wrong, ask) |
+| ceb | 45 | **64.4%** (29) | 0.0% (0) | **35.6%** (16) | **fail** (right, ask) |
+| hil | 45 | 75.6% (34) | **2.2%** (1) | 22.2% (10) | **fail** (wrong) |
+| war | 45 | **64.4%** (29) | **2.2%** (1) | **33.3%** (15) | **fail** (wrong, right, ask) |
+| bcl | 45 | 71.1% (32) | 0.0% (0) | 28.9% (13) | pass |
+| **all** | 270 | 75.9% (205) | 1.1% (3) | 23.0% (62) | wrong passes |
+
+**Verdict under D40: fail**, in fil, ceb, hil and war. On one row each: fil, hil and war wrong
+(one row is 2.2% at 45 rows, the cap allows none), fil ask (7 against the 6 that 15% allows),
+ceb and war right (29 of 45 is 64.4%, 30 would pass). ceb ask (16 against 13) and war ask (15
+against 13) are more than one row.
+
+**The three wrongs (none writes a wrong row).**
+- fil "bumaba ang mga taga-opisina para mag-lunch" and war "nanaog an mga taga-opisina para
+  mangaon hin paniudto", after Mia asked why sales went well: expected why_answer (record_note),
+  Jev picked reply_only at 0.71. Nothing is written; the reason is lost (a missed note, not a
+  wrong one). The ceb twin picked reply_only at 0.53 and asked.
+- hil "sige, makit-anay kita dason" (a goodbye): expected reply_only, Jev picked sales_today at
+  0.63. A read: the clerk gets today's sales instead of a goodbye. No write.
+
+**The asks by cause (62).** Right action below 0.6: 46 (report_sales 14, the short counts "2 pb
+only", "4 b4 pa lang"; sales_period 11, mostly ceb; reply_only 10, "ano ang itatawag ko sa
+iyo?"; set_target 4; why_answer 3; sales_today 3; correct_sales 1). A missing input: 9
+(sales_period amount 3 and items 2, report_sales item 2 and second item 1, correct_sales item
+1). Another pick under 0.6: 7 (why_answer read as
+reply_only 3, report_sales read as sales_today 2, reply_only and sales_period read as
+sales_today 2). ceb's 16 and war's 15 asks are sales_period confidences and the "4 b4" counts.

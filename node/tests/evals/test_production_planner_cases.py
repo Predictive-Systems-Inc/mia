@@ -53,7 +53,8 @@ def test_no_text_appears_in_both_halves() -> None:
 
 def test_no_fresh_text_was_ever_scored() -> None:
     """No fresh text is a spent row's or a text of an earlier run's raw file (casefolded)."""
-    raws = sorted(RAW.glob("production-planner-*.raw.json"))
+    # The spent runs, named (a later run's file scores the fresh rows).
+    raws = [RAW / f"production-planner-2026-10-21-{t}.raw.json" for t in ("0747", "0748")]
     assert raws, RAW
     scored = {c.text.casefold().strip() for c in CASES if c.half == "spent"}
     for raw in raws:

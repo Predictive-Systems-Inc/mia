@@ -434,3 +434,45 @@ tokens, at most $0.15 at the list price above.
 - **Stopped here,** as decided: both gates are reported failing after the one round.
 
 Under D40 (21 Oct 2026) this run reads: ceb, en, fil and hil pass; bcl fails (wrong 2.2%, above 2%), war fails (right 64% below 65%, ask 36% above 30%). Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.
+
+## D40 rerun on the fresh gate half (21 Oct 2026, `2050`, once)
+
+Raw file `docs/research/branch-manager-2026-10-21-2050.raw.json`. The fresh gate half of
+`branch_manager_cases.py` (half "gate"; the rows scored in runs 1 and 2 are spent and were not
+run), 270 rows, 45 per gated language, run once with `MIA_EVAL_HALVES=gate MIA_DECIDER=jev`.
+No agent, description, case or harness changed before or during the run. The printed summary
+and a recount from the raw file agree.
+
+| Language | n | Right | Wrong | Ask | D40 |
+| --- | --- | --- | --- | --- | --- |
+| en | 45 | 84.4% (38) | 0.0% (0) | **15.6%** (7) | **fail** (ask) |
+| fil | 45 | 88.9% (40) | 0.0% (0) | 11.1% (5) | pass |
+| ceb | 45 | 82.2% (37) | 0.0% (0) | 17.8% (8) | pass |
+| hil | 45 | 73.3% (33) | **2.2%** (1) | 24.4% (11) | **fail** (wrong) |
+| war | 45 | 66.7% (30) | 0.0% (0) | **33.3%** (15) | **fail** (ask) |
+| bcl | 45 | 82.2% (37) | **2.2%** (1) | 15.6% (7) | **fail** (wrong) |
+| **all** | 270 | 79.6% (215) | 0.7% (2) | 19.6% (53) | wrong passes |
+
+**Verdict under D40: fail**, in four languages, each on one or two rows: en ask 15.6% (7 of
+45, one row over the 6 that 15% allows), hil and bcl wrong 2.2% (one row each; at 45 rows the
+cap allows none), war ask 33.3% (15, two rows over the 13 that 30% allows).
+
+**The two wrongs.**
+- bcl "mayong trial, baguhon na sana: Classic 43 poon Nov 4": expected change_price (Classic
+  to 43 from 4 Nov), Jev picked propose_experiment at 0.81 (price kind, 43, from 4 Nov). It
+  does not write: propose_experiment has `approval: always` and risk money, so it lands on the
+  owner's approval card as an experiment instead of a dated price. The war twin ("waray trial")
+  made the same pick at 0.27 and asked.
+- hil "umpisa subong bf na ang i-type sang clerk para sa Box of 4": expected set_short_code bf,
+  Jev picked set_short_code at 0.64 with the code slot on the word "clerk". **This one writes**:
+  set_short_code is write_internal with `approval: never`, so Box of 4 would get the short code
+  "clerk". No guard catches it; `code_candidates` offers every short word of the message. A
+  rule 7 fix would be code: leave role words (clerk, staff, cashier) out of the code
+  candidates, or ask when more than one candidate is offered.
+
+**The asks by cause (53).** Right action below 0.6: 48 (propose_experiment 28, the largest
+block in every language: "curious if Special moves faster at 43, can we test"; monthly_letter
+6; set_short_code 5; coaching_who 4; change_price 2; weekly_summary 2; how_to_sell 1). Another
+pick under 0.6: 5, all war (coaching read as how_to_sell, how_to_sell and a monthly letter read
+as clarify, the "waray trial" price read as an experiment, "pira an aton kita han Oktubre?"
+read as an experiment at 0.21). war's 15 asks are the experiment block plus those five.

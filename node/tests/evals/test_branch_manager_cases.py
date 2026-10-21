@@ -50,7 +50,11 @@ def test_no_fresh_text_was_ever_scored() -> None:
     spent row's text is in one (the spent rows are the scored ones)."""
     from tests.evals.test_branch_manager_evals import RESEARCH
 
-    raw = sorted(RESEARCH.glob("branch-manager-*.raw.json"))
+    # The spent runs, named (a later run's file scores the fresh rows).
+    raw = [
+        RESEARCH / f"branch-manager-2026-10-20-{t}.raw.json"
+        for t in ("2047", "2048", "2049", "2119", "2120")
+    ]
     assert raw
     scored = {
         r["text"].casefold().strip()
