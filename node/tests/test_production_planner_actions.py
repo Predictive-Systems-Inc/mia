@@ -1,6 +1,7 @@
 """The production planner's readers, actions, Jev request and argument mapping (pure, the fake
 Jev's answers) on the Ferino's seed (pp, PP_TODAY a Tuesday)."""
 
+import dataclasses
 import datetime as dt
 import json
 from typing import Any
@@ -21,8 +22,9 @@ def reader(q: actions.Query, **slots: Any) -> decider.Reader:
     return decider.Reader(answers_for(actions.build_request(q, "jev"), "clarify", **slots), q)
 
 
-def query(session: Session, who: Person, text: str) -> actions.Query:
-    return actions.build_query(deps_for(session, who), text, "")
+def query(session: Session, who: Person, text: str, lang: str | None = None) -> actions.Query:
+    deps = deps_for(session, who)
+    return actions.build_query(dataclasses.replace(deps, lang=lang or deps.lang), text, "")
 
 
 def ing(session: Session, name: str) -> str:
@@ -204,3 +206,88 @@ def test_instructions_carry_no_message_text(session: Session, pp: Ferinos) -> No
     )
     assert "IGNORE" not in json.dumps(body["questions"])
     assert body["state"]["message"].startswith("IGNORE")
+
+
+def decide(q: actions.Query, action: str, **slots: Any) -> decider.Decision:
+    """decider.parse on the fake Jev's answers: what decide returns, without a request."""
+    body = actions.build_request(q, "jev")
+    return decider.shared.parse(
+        answers_for(body, action, **slots), q, actions=actions.ACTIONS, args=decider._args
+    )
+
+
+def test_a_remove_word_jev_reads_as_set_asks_in_ceb_and_war(session: Session, pp: Ferinos) -> None:
+    """Gate 0748: "kuhai og usa ka batch ang classic" set Classic to 1. A remove word with set,
+    or with no direction, asks: a clarify, so no change_plan runs."""
+    plan = draft(session)
+    classic = item(session, "Classic").id
+    for lang, text in (
+        ("ceb", "kuhai og usa ka batch ang classic"),
+        ("war", "kuhai hin usa nga batch an classic"),
+    ):
+        q = query(session, pp[1]["Nonoy"], text, lang)
+        for direction in ("set", "not_stated", "add"):
+            got = decide(q, "change_plan", item=classic, direction=direction, number="n0")
+            assert (got.action, got.missing) == ("clarify", "direction"), (text, direction)
+        got = decide(q, "change_plan", item=classic, direction="remove", number="n0")
+        assert (got.action, got.args["batches"]) == ("change_plan", q.plan_batches[classic] - 1)
+    session.refresh(plan)
+    assert {x["item_id"]: x["batches"] for x in plan.lines}[classic] == q.plan_batches[classic]
+
+
+def test_set_applies_only_without_a_direction_word(session: Session, pp: Ferinos) -> None:
+    draft(session)
+    special = item(session, "Special").id
+    q = query(session, pp[1]["Nonoy"], "himoa 3 ka batch ang special")
+    for direction in ("set", "not_stated"):
+        got = decide(q, "change_plan", item=special, direction=direction, number="n0")
+        assert (got.action, got.args["batches"]) == ("change_plan", 3)
+    q = query(session, pp[1]["Nonoy"], "dugangi og 2 ka batch, bawasi ang special")
+    got = decide(q, "change_plan", item=special, direction="add", number="n0")
+    assert got.missing == "direction"  # both kinds of word
+
+
+def test_an_item_pick_the_message_does_not_name_asks(session: Session, pp: Ferinos) -> None:
+    """Gate 0748: "pila ka itlog ... sa ube" picked Salted egg ("itlog" is the Eggs code)."""
+    draft(session)
+    salted, ube = item(session, "Salted egg").id, item(session, "Ube").id
+    q = query(session, pp[1]["Nonoy"], "pila ka itlog ang kinahanglan sa ube ugma?")
+    assert q.named == {ube}
+    assert decide(q, "batch_sheet", item=salted).missing == "item"
+    assert decide(q, "batch_sheet", item=ube).action == "batch_sheet"
+    q = query(session, pp[1]["Nonoy"], "batch 2 ube 33 ok 3 hilaw")
+    assert decide(q, "record_batch", item=salted).missing == "item"
+    q = query(session, pp[1]["Nonoy"], "dagdagan ng 1 batch ang ube at salted egg")
+    assert q.named == {ube, salted}
+    got = decide(q, "change_plan", item=ube, direction="add", number="n0")
+    assert (got.action, got.missing, got.args["item_id"]) == ("clarify", "item", None)
+
+
+def test_capacity_reads_the_unit_word_and_asks_for_a_bare_number(
+    session: Session, pp: Ferinos
+) -> None:
+    classic = item(session, "Classic").id
+    q = query(session, pp[1]["Nonoy"], "kaya pa ba ng 3 batch classic")
+    got = decide(q, "capacity", item=classic, number="n0")  # Jev's unit not stated
+    assert (got.action, got.args["pieces"]) == ("capacity", 3 * q.batch_yields[classic])
+    q = query(session, pp[1]["Nonoy"], "kaya pa ba ang 3 sa Biyernes?")
+    assert decide(q, "capacity", item=classic, number="n0").missing == "unit"
+    q = query(session, pp[1]["Nonoy"], "kaya ba ang 200 classic sa Dec 24")
+    assert decide(q, "capacity", item=classic, number="n0").args["pieces"] == 200
+
+
+def test_a_piece_word_wins_over_jevs_unit_in_a_change(session: Session, pp: Ferinos) -> None:
+    draft(session)
+    ube = item(session, "Ube").id  # 36 pieces a batch
+    q = query(session, pp[1]["Nonoy"], "bawasan ng 40 piraso ang ube")
+    args = reader(q, item=ube, direction="remove", number="n0", unit="batches")
+    assert decider._args("change_plan", args)[0]["batches"] == max(0, q.plan_batches[ube] - 2)
+
+
+def test_a_menu_digit_and_ibig_kong_sabihin(session: Session, pp: Ferinos) -> None:
+    assert query(session, pp[1]["Nonoy"], "3 Box of 4 bukas").numbers == {"n0": 3}
+    for lang, text in (
+        ("fil", "dagdagan ng 2 batch ang ube, ibig kong sabihin 1"),
+        ("ceb", "dugangi og 2 ka batch ang ube, buot nako ingnon 1"),
+    ):
+        assert words.numbers(text, PP_TODAY, lang) == {"n0": 1}

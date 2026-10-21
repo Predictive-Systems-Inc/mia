@@ -232,8 +232,9 @@ def ineligibility(
     among: Collection[str] | None = None,
 ) -> list[str]:
     """Why the person may not take the visit (empty when they may): the shift supervisor's reasons
-    plus missing skills. An inactive or non-staff person gets one reason. `org_wide` as in
-    candidate_data (the retail cover, D39)."""
+    plus missing skills. An inactive or non-staff person gets one reason, and so does a person
+    of a branch outside `among` ("not kiosk staff"). `org_wide` as in candidate_data (the retail
+    cover, D39)."""
     if person.status != "active":
         return ["person is not active"]
     if not is_staff(person):
@@ -248,8 +249,9 @@ def ineligibility(
         org_wide=org_wide,
         among=among,
     )
-    if not data:
-        return ["person is not active"]
+    if not data:  # read only the `among` branches (and this one): a person outside them
+        outside = among is not None and person.branch_id not in {*among, branch.id}
+        return ["not kiosk staff" if outside else "person is not active"]
     reasons = list(scoring.ineligibility(data[0], slot_of(session, visit, branch.timezone)))
     missing = sorted(set(job.required_skills if job else []) - set(person.skills))
     if missing:

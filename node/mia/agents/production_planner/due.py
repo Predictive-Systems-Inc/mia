@@ -107,23 +107,16 @@ def _items(session: Session, branch_id: str) -> dict[str, str]:
 
 
 def names(session: Session, commissary: Branch) -> dict[str, str]:
-    """Item and branch names by id (the replies' names)."""
+    """Item and branch names by id (the replies' names), read by the agent alone after its
+    items and core.branch read checks."""
     items = _items(session, commissary.id)
+    get_rbac().require(tools.agent_actor(commissary.id), tools.BRANCHES, "read", session=session)
     stmt = select(Branch).where(Branch.organisation_id == commissary.organisation_id)
     return items | {b.id: b.name for b in session.exec(stmt)}
 
 
 def _send(session: Session, branch: Branch, person: Person, blocks: list[Block]) -> Message:
     return notify(session, person, blocks, Actor.system(branch.id), MANIFEST.id)
-
-
-def _commissary(session: Session, s: ProductionPlannerSettings, branch: Branch) -> Branch | None:
-    """The settings' commissary in the branch's organisation, if any. ponytail: tools has its
-    own lookup; one shared helper waits for the wave."""
-    if not s.commissary:
-        return None
-    stmt = select(Branch).where(Branch.name == s.commissary)
-    return session.exec(stmt.where(Branch.organisation_id == branch.organisation_id)).first()
 
 
 # ---- senders ------------------------------------------------------------------------------
@@ -242,7 +235,7 @@ def _yield(session: Session, commissary: Branch, day: dt.date) -> int:
 
 def _branch_due(session: Session, branch: Branch, now: dt.datetime) -> int:
     s = orgconfig.load().production_planner
-    commissary = _commissary(session, s, branch)
+    commissary = tools.commissary(session, branch.organisation_id)
     if commissary is None:
         return 0
     if branch.id == commissary.id:

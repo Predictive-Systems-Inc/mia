@@ -276,8 +276,9 @@ SPEC = AgentSpec(
     label_key=f"agent.{MANIFEST.id}.label",
     router_description=(
         "Employment: my hours worked this cutoff, cash advances, holiday pay, payroll and"
-        " payslips, 13th month pay, leave balances, SSS, PhilHealth and Pag-IBIG contributions,"
-        " hiring; not who works which shift and not adding people to a branch."
+        " payslips, 13th month pay, leave balances, filing sick or vacation leave for a date, SSS,"
+        " PhilHealth and Pag-IBIG contributions, hiring; not who works which shift and not adding"
+        " people to a branch."
     ),
     handle_turn=handle_turn,
     run_due=due.run_due,

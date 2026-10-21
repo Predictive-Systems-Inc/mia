@@ -14,7 +14,7 @@ from sqlmodel import Session, col, or_, select
 
 from mia.agents.base import AgentDeps
 from mia.agents.decider import NOT_STATED, Action
-from mia.agents.parsing import find_dates, has_negation
+from mia.agents.parsing import find_dates, has_negation, menu_tokens
 from mia.agents.production_planner import MANIFEST, tools, words
 from mia.core import db, orgconfig
 from mia.core.models import Branch
@@ -129,6 +129,7 @@ class Query:
     role: str
     today: dt.date
     items: dict[str, str] = field(default_factory=dict)  # single item id -> "Name (codes)"
+    named: frozenset[str] = frozenset()  # the items the message names (words.named)
     kiosks: dict[str, str] = field(default_factory=dict)  # served branch id -> name
     numbers: dict[str, int] = field(default_factory=dict)  # n0 -> count (words.numbers)
     dates: dict[str, str] = field(default_factory=dict)  # d0 -> ISO date, from find_dates
@@ -158,7 +159,7 @@ def build_query(
     """Every candidate the request needs: the single items (never a bundle), the commissary's
     served kiosks, recipe yields, the batches of the production day's plan (tools.production_day
     now: the plan the tools edit) and what code reads from the message (a recipe against the
-    ingredients). Reads only; the caller holds no write lock."""
+    ingredients, the items it names, the numbers without a menu name's digit). Reads only; the caller holds no write lock."""
     session = deps.session
     home = commissary(session, deps.organisation_id)
     here = (home or deps.branch).id
@@ -176,6 +177,7 @@ def build_query(
         )
         .order_by(col(RetailIngredient.name))
     ).all()
+    singles = [i for i in items if not i.components]
     kiosks, yields, plan = {}, {}, None
     if home is not None:
         kiosks = {b.id: b.name for b in tools.served(session, home)}
@@ -188,9 +190,12 @@ def build_query(
         previous_mia_message=previous_mia_message,
         role=", ".join(deps.person.roles),
         today=deps.today,
-        items={i.id: _named(i) for i in items if not i.components},
+        items={i.id: _named(i) for i in singles},
+        named=frozenset(words.named(message, [(i.id, [i.name, *i.short_codes]) for i in singles])),
         kiosks=kiosks,
-        numbers=words.numbers(message, deps.today, deps.lang),
+        numbers=words.numbers(
+            message, deps.today, deps.lang, menu_tokens((i.name, i.short_codes) for i in items)
+        ),
         dates={i: d.isoformat() for i, d in find_dates(message, deps.today, deps.lang)},
         plan_batches={x["item_id"]: int(x["batches"]) for x in plan.lines} if plan else {},
         plan_date=plan.production_date if plan else None,

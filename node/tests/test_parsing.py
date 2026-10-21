@@ -10,6 +10,8 @@ from mia.agents.parsing import (
     has_negation,
     menu_tokens,
     pre_parse,
+    strip_dates,
+    strip_menu_names,
     strip_times,
     tenders_in,
     was_corrected,
@@ -283,3 +285,13 @@ def test_the_count_parser_reads_a_tender_word() -> None:
     assert [g.words for g in pre_parse("g-cash 3 classic", {"classic"})[0]] == ["classic"]
     assert tenders_in("gcash 2 grab 1 G-Cash") == ["gcash", "grab"]
     assert tenders_in("3 classic") == []
+
+
+def test_strip_dates_takes_out_times_and_dates_but_a_filipino_may() -> None:
+    assert strip_dates("200 classic sa Dec 24 alas 3", "fil").split() == ["200", "classic", "sa"]
+    assert strip_dates("may 5 ube", "fil").split() == ["may", "5", "ube"]
+    assert strip_dates("May 5 ube", "en").split() == ["ube"]
+
+
+def test_strip_menu_names_takes_out_a_name_with_a_digit() -> None:
+    assert strip_menu_names("3 Box of 4 at 2 kape", FERINOS).split() == ["3", "at", "2", "kape"]

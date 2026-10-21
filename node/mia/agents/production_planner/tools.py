@@ -40,7 +40,7 @@ from mia.agents.sales_supervisor.tools import (
 )
 from mia.agents.shift_supervisor import alerts
 from mia.chat.channels import notify
-from mia.core import store
+from mia.core import events, store
 from mia.core.db import utcnow
 from mia.core.models import (
     Actor,
@@ -54,7 +54,7 @@ from mia.core.models import (
 )
 from mia.core.orgconfig import ProductionPlannerSettings
 from mia.core.orgconfig import load as load_settings
-from mia.core.rbac import Resource, get_rbac
+from mia.core.rbac import PermissionDenied, Resource, get_rbac
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailIngredient, RetailItem
 
@@ -67,6 +67,7 @@ PLANS = Resource(kind="data", name=Plan.__tablename__)
 BATCHES = Resource(kind="data", name=Batch.__tablename__)
 DISPATCHES = Resource(kind="data", name=Dispatch.__tablename__)
 PEOPLE = Resource(kind="data", name="core.person")
+BRANCHES = Resource(kind="data", name="core.branch")
 DRIVER = "driver"
 ONE_DAY = dt.timedelta(days=1)
 
@@ -84,8 +85,18 @@ def production_day(commissary: Branch, s: ProductionPlannerSettings, now: dt.dat
     return local.date() if local.time() < s.hours.end else local.date() + ONE_DAY
 
 
+def batch_day(commissary: Branch, s: ProductionPlannerSettings, now: dt.datetime) -> dt.date:
+    """The production date a batch recorded at now belongs to: the latest one whose
+    hours.start has passed (the local date from hours.start on, else the day before), so a
+    correction after the end of production stays on that day's plan."""
+    local = now.astimezone(ZoneInfo(commissary.timezone))
+    return local.date() if local.time() >= s.hours.start else local.date() - ONE_DAY
+
+
 def served(session: Session, commissary: Branch) -> list[Branch]:
-    """The kiosks the commissary bakes for, in the settings' `serves` order (same organisation)."""
+    """The kiosks the commissary bakes for, in the settings' `serves` order (same organisation),
+    read by the agent alone after its core.branch read check."""
+    get_rbac().require(agent_actor(commissary.id), BRANCHES, "read", session=session)
     names = load_settings().production_planner.serves
     rows = session.exec(
         select(Branch)
@@ -133,13 +144,16 @@ class KioskData:
 
 def kiosk_data(session: Session, commissary: Branch, kiosk: Branch, day: dt.date) -> KioskData:
     """The kiosk's numbers for production date day, read by the agent alone with read_all on
-    counts, stock and orders (each check logged). Raises LookupError("not_served") for a branch
-    the commissary does not bake for, PermissionDenied without the agent role's rights."""
+    counts, stock and orders and read on items, recipes and hours (each check logged). Raises
+    LookupError("not_served") for a branch the commissary does not bake for, PermissionDenied
+    without the agent role's rights."""
     if kiosk.id not in {b.id for b in served(session, commissary)}:
         raise LookupError("not_served")
-    actor = agent_actor(kiosk.id)
+    actor, rbac = agent_actor(kiosk.id), get_rbac()
     for resource in (COUNTS, STOCK, ORDERS):
-        get_rbac().require(actor, resource, "read_all", session=session)
+        rbac.require(actor, resource, "read_all", session=session)
+    for resource in (ITEMS, RECIPES, inventory_tools.HOURS):
+        rbac.require(actor, resource, "read", session=session)
     components = _components(session)
     counts = _live_counts(
         session, [kiosk.id], day - dt.timedelta(days=forecast.FORECAST_DAYS), day - ONE_DAY
@@ -285,9 +299,10 @@ def save_batch(
     at: dt.datetime | None = None,
 ) -> Batch:
     """One batch of the plan recorded by the person at `at` (default now), its planned yield
-    the recipe's; a repeated batch number updates its row (a correction). Event
-    `<agent>.batch_recorded`. Raises LookupError("not_planned") for an item not in the plan or
-    a batch number above its line's batches."""
+    the recipe's; a repeated batch number updates its row (a correction). The read of that row
+    and its write run under the write lock (rule 11). Event `<agent>.batch_recorded`. Raises
+    LookupError("not_planned") for an item not in the plan or a batch number above its line's
+    batches."""
     line = next((x for x in plan.lines if x["item_id"] == args.item_id), None)
     if line is None or args.batch_no > line["batches"]:
         raise LookupError("not_planned")
@@ -300,6 +315,7 @@ def save_batch(
         "at": at or utcnow(),
     }
     action = f"{MANIFEST.id}.batch_recorded"
+    events.write_lock(session)
     existing = session.exec(
         select(Batch)
         .where(Batch.plan_id == plan.id)
@@ -333,8 +349,8 @@ def good_pieces(session: Session, plan: Plan) -> dict[str, int]:
 
 def pack(session: Session, plan: Plan, actor: Actor) -> list[Dispatch]:
     """One dispatch per kiosk of the plan (event `<agent>.dispatch_packed`), its lines the
-    good pieces split by forecast.dispatch_split over the planned pieces, lines of 0 left out;
-    the existing rows when the plan is packed."""
+    good pieces split by forecast.dispatch_split over the planned pieces, lines of 0 left out
+    and a kiosk with no line at all skipped; the existing rows when the plan is packed."""
     existing = session.exec(select(Dispatch).where(Dispatch.plan_id == plan.id)).all()
     if existing:
         return list(existing)
@@ -343,8 +359,8 @@ def pack(session: Session, plan: Plan, actor: Actor) -> list[Dispatch]:
     for line in plan.lines:
         planned = {k["branch_id"]: k["pieces"] for k in line["kiosks"]}
         for branch_id, quantity in forecast.dispatch_split(good[line["item_id"]], planned).items():
-            sent = kiosks.setdefault(branch_id, [])
             if quantity:
+                sent = kiosks.setdefault(branch_id, [])
                 sent.append({"item_id": line["item_id"], "quantity": quantity})
     action = f"{MANIFEST.id}.dispatch_packed"
     return [
@@ -473,6 +489,11 @@ def _at_commissary(
 def _today(commissary: Branch) -> dt.date:
     """The production date at the commissary now."""
     return production_day(commissary, load_settings().production_planner, utcnow())
+
+
+def _batch_day(commissary: Branch) -> dt.date:
+    """The production date a batch recorded now belongs to (batch_day)."""
+    return batch_day(commissary, load_settings().production_planner, utcnow())
 
 
 def _plan(deps: AgentDeps, commissary: Branch, day: dt.date) -> Plan:
@@ -771,13 +792,13 @@ class BatchOut(BaseModel):
 
 def check_batch(deps: AgentDeps, args: BatchInput, tool_call_id: str) -> None:
     """The precheck of record_batch: the rights first (write on batches, write_all away from
-    the commissary), then the plan of the production day (`no_plan`), the item and batch
+    the commissary), then the plan of the batch day (batch_day: `no_plan`), the item and batch
     number in it (`not_planned`), and good plus waste at most twice the batch yield
     (`batch_total`)."""
     commissary = _commissary(deps)
     _at_commissary(deps, commissary, [BATCHES], "write", tool_call_id)
     _at_commissary(deps, commissary, [PLANS, RECIPES], "read", tool_call_id)
-    line = _line(_plan(deps, commissary, _today(commissary)), args.item_id)
+    line = _line(_plan(deps, commissary, _batch_day(commissary)), args.item_id)
     if args.batch_no > line["batches"]:
         raise LookupError("not_planned")
     if args.good + args.waste > 2 * _recipe(deps.session, commissary.id, args.item_id).batch_yield:
@@ -792,12 +813,15 @@ def _all_recorded(session: Session, plan: Plan) -> bool:
 
 
 def record_batch(deps: AgentDeps, args: BatchInput, tool_call_id: str) -> BatchOut:
-    """One batch of the production day's plan recorded by the person (save_batch), with the
-    item's yield percent so far. When it is the plan's last unrecorded batch the dispatches
-    are packed by the agent alone and their lists sent, urgent (send_dispatch)."""
+    """One batch of the batch day's plan recorded by the person (save_batch), with the item's
+    yield percent so far. When it is the plan's last unrecorded batch the dispatches are packed
+    by the agent alone and their lists sent, urgent (send_dispatch). The agent's write_all on
+    dispatches is checked before the batch is saved, so a denied grant leaves no batch row."""
     check_batch(deps, args, tool_call_id)  # a direct call skips the guard's precheck
     commissary = _commissary(deps)
-    plan = _plan(deps, commissary, _today(commissary))
+    plan = _plan(deps, commissary, _batch_day(commissary))
+    agent = agent_actor(commissary.id)
+    get_rbac().require(agent, DISPATCHES, "write_all", session=deps.session)
     row = save_batch(deps.session, plan, args, deps.person, deps.actor)
     rows = deps.session.exec(
         select(Batch).where(Batch.plan_id == plan.id).where(Batch.item_id == args.item_id)
@@ -805,8 +829,6 @@ def record_batch(deps: AgentDeps, args: BatchInput, tool_call_id: str) -> BatchO
     percent = forecast.yield_percent(sum(b.good for b in rows), sum(b.planned_yield for b in rows))
     last = _all_recorded(deps.session, plan)
     if last:
-        agent = agent_actor(commissary.id)
-        get_rbac().require(agent, DISPATCHES, "write_all", session=deps.session)
         packed = deps.session.exec(select(Dispatch).where(Dispatch.plan_id == plan.id)).first()
         if packed is None:
             send_dispatch(deps.session, commissary, pack(deps.session, plan, agent))
@@ -824,10 +846,11 @@ def record_batch(deps: AgentDeps, args: BatchInput, tool_call_id: str) -> BatchO
 
 
 def send_dispatch(session: Session, commissary: Branch, rows: list[Dispatch]) -> list[Message]:
-    """Each dispatch's card (replies.dispatch_card: the list and its Delivered button, the
-    decision stored by turn.remember) to the commissary's supervisors and every active person
-    there with the driver skill, urgent. People and items are read by the agent alone after
-    its read check. Returns the messages sent."""
+    """One card per person with every dispatch (replies.dispatch_card: the lists and a
+    Delivered button per packed kiosk, the decisions stored by turn.remember) to the
+    commissary's supervisors and every active person there with the driver skill, urgent.
+    People and items are read by the agent alone after its read check. Returns the messages
+    sent (none without a dispatch)."""
     from mia.agents.production_planner import replies, turn  # both import this module
 
     agent, rbac = agent_actor(commissary.id), get_rbac()
@@ -840,13 +863,12 @@ def send_dispatch(session: Session, commissary: Branch, rows: list[Dispatch]) ->
     names = {i.id: i.name for i in session.exec(select(RetailItem))}
     names |= {k.id: k.name for k in served(session, commissary)}  # the kiosks named in settings
     actor = Actor.system(commissary.id)
-    sent = []
-    for d in rows:
-        for person in to:
-            blocks, options = replies.dispatch_card(dispatch_out(d), names, person.language or "en")
-            message = notify(session, person, blocks, actor, MANIFEST.id, urgent=True)
-            turn.remember(session, message, options, actor)
-            sent.append(message)
+    outs, sent = [dispatch_out(d) for d in rows], []
+    for person in to if outs else []:
+        blocks, options = replies.dispatch_card(outs, names, person.language or "en")
+        message = notify(session, person, blocks, actor, MANIFEST.id, urgent=True)
+        turn.remember(session, message, options, actor)
+        sent.append(message)
     return sent
 
 
@@ -886,8 +908,9 @@ def _dispatches(
 ) -> list[Dispatch]:
     """The dispatches the person may see, newest date first: at the commissary those sent from
     it (to kiosk_id when named), elsewhere those to the person's kiosk; another kiosk needs
-    `<action>_all`. The check carries the person as owner, so read_own and write_own gate by
-    role (Q94) and the query decides the rows."""
+    `<action>_all`. A named kiosk_id the commissary does not serve has none. The check carries
+    the person as owner, so read_own and write_own gate by role (Q94) and the query decides the
+    rows."""
     _check(deps, _as_reporter(DISPATCHES, deps), action, tool_call_id)
     stmt = select(Dispatch).order_by(col(Dispatch.business_date).desc())
     if deps.branch.id == commissary.id:
@@ -898,14 +921,25 @@ def _dispatches(
         if kiosk_id is not None and kiosk_id != deps.branch.id:
             _check(deps, DISPATCHES, f"{action}_all", tool_call_id)
         stmt = stmt.where(Dispatch.branch_id == (kiosk_id or deps.branch.id))
+    if kiosk_id is not None and kiosk_id not in {b.id for b in served(deps.session, commissary)}:
+        return []
     return list(deps.session.exec(stmt))
 
 
+def check_list(deps: AgentDeps, args: DispatchInput, tool_call_id: str) -> None:
+    """The precheck of dispatch_list (spec section 9): staff need the driver skill; a
+    supervisor, owner or admin passes (PermissionDenied otherwise)."""
+    person = deps.person
+    if not (_is_lead(person) or "supervisor" in person.roles or DRIVER in person.skills):
+        raise PermissionDenied(deps.actor.principal.id, "skill:driver")
+
+
 def dispatch_list(deps: AgentDeps, args: DispatchInput, tool_call_id: str) -> DispatchListOut:
-    """The dispatches of the business date (default the newest date of the person's rows),
-    scoped by _dispatches."""
+    """The dispatches of the business date (default the person's business date, deps.today,
+    so no earlier day's list shows before today's is packed), scoped by _dispatches."""
+    check_list(deps, args, tool_call_id)  # a direct call skips the guard's precheck
     rows = _dispatches(deps, _commissary(deps), args.kiosk_id, "read", tool_call_id)
-    day = args.business_date or (rows[0].business_date if rows else None)
+    day = args.business_date or deps.today
     return DispatchListOut(dispatches=[dispatch_out(d) for d in rows if d.business_date == day])
 
 
@@ -1032,6 +1066,7 @@ BINDINGS = [
         dispatch_list,
         DispatchInput,
         "What goes to each kiosk on a date.",
+        precheck=check_list,
     ),
     ToolBinding(
         f"{MANIFEST.id}.confirm_delivery",

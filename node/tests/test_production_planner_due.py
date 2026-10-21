@@ -188,11 +188,12 @@ def test_the_dispatch_list_splits_by_kiosk(
     }
     assert {b: lines_of(d)[classic] for b, d in by.items()} == want  # no batch: the planned split
     assert {d.status for d in by.values()} == {"packed"}
-    text = replies.dispatch_text(tools.dispatch_out(by[pp_en[0].id]), names(session), EN)
+    outs = [tools.dispatch_out(by[k.id]) for k in tools.served(session, comm(session))]
+    _, options = replies.dispatch_card(outs, names(session), EN)
+    text = "\n".join(replies.dispatch_text(d, names(session), EN) for d in outs)
     sent = [m for m in notifications(session, pp_en[1]["Berto"]) if m.text == text]
-    assert len(sent) == 1 and (text, True) in urgency
-    card = replies.dispatch_card(tools.dispatch_out(by[pp_en[0].id]), names(session), EN)
-    assert remembered(session, sent[0]) == card[1] and card[1]
+    assert len(sent) == 1 and (text, True) in urgency  # one card for both kiosks
+    assert remembered(session, sent[0]) == options and len(options) == 2
 
 
 def test_a_short_receipt_is_flagged(

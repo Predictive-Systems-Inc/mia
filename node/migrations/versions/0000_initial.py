@@ -1696,6 +1696,7 @@ def upgrade() -> None:
             ["person.id"],
         ),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("plan_id", "item_id", "batch_no"),
     )
     with op.batch_alter_table("production_planner_batches", schema=None) as batch_op:
         batch_op.create_index(

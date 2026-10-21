@@ -87,7 +87,7 @@ def test_commissary_driver_with_windows_is_not_kiosk_cover(session: Session, rs:
     }
     assert "Berto" not in names
     assert scheduling.ineligibility(session, rs[0], visit, berto, org_wide=True, among=kiosks) == [
-        "person is not active"
+        "not kiosk staff"  # the commissary is outside the kiosks: not "not active"
     ]
 
 

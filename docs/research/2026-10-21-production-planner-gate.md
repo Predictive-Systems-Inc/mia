@@ -89,6 +89,8 @@ covered by the due and chat tests.
 
 Each row is 30 cases (five seeds in six languages).
 
+- **Worst on wrong: Cebuano** (6.0%, three of its fifty: two of the removes read as sets and
+  one "itlog ... ube" read as Salted egg).
 - **The 8 wrongs.** Three are writes: a remove read as a set ("kuhai og usa ka batch ang
   classic" and "kuhai og 2 ka batch ang ube" in ceb, "kuhai hin 2 nga batch an ube" in war; 0.61
   to 0.73), so code would set the line to 1 or 2 batches instead of taking them off; the
@@ -167,6 +169,10 @@ By agent (gate half, no greetings): bookkeeper 100%, shift_supervisor 95.2%, inv
   Mall kiosk" kept on the active shift supervisor in five languages (other, 0.47 to 0.67) and
   asked in en; "saro pang batch nin special sa plano sa aga" kept on the active inventory
   manager (bcl, 0.42).
+- **Four customer_service asks had the planner as top pick, below 0.6**: "how many delivery
+  orders tomorrow?" in en, fil, ceb and hil (0.37 to 0.42, asked, so nothing went to the
+  planner; war and bcl picked customer_service, also below 0.6). The planner's "delivery" words
+  pull at customer orders for delivery; none crossed the threshold.
 
 Tune half (1,082 rows, all languages): right 77.8%, wrong 1.4%; gated languages 83.9%, wrong
 0.8%. The planner's tune seeds route at 100% (30 of 30).
@@ -211,3 +217,22 @@ applied to measured tokens, not a billed amount.
   gate half (`GATE_PLANNER_SEEDS` and `GATE_PLANNER_CONTEXT` are spent with `0749`).
 - The non-English messages are drafts (Q28 to Q35).
 - Record `cost_minor` in the usage rows.
+
+## Notes after the run (numbers unchanged, no rerun)
+
+- 21 Oct 2026, fix wave B: the decider changed after `0748`. Add and remove words in all ten
+  languages (`words.DIRECTION_WORDS`): a change whose add or remove word disagrees with Jev's
+  direction, or has one with the direction not stated, asks (missing "direction"); set applies
+  only without either kind of word, so the three ceb and war removes read as sets now ask. The
+  items the message names are found by code (`words.named`): one item named and another picked,
+  or two named, asks (missing "item"), so "itlog ... ube" picking Salted egg now asks. A unit word
+  wins over Jev's unit, and a capacity number with no unit and no item named asks. A menu name
+  with a digit ("Box of 4") is never a count, and "ibig kong sabihin" (and its regional forms)
+  corrects a number as "pala" does. Tests: `test_production_planner_actions.py`.
+- 21 Oct 2026, fix wave B: router descriptions changed after `0749`. hr_officer's gains "filing
+  sick or vacation leave for a date" (the "sick leave for Monday" seed is labelled right: the HR
+  officer has file_leave); sales_supervisor's contrast gains "not how a clerk is doing" (the "how
+  is Liza doing at selling" seed is labelled right: coaching per clerk is the branch manager's);
+  the planner's own description gains the driver's delivered words (fix wave A).
+- These gates are not rerun: both gate halves are spent, and a rerun needs fresh gate seeds
+  (spec, Carried over).

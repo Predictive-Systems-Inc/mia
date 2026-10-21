@@ -88,7 +88,8 @@ def plan_card(out: PlanOut, names: Names, lang: str) -> tuple[list[Block], Optio
     if out.status != "draft":
         return blocks, {}
     day = out.production_date.isoformat()
-    options = {t("pp.plan.confirm", lang): _decision("confirm_plan", production_date=day)}
+    confirm = _decision("confirm_plan", production_date=day, card=True)  # card: turn._holds
+    options = {t("pp.plan.confirm", lang): confirm}
     return [*blocks, QuickRepliesBlock(options=list(options))], options
 
 
@@ -205,15 +206,25 @@ def dispatch_text(out: DispatchOut, names: Names, lang: str) -> str:
     return "\n".join([head, *lines])
 
 
-def dispatch_card(out: DispatchOut, names: Names, lang: str) -> tuple[list[Block], Options]:
-    """The dispatch with a "Delivered: <kiosk>" button while it is packed: the button runs
-    delivered for that kiosk and date (the turn holds it to the end of that date)."""
-    blocks: list[Block] = [TextBlock(text=dispatch_text(out, names, lang))]
-    if out.status != "packed":
+def delivered_options(rows: list[DispatchOut], names: Names, lang: str) -> Options:
+    """A "Delivered: <kiosk>" button per packed dispatch: each runs delivered for that kiosk
+    and date (the turn holds it to the end of that date)."""
+    return {
+        t("pp.dispatch.delivered", lang, kiosk=names.get(d.branch_id, "")): _decision(
+            "delivered", kiosk_id=d.branch_id, business_date=d.business_date.isoformat()
+        )
+        for d in rows
+        if d.status == "packed"
+    }
+
+
+def dispatch_card(rows: list[DispatchOut], names: Names, lang: str) -> tuple[list[Block], Options]:
+    """Every dispatch's list on one card, with a Delivered button per packed kiosk
+    (delivered_options), so each button holds until it is tapped."""
+    blocks: list[Block] = [TextBlock(text="\n".join(dispatch_text(d, names, lang) for d in rows))]
+    options = delivered_options(rows, names, lang)
+    if not options:
         return blocks, {}
-    label = t("pp.dispatch.delivered", lang, kiosk=names.get(out.branch_id, ""))
-    day = out.business_date.isoformat()
-    options = {label: _decision("delivered", kiosk_id=out.branch_id, business_date=day)}
     return [*blocks, QuickRepliesBlock(options=list(options))], options
 
 

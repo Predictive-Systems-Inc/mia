@@ -278,13 +278,14 @@ def test_the_driver_confirms_a_delivery(
     pp_pin(at(PP_TOMORROW, 8, 50))
     _answers(monkeypatch, "delivered", kiosk=pp_en[0].id)
     berto = pp_en[1]["Berto"]
-    text = _turn(session, berto, t("pp.dispatch.delivered", EN, kiosk="Mall kiosk")).text()
+    reply = _turn(session, berto, t("pp.dispatch.delivered", EN, kiosk="Mall kiosk"))
     row = dispatch_to(session, pp_en[0].id)
-    assert (row.status, row.delivered_by, text) == (
+    assert (row.status, row.delivered_by, reply.blocks[0].text) == (  # type: ignore[union-attr]
         "delivered",
         berto.id,
         t("pp.delivered.done", EN, kiosk="Mall kiosk"),
     )
+    assert buttons(reply) == [t("pp.dispatch.delivered", EN, kiosk="Street stall")]
 
 
 def test_a_delivered_button_runs_without_jev(
@@ -301,7 +302,7 @@ def test_a_delivered_button_runs_without_jev(
     _answers(monkeypatch, "reply_only", jev_on, conversation="greeting")
     first = _turn(session, berto, "hi")
     out = tools.dispatch_out(dispatch_to(session, mall.id))
-    _, options = replies.dispatch_card(out, names(session), EN)
+    _, options = replies.dispatch_card([out], names(session), EN)
     message = session.get(Message, first.message_id)
     assert message is not None
     turn.remember(session, message, options, Actor.system(comm(session).id))
@@ -480,3 +481,69 @@ def test_only_the_given_roles_are_offered_the_agent(session: Session, pp: Ferino
             assert [a.id for a in agents_for(session, person)] == [MANIFEST.id], role
         outsider = Person(name="x", roles=["viewer"], branch_id=branch.id)
         assert agents_for(session, outsider) == []
+
+
+def test_the_drivers_card_delivers_each_kiosk_in_turn_without_jev(
+    session: Session,
+    pp_en: Ferinos,
+    jev_on: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    pp_pin: Pin,
+) -> None:
+    """send_dispatch's one card per person: Mall tapped, the reply carries the Stall's button,
+    which then delivers too; Jev is never asked."""
+    packed(session, pp_en[1], pp_pin)
+    berto, mall, stall_id = pp_en[1]["Berto"], pp_en[0], tools.served(session, comm(session))[1].id
+    (card,) = notifications(session, berto)
+    pp_pin(at(PP_TOMORROW, 8, 50))
+    first = _turn(
+        session, berto, t("pp.dispatch.delivered", EN, kiosk="Mall kiosk"), card.thread_id
+    )
+    stall_button = t("pp.dispatch.delivered", EN, kiosk="Street stall")
+    assert buttons(first) == [stall_button]
+    assert t("pp.delivered.done", EN, kiosk="Mall kiosk") in first.text()
+    last = _turn(session, berto, stall_button, card.thread_id)
+    assert last.text() == t("pp.delivered.done", EN, kiosk="Street stall")
+    statuses = (dispatch_to(session, mall.id).status, dispatch_to(session, stall_id).status)
+    assert statuses == ("delivered", "delivered") and jev_on == []
+
+
+def test_without_jev_the_turn_is_unavailable(
+    session: Session, pp_en: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    only = orgconfig.load().model_copy(update={"agents": [MANIFEST.id]})
+    monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: only))
+    monkeypatch.setenv("MIA_DECIDER", "agent")
+    get_settings.cache_clear()
+    draft(session)
+    reply = _turn(session, pp_en[1]["Nonoy"], "ok na ang plano")
+    assert reply.text() == t("reply.unavailable", EN) and plan_row(session).status == "draft"
+
+
+def test_a_did_you_mean_confirm_holds_only_the_day_it_was_asked(
+    session: Session,
+    pp_en: Ferinos,
+    jev_on: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    pp_pin: Pin,
+) -> None:
+    """A confirm_plan button without plan_card's mark (a "Did you mean" alternative) does not
+    hold past its day, though the plan card's would until hours.start."""
+    pp_pin(at(PP_TODAY, 14, 5))
+    draft(session)
+    nonoy = pp_en[1]["Nonoy"]
+    _answers(monkeypatch, "reply_only", jev_on, conversation="greeting")
+    first = _turn(session, nonoy, "hi")
+    plain = Decision(
+        action="confirm_plan", args={"production_date": PP_TOMORROW.isoformat()}, confidence=1.0
+    )
+    message = session.get(Message, first.message_id)
+    assert message is not None
+    turn.remember(
+        session, message, {"Confirm": plain.model_dump(mode="json")}, Actor.system(nonoy.branch_id)
+    )
+    session.commit()
+    pp_pin(at(PP_TOMORROW, 0, 30))
+    _answers(monkeypatch, "reply_only", jev_on, conversation="other")
+    _turn(session, nonoy, "Confirm", first.thread_id)
+    assert plan_row(session).status == "draft" and len(jev_on) == 2

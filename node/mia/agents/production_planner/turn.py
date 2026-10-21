@@ -4,9 +4,9 @@ chat.service, for every agent.
 
 A button's decision is kept in the decision.clarify_asked event of its question (or its
 notification, through remember) and runs only while it holds, and only when its action is one of
-ACTIONS: the plan's Confirm until production starts (hours.start) on the plan's date, a
-Delivered button to the end of its business date, any other button on the day it was asked. The
-recipe card's Save is a stored set_recipe decision with its args; a recipe typed in chat only
+ACTIONS: the plan card's Confirm until production starts (hours.start) on the plan's date (a
+"Did you mean" confirm holds only the day it was asked), a Delivered button to the end of its
+business date, any other button on the day it was asked. The recipe card's Save is a stored set_recipe decision with its args; a recipe typed in chat only
 shows the card. A confirm with a negation word ("hindi pa ok") shows the plan with its Confirm
 button, never confirms. No tool asks for an approval."""
 
@@ -47,6 +47,8 @@ ASKED = {
     "plan": "pp.ask.plan",
     "batch": "pp.batch.unclear",
     "negated": "pp.change.kept",
+    "direction": "pp.ask.direction",
+    "unit": "pp.ask.unit",
 }
 # a tool refusal's reason -> its reply key (the turn fills item, kiosk and minutes)
 REFUSALS = {
@@ -82,7 +84,7 @@ def _last_question(session: Session, thread: Thread) -> Message | None:
 def _holds(session: Session, deps: AgentDeps, asked: Event, decision: Decision) -> bool:
     """Whether a stored decision may still run now (see the module docstring)."""
     now = db.utcnow()
-    if decision.action == "confirm_plan" and decision.args.get("production_date"):
+    if decision.action == "confirm_plan" and decision.args.get("card"):  # plan_card's only
         home = actions.commissary(session, deps.organisation_id)
         if home is not None:
             start = orgconfig.load().production_planner.hours.start
@@ -213,6 +215,21 @@ def _call(deps: AgentDeps, tool: str, inp: BaseModel) -> dict[str, Any]:
     return call_tool(deps, _BINDINGS[f"{MANIFEST.id}.{tool}"], inp, new_id())
 
 
+def _delivered(
+    session: Session, deps: AgentDeps, thread: Thread, done: tools.DispatchOut, known: replies.Names
+) -> ChatReply:
+    """Delivered, with a Delivered button per kiosk of that date still packed (listed through
+    the dispatch_list tool, rbac first), so the card's other buttons live on in this reply."""
+    text = t("pp.delivered.done", deps.lang, kiosk=known.get(done.branch_id, ""))
+    listed = _call(deps, "dispatch_list", tools.DispatchInput(business_date=done.business_date))
+    rows = tools.DispatchListOut.model_validate(listed).dispatches if "dispatches" in listed else []
+    options = replies.delivered_options(rows, known, deps.lang)
+    if not options:
+        return reply_text(session, deps, thread, text)
+    blocks: list[Block] = [TextBlock(text=text), QuickRepliesBlock(options=list(options))]
+    return _ask(session, deps, thread, blocks, options)
+
+
 def _result(
     session: Session,
     deps: AgentDeps,
@@ -244,8 +261,7 @@ def _result(
         texts = [replies.dispatch_text(d, known, lang) for d in rows]
         text = "\n".join(texts) or t("pp.dispatch.none", lang)
     elif tool == "confirm_delivery":
-        kiosk = known.get(tools.DispatchOut.model_validate(out).branch_id, "")
-        text = t("pp.delivered.done", lang, kiosk=kiosk)
+        return _delivered(session, deps, thread, tools.DispatchOut.model_validate(out), known)
     else:  # capacity
         text = replies.capacity_text(tools.CapacityOut.model_validate(out), known, lang)
     return reply_text(session, deps, thread, text)
@@ -315,6 +331,7 @@ def _act(
     if spec is None:
         return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
     args = dict(decision.args)
+    args.pop("card", None)  # plan_card's mark of its Confirm button (_holds)
     if decision.action == "confirm_plan" and negated:
         return _plan_card(session, deps, thread, args)
     if decision.action == "set_recipe" and not args.pop("save", False):
@@ -369,13 +386,16 @@ def run_due(session: Session, now: dt.datetime) -> int:
     return due.run_due(session, now)
 
 
+# 21 Oct 2026: the driver's phrases (tapos na ang hatid, naihatid, delivery done) were added
+# after the router gate run 0749; its numbers stand, no rerun.
 SPEC = AgentSpec(
     manifest=MANIFEST,
     label_key=f"agent.{MANIFEST.id}.label",
     router_description=(
         "The commissary's production: tomorrow's plan per item and its batches, batch sheets and"
-        " recipes, yield and waste of a batch, the dispatch to each kiosk and its delivery, oven"
-        " capacity for a date; not kiosk stock, not sales counts."
+        " recipes, yield and waste of a batch, the dispatch to each kiosk and its delivery (the"
+        " driver's tapos na ang hatid, naihatid, delivery done), oven capacity for a date; not"
+        " kiosk stock, not sales counts."
     ),
     handle_turn=handle_turn,
     run_due=run_due,

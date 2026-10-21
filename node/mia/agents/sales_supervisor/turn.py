@@ -250,7 +250,7 @@ SPEC = AgentSpec(
         "Sales: clerks reporting how many of each item they sold and for how much, corrections"
         " to a reported count (sorry, 4 special not 3), daily, morning and mid-day sales"
         " totals, sales targets, how today compares, the best day, why sales went well; not"
-        " how much stock is left and not what to bake."
+        " how much stock is left, not what to bake and not how a clerk is doing."
     ),
     handle_turn=handle_turn,
     run_due=due.run_due,

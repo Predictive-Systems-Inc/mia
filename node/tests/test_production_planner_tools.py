@@ -35,7 +35,7 @@ from mia.agents.production_planner.tools import (
 )
 from mia.agents.sales_supervisor import due as sales_due
 from mia.chat.access import agents_for
-from mia.core import orgconfig, people, store
+from mia.core import db, orgconfig, people, store
 from mia.core.models import Actor, Branch, Event, Message, Person, StockEvent, Thread
 from mia.core.rbac import PermissionDenied, Rbac, Resource, get_rbac
 from mia.templates.retail import hours as retail_hours
@@ -76,7 +76,7 @@ def deps_for(session: Session, person: Person) -> AgentDeps:
         person=person,
         branch=branch,
         organisation_id=branch.organisation_id,
-        today=PP_TODAY,
+        today=db.utcnow().astimezone(ZoneInfo(branch.timezone)).date(),  # as chat.service
         lang=person.language or "en",
         manifest=MANIFEST,
     )
@@ -533,8 +533,8 @@ def test_the_last_batch_packs_the_dispatch(session: Session, pp: Ferinos, pp_pin
     assert {d.branch_id for d in rows} == {pp[0].id, stall(session).id}
     assert {d.status for d in rows} == {"packed"}
     assert {d.from_branch_id for d in rows} == {comm(session).id}
-    for who in ("Nonoy", "Berto"):  # the head and the driver, urgent, one list per kiosk
-        assert len(notifications(session, pp[1][who])) == 2
+    for who in ("Nonoy", "Berto"):  # the head and the driver, urgent, one card for both kiosks
+        assert len(notifications(session, pp[1][who])) == 1
     assert notifications(session, pp[1]["Marites"]) == []
 
 
@@ -706,6 +706,7 @@ def test_the_last_batch_reads_no_dispatch_before_the_agents_check(
     assert reads == []
     monkeypatch.undo()
     assert session.exec(select(Dispatch).where(Dispatch.business_date == PP_TOMORROW)).all() == []
+    assert session.exec(select(Batch).where(Batch.plan_id == plan_row(session).id)).all() == []
 
 
 def test_a_kiosk_supervisors_recipe_is_refused_before_the_item_is_read(
@@ -732,3 +733,82 @@ def test_plan_for_refuses_without_the_agents_plans_read(
     deny(monkeypatch, MANIFEST.roles.agent_role, tools.PLANS, "read")
     with pytest.raises(PermissionDenied):
         tools.plan_for(session, comm(session).id, PP_TODAY - ONE_DAY)
+
+
+def test_a_batch_after_production_ends_stays_on_that_days_plan(
+    session: Session, pp: Ferinos, pp_pin: Pin
+) -> None:
+    """At 10:00 (after the 09:00 end) and at 15:00 (tomorrow's draft out) a batch is today's."""
+    call, classic = caller(session, pp), item(session, "Classic").id
+    today = tools.draft_plan(session, comm(session), PP_TODAY)
+    pp_pin(at(PP_TODAY, 10))
+    first = BatchInput(item_id=classic, batch_no=1, good=40, waste=8, reason="burnt")
+    assert call("Nonoy", "record_batch", first) == "ok"
+    pp_pin(at(PP_TODAY, 14, 5))
+    tomorrow = draft(session)
+    pp_pin(at(PP_TODAY, 15))
+    assert call("Nonoy", "record_batch", first.model_copy(update={"good": 44})) == "ok"
+    rows = session.exec(select(Batch).where(Batch.item_id == classic)).all()
+    mine = [(b.plan_id, b.good) for b in rows if b.plan_id in {today.id, tomorrow.id}]
+    assert mine == [(today.id, 44)]
+    assert tools.batch_day(comm(session), orgconfig.load().production_planner, at(PP_TODAY, 2)) == (
+        PP_TODAY - ONE_DAY
+    )
+
+
+def test_pack_skips_a_kiosk_with_nothing_to_send(session: Session, pp: Ferinos) -> None:
+    plan, head = draft(session), Actor.person(pp[1]["Nonoy"])
+    lines = [
+        x
+        | {
+            "kiosks": [
+                k | {"pieces": 0} if k["branch_id"] == stall(session).id else k for k in x["kiosks"]
+            ]
+        }
+        for x in plan.lines
+    ]
+    plan = store.update(session, plan, {"lines": lines}, head)
+    packed_rows = tools.pack(session, plan, tools.agent_actor(comm(session).id))
+    assert [d.branch_id for d in packed_rows] == [pp[0].id]
+
+
+def test_a_baker_without_the_driver_skill_gets_no_dispatch_list(
+    session: Session, pp: Ferinos, pp_pin: Pin
+) -> None:
+    packed(session, pp[1], pp_pin)
+    baker = people.add_person(
+        session,
+        Actor.system(comm(session).id),
+        branch_id=comm(session).id,
+        name="Jojo",
+        roles=["staff"],
+        language="fil",
+    )
+    pp[1]["Jojo"] = baker
+    call = caller(session, pp)
+    assert [call(w, "dispatch_list", DispatchInput()) for w in ("Jojo", "Berto", "Nonoy")] == [
+        "denied",
+        "ok",
+        "ok",
+    ]
+
+
+def test_the_dispatch_list_is_of_today_and_of_served_kiosks_only(
+    session: Session, pp: Ferinos
+) -> None:
+    """Before today's dispatch is packed the list is empty, never yesterday's; a kiosk the
+    commissary does not serve has none, even for the owner."""
+    assert run(session, pp[1]["Berto"], "dispatch_list", DispatchInput())["dispatches"] == []
+    old = DispatchInput(business_date=PP_TODAY - ONE_DAY)
+    assert len(run(session, pp[1]["Berto"], "dispatch_list", old)["dispatches"]) == 2
+    other = old.model_copy(update={"kiosk_id": comm(session).id})
+    assert run(session, pp[1]["Rosa"], "dispatch_list", other)["dispatches"] == []
+
+
+def test_served_refuses_without_the_agents_branch_read(
+    session: Session, pp: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert [b.id for b in tools.served(session, comm(session))] == [pp[0].id, stall(session).id]
+    deny(monkeypatch, MANIFEST.roles.agent_role, tools.BRANCHES, "read")
+    with pytest.raises(PermissionDenied):
+        tools.served(session, comm(session))

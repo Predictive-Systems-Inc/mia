@@ -727,6 +727,7 @@ Format for each entry:
 - Where: node/config/policies/policy.csv, node/mia/core/rbac.py
 - Question: May the agent role read the served kiosks' counts and stock while the head reads only plan rows, and kiosk supervisors only their own kiosk's dispatch?
 - Answer (21 Oct 2026, D39): yes; the planner's agent role reads the served kiosks' sales counts and stock events while no person gains a cross-branch right (the commissary head reads plan rows, a kiosk supervisor their own dispatch).
+- Note (21 Oct 2026, fix wave B): a kiosk supervisor's plan view shows each item's line totals for every served kiosk, so the other kiosk's pieces are the total less their own. That is plan data (what the commissary bakes), never the other kiosk's sales counts or stock, so it stands.
 - Blocking: no (answered).
 
 ## Q97: The bookkeeper's tax table
@@ -831,5 +832,5 @@ Format for each entry:
 ## Q114: The production planner's own assumptions
 - Where: node/mia/agents/production_planner (forecast.py, capacity.py, due.py), node/mia/templates/retail/seed.py, node/config/org/ferinos/settings.yaml
 - Question: Four choices the plan made without an owner's word: (1) when the kiosks' demands add up to more than the whole batches hold, which kiosk gets fewer pieces; (2) what happens to a draft plan nobody confirmed by the start of production; (3) are the ovens one pool of minutes or separate ovens per item; (4) how long does each recipe bake?
-- Assumed answer: (1) the shortfall comes off the kiosk with the larger forecast; (2) a draft nobody confirmed by 03:00, the start of production, stands as the day's plan; (3) one pool of oven minutes (ovens times the production window, less the planned batches times each recipe's oven minutes); (4) 45 minutes for every seeded recipe until the owner enters hers.
+- Assumed answer: (1) the shortfall comes off the kiosk with the larger demand when the plan is split, and off the kiosk with the larger planned pieces when fewer good pieces are dispatched (forecast.dispatch_split), the first kiosk on a tie; not off the larger forecast; (2) a draft nobody confirmed by 03:00, the start of production, stands as the day's plan; (3) one pool of oven minutes (ovens times the production window, less the planned batches times each recipe's oven minutes); (4) 45 minutes for every seeded recipe until the owner enters hers.
 - Blocking: no.

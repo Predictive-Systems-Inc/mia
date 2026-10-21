@@ -49,10 +49,12 @@ class Plan(BranchScoped, table=True):
 
 class Batch(BranchScoped, table=True):
     """One batch of an item in a plan: planned yield, good pieces, waste and its reason (burnt,
-    undercooked, dropped or other). A repeated batch number updates its row (a correction)."""
+    undercooked, dropped or other). A repeated batch number updates its row (a correction); one
+    row per plan, item and batch number."""
 
     __redact__: ClassVar[frozenset[str]] = frozenset()
     __tablename__: ClassVar[str] = "production_planner_batches"
+    __table_args__ = (UniqueConstraint("plan_id", "item_id", "batch_no"),)
 
     plan_id: str = Field(foreign_key="production_planner_plans.id", index=True)
     item_id: str = Field(foreign_key="retail_items.id")

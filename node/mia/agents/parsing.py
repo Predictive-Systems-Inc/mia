@@ -394,6 +394,26 @@ _PRICE = re.compile(
 )
 
 
+def strip_dates(text: str, lang: str) -> str:
+    """The text without clock times (strip_times) and dates (find_dates' patterns, read as
+    find_dates reads them in lang: outside en "may 5" stays, Filipino "may" is "there is").
+    Pure."""
+
+    def cut(m: re.Match[str]) -> str:
+        month = m["m1"] or m["m2"]
+        return m[0] if month and month.lower() == "may" and lang != "en" else " "
+
+    return _DATE.sub(cut, strip_times(text))
+
+
+def strip_menu_names(text: str, menu_tokens: Collection[str]) -> str:
+    """The text without the whole menu names that carry a digit (the menu tokens with spaces,
+    "box of 4"), so their digit is never read as a count or an amount. Pure."""
+    for name in (m for m in menu_tokens if " " in m):
+        text = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", " ", text, flags=re.IGNORECASE)
+    return text
+
+
 def find_prices(text: str, lang: str, menu_tokens: Collection[str] = ()) -> list[tuple[str, int]]:
     """Amounts in the message in text order as (id "p0", "p1", ..., integer minor units):
     "50", "₱50", "P50", "50 pesos", "50piso", "49.50" (4950). Clock times (strip_times) and
@@ -404,18 +424,13 @@ def find_prices(text: str, lang: str, menu_tokens: Collection[str] = ()) -> list
     ("subukan natin 50 ang classic": 50); the digit of a menu name ("Box of 4") is no amount. Pure; the model only picks among these candidates,
     never computes one."""
 
-    def undated(m: re.Match[str]) -> str:
-        month = m["m1"] or m["m2"]
-        return m[0] if month and month.lower() == "may" and lang != "en" else " "
-
-    text = _DATE.sub(undated, strip_times(text))
+    text = strip_dates(text, lang)
     menu = {m.casefold() for m in menu_tokens}
     kept_tokens = [tok for tok in _join_names(_tokens(text), menu) if tok not in FILLER]
     counts = Counter(
         int(a) for a, b in pairwise(kept_tokens) if a.isdigit() and b.strip(".,:;!?") in menu
     )
-    for name in (m for m in menu if " " in m):  # "Box of 4": its digit is no amount
-        text = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", " ", text, flags=re.IGNORECASE)
+    text = strip_menu_names(text, menu)  # "Box of 4": its digit is no amount
     found = []
     for m in _PRICE.finditer(text):
         pesos = int(m["whole"].replace(",", ""))

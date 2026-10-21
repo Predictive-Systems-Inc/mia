@@ -230,7 +230,8 @@ work (draft plan, dispatch, match tick, closing yield). 7. Ten languages. 8. Eva
   rows, and the seed loads its own role, until `receive_delivery` takes item lines (owner: the
   inventory manager spec).
 - production_planner match tick: a short dispatch is flagged only an hour after it arrived (an
-  08:35 dispatch was flagged at 08:50), and it is never matched again after a later receipt.
+  08:35 dispatch was flagged at 08:50 before this rule), and it is never matched again after a
+  later receipt.
 - production_planner tests: the `send_after` asserts were dropped, because Message has no
   `send_after` field.
 - production_planner capacity: `CapacityOut` carries no item name, so `capacity_text` lists the
@@ -239,3 +240,10 @@ work (draft plan, dispatch, match tick, closing yield). 7. Ten languages. 8. Eva
   gate failed (wrong 2.7%, right below 80% in fil, ceb, hil, war and bcl; en passes) and the
   router gate failed (wrong 4.5%, hil, war and bcl below the bar); reported as they are, a rerun
   of either needs fresh gate seeds.
+- production_planner staff offer: every staff member is offered the agent and `dispatch_list`
+  (policy.csv); the `use` line is by role; the skill is checked in confirm_delivery and
+  dispatch_list.
+- production_planner next fresh seeds (a rerun only with new seeds): name the arrival or the
+  delivery in the dispatch texts; build DRAFT (the confirm scenario's previous message) from
+  t(); reword the two disputed router seeds ("sick leave for Monday", "how is Liza doing at
+  selling"), which are labelled right but read as the other agent.

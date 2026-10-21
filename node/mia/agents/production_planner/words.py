@@ -4,12 +4,12 @@ a number code read or a value of a fixed list here, never a word of the message.
 
 import datetime as dt
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import NamedTuple
 
-from mia.agents.parsing import _DATE, strip_times
+from mia.agents.parsing import strip_dates, strip_menu_names
 from mia.templates.retail.models import RetailIngredient
 
 _COMMON = {
@@ -59,8 +59,57 @@ UNITS = {
     "piraso": "pcs", "pack": "pack", "packs": "pack",
 }  # fmt: skip
 
+_ADD_EN_FIL = ("add", "more", "plus", "extra", "increase", "dagdagan", "dagdag", "idagdag")
+_REMOVE_EN_FIL = (
+    "remove", "less", "fewer", "minus", "reduce", "subtract", "bawasan", "bawas", "ibawas",
+    "tanggalin", "alisin",
+)  # fmt: skip
+# The add and remove words of a plan change per language, en and fil in every one; beyond en and
+# fil machine drafts (Q28 to Q35). A word here that disagrees with Jev's direction asks (decider).
+DIRECTION_WORDS: dict[str, dict[str, tuple[str, ...]]] = {
+    "en": {"add": _ADD_EN_FIL, "remove": _REMOVE_EN_FIL},
+    "fi": {
+        "add": (*_ADD_EN_FIL, "lisää", "lisätä", "enemmän"),
+        "remove": (*_REMOVE_EN_FIL, "vähennä", "vähentää", "vähemmän", "poista"),
+    },
+    "fil": {"add": _ADD_EN_FIL, "remove": _REMOVE_EN_FIL},
+    "ceb": {
+        "add": (*_ADD_EN_FIL, "dugang", "dugangi", "dugangan", "idugang"),
+        "remove": (*_REMOVE_EN_FIL, "kuhai", "kuhaan", "bawasi", "kunhori", "kunhoran", "minusi"),
+    },
+    "ilo": {
+        "add": (*_ADD_EN_FIL, "nayonan", "inayonan", "ayonan", "ikabil"),
+        "remove": (*_REMOVE_EN_FIL, "kissayan", "ikkaten", "bawasen"),
+    },
+    "hil": {
+        "add": (*_ADD_EN_FIL, "dugang", "dugangi", "dugangan", "idugang"),
+        "remove": (*_REMOVE_EN_FIL, "buhini", "buhinan", "buhin", "kuhaan", "bawasi"),
+    },
+    "war": {
+        "add": (*_ADD_EN_FIL, "dugang", "dugangi", "dugangan", "idugang"),
+        "remove": (*_REMOVE_EN_FIL, "kuhai", "kuhaan", "bawasi", "bawasan"),
+    },
+    "bcl": {
+        "add": (*_ADD_EN_FIL, "dagdagi", "dugangan", "dugang"),
+        "remove": (*_REMOVE_EN_FIL, "bawasi", "kuanan", "halion"),
+    },
+    "pam": {"add": (*_ADD_EN_FIL, "dagdagi"), "remove": (*_REMOVE_EN_FIL, "ikua", "bawasi")},
+    "pag": {"add": (*_ADD_EN_FIL, "dagdagi"), "remove": (*_REMOVE_EN_FIL, "kulangan", "ekalen")},
+}
+# ponytail: one table of every language's words, as REASONS (a ceb clerk may write in fil); split
+# it per language when a word of one language means the other direction in another.
+DIRECTION = {w: d for langs in DIRECTION_WORDS.values() for d, ws in langs.items() for w in ws}
+BATCH_WORDS = ("batch", "batches", "salang")
+
 _WORD = re.compile(r"\d+(?:\.\d+)?|[^\W\d_]+", re.UNICODE)
-_I_MEAN = re.compile(r"\bi\s+mean\b", re.IGNORECASE)
+# "I mean" and its Philippine forms (machine drafts beyond en and fil, Q28 to Q35): the number
+# before it is the one corrected, as before "pala".
+_I_MEAN = re.compile(
+    r"\b(?:i\s+mean|ibig\s+kong\s+sabihin|buot\s+(?:nako|ko)\s+ingnon|buot\s+ko\s+silingon"
+    r"|gusto\s+ko\s+sidngon|boot\s+kong\s+sabihon|kayat\s+ko\s+a\s+sawen"
+    r"|buri\s+kung\s+sabyan|labay\s+kon\s+ibaga)\b",
+    re.IGNORECASE,
+)
 
 
 class _Num(NamedTuple):
@@ -68,24 +117,48 @@ class _Num(NamedTuple):
     value: int
 
 
-def _undated(text: str, lang: str) -> str:
-    """The text without clock times and dates (find_dates' patterns; outside en "may 5" stays,
-    Filipino "may" is "there is")."""
-
-    def cut(m: re.Match[str]) -> str:
-        month = m["m1"] or m["m2"]
-        return m[0] if month and month.lower() == "may" and lang != "en" else " "
-
-    return _DATE.sub(cut, strip_times(text))
+def said(text: str) -> list[str]:
+    """The casefolded words and numbers of the text, in order. Pure."""
+    return _WORD.findall(text.casefold())
 
 
-def numbers(text: str, today: dt.date, lang: str) -> dict[str, int]:
+def directions(text: str) -> set[str]:
+    """The directions ("add", "remove") whose words the text holds (DIRECTION). Pure."""
+    return {DIRECTION[w] for w in said(text) if w in DIRECTION}
+
+
+def units(text: str) -> set[str]:
+    """The units ("batches", "pieces") whose words the text holds. Pure."""
+    words = set(said(text))
+    found = {"batches"} if words & set(BATCH_WORDS) else set()
+    return found | ({"pieces"} if words & set(PIECE_WORDS) else set())
+
+
+def named(text: str, rows: Iterable[tuple[str, Sequence[str]]]) -> set[str]:
+    """The ids of the rows whose name or a short code the text holds as whole words, from (id,
+    names) pairs; the longest name first, and a name found takes its words out (so "salted egg"
+    is not also "egg"). Pure."""
+    rest = f" {' '.join(said(text))} "
+    names = [(" ".join(said(n)), rid) for rid, ns in rows for n in ns]
+    found: set[str] = set()
+    for name, rid in sorted(names, key=lambda x: -len(x[0])):
+        if name and f" {name} " in rest:
+            found.add(rid)
+            rest = rest.replace(f" {name} ", "  ")
+    return found
+
+
+def numbers(
+    text: str, today: dt.date, lang: str, menu_tokens: Collection[str] = ()
+) -> dict[str, int]:
     """The counts of the message as {"n0": n, ...} in text order: digits and NUMBER_WORDS of the
-    language, after clock times and dates are taken out (so "alas 3" and "Dec 24" are none). A
-    second number corrects the first only with "pala" or "I mean": "2 ..., 3 pala" and "2, I
-    mean 1" drop the number before the correction. `today` is unused: every date pattern goes,
-    whatever day it names."""
-    text = _undated(text, lang)
+    language, after clock times and dates (parsing.strip_dates) and the menu names with a digit
+    (parsing.strip_menu_names: "3 Box of 4" is 3) are taken out (so "alas 3" and "Dec 24" are
+    none). A second number corrects the first only with "pala" or "I mean" (_I_MEAN, "ibig kong
+    sabihin" and its forms): "2 ..., 3 pala" and "2, I mean 1" drop the number before the
+    correction. `today` is unused: every date pattern goes, whatever day it names."""
+    menu = {m.casefold() for m in menu_tokens}
+    text = strip_menu_names(strip_dates(text, lang), menu)
     known = NUMBER_WORDS.get(lang, _COMMON)
     found: list[_Num] = []
     pala: list[int] = []  # the index of the number right before each "pala"

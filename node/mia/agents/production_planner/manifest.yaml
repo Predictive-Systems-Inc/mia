@@ -19,6 +19,7 @@ roles:
     - data:retail_ingredients:read
     - data:retail_branch_hours:read
     - data:core.person:read
+    - data:core.branch:read
     - data:production_planner_recipes:read
     - data:production_planner_recipes:write
     - data:production_planner_recipes:read_all
