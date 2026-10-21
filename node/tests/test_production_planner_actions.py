@@ -291,3 +291,16 @@ def test_a_menu_digit_and_ibig_kong_sabihin(session: Session, pp: Ferinos) -> No
         ("ceb", "dugangi og 2 ka batch ang ube, buot nako ingnon 1"),
     ):
         assert words.numbers(text, PP_TODAY, lang) == {"n0": 1}
+
+
+def test_a_batch_report_reads_the_started_plan(session: Session, pp: Ferinos, pp_pin: Pin) -> None:
+    """At 10:00 production has ended: a plan edit reads tomorrow's plan, a batch report today's
+    (tools.batch_day, where record_batch saves)."""
+    ube = item(session, "Ube").id
+    today = tools.draft_plan(session, comm(session), PP_TODAY)
+    tools.set_batches(session, today, ube, 9, tools.agent_actor(comm(session).id))
+    draft(session)
+    pp_pin(at(PP_TODAY, 10, 0))
+    q = query(session, pp[1]["Nonoy"], "batch 2 ube 33 ok 3 hilaw")
+    assert (q.plan_date, q.plan_batches[ube]) == (PP_TODAY, 9)
+    assert query(session, pp[1]["Nonoy"], "dagdagan ng 1 batch ang ube").plan_date == PP_TOMORROW

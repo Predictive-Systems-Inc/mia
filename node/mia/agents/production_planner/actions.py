@@ -157,9 +157,10 @@ def build_query(
     deps: AgentDeps, message: str, previous_mia_message: str, *, message_id: str | None = None
 ) -> Query:
     """Every candidate the request needs: the single items (never a bundle), the commissary's
-    served kiosks, recipe yields, the batches of the production day's plan (tools.production_day
-    now: the plan the tools edit) and what code reads from the message (a recipe against the
-    ingredients, the items it names, the numbers without a menu name's digit). Reads only; the caller holds no write lock."""
+    served kiosks, recipe yields, the batches of the plan the tools edit (tools.production_day
+    now; tools.batch_day for a batch report, the plan record_batch saves on) and what code
+    reads from the message (a recipe against the ingredients, the items it names, the numbers
+    without a menu name's digit). Reads only; the caller holds no write lock."""
     session = deps.session
     home = commissary(session, deps.organisation_id)
     here = (home or deps.branch).id
@@ -177,13 +178,15 @@ def build_query(
         )
         .order_by(col(RetailIngredient.name))
     ).all()
-    singles = [i for i in items if not i.components]
+    singles, batch = [i for i in items if not i.components], words.batch(message)
     kiosks, yields, plan = {}, {}, None
     if home is not None:
         kiosks = {b.id: b.name for b in tools.served(session, home)}
         yields = {r.item_id: r.batch_yield for r in tools.recipes(session, home.id)}
-        # the plan the tools edit: production_day on the clock the tests pin (mia.core.db)
-        day = tools.production_day(home, orgconfig.load().production_planner, db.utcnow())
+        # the plan the tools edit, on the clock the tests pin (mia.core.db): a batch report's
+        # is batch_day's (record_batch saves there), every other message's production_day's
+        when = tools.batch_day if batch else tools.production_day
+        day = when(home, orgconfig.load().production_planner, db.utcnow())
         plan = tools.plan_for(session, home.id, day)
     return Query(
         message=message,
@@ -201,7 +204,7 @@ def build_query(
         plan_date=plan.production_date if plan else None,
         batch_yields=yields,
         recipe=words.recipe(message, ings),
-        batch=words.batch(message),
+        batch=batch,
         negated=has_negation(message),
         lang=deps.lang,
         message_id=message_id,

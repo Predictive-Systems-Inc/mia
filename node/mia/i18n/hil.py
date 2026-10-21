@@ -613,6 +613,7 @@ STRINGS: dict[str, str | list[str]] = {
     "pp.ask.number": "Pila?",
     "pp.ask.direction": "Dugangan, buhinan ukon himuon nga eksakto?",
     "pp.ask.unit": "Batch ukon piraso?",
+    "pp.capacity.asked": "{pieces} {item} sa {date}:",
     "pp.ask.plan": "Wala sang linya ang sina nga item sa plano sang sina nga adlaw. Isugid ang eksakto nga kadamuon sang batch.",
     "pp.ask.recipe": "Wala pa sang recipe ang sina nga item, gani indi ko maisip ang piraso sa batch. Isugid ang kadamuon sang batch.",
     "pp.capacity.free": "{date}: {minutes} ka minuto sang oven ang bakante.",

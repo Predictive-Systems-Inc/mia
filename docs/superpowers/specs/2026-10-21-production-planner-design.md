@@ -247,3 +247,9 @@ work (draft plan, dispatch, match tick, closing yield). 7. Ten languages. 8. Eva
   delivery in the dispatch texts; build DRAFT (the confirm scenario's previous message) from
   t(); reword the two disputed router seeds ("sick leave for Monday", "how is Liza doing at
   selling"), which are labelled right but read as the other agent.
+- sales_supervisor: `sales.report.compare` carries a hard-coded "4-week" in its text and is
+  allow-listed in the digit-free test (`NAMED_DIGITS`); a placeholder for the window is owed
+  (owner: the sales supervisor).
+- production_planner decider: the DIRECTIONS option text Jev reads still lists English and
+  Filipino words only; the code guard (`words.DIRECTION_WORDS`, ten languages) covers the
+  decision, and the text stays as the gate measured it.
