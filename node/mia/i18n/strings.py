@@ -913,6 +913,8 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "pp.ask.item": "Which item?",
         "pp.ask.kiosk": "Which kiosk?",
         "pp.ask.number": "How many?",
+        "pp.ask.direction": "More, fewer or exactly that many?",
+        "pp.ask.unit": "Batches or pieces?",
         "pp.ask.plan": (
             "That item has no line in the plan of that day. Tell me the exact number of batches."
         ),
@@ -1841,6 +1843,8 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "pp.ask.item": "Mikä tuote?",
         "pp.ask.kiosk": "Mikä kioski?",
         "pp.ask.number": "Kuinka monta?",
+        "pp.ask.direction": "Lisää, vähemmän vai tasan niin monta?",
+        "pp.ask.unit": "Eriä vai kappaleita?",
         "pp.ask.plan": "Tuotteella ei ole riviä sen päivän suunnitelmassa. Kerro tarkka erämäärä.",
         "pp.ask.recipe": (
             "Tuotteella ei ole vielä reseptiä, joten en osaa laskea kappaleita eriksi. Kerro erät."
