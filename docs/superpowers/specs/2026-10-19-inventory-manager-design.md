@@ -220,3 +220,8 @@ and replies for scenarios 1 to 4. 5. Scenarios 5 to 8. 6. Due work (9, 10). 7. T
     match by supplier later.
   - The fix wave's local reason words and spaced times were read off the spent gate half: the
     rerun needs a fresh gate half (new seeds), with spaced times in it.
+- 21 Oct 2026 (the local test deployment): a count or leftover question with no number answers
+  through the read-only `on_hand` tool and records nothing; a waste report with no number asks
+  for the quantity and writes no row. The parser reads digits, not number words, so "tatlong ube
+  ang nasira" asks for the number (a harmless extra question); the production planner's
+  `words.numbers` reads number words in ten languages and is the shared helper to adopt here.
