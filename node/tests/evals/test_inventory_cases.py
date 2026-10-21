@@ -1,30 +1,62 @@
 """The inventory manager eval set is well formed (offline; the real-Jev run is
 test_inventory_manager_evals.py)."""
 
+import json
 from collections import Counter
+from pathlib import Path
 
 from mia.agents.inventory_manager.actions import ACTIONS
 from mia.agents.parsing import menu_tokens, pre_parse, strip_times
 from mia.templates.retail.seed import INGREDIENTS, ITEMS
-from tests.evals.inventory_manager_cases import CASES, GATED_LANGS, SCENARIOS, SYNONYMS
+from tests.evals.inventory_manager_cases import CASES, FRESH, GATED_LANGS, SCENARIOS, SYNONYMS
 
 ROWS = [(name, codes) for name, codes, *_ in ITEMS] + [(n, c) for n, c, *_ in INGREDIENTS]
 NAMES = {name for name, _ in ROWS}
 COUNTED = ("report_stock", "place_order", "receive")
+RESEARCH = Path(__file__).parents[3] / "docs" / "research"
 
 
-def test_ten_cases_per_language_scenario_and_half() -> None:
-    counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
-    assert set(counts) == {
-        (lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in ("tune", "gate")
+def _texts(half: str) -> set[str]:
+    return {c.text.casefold().strip() for c in CASES if c.half == half}
+
+
+def test_five_fresh_cases_per_language_scenario_and_half_and_twenty_spent() -> None:
+    fresh = Counter((c.lang, c.scenario, c.half) for c in CASES if c.half != "spent")
+    assert set(fresh) == {
+        (lang, s, h) for lang in GATED_LANGS for s in FRESH for h in ("tune", "gate")
     }
-    assert set(counts.values()) == {10}
+    assert set(fresh.values()) == {5}
+    spent = Counter((c.lang, c.scenario) for c in CASES if c.half == "spent")
+    assert set(spent) == {(lang, s) for lang in GATED_LANGS for s in SCENARIOS}
+    assert set(spent.values()) == {20}
 
 
 def test_no_text_appears_in_both_halves() -> None:
-    tune = {c.text.casefold().strip() for c in CASES if c.half == "tune"}
-    gate = {c.text.casefold().strip() for c in CASES if c.half == "gate"}
+    """The fresh tune and gate halves share no text, and neither shares one with a spent row."""
+    tune, gate, spent = _texts("tune"), _texts("gate"), _texts("spent")
     assert not tune & gate, tune & gate
+    assert not (tune | gate) & spent, (tune | gate) & spent
+
+
+def test_no_fresh_text_was_ever_scored() -> None:
+    """No fresh text is in any earlier inventory manager run (every raw report's results)."""
+    raws = sorted(RESEARCH.glob("inventory-manager-*.raw.json"))
+    assert raws
+    scored = {
+        r["text"].casefold().strip()
+        for path in raws
+        for r in json.loads(path.read_text(encoding="utf-8"))["results"]
+    }
+    fresh = _texts("tune") | _texts("gate")
+    assert not fresh & scored, fresh & scored
+
+
+def test_the_halves_are_selected_by_name_and_the_spent_half_never() -> None:
+    from tests.evals.test_inventory_manager_evals import _selected
+
+    assert {c.half for c in _selected(CASES, "tune")} == {"tune"}
+    assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
+    assert not any(c.half == "spent" for c in _selected(CASES, "tune,gate,spent"))
 
 
 def test_no_tagalog() -> None:
@@ -75,3 +107,22 @@ def test_scoring() -> None:
     other = asked | {"action": "place_order", "raw_action": "place_order", "missing": None}
     assert _score(other) == "wrong"
     assert _score(asked | {"error": "boom"}) == "other"
+    # a waste with no number: right when Mia asks how many
+    many = asked | {"expected_items": [("Ube", None)], "expected_missing": "quantity"}
+    many |= {"missing": "quantity", "found_items": [("Ube", None)]}
+    assert _score(many) == "right"
+    assert _score(many | {"action": "report_stock", "missing": None}) == "wrong_items"
+
+
+def test_on_hand_is_found_and_scored() -> None:
+    """A how-many-left question: the on_hand event is found as kind on_hand with no quantity."""
+    from tests.evals.test_inventory_manager_evals import _found, _score
+
+    args = {"kind": "count", "item_id": "u", "ingredient_id": None, "quantity": None}
+    kind, items = _found(args | {"on_hand": True}, {"u": "Ube"})
+    assert (kind, items) == ("on_hand", [("Ube", None)])
+    r = {"error": None, "expected_action": "report_stock", "expected_kind": "on_hand"}
+    r |= {"expected_items": [("Ube", None)], "expected_missing": None, "confidence": 0.9}
+    r |= {"action": "report_stock", "raw_action": "report_stock", "missing": None}
+    assert _score(r | {"found_kind": kind, "found_items": items}) == "right"
+    assert _score(r | {"found_kind": "low", "found_items": items}) == "wrong_items"

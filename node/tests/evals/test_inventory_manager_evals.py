@@ -1,17 +1,22 @@
-"""Real-Jev inventory manager decider evaluation, asserted with the Q40 bar of tests/evals/gate.py.
-Run: MIA_DECIDER=jev uv run pytest node/tests/evals/test_inventory_manager_evals.py -m evals -s
-(needs MIA_TYPESAFE_KEY; skips while the case list is empty). Each case runs build_query and
-decider.decide on Ferino's seeded demo through egress (pseudonymised, rule 6). The gate reads
-the gate half only; the tune half is for tuning the action descriptions. Scores: right (the
-expected action; for a count, order or delivery the expected (name, quantity) pairs, for a
-report the expected kind; a waste without a reason is right when Mia asks the reason), wrong
-(another action at >= the threshold), wrong_items (the expected action with other items, kind
-or a guessed reason: a wrong write, counted apart), ask (clarify or another missing input),
-other (an error)."""
+"""Real-Jev inventory manager decider evaluation, asserted with the D40 bar of tests/evals/gate.py.
+Run the fresh gate half (the D40 rerun):
+MIA_EVAL_HALVES=gate MIA_DECIDER=jev uv run pytest node/tests/evals/test_inventory_manager_evals.py -m evals -s
+(needs MIA_TYPESAFE_KEY; skips while the case list is empty). MIA_EVAL_HALVES picks the halves
+(default "tune,gate"; "tune" for a tuning run, "gate" for the gate run); a spent row (the 19 Oct
+sets, both halves ran) is never run. Each case runs build_query and decider.decide on Ferino's
+seeded demo through egress (pseudonymised, rule 6). The gate reads the fresh gate half only; the
+tune half is for tuning the action descriptions. Scores: right (the expected action; for a
+count, order or delivery the expected (name, quantity) pairs, for a report the expected kind; a
+waste without a reason is right when Mia asks the reason, a waste with no number when Mia asks
+how many, a how-many-left question when it is the on_hand question of the item), wrong (another
+action at >= the threshold), wrong_items (the expected action with other items, kind or a
+guessed reason: a wrong write, counted apart), ask (clarify or another missing input), other
+(an error)."""
 
 import asyncio
 import datetime as dt
 import json
+import os
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -26,6 +31,7 @@ from mia.agents.base import AgentDeps
 from mia.agents.decider import THRESHOLD
 from mia.agents.inventory_manager import MANIFEST, decider
 from mia.agents.inventory_manager.actions import build_query
+from mia.agents.inventory_manager.decider import ON_HAND
 from mia.core import jev
 from mia.core.egress import EgressContext, egress_context
 from mia.core.models import Actor, Branch, Person, UsageCloudRequest
@@ -49,6 +55,12 @@ def _report_path(now: dt.datetime) -> Path:
     if path.exists():
         raise FileExistsError(f"refusing to overwrite {path}")
     return path
+
+
+def _selected(cases: list[Case], halves: str) -> list[Case]:
+    """The cases of the named halves (comma-separated); a spent row never."""
+    wanted = set(halves.split(",")) - {"spent"}
+    return [c for c in cases if c.half in wanted]
 
 
 def _deps(session: Session, case: Case, person_id: str) -> AgentDeps:
@@ -110,7 +122,11 @@ async def _one(
 
 def _found(args: dict[str, Any], names: dict[str, str]) -> tuple[str, list[tuple[Any, ...]]]:
     """The kind and the (name, quantity) pairs a decision's args would write: a report's
-    events, or an order's or a delivery's lines."""
+    events, or an order's or a delivery's lines; an on_hand question (one event, no quantity)
+    is kind on_hand."""
+    if args.get(ON_HAND):
+        ref = str(args.get("item_id") or args.get("ingredient_id"))
+        return ON_HAND, [(names.get(ref, "?"), args.get("quantity"))]
     rows = args.get("events") or args.get("lines") or []
     pairs = [
         (names.get(str(e.get("item_id") or e.get("ingredient_id")), "?"), e.get("quantity"))
@@ -189,12 +205,13 @@ def test_decider(engine: Engine, session: Session, ferinos: Ferinos) -> None:
     senders = {role: staff[name].id for role, name in SENDERS.items()}
     names = {i.id: i.name for i in session.exec(select(RetailItem)).all()}
     names |= {i.id: i.name for i in session.exec(select(RetailIngredient)).all()}
+    cases = _selected(CASES, os.environ.get("MIA_EVAL_HALVES", "tune,gate"))
 
     async def run() -> list[dict[str, Any]]:
         sem = asyncio.Semaphore(4)
         return list(
             await asyncio.gather(
-                *(_one(i, c, engine, senders[c.role], sem) for i, c in enumerate(CASES))
+                *(_one(i, c, engine, senders[c.role], sem) for i, c in enumerate(cases))
             )
         )
 
@@ -229,5 +246,6 @@ def test_decider(engine: Engine, session: Session, ferinos: Ferinos) -> None:
     print(f"\nconfusions: {summary['confusions']}\nwall {wall:.0f} s")
     text = json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1)
     report.write_text(text + "\n", encoding="utf-8")
-    failed = gate.gate_failures(gated)  # the Q40 bar, as the router's
-    assert not failed, failed
+    if gated_rows:  # a tune-only run has no gate to assert
+        failed = gate.gate_failures(gated)  # the D40 bar, as the router's
+        assert not failed, failed
