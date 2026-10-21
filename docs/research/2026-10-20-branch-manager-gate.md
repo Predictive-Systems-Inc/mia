@@ -432,3 +432,5 @@ tokens, at most $0.15 at the list price above.
   passing and fil (ask 15.9%), war (right 79.5%) and bcl still failing; the description change itself fixed the out-of-v1 subjects (76.7% on the
   tune half) and customer_service routes at 100%.
 - **Stopped here,** as decided: both gates are reported failing after the one round.
+
+Under D40 (21 Oct 2026) this run reads: ceb, en, fil and hil pass; bcl fails (wrong 2.2%, above 2%), war fails (right 64% below 65%, ask 36% above 30%). Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.

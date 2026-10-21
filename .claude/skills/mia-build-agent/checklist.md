@@ -66,7 +66,7 @@ no test says so. Pin each line to the plan task that owns it.
 - No text in both halves: `node/tests/evals/router_cases.py`, `node/tests/evals/test_router_cases.py::test_no_text_appears_in_both_halves`.
 - The router shape test skips an id in `PENDING`, so the gates step empties it: `node/tests/evals/router_cases.py` (`PENDING`), `node/tests/evals/test_router_cases.py::test_every_gated_language_covers_every_agent_and_group`.
 - The raw file named by local time, never overwritten: `node/tests/evals/test_sales_supervisor_evals.py` (`_report_path`), `node/tests/evals/test_router_cases.py::test_the_raw_report_is_named_by_local_minute_and_never_overwritten`.
-- The gate bar is Q40: `node/tests/evals/gate.py` (`gate_failures`), `node/tests/evals/test_router_cases.py::test_the_gate_is_the_q40_bar`.
+- The gate bar is Q40: `node/tests/evals/gate.py` (`gate_failures`), `node/tests/evals/test_router_cases.py::test_the_gate_is_the_d40_bar`.
 - The report in the research shape with the gate stated as it is, numbers recomputed from the raw file: `docs/research/*.md`; no test, the reviewer recomputes.
 
 ## Tests

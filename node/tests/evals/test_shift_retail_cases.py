@@ -138,9 +138,9 @@ def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path:
         _report_path(now, tmp_path)
 
 
-def test_the_gate_is_the_q40_bar() -> None:
-    """The decider half's gate summary, built by the harness's _row, meets the Q40 bar of
-    gate.py: wrong at most 2%, per language right at least 80% and ask at most 15%."""
+def test_the_gate_is_the_d40_bar() -> None:
+    """The decider half's gate summary, built by the harness's _row, meets the D40 bar of
+    gate.py (full bar for fil)."""
     from tests.evals.gate import gate_failures
     from tests.evals.test_shift_retail_evals import _row
 

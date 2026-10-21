@@ -173,3 +173,5 @@ input tokens about $0.15, $0.00014 per message.
    pulls a right `report_sales` under 0.6. Dropping the period judgment for a count with no
    day word (code) would turn most count asks into rights.
 4. The chat scenarios have still not been run against real Jev.
+
+Under D40 (21 Oct 2026) this run reads: bcl, ceb and en pass; fil fails (ask 17%, above 15%), hil fails (wrong 3.3%), war fails (wrong 3.3%). Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.

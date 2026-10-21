@@ -264,3 +264,5 @@ measured tokens, not a billed amount.
   needs a fresh router gate half.
 - The non-English messages are drafts (Q28 to Q35).
 - Record `cost_minor` in the usage rows.
+
+Under D40 (21 Oct 2026) this run reads: no language passes; bcl fails (right 56%, ask 43%), ceb (wrong 4.0%, right 60%, ask 36%), en (ask 19%), fil (wrong 4.0%, right 72%, ask 24%), hil (wrong 2.7%, ask 32%), war (wrong 5.3%, right 52%, ask 43%). Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.

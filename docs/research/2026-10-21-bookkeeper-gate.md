@@ -240,3 +240,5 @@ most $0.19 (4.41 million tokens): a price applied to measured tokens, not a bill
 - The non-English messages are drafts (Q28 to Q35); the tax table is checked with the accountant
   (Q97).
 - Record `cost_minor` in the usage rows.
+
+Under D40 (21 Oct 2026) this run reads: bcl, ceb, en and war pass; fil fails (ask 16%, above 15%), hil fails (wrong 3.6%, above 2%). Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.

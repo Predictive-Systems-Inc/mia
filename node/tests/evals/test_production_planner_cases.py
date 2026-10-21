@@ -151,7 +151,7 @@ def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path:
         _report_path(now, tmp_path)
 
 
-def test_the_gate_is_the_q40_bar() -> None:
+def test_the_gate_is_the_d40_bar() -> None:
     from tests.evals.gate import gate_failures
     from tests.evals.test_production_planner_evals import _row
 

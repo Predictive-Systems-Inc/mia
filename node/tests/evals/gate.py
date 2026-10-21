@@ -1,15 +1,22 @@
-"""The Q40 gate bar, shared by the router and the agent decider eval harnesses."""
+"""The D40 gate bar, shared by the router and the agent decider eval harnesses."""
 
 from typing import Any
 
+# Languages whose strings are machine drafts (Q28 to Q35); one leaves when its native review lands.
+DRAFTED = frozenset({"ceb", "ilo", "hil", "war", "bcl", "pam", "pag"})
+RIGHT_MIN = {"full": 0.80, "drafted": 0.65}
+ASK_MAX = {"full": 0.15, "drafted": 0.30}
+
 
 def gate_failures(gated: dict[str, Any]) -> list[str]:
-    """The Q40 bar on a fresh gate half: wrong at most 2% (hard), and per gated language right
-    at least 80% and ask at most 15% (greetings left out). Empty when the gate passes."""
+    """The D40 bar on a fresh gate half: wrong at most 2% overall (hard, every language), and per
+    gated language right at least 80% and ask at most 15%, relaxed to 65% and 30% for a machine-
+    drafted language (DRAFTED), greetings left out. Empty when the gate passes."""
     failed = [f"wrong {gated['all']['wrong']}"] if gated["all"]["wrong"] > 0.02 else []
     for lang, v in gated["by_language"].items():
-        if v["right"] < 0.80:
+        tier = "drafted" if lang in DRAFTED else "full"
+        if v["right"] < RIGHT_MIN[tier]:
             failed.append(f"{lang} right {v['right']}")
-        if v["ask"] > 0.15:
+        if v["ask"] > ASK_MAX[tier]:
             failed.append(f"{lang} ask {v['ask']}")
     return failed

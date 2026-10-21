@@ -171,3 +171,5 @@ million input tokens about $0.19, $0.00016 per message.
 4. "Salted duck eggs" versus the Salted egg item: one swap; the `item` question could say an
    ingredient that is running low is never a menu item.
 5. The chat scenarios have not been run against real Jev.
+
+Under D40 (21 Oct 2026) this run reads: bcl, en, hil and war pass; ceb fails (right 62%, ask 37%), fil fails (right 79%, ask 19%). Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.

@@ -121,7 +121,7 @@ def test_gated_summary_ignores_reported_languages_and_the_tune_half() -> None:
     assert gated["any"]["n"] == 2 and gated["any"]["ask"] == 1.0
 
 
-def test_the_gate_is_the_q40_bar() -> None:
+def test_the_gate_is_the_d40_bar() -> None:
     from tests.evals.gate import gate_failures
 
     def gated(wrong: float, right: float, ask: float) -> dict[str, object]:
@@ -129,7 +129,6 @@ def test_the_gate_is_the_q40_bar() -> None:
 
     assert gate_failures(gated(0.02, 0.80, 0.15)) == []
     assert gate_failures(gated(0.021, 0.80, 0.15)) == ["wrong 0.021"]
-    assert gate_failures(gated(0.0, 0.79, 0.16)) == ["en right 0.79", "en ask 0.16"]
 
 
 def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:

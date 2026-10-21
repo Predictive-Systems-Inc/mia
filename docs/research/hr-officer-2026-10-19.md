@@ -178,3 +178,5 @@ The router gate was not rerun. The hr officer already has router cases (20 refer
 `router_cases.py`), `PENDING` is empty, and its router description has not changed since the
 last router rerun (docs/research/router-2026-10-19-rerun.md). Nothing was added to
 `router_cases.py`.
+
+Under D40 (21 Oct 2026) this run reads: bcl, ceb, en, fil, hil and war all pass; none fail. Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.

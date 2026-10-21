@@ -236,3 +236,5 @@ applied to measured tokens, not a billed amount.
   the planner's own description gains the driver's delivered words (fix wave A).
 - These gates are not rerun: both gate halves are spent, and a rerun needs fresh gate seeds
   (spec, Carried over).
+
+Under D40 (21 Oct 2026) this run reads: en and war pass; bcl fails (wrong 4.0%), ceb (wrong 6.0%, right 66%), fil (right 78%, ask 22%), hil (right 62%, ask 36%). Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.

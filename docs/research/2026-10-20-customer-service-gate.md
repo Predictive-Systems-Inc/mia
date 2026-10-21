@@ -262,3 +262,5 @@ bypass the router), five in each half:
   customer orders are waiting for confirmation".
 
 These have not been scored by the router; the next router run reports them.
+
+Under D40 (21 Oct 2026) this run reads: bcl, ceb, en, fil, hil and war all pass; none fail. Computed from the relaxed-bar table in docs/research/2026-10-21-q40-threshold-study.md; no rerun, the numbers and verdict above stand.
