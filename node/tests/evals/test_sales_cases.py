@@ -1,27 +1,58 @@
 """The sales supervisor eval set is well formed (offline; the real-Jev run is
 test_sales_supervisor_evals.py)."""
 
+import json
 from collections import Counter
+from pathlib import Path
 
 from mia.agents.parsing import menu_tokens, pre_parse
 from mia.agents.sales_supervisor.actions import ACTIONS
 from mia.templates.retail.seed import ITEMS as MENU
 from tests.evals.sales_cases import CASES, GATED_LANGS, SCENARIOS
 
+RESEARCH = Path(__file__).parents[3] / "docs" / "research"
+PER_HALF = {"tune": 5, "gate": 5, "spent": 20}
+
+
+def _folded(half: str) -> set[str]:
+    return {c.text.casefold().strip() for c in CASES if c.half == half}
+
 
 def test_ten_cases_per_language_scenario_and_half() -> None:
+    """Ten fresh messages per language and scenario (five tune, five gate), twenty spent."""
     counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
     assert set(counts) == {
-        (lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in ("tune", "gate")
+        (lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in PER_HALF
     }
-    assert set(counts.values()) == {10}
+    assert all(n == PER_HALF[half] for (_, _, half), n in counts.items()), counts
 
 
 def test_no_text_appears_in_both_halves() -> None:
-    """The gate half is fresh: none of its texts (casefolded) is in the tune half."""
-    tune = {c.text.casefold().strip() for c in CASES if c.half == "tune"}
-    gate = {c.text.casefold().strip() for c in CASES if c.half == "gate"}
+    """The fresh halves share no text (casefolded), and neither repeats a spent one."""
+    tune, gate, spent = _folded("tune"), _folded("gate"), _folded("spent")
     assert not tune & gate, tune & gate
+    assert not (tune | gate) & spent, (tune | gate) & spent
+
+
+def test_no_fresh_text_was_ever_scored() -> None:
+    """No fresh text (casefolded) is in any earlier sales supervisor run's raw file."""
+    raws = sorted(RESEARCH.glob("sales-supervisor-*.raw.json"))
+    assert raws
+    scored = {
+        r["text"].casefold().strip()
+        for path in raws
+        for r in json.loads(path.read_text(encoding="utf-8"))["results"]
+    }
+    seen = (_folded("tune") | _folded("gate")) & scored
+    assert not seen, seen
+
+
+def test_the_halves_are_selected_by_name_and_the_spent_half_never() -> None:
+    from tests.evals.test_sales_supervisor_evals import _selected
+
+    assert {c.half for c in _selected(CASES, "tune")} == {"tune"}
+    assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
+    assert not any(c.half == "spent" for c in _selected(CASES, "tune,gate,spent"))
 
 
 def test_expected_actions_are_actions_and_counts_name_items() -> None:
@@ -56,9 +87,5 @@ def test_why_answers_follow_the_why_question() -> None:
     assert all(c.previous for c in CASES if c.expected_action == "why_answer")
 
 
-def test_no_tagalog_and_balanced_halves() -> None:
+def test_no_tagalog() -> None:
     assert not any("tagalog" in c.text.casefold() for c in CASES)
-    halves = Counter((c.lang, c.scenario, c.half) for c in CASES)
-    for lang in GATED_LANGS:
-        for s in SCENARIOS:
-            assert abs(halves[(lang, s, "tune")] - halves[(lang, s, "gate")]) <= 1

@@ -5,11 +5,17 @@ decider.decide on Ferino's seeded demo, through egress (pseudonymised, rule 6). 
 language, scenario and half: right (the expected action with the expected items), wrong (another
 action at >= the threshold), wrong_items (the expected action with other items), ask (clarify
 or a missing input), other (an error), p50 and p95 latency and tokens per message. The gate
-asserts run over the gate half only; the tune half is for tuning the action descriptions."""
+asserts run over the gate half only; the tune half is for tuning the action descriptions.
+
+MIA_EVAL_HALVES picks the halves (default "tune,gate"; "tune" for a tuning run, "gate" for the
+gate run); the spent half (rows scored in an earlier run) never runs. The fresh gate half, for
+the D40 rerun:
+MIA_EVAL_HALVES=gate MIA_DECIDER=jev uv run pytest node/tests/evals/test_sales_supervisor_evals.py -m evals -s"""
 
 import asyncio
 import datetime as dt
 import json
+import os
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -49,6 +55,12 @@ def _report_path(now: dt.datetime, folder: Path = RESEARCH) -> Path:
     if path.exists():
         raise FileExistsError(f"refusing to overwrite {path}")
     return path
+
+
+def _selected(cases: list[Case], halves: str) -> list[Case]:
+    """The cases of the named halves (comma-separated); the spent half never."""
+    wanted = set(halves.split(",")) - {"spent"}
+    return [c for c in cases if c.half in wanted]
 
 
 def _needs_jev() -> None:
@@ -158,7 +170,8 @@ def _table(results: list[dict[str, Any]], key: str) -> dict[str, Any]:
 
 
 def _gated(results: list[dict[str, Any]]) -> dict[str, Any]:
-    """The rows the gate asserts read: the gate half of the gated languages."""
+    """The rows the gate asserts read: the fresh gate half of the gated languages (spent rows
+    never run)."""
     rows = [r for r in results if r["half"] == "gate" and r["lang"] in GATED_LANGS]
     return {
         "all": _row(rows),
@@ -191,11 +204,12 @@ def test_sales_supervisor_decider(engine: Engine, session: Session, ferinos: Fer
     _, staff = ferinos
     senders = {role: staff[name].id for role, name in SENDERS.items()}
     names = {i.id: i.name for i in session.exec(select(RetailItem)).all()}
+    cases = _selected(CASES, os.environ.get("MIA_EVAL_HALVES", "tune,gate"))
 
     async def run() -> list[dict[str, Any]]:
         sem = asyncio.Semaphore(CONCURRENCY)
         return await asyncio.gather(
-            *(_one(i, c, engine, senders[c.role], sem) for i, c in enumerate(CASES))
+            *(_one(i, c, engine, senders[c.role], sem) for i, c in enumerate(cases))
         )
 
     started = time.perf_counter()
