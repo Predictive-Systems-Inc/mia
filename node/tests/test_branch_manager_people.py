@@ -23,7 +23,17 @@ from mia.channels.simulator import SimAdapter
 from mia.chat.service import run_turn
 from mia.core import jev, orgconfig, people
 from mia.core.db import utcnow
-from mia.core.models import Actor, AuthCode, Branch, ChannelIdentity, ChannelInbound, Event, Person
+from mia.core.models import (
+    Actor,
+    AuthCode,
+    Branch,
+    ChannelIdentity,
+    ChannelInbound,
+    Event,
+    Message,
+    Person,
+    Thread,
+)
 from mia.i18n import t
 from mia.settings import get_settings
 from tests.channels.kits import _hub_sign
@@ -92,7 +102,9 @@ def test_an_admin_adds_a_clerk_with_the_invite(session: Session, bm: Ferinos) ->
     created = session.exec(select(Event).where(Event.action == "person.created")).all()
     assert maria.id in {e.entity_id for e in created}
     code = session.exec(select(AuthCode).where(AuthCode.person_id == maria.id)).one()
-    assert code.purpose == "invite" and code.created_by == deps.actor.principal.id
+    assert (
+        code.purpose == "invite" and code.created_by == deps.person.id
+    )  # the admin, not the agent
     logged = session.exec(select(Event).where(Event.tool_call_id == "a1")).all()
     called = next(e for e in logged if e.action == "tool.called")
     assert called.after and called.after["output"]["invite_code"] == "<redacted>"
@@ -136,13 +148,83 @@ def test_owner_is_never_assignable(role: str) -> None:
         AddPersonInput(name="X", role=role)  # type: ignore[arg-type]
 
 
-def test_only_the_owner_adds_an_admin_with_a_phone(session: Session, bm: Ferinos) -> None:
+@pytest.mark.parametrize("phone", [None, TYPED])
+def test_only_the_owner_adds_an_admin(session: Session, bm: Ferinos, phone: str | None) -> None:
+    """An admin adding an admin is refused with no hint (no_person); clerks, staff and
+    supervisors stay theirs to add."""
     kiosk, ppl = bm
     admin = deps_for(session, _admin(session, kiosk))
-    args = AddPersonInput(name="Eve", role="admin", phone=TYPED)
+    args = AddPersonInput(name="Eve", role="admin", phone=phone)
     out = call_tool(admin, ADD, args, "a1")
-    assert (out["message"], _people_named(session, "Eve")) == ("phone_role", [])
+    assert (out["message"], _people_named(session, "Eve")) == ("no_person", [])
+    for i, role in enumerate(("clerk", "staff", "supervisor")):
+        add = AddPersonInput(name=f"New{i}", role=role)  # type: ignore[arg-type]
+        assert call_tool(admin, ADD, add, f"b{i}")["role"] == role
     assert call_tool(deps_for(session, ppl["Rosa"]), ADD, args, "a2")["role"] == "admin"
+
+
+def _notices(session: Session, person: Person) -> list[str]:
+    stmt = select(Message).join(Thread).where(Thread.person_id == person.id)
+    return [m.text for m in session.exec(stmt.where(Message.role == "notification"))]
+
+
+def test_the_owner_is_told_of_a_person_and_a_link_made_in_the_chat(
+    session: Session, bm: Ferinos
+) -> None:
+    kiosk, ppl = bm
+    dina = _admin(session, kiosk)
+    admin = deps_for(session, dina)
+    call_tool(admin, ADD, AddPersonInput(name="Maria", role="clerk"), "a1")
+    call_tool(admin, SET, SetPhoneInput(person_id=ppl["Liza"].id, phone=TYPED), "s1")
+    rosa = ppl["Rosa"]
+    added = t("bm.person.owner_added", rosa.language, actor="Dina", name="Maria", role="clerk",
+              branch=kiosk.name)  # fmt: skip
+    linked = t("bm.person.owner_linked", rosa.language, actor="Dina", name=ppl["Liza"].name,
+               last4="4567")  # fmt: skip
+    assert _notices(session, rosa) == [added, linked]
+    assert _notices(session, dina) == []  # the sender is not told of their own act
+    before = len(_notices(session, rosa))
+    call_tool(deps_for(session, rosa), ADD, AddPersonInput(name="Ben", role="clerk"), "a2")
+    assert len(_notices(session, rosa)) == before  # nor is the owner of their own
+    _no_digits_in_events(session)
+
+
+def test_the_admin_is_told_when_their_invite_meets_a_number_someone_holds(
+    session: Session, bm: Ferinos
+) -> None:
+    kiosk, ppl = bm
+    dina = _admin(session, kiosk)
+    admin = deps_for(session, dina)
+    call_tool(admin, SET, SetPhoneInput(person_id=ppl["Liza"].id, phone=TYPED), "s1")
+    out = call_tool(admin, ADD, AddPersonInput(name="Maria", role="clerk"), "a1")
+    result = linking.redeem(session, "whatsapp", ADDRESS, out["invite_code"], utcnow())
+    assert result.status == "taken"
+    assert _notices(session, dina) == [t("channel.link_taken", dina.language, name="Maria")]
+
+
+def test_a_direct_link_revokes_the_open_invite(session: Session, bm: Ferinos) -> None:
+    kiosk, _ = bm
+    admin = deps_for(session, _admin(session, kiosk))
+    out = call_tool(admin, ADD, AddPersonInput(name="Maria", role="clerk"), "a1")
+    (maria,) = _people_named(session, "Maria")
+    call_tool(admin, SET, SetPhoneInput(person_id=maria.id, phone=TYPED), "s1")
+    late = linking.redeem(session, "whatsapp", "639981112222", out["invite_code"], utcnow())
+    assert late.status in ("expired", "invalid")  # revoked; the second-number guard too
+    assert linking.identity_for(session, "whatsapp", "639981112222") is None
+    (code,) = session.exec(select(AuthCode).where(AuthCode.person_id == maria.id)).all()
+    assert code.expires_at == code.created_at and code.used_at is None
+    revoked = session.exec(select(Event).where(Event.action == "auth.code_revoked")).all()
+    assert [e.entity_id for e in revoked] == [code.id]
+
+
+def test_a_code_never_links_a_second_whatsapp_number(session: Session, bm: Ferinos) -> None:
+    kiosk, ppl = bm
+    admin = deps_for(session, _admin(session, kiosk))
+    call_tool(admin, SET, SetPhoneInput(person_id=ppl["Liza"].id, phone=TYPED), "s1")
+    code = linking.create_code(session, Actor.system(kiosk.id), ppl["Liza"], "self")
+    second = linking.redeem(session, "whatsapp", "639981112222", code, utcnow())
+    assert second.status == "invalid"
+    assert linking.identity_for(session, "whatsapp", "639981112222") is None
 
 
 # ---- set_phone ---------------------------------------------------------------------------

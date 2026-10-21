@@ -11,7 +11,7 @@ import re
 from typing import Literal
 
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from mia.chat.blocks import TextBlock
 from mia.core import auth, events, keys, store
@@ -83,8 +83,10 @@ def ph_mobile(text: str) -> str | None:
 def link_phone(session: Session, actor: Actor, person: Person, address: str) -> None:
     """Link the address to the person on WhatsApp and on every enabled phone channel (the sim
     in dev), the row a redeemed code writes (event channel.linked, the address redacted). An
-    address the person already holds is kept. Raises LookupError("phone_taken") when another
-    person holds it on one of those channels, before anything is written: never relinked."""
+    address the person already holds is kept, and the person's open invite and self codes are
+    revoked (event auth.code_revoked), so no second number can act as them through an earlier
+    code. Raises LookupError("phone_taken") when another person holds it on one of those
+    channels, before anything is written: never relinked."""
     from mia.channels import registry  # registry loads orgconfig; keep linking light
 
     enabled = [a.channel_id for a in registry.enabled() if a.channel_id in PHONE_CHANNELS]
@@ -102,6 +104,16 @@ def link_phone(session: Session, actor: Actor, person: Person, address: str) -> 
             consent_at=now,
         )
         store.insert(session, identity, actor, action="channel.linked", redact=("address",))
+    open_codes = session.exec(
+        select(AuthCode)
+        .where(AuthCode.person_id == person.id)
+        .where(col(AuthCode.purpose).in_(["invite", "self"]))
+        .where(col(AuthCode.used_at).is_(None))
+        .where(AuthCode.expires_at > now)
+    ).all()
+    for code in open_codes:
+        revoked = {"expires_at": code.created_at}  # expired from the start, on any clock
+        store.update(session, code, revoked, actor, action="auth.code_revoked")
 
 
 def _channel_actor(channel: str) -> Actor:
@@ -128,7 +140,9 @@ def _record(session: Session, channel: str, address: str, ok: bool, now: dt.date
 def redeem(
     session: Session, channel: str, address: str, code: str, now: dt.datetime
 ) -> RedeemResult:
-    """Link the address to the code's person, or say why not. Never overwrites a link."""
+    """Link the address to the code's person, or say why not. Never overwrites a link, and
+    never links a second address on the channel to a person who already has one there
+    (invalid, no hint; they relink through the owner)."""
     if auth.throttled(session, "link_code", _key(channel, address), now):
         _record(session, channel, address, False, now)
         return RedeemResult(status="blocked")
@@ -149,6 +163,9 @@ def redeem(
         _record(session, channel, address, False, now)
         _tell_inviter(session, row, person)
         return RedeemResult(status="taken", person=None)
+    if existing is None and _holds_channel(session, person, channel):
+        _record(session, channel, address, False, now)
+        return RedeemResult(status="invalid")
     actor = Actor.person(person)
     auth.use_code(session, actor, row, now)
     if existing is None:
@@ -167,6 +184,18 @@ def redeem(
         )
     _record(session, channel, address, True, now)
     return RedeemResult(status="linked", person=person)
+
+
+def _holds_channel(session: Session, person: Person, channel: str) -> bool:
+    return (
+        session.exec(
+            select(ChannelIdentity)
+            .where(ChannelIdentity.person_id == person.id)
+            .where(ChannelIdentity.channel == channel)
+            .where(ChannelIdentity.status == "active")
+        ).first()
+        is not None
+    )
 
 
 def _tell_inviter(session: Session, row: AuthCode, person: Person) -> None:

@@ -83,7 +83,7 @@ def test_a_number_in_a_chat_turn_never_reaches_an_event(
     asyncio.run(run_turn(session, None, people["Juha"], text, None))
     session.commit()
     assert not any(d in _events_text(session) for d in ("9171234567", "917 123", "1234567"))
-    assert "<number ...4567>" in _events_text(session)
+    assert "<number>" in _events_text(session)  # the chain keeps no digit of it
     thread = session.exec(select(Thread).where(Thread.person_id == people["Juha"].id)).one()
     assert thread.title == "I'm sick tomorrow, text me on <number ...4567>"
     stored = session.exec(select(Message).where(Message.role == "user")).one()
@@ -119,3 +119,19 @@ def test_a_decider_request_leaves_with_the_number_masked(
     for body in seen:
         assert body["state"]["message"] == "call <number>, I owe ₱3,210 and 12,450"
         assert not any(d in json.dumps(body) for d in NUMBER_DIGITS)
+
+
+@pytest.mark.parametrize("action", ["tool.called", "decision.made", "decision.clarify_asked"])
+def test_an_event_given_free_text_keeps_no_digit_of_a_number(
+    session: Session, people: dict[str, Person], action: str
+) -> None:
+    """emit masks every payload fully before the hash, not only row snapshots."""
+    from mia.core import events
+    from mia.core.models import Actor
+
+    after = {"input": {"note": "call 0917 123 4567"}, "alternatives": ["+63 917-123-4567"]}
+    ev = events.emit(session, action, ("thread", "t1"), {"q": "0917 123 4567"}, after,
+                     Actor.person(people["Juha"]))  # fmt: skip
+    text = json.dumps([ev.before, ev.after])
+    assert not any(d in text for d in NUMBER_DIGITS) and "<number>" in text
+    assert events.verify_chain(session)

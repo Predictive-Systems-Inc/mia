@@ -348,6 +348,8 @@ STRINGS: dict[str, str | list[str]] = {
     "bm.person.invite": "I-forward ki {name}: {link} (o i-text si Mia: LINK {code}). Valid {days} na aldaw, saro sanang gamit.",
     "bm.person.invite_code": "Sabihi si {name} na i-text si Mia: LINK {code}. Valid {days} na aldaw, saro sanang gamit.",
     "bm.person.phone_linked": "Naka-link na an numero ni {name} (huri: {last4}). Bisto na siya ni Mia sa WhatsApp.",
+    "bm.person.owner_added": "Idinugang ni {actor} si {name} ({role}) sa {branch} hale sa chat.",
+    "bm.person.owner_linked": "Ini-link ni {actor} an numero na nagtatapos sa {last4} ki {name} hale sa chat. Bisto na siya ni Mia sa WhatsApp.",
     "bm.person.exists": "Igwa nang {name} sa team duman. Ibang pangaran?",
     "bm.person.ask_name": "Siisay an idadagdag? I-send an pangaran, halimbawa: idagdag si Maria clerk.",
     "bm.person.ask_role": "Anong role: clerk, staff, supervisor o admin?",

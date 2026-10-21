@@ -235,7 +235,7 @@ def create_code(
             purpose=purpose,
             address=address,
             expires_at=now + CODE_TTL[purpose],
-            created_by=actor.principal.id,
+            created_by=actor.person_id or actor.principal.id,  # the human an agent acts for
         ),
         actor,
         action="auth.code_created",

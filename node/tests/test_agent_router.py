@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Any
 
 import pytest
@@ -610,3 +611,17 @@ def test_a_switch_away_within_the_hour_unlearns(
     before = len(two_agents)
     _turn(session, people["Sanna"], "7 sp 1 cl")
     assert len(two_agents) == before + 1  # Jev was asked: one counted tap learns nothing
+
+
+def test_a_mobile_number_leaves_for_the_router_with_no_digit(
+    session: Session,
+    people: dict[str, Person],
+    two_agents: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """jev.ask is the one Jev egress point: the router's request is masked there too."""
+    _router_answers(monkeypatch, two_agents, "shift_supervisor")
+    _turn(session, people["Sanna"], "number ni ana 0917 123 4567")
+    sent = json.dumps(two_agents[0])
+    assert "<number>" in two_agents[0]["state"]["message"]
+    assert not any(d in sent for d in ("0917", "917", "123", "4567"))

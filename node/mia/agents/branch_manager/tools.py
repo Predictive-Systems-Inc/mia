@@ -1505,7 +1505,8 @@ def _target_branch(deps: AgentDeps, branch_id: str | None) -> Branch:
 
 def check_add_person(deps: AgentDeps, args: AddPersonInput, tool_call_id: str) -> None:
     """The precheck of add_person: the branch is the organisation's, no active person of it
-    has the name (any case; person_exists), the phone is a PH mobile no one holds. LookupError."""
+    has the name (any case; person_exists), an admin only for an owner sender (no_person, no
+    hint), the phone is a PH mobile no one holds. LookupError."""
     _check(deps, PEOPLE, "read", tool_call_id)
     _check(deps, BRANCHES, "read", tool_call_id)
     branch = _target_branch(deps, args.branch_id)
@@ -1515,6 +1516,8 @@ def check_add_person(deps: AgentDeps, args: AddPersonInput, tool_call_id: str) -
     ).all()
     if any(p.name.casefold() == name for p in here):
         raise LookupError("person_exists")
+    if args.role == "admin" and "owner" not in deps.person.roles:
+        raise LookupError("no_person")
     address = _phone(args.phone)
     if address is not None and not _may_link(deps, [args.role]):
         raise LookupError("phone_role")
@@ -1527,7 +1530,8 @@ def add_person(deps: AgentDeps, args: AddPersonInput, tool_call_id: str) -> Pers
     person.language_chosen), the CLI's `mia person add`. A phone links them on WhatsApp
     (linking.link_phone, the address redacted); without one, the invite `mia invite` makes (a
     LINK code, single use, and the wa.me link when MIA_WA_NUMBER is set). Admin only (policy);
-    the tool is sensitive, so its tool.called event keeps only the person id."""
+    the tool is sensitive, so its tool.called event keeps only the person id. Every owner
+    but the sender is told who added whom (_tell_owners)."""
     check_add_person(deps, args, tool_call_id)
     _check(deps, PEOPLE, "write", tool_call_id)
     branch = _target_branch(deps, args.branch_id)
@@ -1542,10 +1546,14 @@ def add_person(deps: AgentDeps, args: AddPersonInput, tool_call_id: str) -> Pers
     out = PersonOut(
         person_id=person.id, name=person.name, role=args.role, branch=branch.name, created=True
     )
+    _tell_owners(
+        deps, "bm.person.owner_added", name=person.name, role=args.role, branch=branch.name
+    )
     address = _phone(args.phone)
     if address is not None:
         _check(deps, IDENTITIES, "write", tool_call_id)
         linking.link_phone(deps.session, deps.actor, person, address)
+        _tell_owners(deps, "bm.person.owner_linked", name=person.name, last4=address[-4:])
         return out.model_copy(update={"phone_last4": address[-4:]})
     try:
         code = linking.create_code(deps.session, deps.actor, person, "invite")
@@ -1553,6 +1561,18 @@ def add_person(deps: AgentDeps, args: AddPersonInput, tool_call_id: str) -> Pers
         return out  # no master key on this node: the admin runs `mia invite` once it has one
     link = linking.invite_link(code) if get_settings().MIA_WA_NUMBER else None
     return out.model_copy(update={"invite_code": code, "invite_link": link})
+
+
+def _tell_owners(deps: AgentDeps, key: str, **params: str) -> None:
+    """Notify every active owner of the organisation but the sender (chat.channels.notify) of
+    a person or a link made from the chat, naming who did it."""
+    branches = select(Branch.id).where(Branch.organisation_id == deps.organisation_id)
+    rows = deps.session.exec(
+        select(Person).where(col(Person.branch_id).in_(branches)).where(Person.status == "active")
+    ).all()
+    for owner in (p for p in rows if "owner" in p.roles and p.id != deps.person.id):
+        text = t(key, owner.language, actor=deps.person.name, **params)
+        notify(deps.session, owner, [TextBlock(text=text)], deps.actor, MANIFEST.id)
 
 
 def _person_of_org(deps: AgentDeps, person_id: str) -> Person:
@@ -1589,13 +1609,15 @@ def check_phone(deps: AgentDeps, args: SetPhoneInput, tool_call_id: str) -> None
 def set_phone(deps: AgentDeps, args: SetPhoneInput, tool_call_id: str) -> PersonOut:
     """Link the number to an existing person on WhatsApp (linking.link_phone, event
     channel.linked with the address redacted), so their messages act as them without the
-    invite. Admin only (policy), sensitive. Raises LookupError (check_phone)."""
+    invite. Admin only (policy), sensitive; every owner but the sender is told. Raises
+    LookupError (check_phone)."""
     check_phone(deps, args, tool_call_id)
     _check(deps, IDENTITIES, "write", tool_call_id)
     person = _person_of_org(deps, args.person_id)
     address = _phone(args.phone)
     assert address is not None
     linking.link_phone(deps.session, deps.actor, person, address)
+    _tell_owners(deps, "bm.person.owner_linked", name=person.name, last4=address[-4:])
     branch = deps.session.get(Branch, person.branch_id)
     return PersonOut(
         person_id=person.id,

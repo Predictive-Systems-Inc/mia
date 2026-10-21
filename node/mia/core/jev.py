@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from mia.core.egress import EgressBlocked, EgressTransport, current_context
+from mia.core.events import mask_value
 from mia.settings import get_settings
 
 RETRY_STATUS = {408, 429, 529}
@@ -32,8 +33,10 @@ def _inner() -> httpx.AsyncBaseTransport | None:
 
 
 async def ask(body: dict[str, Any]) -> dict[str, Any]:
-    """One request with an already pseudonymised body; returns its `answers`. Raises
-    JevUnreachable when waiting may help, JevError otherwise."""
+    """One request with an already pseudonymised body; returns its `answers`. The single Jev
+    egress point: every mobile number in any string of the body leaves as "<number>", no digit
+    of it. Raises JevUnreachable when waiting may help, JevError otherwise."""
+    body = mask_value(body, keep_last=0)
     settings = get_settings()
     if not settings.MIA_TYPESAFE_KEY:
         raise JevError("MIA_TYPESAFE_KEY is not set")

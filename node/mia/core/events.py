@@ -134,25 +134,26 @@ def mask_phones(text: str, keep_last: int = 4) -> str:
     return text
 
 
-def _masked(value: Any) -> Any:
+def mask_value(value: Any, keep_last: int = 4) -> Any:
+    """A copy of a JSON value with mask_phones applied to every string in it (dict keys stay)."""
     if isinstance(value, str):
-        return mask_phones(value)
+        return mask_phones(value, keep_last)
     if isinstance(value, list):
-        return [_masked(v) for v in value]
+        return [mask_value(v, keep_last) for v in value]
     if isinstance(value, dict):
-        return {k: _masked(v) for k, v in value.items()}
+        return {k: mask_value(v, keep_last) for k, v in value.items()}
     return value
 
 
 def snapshot(row: SQLModel | None, redact: Iterable[str] = ()) -> dict[str, Any] | None:
     """JSON-safe copy of a row for before/after values. Fields named in the model's
-    `__redact__` and in `redact` are replaced by "<redacted>" so secrets never enter events,
-    and a mobile number in any text is masked (mask_phones): the chain is never rewritable."""
+    `__redact__` and in `redact` are replaced by "<redacted>" so secrets never enter events
+    (emit masks every mobile number)."""
     if row is None:
         return None
     data = row.model_dump(mode="json")
     hidden = set(getattr(row, "__redact__", ())) | set(redact)
-    return {k: (REDACTED if k in hidden and v is not None else _masked(v)) for k, v in data.items()}
+    return {k: (REDACTED if k in hidden and v is not None else v) for k, v in data.items()}
 
 
 def emit(
@@ -166,7 +167,9 @@ def emit(
     tool_call_id: str | None = None,
     approval_id: str | None = None,
 ) -> Event:
-    """Append one event, chained to the previous one, in the caller's transaction."""
+    """Append one event, chained to the previous one, in the caller's transaction. Every
+    mobile number in `before` and `after` is masked to "<number>" before the hash (the chain
+    is never rewritable and needs no digit of one; the live rows keep them)."""
     if isinstance(entity, tuple):
         entity_type, entity_id = entity
     else:
@@ -180,8 +183,8 @@ def emit(
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,
-        before=before,
-        after=after,
+        before=mask_value(before, keep_last=0),
+        after=mask_value(after, keep_last=0),
         tool_call_id=tool_call_id,
         approval_id=approval_id,
         prev_hash="",
