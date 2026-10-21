@@ -65,6 +65,8 @@ def header(name: str) -> tuple[str, ...]:
 
 
 def _parse(line: int, raw: dict[str, str]) -> Row:
+    if None in raw or None in raw.values():  # DictReader keys extra fields by None, fills missing
+        raise ValueError(f"line {line}: {len(HEADER)} fields expected, an extra or missing one")
     if raw["lang"] not in LANGS or raw["half"] not in HALVES or not raw["message"]:
         raise ValueError(f"line {line}: lang, half or message: {raw}")
     args = {k: int(raw[k]) if k in INTS else raw[k] for k in ARGS if raw[k] != ""}
@@ -77,7 +79,8 @@ def _parse(line: int, raw: dict[str, str]) -> Row:
 
 def read(name: str) -> list[Row]:
     """Every row of cases/<name>.csv in file order; raises ValueError (TypeError for an extra
-    that is no object) naming the line when the header is not HEADER or a row does not parse."""
+    that is no object) naming the line when the header is not HEADER or a row does not parse
+    (more or fewer fields than HEADER among them)."""
     if header(name) != HEADER:
         raise ValueError(f"{path(name)}: header is not {HEADER}")
     with path(name).open(encoding="utf-8", newline="") as f:
@@ -95,6 +98,20 @@ def write(name: str, rows: list[dict[str, Any]]) -> None:
             out.writerow({k: r.get(k, "") for k in HEADER} | {"extra": text})
 
 
+def results_path(raw: Path) -> Path:
+    """The results CSV of a run's raw json: <name>.results.csv beside it."""
+    return raw.with_name(raw.name.removesuffix(".raw.json") + ".results.csv")
+
+
+def new_run(raw: Path) -> Path:
+    """`raw` when neither it nor its results CSV exists; raises FileExistsError otherwise, so a
+    harness checks both before it writes anything."""
+    for found in (raw, results_path(raw)):
+        if found.exists():
+            raise FileExistsError(f"refusing to overwrite {found}")
+    return raw
+
+
 def write_results(
     raw: Path,
     results: list[dict[str, Any]],
@@ -104,7 +121,7 @@ def write_results(
     """The run's results CSV beside its raw json (<name>.results.csv), one row per result with
     the RESULTS columns (intent and predicted read from the named result keys); refuses to
     overwrite an earlier run's file."""
-    out = raw.with_name(raw.name.removesuffix(".raw.json") + ".results.csv")
+    out = results_path(raw)
     with out.open("x", encoding="utf-8", newline="") as f:  # "x": never overwrites
         w = csv.writer(f, lineterminator="\n")
         w.writerow(RESULTS)

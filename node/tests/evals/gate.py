@@ -82,15 +82,20 @@ def decided(r: dict[str, Any]) -> str | None:
     return ASK if r["action"] == "clarify" or r.get("missing") is not None else r["action"]
 
 
+# The harness scores of the expected action with other items, amount or inputs.
+WRONG_INPUTS = frozenset({"wrong", "wrong_items"})
+
+
 def wrong_writes(results: Iterable[dict[str, Any]], agent: str) -> list[dict[str, Any]]:
-    """The short rows whose decided action writes a row and is not the expected one (D42): the
-    short half's only assertion. Rows of the other halves are never counted."""
+    """The short rows whose decided action writes a row and is not the expected one, or is the
+    expected one with other inputs (its harness score in WRONG_INPUTS) (D42): the short half's
+    only assertion. Rows of the other halves are never counted."""
     return [
         r
         for r in results
         if r["half"] == "short"
-        and (got := decided(r)) != r["expected_action"]
-        and writes(agent, got)
+        and writes(agent, got := decided(r))
+        and (got != r["expected_action"] or r.get("score") in WRONG_INPUTS)
     ]
 
 

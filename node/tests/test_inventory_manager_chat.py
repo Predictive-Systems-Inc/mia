@@ -182,6 +182,16 @@ def test_a_waray_waste_read_as_a_count_asks_and_writes_nothing(
     assert _chat_rows(session) == []
 
 
+def test_a_cebuano_sayang_read_as_a_count_asks_and_writes_nothing(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review: "sayang" is a waste word, so a count pick on "3 sp sayang" asks the kind."""
+    _answers(monkeypatch, "report_stock", kind="count", item_0=_id(session, "Classic"))
+    reply = _turn(session, ferinos[1]["Ana"], "3 sp sayang")
+    assert reply.text() == t("clarify.rephrase", FIL)  # asks
+    assert _chat_rows(session) == []
+
+
 def test_a_left_in_stock_question_with_no_kind_reads_on_hand(
     session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

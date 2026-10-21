@@ -40,7 +40,7 @@ from mia.core.models import Actor, Branch, Person, UsageCloudRequest
 from mia.settings import get_settings
 from mia.templates.retail.models import RetailIngredient, RetailItem
 from tests.evals import gate
-from tests.evals.cases import write_results
+from tests.evals.cases import new_run, write_results
 from tests.evals.inventory_manager_cases import CASES, GATED_LANGS, Case
 
 pytestmark = pytest.mark.evals
@@ -55,9 +55,7 @@ Ferinos = tuple[Branch, dict[str, Person]]
 def _report_path(now: dt.datetime) -> Path:
     """The raw file for a run at `now` (local time); never overwrites an earlier run."""
     path = RESEARCH / f"{MANIFEST.id.replace('_', '-')}-{now:%Y-%m-%d-%H%M}.raw.json"
-    if path.exists():
-        raise FileExistsError(f"refusing to overwrite {path}")
-    return path
+    return new_run(path)  # neither the raw json nor its results CSV may exist
 
 
 def _selected(cases: list[Case], halves: str) -> list[Case]:

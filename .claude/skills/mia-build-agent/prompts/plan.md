@@ -23,8 +23,8 @@ name is not done.
 6. Due work: windows, markers with sends, urgent flags, per-branch commits. Tests:
    `test_<id>_due.py` with clocks across midnight.
 7. Ten languages: every key through the coverage test, placeholders, assert through `t(...)`.
-8. Evals and docs: seeds per gated language in `node/tests/evals/router_cases.py`, `PENDING` emptied, both gates
-   at the Q40 bar on fresh halves, the reports, README, layout, ADR, questions.
+8. Evals and docs: seeds per gated language in `node/tests/evals/cases/router.csv`, `PENDING`
+   (in `node/tests/evals/router_cases.py`) emptied, both gates at the Q40 bar on fresh halves, the reports, README, layout, ADR, questions.
 
 ## Self-review
 Every Review Focus line has a task and a test; every spec scenario has a test; no placeholder

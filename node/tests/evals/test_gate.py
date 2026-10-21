@@ -66,6 +66,20 @@ def test_a_wrong_write_is_a_short_rows_writing_action_other_than_the_expected() 
     assert not wrong_writes([gated], "bookkeeper")  # a gate row never counts
 
 
+def test_a_writing_action_with_wrong_inputs_is_a_wrong_write() -> None:
+    """The expected action with other items or another amount writes the wrong row (D42)."""
+    row = {"half": "short", "error": None, "missing": None}
+    sold = row | {"expected_action": "report_sales", "action": "report_sales"}
+    assert wrong_writes([sold | {"score": "wrong_items"}], "sales_supervisor") == [
+        sold | {"score": "wrong_items"}
+    ]
+    counted = row | {"expected_action": "cash_count", "action": "cash_count"}
+    assert wrong_writes([counted | {"score": "wrong"}], "bookkeeper")  # another amount
+    assert not wrong_writes([counted | {"score": "right"}], "bookkeeper")
+    asked = row | {"expected_action": "balances", "action": "balances", "score": "wrong"}
+    assert not wrong_writes([asked], "bookkeeper")  # wrong inputs, no write
+
+
 def test_a_runs_results_csv_sits_beside_its_raw_file_and_never_overwrites(tmp_path: Path) -> None:
     raw = tmp_path / "bookkeeper-2026-10-21-0905.raw.json"
     row = {"text": "cash 12450", "lang": "en", "half": "short", "expected_action": "ask"}
@@ -76,3 +90,43 @@ def test_a_runs_results_csv_sits_beside_its_raw_file_and_never_overwrites(tmp_pa
     assert lines == [",".join(RESULTS), "cash 12450,en,short,ask,cash_count,0.9,wrong,"]
     with pytest.raises(FileExistsError):
         results_csv(raw, [row])
+
+
+def test_a_new_run_refuses_when_its_raw_file_or_results_csv_exists(tmp_path: Path) -> None:
+    from tests.evals.cases import new_run
+
+    raw = tmp_path / "bookkeeper-2026-10-21-0905.raw.json"
+    assert new_run(raw) == raw
+    raw.with_name("bookkeeper-2026-10-21-0905.results.csv").write_text("x", encoding="utf-8")
+    with pytest.raises(FileExistsError):
+        new_run(raw)  # before anything is written
+    assert not raw.exists()
+
+
+def _csv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str) -> None:
+    from tests.evals import cases
+
+    monkeypatch.setattr(cases, "FOLDER", tmp_path)
+    (tmp_path / "x.csv").write_text(text, encoding="utf-8")
+
+
+def test_a_cases_csv_with_a_bad_header_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.evals.cases import HEADER, read
+
+    _csv(tmp_path, monkeypatch, ",".join(HEADER[:-1]) + "\n")
+    with pytest.raises(ValueError, match="header"):
+        read("x")
+
+
+@pytest.mark.parametrize("cells", [17, 15])  # an extra field, a missing field
+def test_a_cases_row_with_extra_or_missing_fields_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cells: int
+) -> None:
+    from tests.evals.cases import HEADER, read
+
+    row = ["ask", "cash", "en", "short"] + [""] * (cells - 4)
+    _csv(tmp_path, monkeypatch, ",".join(HEADER) + "\n" + ",".join(row) + "\n")
+    with pytest.raises(ValueError, match="line 2: 16 fields"):
+        read("x")

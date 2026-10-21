@@ -3,7 +3,7 @@ import datetime as dt
 from typing import Any
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from mia.agents.decider import DecideError, Reader
 from mia.agents.parsing import menu_tokens, pre_parse, was_corrected
@@ -291,6 +291,30 @@ def test_action_instructions_say_who_texts_and_carry_no_message_text(
         assert "Filipino" in question["instructions"]
 
 
+@pytest.mark.parametrize("mode", ["choice", "nouls"])
+def test_action_instructions_name_the_organisation_of_the_request(
+    monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    monkeypatch.setenv("MIA_SALES_QUESTION", mode)
+    get_settings.cache_clear()
+    q = dataclasses.replace(query("3 sp"), org="Acme Bakes")
+    questions = build_request(q, "m")["questions"].items()
+    asks = [v for k, v in questions if k == "action" or k.startswith("is_")]
+    assert asks
+    for question in asks:
+        assert "Acme Bakes" in question["instructions"]
+        assert "Ferino" not in question["instructions"]
+
+
+def test_build_query_reads_the_organisation_name(
+    session: Session, ferinos: tuple[Branch, dict[str, Person]]
+) -> None:
+    from mia.core.models import Organisation
+
+    q = build_query(deps_for(session, ferinos[1]["Ana"]), "3 sp", "")
+    assert q.org == session.exec(select(Organisation)).one().name
+
+
 def test_nouls_ask_a_yes_or_no_per_action_and_keep_the_slot_questions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -343,3 +367,15 @@ def test_nouls_keep_the_correction_by_rule() -> None:
 def test_a_missing_noul_is_a_decide_error() -> None:
     with pytest.raises(DecideError):
         _parse({"is_report_sales": {"noul": 0.9}}, query("3 sp"))
+
+
+def test_nouls_ask_when_the_runner_up_yes_is_close() -> None:
+    """The review: one yes at 0.95 and a runner-up at 0.59 is not sure enough to write."""
+    d = _noul_parsed("3 sp", report_sales=0.95, sales_today=0.59)
+    assert d.action == "clarify"
+    assert [a.action for a in d.alternatives] == ["report_sales", "sales_today"]
+
+
+def test_nouls_write_when_the_runner_up_yes_is_below_the_margin() -> None:
+    d = _noul_parsed("3 sp", report_sales=0.95, sales_today=0.39)
+    assert d.action == "report_sales"

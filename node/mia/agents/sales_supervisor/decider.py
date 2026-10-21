@@ -134,11 +134,15 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     return {}, None  # clarify
 
 
+RUNNER_UP = 0.4  # a second yes at or above this beside one confident yes asks instead of writing
+
+
 def _from_nouls(answers: dict[str, Any]) -> dict[str, Any]:
     """The answers with the `is_<action>` yes probabilities turned into the one `action`
     answer the shared parse reads (MIA_SALES_QUESTION=nouls). One yes at or above THRESHOLD
-    with every other below is that action; two or more at or above are clarify with only
-    those as alternatives (the Did you mean buttons); none at or above is the top yes at its
+    with every other below RUNNER_UP is that action; two or more at or above THRESHOLD, or one
+    with a runner-up at or above RUNNER_UP, are clarify with only those as alternatives (the
+    Did you mean buttons); none at or above is the top yes at its
     own probability, which the shared parse turns into clarify as for a choice. Answers that
     already carry `action` (the choice question) pass unchanged."""
     if "action" in answers:
@@ -149,6 +153,8 @@ def _from_nouls(answers: dict[str, Any]) -> dict[str, Any]:
         raise DecideError(f"unexpected answer: {exc!r}") from exc
     ranked = sorted(yes, key=lambda name: -yes[name])
     confident = [name for name in ranked if yes[name] >= THRESHOLD]
+    if len(confident) == 1 and len(ranked) > 1 and yes[ranked[1]] >= RUNNER_UP:
+        confident = ranked[:2]
     if len(confident) > 1:
         top = {
             "choice": "clarify",

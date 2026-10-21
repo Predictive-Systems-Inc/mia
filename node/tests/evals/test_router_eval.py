@@ -34,7 +34,7 @@ from mia.core.db import utcnow
 from mia.core.egress import EgressContext, egress_context
 from mia.core.models import Actor, Branch, Event, Person, UsageCloudRequest
 from mia.settings import get_settings
-from tests.evals.cases import write_results
+from tests.evals.cases import new_run, write_results
 from tests.evals.gate import gate_failures
 from tests.evals.router_cases import CASES, GATED_LANGS, Case
 
@@ -51,9 +51,7 @@ def _report_path(now: dt.datetime, folder: Path = RESEARCH) -> Path:
     """The raw file for a run at `now` (local time), router-<date>-<HHMM>.raw.json; raises
     FileExistsError when it exists, so a run never overwrites an earlier one."""
     path = folder / f"router-{now:%Y-%m-%d-%H%M}.raw.json"
-    if path.exists():
-        raise FileExistsError(f"refusing to overwrite {path}")
-    return path
+    return new_run(path)  # neither the raw json nor its results CSV may exist
 
 
 def _selected(cases: list[Case], halves: str = "tune,gate") -> list[Case]:

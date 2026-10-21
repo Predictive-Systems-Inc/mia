@@ -153,9 +153,9 @@ REFILL_WORDS = frozenset([
     "refill", "refilled", "replenish", "replenished", "topup", "top-up", "täydennys",
     "täydensin", "täydennä",
     "dagdag", "dagdagan", "nagdagdag", "idinagdag", "dinagdagan", "lagay", "nilagay",
-    "naglagay", "nilagyan", "punan", "pinunan", "pinunuan", "punuin", "pinuno",
+    "naglagay", "nilagyan", "punan", "pinunan", "pinunuan", "punuin", "puno", "pinuno",
     "dugang", "gidugang", "gidugangan", "dugangi", "nagdugang", "gindugang", "gindugangan",
-    "ginpuno", "gipuno", "gipun-an", "punuon", "pun-an", "napuno", "gibutang",
+    "ginpuno", "gipuno", "gipun-an", "punuon", "pun-an", "napuno", "butang", "gibutang",
     "gibutangan", "ginbutang", "ginbutangan", "inayonan", "nanayonan", "innayon",
 ])  # fmt: skip
 

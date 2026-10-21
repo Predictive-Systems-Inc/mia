@@ -314,6 +314,18 @@ def test_a_filipino_refill_read_as_a_spend_asks_and_writes_nothing(
     assert session.exec(select(Deposit).where(Deposit.amount == 350_000)).all() == []
 
 
+def test_a_puno_refill_read_as_a_spend_asks_and_writes_nothing(
+    session: Session, bk: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review: "puno" is a refill word, so a spend pick asks the kind."""
+    marites = bk[1]["Marites"]
+    _answers(monkeypatch, "petty_cash", amount="p0", petty="spend", category="supplies")
+    reply = _turn(session, marites, "puno sa petty cash ₱3,500")
+    assert reply.text().startswith(t("bk.petty.ask_kind", "fil"))
+    assert session.exec(select(Expense).where(Expense.amount == 350_000)).all() == []
+    assert session.exec(select(Deposit).where(Deposit.amount == 350_000)).all() == []
+
+
 def test_a_waray_pagsira_count_read_as_an_expense_asks_and_writes_nothing(
     session: Session, bk: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -38,7 +38,7 @@ from mia.settings import get_settings
 from mia.templates.retail.models import RetailItem
 from tests.conftest import PP_TOMORROW, Shop
 from tests.evals import gate
-from tests.evals.cases import write_results
+from tests.evals.cases import new_run, write_results
 from tests.evals.production_planner_cases import CASES, GATED_LANGS, TODAY, Case
 
 pytestmark = pytest.mark.evals
@@ -52,9 +52,7 @@ SENDERS = {"head": "Nonoy", "owner": "Rosa", "driver": "Berto", "kiosk": "Marite
 def _report_path(now: dt.datetime, folder: Path = RESEARCH) -> Path:
     """The raw file for a run at `now` (local time); never overwrites an earlier run."""
     path = folder / f"{MANIFEST.id.replace('_', '-')}-{now:%Y-%m-%d-%H%M}.raw.json"
-    if path.exists():
-        raise FileExistsError(f"refusing to overwrite {path}")
-    return path
+    return new_run(path)  # neither the raw json nor its results CSV may exist
 
 
 def _selected(cases: list[Case], halves: str) -> list[Case]:

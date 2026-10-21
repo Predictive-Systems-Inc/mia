@@ -101,10 +101,13 @@ def _late(q: Query) -> bool:
 def _named_days(q: Query) -> set[str]:
     """The ISO days the message names: parsing.find_dates in the sender's language, plus an
     English pass for the month names (an English "May 5" from a fil sender) on the text without
-    its clock times, so fil "may 3 pm" ("there is", 3 pm) is never May 3."""
+    its clock times, so fil "may 3 pm" ("there is", 3 pm) is never May 3. The English pass keeps
+    only days from today on: fil "sarado may 3" is never a past 3 May (a close_day button); the
+    sender's own pass keeps past days ("kasuhapon" is yesterday, asked as an off day)."""
     days = find_dates(q.message, q.today, q.lang)
     if q.lang != "en":
-        days += find_dates(strip_times(q.message), q.today, "en")
+        english = find_dates(strip_times(q.message), q.today, "en")
+        days += [(i, d) for i, d in english if d >= q.today]
     return {d.isoformat() for _, d in days}
 
 

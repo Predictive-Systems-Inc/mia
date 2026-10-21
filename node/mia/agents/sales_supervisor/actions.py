@@ -27,6 +27,7 @@ from mia.agents.parsing import (
     was_corrected,
 )
 from mia.agents.sales_supervisor import MANIFEST
+from mia.core.models import Organisation
 from mia.i18n import t
 from mia.settings import get_settings
 from mia.templates.retail import hours as retail_hours
@@ -159,6 +160,7 @@ class Query:
     previous_id: str | None = None  # Mia's previous message, kept when it is the why question
     tender: str | None = None  # the one tender the message names (parsing.find_tender)
     tenders: list[str] = field(default_factory=list)  # every tender named (parsing.tenders_in)
+    org: str = "the shops"  # the organisation's name, for the sender phrase (who)
 
 
 def _periods(lang: str) -> dict[str, str]:
@@ -277,14 +279,19 @@ def build_query(
         previous_id=previous_id if why_asked else None,
         tender=find_tender(message),
         tenders=tenders_in(message),
+        org=org.name if (org := session.get(Organisation, deps.organisation_id)) else "the shops",
     )
 
 
-# Who texts and how (D42): the action question is WHO's question plus SHAPE, three sentences.
-WHO = (
-    "the sender (Ferino's clerk, supervisor or owner, as `sender_role` says; `previous_mia_message`"
-    " is what it may answer)"
-)
+# Who texts and how (D42): the action question is who's question plus SHAPE, three sentences.
+def who(org: str) -> str:
+    """The sender phrase, naming the organisation read at request time (never a message)."""
+    return (
+        f"the sender (a clerk, supervisor or owner at {org}, as `sender_role` says;"
+        " `previous_mia_message` is what it may answer)"
+    )
+
+
 SHAPE = (
     "`message` is a short phone text in English, Filipino or both mixed, often lowercase and"
     " abbreviated, with digits for numbers, item short codes and words like na lang, po or pa."
@@ -296,20 +303,21 @@ def _choice(instructions: str, options: dict[str, str]) -> dict[str, Any]:
     return {"type": "choice", "instructions": instructions, "criteria": options}
 
 
-def _action_questions() -> dict[str, Any]:
+def _action_questions(org: str) -> dict[str, Any]:
     """The action question: one choice over ACTIONS, or under MIA_SALES_QUESTION=nouls one
     yes-or-no `is_<action>` per NOULS entry, all in the same request."""
     if get_settings().MIA_SALES_QUESTION == "choice":
         return {
             "action": _choice(
-                f"Which one action does {WHO} want from Mia, the shops' sales supervisor? {SHAPE}",
+                f"Which one action does {who(org)} want from Mia, the shops' sales supervisor?"
+                f" {SHAPE}",
                 {name: a.description for name, a in ACTIONS.items()},
             )
         }
     return {
         f"is_{name}": {
             "type": "noul",
-            "instructions": f"{ask.format(who=WHO)} {SHAPE}",
+            "instructions": f"{ask.format(who=who(org))} {SHAPE}",
             "criteria": {"true": ACTIONS[name].description, "false": "No, something else."},
         }
         for name, ask in NOULS.items()
@@ -329,7 +337,7 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
         "total": q.total,
     }
     questions: dict[str, Any] = {
-        **_action_questions(),
+        **_action_questions(q.org),
         "period": _choice(
             "Which period of sales does the sender ask about, or which day is a count for?"
             " Not stated when the message names no period or day (a plain count).",
