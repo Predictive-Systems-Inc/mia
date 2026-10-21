@@ -164,6 +164,21 @@ def test_petty_cash_without_a_kind_asks(session: Session, bk: Ferinos) -> None:
     )
 
 
+def test_a_petty_pick_against_the_messages_word_asks(session: Session, bk: Ferinos) -> None:
+    """Rule 7: a refill word over a spend pick, or a spend word over a refill pick, asks."""
+    for text, picked in [
+        ("pinunan ko ang petty cash, 3,500", "spend"),
+        ("ni-refill ko ang petty 500", "spend"),
+        ("gidugangan nako ang petty 500", "spend"),
+        ("top up petty 500", "spend"),
+        ("petty 500 para sa yelo", "refill"),
+    ]:
+        q = query(session, bk[1]["Marites"], text)
+        args, missing = decider._args("petty_cash", reader(q, amount="p0", petty=picked))
+        assert (args["kind"], missing) == (None, "kind"), text
+    assert words.says_refill("dinagdagan ang petty") and not words.says_refill("para sa yelo")
+
+
 def test_an_opening_negation_corrects_only_with_an_amount() -> None:
     assert words.corrected("wag, 2,500 pala", "fil")
     assert not words.corrected("no cash count yet", "en")

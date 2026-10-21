@@ -1,6 +1,7 @@
 """Ask Jev which inventory manager action a message wants and with which inputs (see
 mia.agents.decider). decide() runs no tool."""
 
+import re
 from functools import partial
 from typing import Any
 
@@ -66,6 +67,22 @@ def _event(
 
 ON_HAND = "on_hand"
 ASKS = ("count", "leftover")  # these kinds with no number ask how many are left
+# Rule 7: the words that say stock was thrown away or lost, across the languages (machine
+# drafts beyond en and fil, Q28 to Q35). With one, any kind but waste asks the kind: a waste is
+# never recorded as a count. Whole words only ("pagsira", the closing, is not "sira").
+WASTE_WORDS = frozenset({
+    "waste", "wasted", "trash", "garbage", "threw", "thrown", "throw", "dropped", "spoiled",
+    "expired", "burnt", "burned",
+    "tapon", "itapon", "tinapon", "itinapon", "natapon", "basura", "basurahan", "sira",
+    "nasira", "sayang", "nasayang", "panis", "napanis", "sunog", "nasunog", "nahulog",
+    "labay", "ilabay", "gilabay", "gilabayan", "nausik", "usik", "napanos", "panos",
+    "haboy", "ihaboy", "ginhaboy", "ginpanhaboy", "labog", "ilabog", "ginlabog", "ginlabugan",
+    "pinanlabog",
+})  # fmt: skip
+
+
+def _says_waste(text: str) -> bool:
+    return any(w in WASTE_WORDS for w in re.findall(r"\w+", text.casefold()))
 
 
 def _report(r: Reader) -> tuple[dict[str, Any], str | None]:
@@ -73,10 +90,14 @@ def _report(r: Reader) -> tuple[dict[str, Any], str | None]:
     count (no correction action in v1). A count or leftover with no number is the question
     how many are left: the event of the item, marked ON_HAND (the turn runs on_hand). An unsure reason is not stated (it does not count
     toward the confidence), so a waste asks for it with the reason buttons; a waste with no
-    number is missing its quantity."""
+    number is missing its quantity. No kind and no number is the on_hand question too, unless a
+    WASTE_WORDS word is said; with one, any kind but waste asks the kind (rule 7)."""
     q: Query = r.q
     kind = r.pick("kind", set(KINDS))
     reason = r.pick("reason", set(REASONS), fallback=True) if kind == "waste" else None
+    waste_said = _says_waste(q.message)
+    if waste_said and kind != "waste" and (kind is not None or q.groups):
+        return {"events": []}, "kind"  # "4 nga classic ginlabog" is never a count of 4
     events: list[dict[str, Any]] = []
     if q.groups:
         for i, g in enumerate(q.groups):
@@ -88,10 +109,10 @@ def _report(r: Reader) -> tuple[dict[str, Any], str | None]:
         ref = r.pick("item", set(q.items), fallback=True)
         if ref is None:
             return {"events": []}, "item"
-        if kind is None:
+        if kind is None and waste_said:
             return {"events": []}, "kind"
-        if kind in ASKS:  # no number: "how many are left", never a count of nothing
-            return _event(r, kind, ref, None, None) | {ON_HAND: True}, None
+        if kind is None or kind in ASKS:  # no number: "how many are left", a read, never a write
+            return _event(r, kind or "count", ref, None, None) | {ON_HAND: True}, None
         if kind == "waste":  # no number: ask how many, never a waste of nothing (rule 7)
             return {"events": [_event(r, kind, ref, None, reason)]}, "quantity"
         events.append(_event(r, kind, ref, None, reason))

@@ -302,6 +302,32 @@ def test_petty_cash_without_its_kind_asks_with_buttons(
     assert refill.bank == tools.PETTY
 
 
+def test_a_filipino_refill_read_as_a_spend_asks_and_writes_nothing(
+    session: Session, bk: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fresh gate row (2048): "pinunan" is a refill word, so a spend pick asks the kind."""
+    marites = bk[1]["Marites"]
+    _answers(monkeypatch, "petty_cash", amount="p0", petty="spend", category="supplies")
+    reply = _turn(session, marites, "pinunan ko ang petty cash, ₱3,500")
+    assert reply.text().startswith(t("bk.petty.ask_kind", "fil"))
+    assert session.exec(select(Expense).where(Expense.amount == 350_000)).all() == []
+    assert session.exec(select(Deposit).where(Deposit.amount == 350_000)).all() == []
+
+
+def test_a_waray_pagsira_count_read_as_an_expense_asks_and_writes_nothing(
+    session: Session, bk: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mia.core import people
+
+    marites = people.set_language(session, Actor.system(bk[0].id), bk[1]["Marites"], "war")
+    session.commit()
+    _answers(monkeypatch, "expense", amount="p0", category="repairs")
+    reply = _turn(session, marites, "sulod han kaha han pagsira ₱8,065.50")
+    assert _quick(reply).options  # cash count or expense, asked
+    assert session.exec(select(Expense).where(Expense.amount == 806_550)).all() == []
+    assert session.exec(select(CashCount).where(CashCount.counted == 806_550)).all() == []
+
+
 def test_a_deposit_lowers_undeposited_cash(
     session: Session, bk_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

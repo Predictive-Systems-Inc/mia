@@ -163,6 +163,25 @@ def test_find_dates_month_names_iso_and_day_words() -> None:
     ]
 
 
+def test_find_dates_yesterday_and_the_day_before_in_every_language() -> None:
+    yesterday, before = dt.date(2026, 10, 18), dt.date(2026, 10, 17)
+    for text, lang in [
+        ("yesterday", "en"),
+        ("eilen", "fi"),
+        ("kahapon", "fil"),
+        ("gahapon", "ceb"),
+        ("kagahapon", "ceb"),
+        ("kahapon", "hil"),
+        ("kakulop", "war"),
+        ("kasuhapon dai ako naka-check out", "bcl"),
+        ("idi kalman", "ilo"),
+    ]:
+        assert find_dates(text, MONDAY, lang) == [("d0", yesterday)], (text, lang)
+    assert find_dates("the day before yesterday", MONDAY, "en") == [("d0", before)]
+    assert find_dates("kamakalawa", MONDAY, "fil") == [("d0", before)]
+    assert find_dates("toissapäivänä", MONDAY, "fi") == [("d0", before)]
+
+
 def test_find_dates_never_a_bare_number() -> None:
     assert find_dates("3 special 5 classic", MONDAY, "en") == []
     assert find_dates("may 3 special po", MONDAY, "fil") == []

@@ -162,6 +162,43 @@ def test_how_many_are_left_answers_the_count_in_filipino(
     assert all(r.quantity is not None for r in session.exec(asked_rows).all())
 
 
+def _chat_rows(session: Session) -> list[StockEvent]:
+    stmt = select(StockEvent).where(col(StockEvent.source_message_id).is_not(None))
+    return list(session.exec(stmt).all())
+
+
+def test_a_waray_waste_read_as_a_count_asks_and_writes_nothing(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fresh gate row (2052): "ginlabog" is a waste word, so a count pick asks the kind."""
+    from mia.core import people as people_service
+
+    branch, people = ferinos
+    ana = people_service.set_language(session, Actor.system(branch.id), people["Ana"], "war")
+    session.commit()
+    _answers(monkeypatch, "report_stock", kind="count", item_0=_id(session, "Classic"))
+    _turn(session, ana, "4 nga classic ginlabog")
+    assert _chat_rows(session) == []
+
+
+def test_a_left_in_stock_question_with_no_kind_reads_on_hand(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reviewers' note (2052): Jev picked report_stock at 0.95 with no kind; with no number
+    and no waste word that is the on_hand question, a read."""
+    from mia.core import people as people_service
+
+    branch, people = ferinos
+    rosa = people_service.set_language(session, Actor.system(branch.id), people["Rosa"], "en")
+    session.commit()
+    _answers(monkeypatch, "report_stock", item=_id(session, "Rice flour"))
+    reply = _turn(session, rosa, "how much rice flour is left in stock")
+    kiosk = session.get(Branch, rosa.branch_id)
+    assert kiosk is not None
+    assert reply.text() == t("stock.not_counted", "en", item="Rice flour", branch=kiosk.name)
+    assert _chat_rows(session) == []
+
+
 def test_leftovers_are_echoed(
     session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

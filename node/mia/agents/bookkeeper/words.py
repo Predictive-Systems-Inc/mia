@@ -117,9 +117,9 @@ def corrected(text: str, lang: str) -> bool:
     return _drop_negated(text)[1] or (opens and bool(amounts(text, lang)))
 
 
-# The words that name a closing cash count, per language (the default for any other). In ceb
-# and hil "pagsira" and "sirado" are the closing; in fil "pagsira" means breaking, so it is not
-# one there.
+# The words that name a closing cash count, per language (the default for any other). In ceb,
+# hil and war "pagsira" and "sirado" are the closing; in fil "pagsira" means breaking, so it is
+# not one there, "pagsara" is (also in bcl).
 _COUNT_COMMON = frozenset(
     [
         "cash count",
@@ -133,6 +133,9 @@ _COUNT_COMMON = frozenset(
 COUNT_WORDS: dict[str, frozenset[str]] = {
     "ceb": _COUNT_COMMON | {"pagsira", "sirado"},
     "hil": _COUNT_COMMON | {"pagsira", "sirado"},
+    "war": _COUNT_COMMON | {"pagsira", "sirado"},
+    "fil": _COUNT_COMMON | {"pagsara"},
+    "bcl": _COUNT_COMMON | {"pagsara"},
 }
 
 
@@ -144,13 +147,38 @@ def says_count(text: str, lang: str) -> bool:
     )
 
 
-REFILL_WORDS = frozenset(["refill", "replenish", "dagdag", "lagay", "nilagay", "punan"])
+# The words that put money into petty cash, across the ten languages (machine drafts beyond en
+# and fil, Q28 to Q35). A word holding "refill" counts too (ni-refill, nag-refill, gi-refill).
+REFILL_WORDS = frozenset([
+    "refill", "refilled", "replenish", "replenished", "topup", "top-up", "täydennys",
+    "täydensin", "täydennä",
+    "dagdag", "dagdagan", "nagdagdag", "idinagdag", "dinagdagan", "lagay", "nilagay",
+    "naglagay", "nilagyan", "punan", "pinunan", "pinunuan", "punuin", "pinuno", "puno",
+    "dugang", "gidugang", "gidugangan", "dugangi", "nagdugang", "gindugang", "gindugangan",
+    "ginpuno", "gipuno", "gipun-an", "punuon", "pun-an", "napuno", "butang", "gibutang",
+    "gibutangan", "ginbutang", "ginbutangan", "inayonan", "nanayonan", "innayon",
+])  # fmt: skip
+
+
+def _said(text: str) -> set[str]:
+    return {w.strip(".,!?;:").casefold() for w in text.split()}
+
+
+def says_refill(text: str) -> bool:
+    """True when a word of the text is a REFILL_WORDS word or holds "refill", or the text says
+    "top up"."""
+    said = _said(text)
+    return (
+        bool(said & REFILL_WORDS)
+        or any("refill" in w for w in said)
+        or ("top up" in " ".join(text.casefold().split()))
+    )
 
 
 def says_spend(text: str) -> bool:
-    """True when a word of the text is a SPEND_WORDS word and none is a REFILL_WORDS word."""
-    said = {w.strip(".,!?;:").casefold() for w in text.split()}
-    return bool(said & SPEND_WORDS) and not said & REFILL_WORDS
+    """True when a word of the text is a SPEND_WORDS word and the text says no refill
+    (says_refill)."""
+    return bool(_said(text) & SPEND_WORDS) and not says_refill(text)
 
 
 def banks_in(text: str) -> list[str]:

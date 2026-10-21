@@ -276,6 +276,117 @@ def test_a_check_out_with_an_unlikely_correction_asks(
     assert not session.exec(select(Timesheet).where(Timesheet.date == RS_TODAY)).all()
 
 
+def _speaking(session: Session, person: Person, lang: str) -> Person:
+    from mia.core import people
+
+    person = people.set_language(session, Actor.system(person.branch_id), person, lang)
+    session.commit()
+    return person
+
+
+def _closures(session: Session) -> list[Any]:
+    from mia.templates.retail.models import RetailClosure
+
+    return list(session.exec(select(RetailClosure).where(RetailClosure.date != NOV_1)).all())
+
+
+def test_a_closure_read_as_an_absence_closes_the_day_for_head_staff_in_filipino(
+    session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fresh gate rows (2056): "sarado sa Nobyembre 6" is the kiosk's closure, never the
+    sender's absence; a supervisor's runs close_day."""
+    marites = rs[1]["Marites"]
+    _answers(monkeypatch, "record_absence", date="2026-11-06", reason="other")
+    _turn(session, marites, "sarado sa Nobyembre 6, may company outing")
+    assert not session.exec(select(Absence).where(Absence.person_id == marites.id)).all()
+    assert [c.date for c in _closures(session)] == [dt.date(2026, 11, 6)]
+
+
+@pytest.mark.parametrize(
+    ("lang", "text"),
+    [
+        ("hil", "sarado sa Nobyembre 6, may company outing kami"),
+        ("bcl", "sarado sa Nobyembre 6, may company outing kami tabi"),
+    ],
+)
+def test_a_clerks_closure_read_as_an_absence_asks(
+    session: Session,
+    rs: Ferinos,
+    jev_on: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    lang: str,
+    text: str,
+) -> None:
+    ana = _speaking(session, rs[1]["Ana"], lang)
+    _answers(monkeypatch, "record_absence", date="2026-11-06", reason="other")
+    _turn(session, ana, text)
+    assert not session.exec(select(Absence).where(Absence.person_id == ana.id)).all()
+    assert _closures(session) == [] and not _tool_calls(session)
+
+
+def test_a_waray_closure_read_as_an_incident_is_no_incident(
+    session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    rs_pin(at(RS_TODAY, 14))
+    marites = _speaking(session, rs[1]["Marites"], "war")
+    n = len(session.exec(select(Incident)).all())
+    _answers(monkeypatch, "report_site_problem", problem_kind="equipment")
+    _turn(session, marites, "waray abri ha Biyernes, may brownout an mall")
+    assert len(session.exec(select(Incident)).all()) == n
+    assert [c.date for c in _closures(session)] == [dt.date(2026, 10, 30)]  # Friday, close_day
+
+
+@pytest.mark.parametrize(
+    ("lang", "text"),
+    [
+        ("hil", "indi ako kaabot sa opening, 11 na ako maabot"),
+        ("war", "diri ako umabot ha opening, 11 na ako maabot"),
+        ("en", "running late, there by 10:30am"),
+    ],
+)
+def test_a_late_notice_read_as_a_check_in_never_checks_in(
+    session: Session,
+    rs: Ferinos,
+    jev_on: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    rs_pin: Pin,
+    lang: str,
+    text: str,
+) -> None:
+    ana = _speaking(session, rs[1]["Ana"], lang)
+    rs_pin(at(RS_TODAY, 8, 50))
+    _answers(monkeypatch, "check_in")
+    _turn(session, ana, text)
+    assert visit_of(session, ana, RS_TODAY).actual_start is None and not _tool_calls(session)
+
+
+def test_a_late_notice_on_the_wrong_day_asks_in_hiligaynon(
+    session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    """ "subong" is today: an absence Jev put on tomorrow asks the date."""
+    ana = _speaking(session, rs[1]["Ana"], "hil")
+    rs_pin(at(RS_TODAY, 8, 30))
+    tomorrow = (RS_TODAY + dt.timedelta(days=1)).isoformat()
+    _answers(monkeypatch, "record_absence", date=tomorrow, reason="late")
+    _turn(session, ana, "sorry, isa ka oras ako ma-late subong")
+    assert not session.exec(select(Absence).where(Absence.person_id == ana.id)).all()
+
+
+def test_a_bikol_yesterday_correction_on_today_asks(
+    session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    """ "kasuhapon" is yesterday: a correction Jev put on today asks the date, writes nothing."""
+    ana = _speaking(session, rs[1]["Ana"], "bcl")
+    rs_pin(at(RS_TODAY, 9, 1))
+    tools.check_in(deps_for(session, ana), CheckInInput(), "c")
+    session.commit()
+    rs_pin(at(RS_TODAY, 22))
+    _answers(monkeypatch, "correct_time", time="t0", date=RS_TODAY.isoformat())
+    _turn(session, ana, "kasuhapon dai ako naka-check out, naghali ako nin 9pm")
+    assert not session.exec(select(Timesheet).where(Timesheet.date == RS_TODAY)).all()
+    assert visit_of(session, ana, RS_TODAY).actual_end is None
+
+
 def test_a_cover_ask_with_an_unread_date_asks(
     session: Session, rs_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

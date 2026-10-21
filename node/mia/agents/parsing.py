@@ -280,11 +280,16 @@ FI_WEEKDAYS_ESSIVE = [
     "sunnuntaina",
 ]  # fmt: skip
 
-# Today: hil "subong", war "yana", bcl "ngunyan"; tomorrow: hil and war "buwas", bcl "sa aga".
+# Today: hil "subong", war "yana", bcl "ngunyan"; tomorrow: hil and war "buwas", bcl "sa aga";
+# yesterday: fil and hil "kahapon", ceb "gahapon", war "kakulop", bcl "kasuhapon", ilo "idi
+# kalman"; the day before: fil "kamakalawa". Regional forms are machine drafts (Q28 to Q35).
 DAY_WORDS = {
     "today": 0, "tänään": 0, "ngayon": 0, "karon": 0, "subong": 0, "yana": 0, "ngunyan": 0,
     "ngonyan": 0,
     "tomorrow": 1, "huomenna": 1, "bukas": 1, "ugma": 1, "buwas": 1, "sa aga": 1,
+    "yesterday": -1, "eilen": -1, "kahapon": -1, "gahapon": -1, "kagahapon": -1,
+    "kakulop": -1, "kasuhapon": -1, "idi kalman": -1,
+    "day before yesterday": -2, "toissapäivänä": -2, "kamakalawa": -2,
 }  # fmt: skip
 # ceb "sunod semana", hil "masunod nga semana", war "sunod nga semana", bcl "sunod na semana".
 NEXT_WEEK = (
@@ -346,7 +351,8 @@ def _after(weekday: int, anchor: dt.date) -> dt.date:
 
 def find_dates(text: str, today: dt.date, lang: str) -> list[tuple[str, dt.date]]:
     """Dates in the message in text order as (id "d0", "d1", ..., date). Pure. Finds the
-    today and tomorrow words (en, fi, fil, ceb, hil, war, bcl), weekday names (en, fi, fil,
+    today, tomorrow, yesterday and day-before words (DAY_WORDS: en, fi, fil, ceb, hil, war,
+    bcl, ilo), weekday names (en, fi, fil,
     ceb, hil, war, bcl: the next such day after today, or after the date before it in the
     message, so "next week Monday to Wednesday" is one week), "next week <weekday>" and
     "<weekday> next week"

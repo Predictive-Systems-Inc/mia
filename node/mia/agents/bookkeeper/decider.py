@@ -86,6 +86,12 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     if action == "petty_cash":
         amount = _amount(r)
         kind = r.pick("petty", set(PETTY)) or ("spend" if words.says_spend(q.message) else None)
+        # rule 7: a refill word against a spend pick, or a spend word against a refill pick,
+        # asks the kind ("pinunan ko ang petty cash, 3,500" is never a spend)
+        if (kind == "spend" and words.says_refill(q.message)) or (
+            kind == "refill" and words.says_spend(q.message)
+        ):
+            kind = None
         args = {
             "kind": kind,
             "amount": amount,

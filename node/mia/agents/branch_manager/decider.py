@@ -8,6 +8,18 @@ from typing import Any
 from mia.agents import decider as shared
 from mia.agents.branch_manager.actions import ACTIONS, CONVERSATION, KINDS, Query, build_request
 from mia.agents.decider import NOT_STATED, Decision, Reader
+from mia.core.people import HUMAN_ROLES
+
+# Rule 7: a role word or a common shop noun is never a short code ("bf na ang i-type sang clerk
+# para sa Box of 4" names bf, never clerk). A picked candidate in this list asks for the code.
+# ponytail: a fixed list beside actions.NOT_CODES; fold the two together if they keep growing.
+ROLE_WORDS = frozenset({
+    *HUMAN_ROLES, "cashier", "crew", "kiosk", "stall", "branch", "mall", "shop", "store",
+    "boss", "amo", "bantay", "tindera", "tindero", "helper", "baker", "rider", "driver",
+    "buyer", "client", "guest", "user", "mia", "menu", "price", "presyo", "team", "worker",
+    "lahat", "tanan", "sila", "kami", "tayo", "kita", "namon", "aton", "subong", "ngayon",
+    "karon", "yana", "ngunyan", "umpisa", "simula", "itype",
+})  # fmt: skip
 
 
 def _pick(r: Reader, slot: str, options: dict[str, Any]) -> str | None:
@@ -59,6 +71,8 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         return {"item_id": item}, None if item else "item"
     if action == "set_short_code":
         item, code = _pick(r, "item", q.items), _pick(r, "code", q.codes)
+        if code and q.codes[code].casefold() in ROLE_WORDS:
+            code = None  # a role or common word: ask for the code
         args = {"item_id": item, "code": q.codes[code] if code else None}
         return args, "item" if not item else None if code else "code"
     if action == "coaching_who":  # an item only when one is named ("sino magaling sa ube")

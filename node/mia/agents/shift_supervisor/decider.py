@@ -13,8 +13,10 @@ from typing import Any
 
 from mia.agents import decider as shared
 from mia.agents.decider import Alternative, DecideError, Decision, Reader
+from mia.agents.parsing import find_dates, has_negation
 from mia.agents.shift_supervisor.actions import (
     ANOTHER_DAY,
+    SUPERVISING,
     Query,
     actions_for,
     build_request,
@@ -37,6 +39,30 @@ CORRECTION_WORDS = frozenset({
     "correct", "correction",
 })  # fmt: skip
 
+# A late word with a clock time, or a negated arrive word ("indi ako kaabot sa opening, 11 na ako
+# maabot"), is a late notice, never a check-in now. "ma-late" reads as "ma" and "late".
+LATE_WORDS = frozenset({
+    "late", "malate", "nalate", "maleleyt", "naleleyt", "maleyt", "naleyt", "atrasado",
+    "maatrasado", "naatrasado", "ulahi", "maulahi", "naulahi", "mahuhuli", "mahuli", "delayed",
+})  # fmt: skip
+ARRIVE_WORDS = frozenset({
+    "abot", "kaabot", "umabot", "maabot", "makaabot", "aabot", "makakaabot", "nakaabot",
+    "naabot", "arrive", "make",
+})  # fmt: skip
+# A closure of the kiosk: never the sender's absence or an incident (close_day or ask). A first
+# person singular word makes it the sender's own ("sarado ang daan, hindi ako makakapasok").
+CLOSURE_WORDS = frozenset({
+    "sarado", "sirado", "closed", "nakasara", "nakasarado", "isara", "isasara", "sasarhan",
+    "sirhan", "sirad-an",
+})  # fmt: skip
+CLOSURE_PHRASES = (
+    "no open", "not open", "won't open", "waray abri", "diri abri", "dili abli", "dili moabli",
+    "indi bukas", "indi abri", "indi mabukas", "dai bukas", "dai magbukas", "hindi bukas",
+    "hindi magbubukas",
+)  # fmt: skip
+FIRST_PERSON = frozenset({"ako", "ko", "ak", "i", "me", "my", "akon", "nako", "naku", "minä"})
+CLOSURE = "closure"  # the missing input of an absence or incident that names a closure
+
 
 # A check-out time this far from the branch's clock is a time correction, never a check-out now.
 CHECK_OUT_NOW = dt.timedelta(minutes=5)
@@ -57,6 +83,38 @@ def _not_now(q: Query) -> bool:
     now = _minutes(q.now)
     limit = CHECK_OUT_NOW.total_seconds() // 60
     return any(abs(_minutes(dt.time.fromisoformat(v)) - now) > limit for v in q.times.values())
+
+
+def _late(q: Query) -> bool:
+    """True when the message is a late notice: a LATE_WORDS word with a clock time, or a
+    negation with an ARRIVE_WORDS word."""
+    late = bool(q.times) and _has_word(q.message, LATE_WORDS)
+    return late or (has_negation(q.message) and _has_word(q.message, ARRIVE_WORDS))
+
+
+def _named_days(q: Query) -> set[str]:
+    """The ISO days the message names (parsing.find_dates; "en" so an English "May 5" counts)."""
+    return {d.isoformat() for _, d in find_dates(q.message, q.today, "en")}
+
+
+def _off_day(day: str | None, q: Query) -> bool:
+    """True in retail when the message names days and `day` is none of them ("kasuhapon" is
+    yesterday, never today): the date is asked, never written. ponytail: retail only (the D40
+    rows); cleaning's tests default an unpicked "tomorrow" absence to today."""
+    named = _named_days(q) if is_retail() else set()
+    return bool(named) and day not in named
+
+
+def _closure(q: Query) -> bool:
+    """True in retail when the message names a closure (CLOSURE_WORDS or CLOSURE_PHRASES) and a
+    day, with no first person singular word: the kiosk's closure, never the sender's absence or
+    an incident."""
+    folded = " ".join(re.findall(r"[\w'-]+", q.message.casefold()))
+    said = _has_word(q.message, CLOSURE_WORDS) or any(
+        re.search(rf"\b{re.escape(p)}\b", folded) for p in CLOSURE_PHRASES
+    )
+    first = _has_word(q.message, FIRST_PERSON)
+    return is_retail() and said and not first and bool(_named_days(q))
 
 
 def _period(value: str | None, today: dt.date) -> tuple[str | None, str | None]:
@@ -101,11 +159,15 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         reason = r.pick("reason", {"sick", "late", "leaving_early", "other"})
         part = r.pick("partial_day", {"morning", "afternoon", "whole_day"})
         person = r.pick("person", q.people, count_unstated=True)
+        if _closure(q):
+            return {}, CLOSURE
         if day == ANOTHER_DAY:
             return {}, "date"
         if _ambiguous(person, q):
             return {}, "person"
         date = day or q.today.isoformat()
+        if _off_day(date, q):
+            return {}, "date"
         return {
             "date": date,
             "reason": reason or "other",
@@ -139,11 +201,15 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         timed = q.times and (_has_word(q.message, CORRECTION_WORDS) or _not_now(q))
         if action == "check_out" and timed and is_retail():
             return {}, "time"
+        if action == "check_in" and is_retail() and _late(q):  # a late notice, never now
+            return {}, "time"
         return {"location_name": q.sites.get(site or "")}, None
     if action == "report_site_problem":
         kind = r.pick("problem_kind", set(problem_kinds()))
         site = r.pick("site", q.sites)
         location = q.sites.get(site or "")
+        if _closure(q):  # "waray abri ha Biyernes": a closure, never an incident
+            return {}, CLOSURE
         if is_retail() and _has_word(q.message, STOCK_WORDS):  # stock (Q108): ask, any kind
             return {}, "problem_kind"
         return {"kind": kind, "text": q.message[:500], "location_name": location}, None
@@ -178,7 +244,9 @@ def _retail_args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
             return {}, "person"
         return {"start": start, "person_name": q.people.get(person or "")}, None
     day = r.pick("date", {*q.dates, ANOTHER_DAY})
-    if day == ANOTHER_DAY:
+    # correct_time defaults to today; close_day and swap ask for a day not picked
+    stated = day or (q.today.isoformat() if action == "correct_time" else None)
+    if day == ANOTHER_DAY or (stated is not None and _off_day(stated, q)):
         return {}, "date"
     if action == "close_day":
         site = r.pick("site", q.sites)
@@ -213,9 +281,35 @@ def _as_correction(d: Decision) -> Decision:
     )
 
 
+def _as_closure(d: Decision, answers: dict[str, Any], q: Query) -> Decision:
+    """An absence or incident held back for a closure (missing CLOSURE) runs close_day when the
+    sender is head staff (SUPERVISING), Jev was sure, the message has no clock time and the day
+    is the one it names; else it stays a clarify, close_day offered first when complete."""
+    if d.missing != CLOSURE:
+        return d
+    reader = Reader(answers, q)
+    args, missing = _retail_args("close_day", reader)
+    named = _named_days(q)
+    if args.get("date") is None and len(named) == 1:
+        args, missing = {**args, "date": next(iter(named))}, None
+    if missing is not None:
+        return d
+    sure = min([d.confidence, *reader.confidences]) >= shared.THRESHOLD
+    if sure and not q.times and SUPERVISING & set(q.role.split(", ")):
+        return Decision(
+            action="close_day", args=args, confidence=d.confidence, raw_action=d.raw_action
+        )
+    close = Alternative(action="close_day", args=args, probability=d.confidence)
+    others = [a for a in d.alternatives if a.action != "close_day"]
+    return d.model_copy(update={"alternatives": [close, *others][:3]})
+
+
 def parse(answers: dict[str, Any], q: Query) -> Decision:
-    """The shared parse over the template's actions (actions_for) and argument mapping."""
-    return _as_correction(shared.parse(answers, q, actions=actions_for(), args=_args))
+    """The shared parse over the template's actions (actions_for) and argument mapping; a
+    held-back check-out becomes correct_time (_as_correction), a held-back closure close_day
+    (_as_closure)."""
+    d = _as_correction(shared.parse(answers, q, actions=actions_for(), args=_args))
+    return _as_closure(d, answers, q)
 
 
 async def decide(q: Query) -> Decision:

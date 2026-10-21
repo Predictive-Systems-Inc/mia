@@ -469,6 +469,25 @@ def test_a_short_code_is_set_without_approval(
     assert session.exec(select(Approval)).all() == []
 
 
+def test_a_role_word_picked_as_the_short_code_asks_in_hiligaynon(
+    session: Session, bm: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fresh gate row (2050): "clerk" is a role word, never a short code; the code asks."""
+    from mia.agents.branch_manager.actions import code_candidates
+    from mia.core import people
+
+    marites = people.set_language(session, Actor.system(bm[0].id), bm[1]["Marites"], "hil")
+    session.commit()
+    text = "umpisa subong bf na ang i-type sang clerk para sa Box of 4"
+    box = item(session, "Box of 4")
+    before = list(box.short_codes)
+    clerk = code_candidates(text, session.exec(select(RetailItem)).all()).index("clerk")
+    _answers(monkeypatch, "set_short_code", item=box.id, code=f"c{clerk}")
+    _turn(session, marites, text)
+    session.refresh(box)
+    assert box.short_codes == before
+
+
 # ---- conversation --------------------------------------------------------------------------
 
 
