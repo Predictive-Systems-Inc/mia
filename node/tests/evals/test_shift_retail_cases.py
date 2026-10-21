@@ -2,6 +2,7 @@
 test_shift_retail_evals.py)."""
 
 import datetime as dt
+import json
 from collections import Counter
 from pathlib import Path
 
@@ -26,21 +27,40 @@ INPUTS = {
 # Ferino's people by first name and the Mall kiosk's hours, as build_query hands them to code.
 PEOPLE = {f"p{n}": name for n, name in enumerate(("Rosa", "Marites", "Jun", "Ana", "Liza", "Pao"))}
 OPENS, CLOSES = dt.time(9), dt.time(21)
+# The runs that scored the spent rows (21 Oct 2026); a later run's file scores the fresh rows.
+RESEARCH = Path(__file__).parents[3] / "docs" / "research"
+SCORED = [
+    RESEARCH / f"shift-supervisor-retail-2026-10-21-{t}.raw.json" for t in ("0303", "0305", "0306")
+]
+
+
+def _key(text: str) -> str:
+    return text.casefold().strip()
 
 
 def test_ten_cases_per_language_scenario_and_half() -> None:
-    """Per language and scenario: five tune and five gate seeds."""
+    """Per language and scenario: five fresh tune and five fresh gate seeds, ten spent."""
     counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
-    halves = ("tune", "gate")
-    assert set(counts) == {(lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in halves}
-    assert set(counts.values()) == {5}
+    halves = {"tune": 5, "gate": 5, "spent": 10}
+    want = {(lang, s, h): n for lang in GATED_LANGS for s in SCENARIOS for h, n in halves.items()}
+    assert counts == want
 
 
 def test_no_text_appears_in_both_halves() -> None:
-    sets = {h: {c.text.casefold().strip() for c in CASES if c.half == h} for h in ("tune", "gate")}
+    sets = {h: {_key(c.text) for c in CASES if c.half == h} for h in ("tune", "gate")}
     assert not sets["tune"] & sets["gate"], sets["tune"] & sets["gate"]
     pairs = [(c.lang, c.text) for c in CASES]
     assert len(pairs) == len(set(pairs)), Counter(pairs).most_common(3)
+
+
+def test_no_fresh_text_was_ever_scored() -> None:
+    """No fresh text is a spent row's or one the 21 Oct 2026 runs scored (any language, any
+    case: compared casefolded)."""
+    scored = {_key(c.text) for c in CASES if c.half == "spent"}
+    for path in SCORED:
+        scored |= {_key(r["text"]) for r in json.loads(path.read_text("utf-8"))["results"]}
+    fresh = {_key(c.text) for c in CASES if c.half != "spent"}
+    assert scored and not fresh & scored, sorted(fresh & scored)
 
 
 def test_the_actions_are_retail_actions() -> None:
@@ -53,7 +73,7 @@ def test_no_case_names_tagalog() -> None:
 
 
 def test_expected_inputs_and_roles() -> None:
-    dates = {(TODAY + dt.timedelta(days=n)).isoformat() for n in range(14)}  # actions._dates
+    dates = {(TODAY + dt.timedelta(days=n)).isoformat() for n in range(-7, 14)}  # actions._dates
     for c in CASES:
         assert set(c.expected) == INPUTS.get(c.expected_action, set()), c
         assert c.expected.get("date", TODAY.isoformat()) in dates, c
@@ -125,6 +145,8 @@ def test_the_halves_are_selected_by_name() -> None:
 
     assert {c.half for c in _selected(CASES, "tune")} == {"tune"}
     assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
+    assert {c.half for c in _selected(CASES, "tune,gate,spent")} == {"tune", "gate"}
+    assert _selected(CASES, "spent") == []
 
 
 def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:

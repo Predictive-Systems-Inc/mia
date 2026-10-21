@@ -1,13 +1,15 @@
 """Real-Jev retail shift supervisor decider evaluation, asserted with the Q40 bar of
-tests/evals/gate.py. Run: MIA_DECIDER=jev uv run pytest node/tests/evals/test_shift_retail_evals.py
--m evals -s (needs MIA_TYPESAFE_KEY). Each case runs build_query and decider.decide on Ferino's
+tests/evals/gate.py. The fresh gate half (the D40 rerun) runs once with
+MIA_EVAL_HALVES=gate MIA_DECIDER=jev uv run pytest node/tests/evals/test_shift_retail_evals.py -m evals -s
+(needs MIA_TYPESAFE_KEY). Each case runs build_query and decider.decide on Ferino's
 seeded demo (the rs_shop fixture: MIA_ORG=ferinos, so is_retail() holds and RETAIL_ACTIONS are
 offered, seeded on the case set's TODAY) through egress (pseudonymised, rule 6), with today
 pinned to TODAY, never the run date. A case acts as the agent for a seeded person with the
 case's role (clerk Ana, supervisor Marites of the Mall kiosk, supervisor Jun of the Street stall);
 an assign_cover case answers Mia's list for Pao's stall shift tomorrow (the sender's last
-find_replacements visit). MIA_EVAL_HALVES picks the halves (default "tune,gate"; "tune" for a
-tuning run, "gate" for the gate run). Each result keeps Jev's own pick (raw_action), the tool
+find_replacements visit). MIA_EVAL_HALVES picks the halves of the fresh rows (default
+"tune,gate"; "tune" for a tuning run, "gate" for the gate run); the spent rows, scored in the
+runs of 21 Oct 2026, are never selected. Each result keeps Jev's own pick (raw_action), the tool
 input and what it resolves to, the seconds and the usage-row tokens. The gate reads the gate
 half only; the tune half is for tuning the retail action descriptions."""
 
@@ -53,8 +55,8 @@ def _report_path(now: dt.datetime, folder: Path = RESEARCH) -> Path:
 
 
 def _selected(cases: list[Case], halves: str) -> list[Case]:
-    """The cases of the named halves (comma-separated)."""
-    wanted = set(halves.split(","))
+    """The cases of the named halves (comma-separated); never a spent case, whatever is named."""
+    wanted = set(halves.split(",")) - {"spent"}
     return [c for c in cases if c.half in wanted]
 
 
