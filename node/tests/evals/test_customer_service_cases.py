@@ -12,6 +12,7 @@ from mia.i18n import SUPPORTED
 from mia.templates.retail.seed import ITEMS
 from tests.conftest import TODAY as SEEDED
 from tests.evals import gate
+from tests.evals.cases import HEADER, header, read
 from tests.evals.customer_service_cases import (
     CASES,
     GATED_LANGS,
@@ -157,3 +158,7 @@ def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path:
     path.write_text("{}")
     with pytest.raises(FileExistsError, match="customer-service-2026-10-20-2305"):
         _report_path(now, tmp_path)
+
+
+def test_the_csv_has_the_shared_header_and_every_row_parses() -> None:
+    assert header("customer_service") == HEADER and len(read("customer_service")) == len(CASES)

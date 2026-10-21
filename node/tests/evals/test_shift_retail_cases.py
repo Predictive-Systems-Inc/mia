@@ -13,6 +13,7 @@ from mia.agents.shift_supervisor import roster
 from mia.agents.shift_supervisor.actions import RETAIL_ACTIONS, RETAIL_PROBLEM_KINDS
 from tests.conftest import RS_TODAY
 from tests.evals import gate
+from tests.evals.cases import HEADER, header, read
 from tests.evals.shift_retail_cases import CASES, GATED_LANGS, SCENARIOS, TODAY
 
 # The inputs each action is scored on (beyond the action itself).
@@ -187,3 +188,7 @@ def test_the_gate_is_the_d40_bar() -> None:
     assert gate_failures(gated(80, 15, 2)) == []
     assert gate_failures(gated(80, 15, 3)) == ["wrong 0.03", "fil wrong 0.03"]
     assert gate_failures(gated(79, 16, 0)) == ["fil right 0.79", "fil ask 0.16"]
+
+
+def test_the_csv_has_the_shared_header_and_every_row_parses() -> None:
+    assert header("shift_supervisor") == HEADER and len(read("shift_supervisor")) == len(CASES)

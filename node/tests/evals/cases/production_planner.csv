@@ -1,0 +1,545 @@
+intent,message,lang,half,role,previous,item,amount,number,date,provider,category,kiosk,direction,unit,extra
+plan,what are we baking tomorrow?,en,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,ano ang lulutuin natin bukas?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,send me tomorrow's production plan,en,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,ipadala ang production plan para bukas,fil,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,how many batches of each item tomorrow?,en,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,ilang batch bawat item bukas?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,show me the plan,en,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,patingin ng plano,fil,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,what's in the plan for Wednesday?,en,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,ano ang nasa plano sa Miyerkules?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,how many pieces per kiosk tomorrow?,en,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,ilang piraso bawat kiosk bukas?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,plan for tomorrow please,en,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,plano para bukas po,fil,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,how much do we bake for the Mall kiosk tomorrow?,en,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,ilan ang lulutuin para sa Mall kiosk bukas?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,is tomorrow's plan ready?,en,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,handa na ba ang plano bukas?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,what's the production for Thursday?,en,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,ano ang produksyon sa Huwebes?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+confirm_plan,ok,en,spent,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,ok po,fil,spent,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,approved,en,spent,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,aprubado,fil,spent,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,go ahead with that plan,en,spent,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"sige, ituloy ang plano",fil,spent,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,confirmed,en,spent,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,kumpirmado,fil,spent,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"looks good, confirm it",en,spent,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"ayos, i-confirm mo na",fil,spent,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"yes, that's fine",en,spent,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"oo, ayos lang",fil,spent,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"all good, go",en,spent,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,go na po,fil,spent,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,approve the plan,en,spent,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,aprubahan ang plano,fil,spent,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"ok, bake that",en,spent,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"sige, lutuin na yan",fil,spent,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"fine by me, confirm",en,spent,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"ayos sa akin, confirm",fil,spent,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+plan,are the customer orders in tomorrow's plan?,en,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,kasama ba sa plano bukas ang mga order?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,how many pieces in the plan are for orders?,en,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,ilang piraso sa plano ang para sa order?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,does the plan count the Mall kiosk's pickup orders?,en,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,kasama ba sa plano ang pickup orders ng Mall kiosk?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,show the plan with the orders,en,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,ipakita ang plano kasama ang mga order,fil,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,tomorrow's plan with the orders please,en,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,plano bukas kasama ang order po,fil,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,is the order of 30 Classic in the plan?,en,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,nasa plano ba ang order na 30 Classic?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,how many orders are in tomorrow's plan?,en,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,ilang order ang nasa plano bukas?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,did the confirmed orders go into the plan?,en,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,napasok ba sa plano ang mga confirmed na order?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,the Street stall's plan line with its orders,en,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,ang linya ng Street stall sa plano kasama ang order,fil,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,how much of the plan is orders?,en,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,gaano karami sa plano ang order?,fil,spent,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+change_plan,add one batch of ube,en,spent,head,,Ube,,1,,,,,add,,"{""scenario"": ""change""}"
+change_plan,dagdagan ng isang batch ang ube,fil,spent,head,,Ube,,1,,,,,add,,"{""scenario"": ""change""}"
+change_plan,one batch less of classic,en,spent,head,,Classic,,1,,,,,remove,,"{""scenario"": ""change""}"
+change_plan,bawasan ng isang batch ang classic,fil,spent,head,,Classic,,1,,,,,remove,,"{""scenario"": ""change""}"
+change_plan,make special 3 batches,en,spent,head,,Special,,3,,,,,set,,"{""scenario"": ""change""}"
+change_plan,gawin 3 batch ang special,fil,spent,head,,Special,,3,,,,,set,,"{""scenario"": ""change""}"
+change_plan,add 2 batches of classic,en,spent,head,,Classic,,2,,,,,add,,"{""scenario"": ""change""}"
+change_plan,dagdag 2 batch sa classic,fil,spent,head,,Classic,,2,,,,,add,,"{""scenario"": ""change""}"
+change_plan,remove 1 batch of salted egg,en,spent,head,,Salted egg,,1,,,,,remove,,"{""scenario"": ""change""}"
+change_plan,bawas 1 batch sa salted egg,fil,spent,head,,Salted egg,,1,,,,,remove,,"{""scenario"": ""change""}"
+change_plan,set puto bumbong to 2 batches,en,spent,head,,Puto bumbong,,2,,,,,set,,"{""scenario"": ""change""}"
+change_plan,gawing 2 batch ang puto bumbong,fil,spent,head,,Puto bumbong,,2,,,,,set,,"{""scenario"": ""change""}"
+change_plan,plus 1 batch cheese overload,en,spent,head,,Cheese overload,,1,,,,,add,,"{""scenario"": ""change""}"
+change_plan,plus 1 batch sa cheese overload,fil,spent,head,,Cheese overload,,1,,,,,add,,"{""scenario"": ""change""}"
+change_plan,less 2 batches of ube,en,spent,head,,Ube,,2,,,,,remove,,"{""scenario"": ""change""}"
+change_plan,bawasan ng 2 batch ang ube,fil,spent,head,,Ube,,2,,,,,remove,,"{""scenario"": ""change""}"
+change_plan,classic 4 batches only,en,spent,head,,Classic,,4,,,,,set,,"{""scenario"": ""change""}"
+change_plan,4 batch lang ang classic,fil,spent,head,,Classic,,4,,,,,set,,"{""scenario"": ""change""}"
+change_plan,one more batch of special tomorrow,en,spent,head,,Special,,1,,,,,add,,"{""scenario"": ""change""}"
+change_plan,isa pang batch ng special bukas,fil,spent,head,,Special,,1,,,,,add,,"{""scenario"": ""change""}"
+batch_sheet,batch sheet classic,en,spent,head,,Classic,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,batch sheet ng classic,fil,spent,head,,Classic,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,how many eggs do I need for the ube?,en,spent,head,,Ube,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,ilang itlog ang kailangan sa ube?,fil,spent,head,,Ube,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,ingredients for tomorrow's special,en,spent,head,,Special,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,mga sangkap para sa special bukas,fil,spent,head,,Special,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,what does a batch of salted egg cost?,en,spent,head,,Salted egg,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,magkano ang isang batch ng salted egg?,fil,spent,head,,Salted egg,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,sheet for cheese overload,en,spent,head,,Cheese overload,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,sheet ng cheese overload,fil,spent,head,,Cheese overload,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,how much rice flour for the classic tomorrow?,en,spent,head,,Classic,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,ilang kilo ng galapong para sa classic bukas?,fil,spent,head,,Classic,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,cost per piece of puto bumbong,en,spent,head,,Puto bumbong,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,magkano bawat piraso ng puto bumbong,fil,spent,head,,Puto bumbong,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,batch sheet ube please,en,spent,head,,Ube,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,batch sheet ube po,fil,spent,head,,Ube,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,what goes into a batch of special?,en,spent,head,,Special,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,ano ang laman ng isang batch ng special?,fil,spent,head,,Special,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,coconuts needed for the classic batches,en,spent,head,,Classic,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,ilang niyog ang kailangan sa classic,fil,spent,head,,Classic,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+set_recipe,"recipe classic: 48 pieces, 2 kg rice flour, 1 tray eggs, 6 coco, 45 min",en,spent,owner,,Classic,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"recipe ng classic: 48 piraso, 2 kg rice flour, 1 tray itlog, 6 niyog, 45 min",fil,spent,owner,,Classic,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"ube recipe: 36 pcs, 2 kg flour, 1 tray egg, 6 coco, 1 kg sugar, 50 min",en,spent,owner,,Ube,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"recipe ng ube: 36 piraso, 2 kg flour, 1 tray itlog, 6 niyog, 1 kg asukal, 50 min",fil,spent,owner,,Ube,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"special: 36 pieces per batch, 2 kg rf, 1 tray eggs, 1 kg sugar, 1 pack bl, 45 min",en,spent,owner,,Special,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"special: 36 piraso kada batch, 2 kg rf, 1 tray itlog, 1 kg asukal, 1 pack dahon, 45 min",fil,spent,owner,,Special,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"recipe salted egg: 36 pcs, 2 kg rf, 1 tray egg, 12 maalat, 45 min",en,spent,owner,,Salted egg,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"recipe ng salted egg: 36 piraso, 2 kg rf, 1 tray itlog, 12 maalat, 45 min",fil,spent,owner,,Salted egg,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"set the cheese overload recipe: 36 pcs, 2 kg flour, 500 g cheese, 1 tray eggs, 45 min",en,spent,owner,,Cheese overload,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"ilagay ang recipe ng cheese overload: 36 piraso, 2 kg flour, 500 g keso, 1 tray itlog, 45 min",fil,spent,owner,,Cheese overload,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"puto bumbong recipe: 48 pcs, 3 kg rf, 1 kg sugar, 1 pack bl, 30 min",en,spent,owner,,Puto bumbong,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"recipe ng puto bumbong: 48 piraso, 3 kg rf, 1 kg asukal, 1 pack dahon, 30 min",fil,spent,owner,,Puto bumbong,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"change the classic recipe: 50 pieces, 2.5 kg rf, 1 tray egg, 6 coco, 45 min",en,spent,owner,,Classic,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"palitan ang recipe ng classic: 50 piraso, 2.5 kg rf, 1 tray itlog, 6 niyog, 45 min",fil,spent,owner,,Classic,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"new ube recipe: 40 pcs, 2 kg rf, 1 tray egg, 1 kg sugar, 1 pack bl, 45 min",en,spent,owner,,Ube,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"bagong recipe ng ube: 40 piraso, 2 kg rf, 1 tray itlog, 1 kg asukal, 1 pack dahon, 45 min",fil,spent,owner,,Ube,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"recipe for special: 36 pcs, 2 kg rice flour, 2 tray eggs, 1 kg sugar, 40 min",en,spent,owner,,Special,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"recipe para sa special: 36 piraso, 2 kg rice flour, 2 tray itlog, 1 kg asukal, 40 min",fil,spent,owner,,Special,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"classic recipe: 48 pcs, 2 kg rf, 1 tray egg, 6 coconut, 1 pack bl, 45 mins",en,spent,owner,,Classic,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"recipe classic: 48 piraso, 2 kg rf, 1 tray itlog, 6 niyog, 1 pack dahon, 45 minutos",fil,spent,owner,,Classic,,,,,,,,,"{""scenario"": ""recipe""}"
+record_batch,batch 2 classic 45 ok 3 burnt,en,spent,head,,Classic,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 2 classic 45 ok 3 sunog,fil,spent,head,,Classic,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,"ube batch 1: 34 good, 2 dropped",en,spent,head,,Ube,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,"ube batch 1: 34 ok, 2 nahulog",fil,spent,head,,Ube,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 3 special 36 ok,en,spent,head,,Special,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 3 special 36 piraso ok,fil,spent,head,,Special,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 1 salted egg 30 ok 6 undercooked,en,spent,head,,Salted egg,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 1 salted egg 30 ok 6 hilaw,fil,spent,head,,Salted egg,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,"cheese overload batch 2, 35 good, 1 other",en,spent,head,,Cheese overload,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,"cheese overload batch 2, 35 ok, 1 iba",fil,spent,head,,Cheese overload,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch #4 classic 48 ok,en,spent,head,,Classic,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch #4 classic 48 ok lahat,fil,spent,head,,Classic,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 1 puto bumbong 44 ok 4 burnt,en,spent,head,,Puto bumbong,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 1 puto bumbong 44 ok 4 sunog,fil,spent,head,,Puto bumbong,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,"batch 3 classic: 46 ok, 2 dropped",en,spent,head,,Classic,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,"batch 3 classic: 46 ok, 2 nahulog",fil,spent,head,,Classic,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 2 ube 33 ok 3 undercooked,en,spent,head,,Ube,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 2 ube 33 ok 3 hilaw,fil,spent,head,,Ube,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 1 special 35 good 1 burnt,en,spent,head,,Special,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 1 special 35 maayos 1 sunog,fil,spent,head,,Special,,,,,,,,,"{""scenario"": ""batch""}"
+dispatch,what's arriving tomorrow?,en,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ano ang darating bukas?,fil,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,dispatch list for the mall,en,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,dispatch list para sa mall,fil,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,how many classic are coming to our kiosk?,en,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ilang classic ang darating sa kiosk namin?,fil,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,what's coming in today?,en,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ano ang darating ngayon?,fil,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,when does the delivery from the commissary come?,en,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,kailan darating ang delivery galing commissary?,fil,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,what will the driver bring us?,en,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ano ang dadalhin ng driver sa amin?,fil,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,send me our dispatch list,en,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ipadala ang dispatch list namin,fil,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,how many pieces are we getting tomorrow?,en,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ilang piraso ang matatanggap namin bukas?,fil,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,what's on the delivery for the Mall kiosk?,en,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ano ang laman ng delivery para sa Mall kiosk?,fil,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,is our bibingka on its way?,en,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,papunta na ba ang bibingka namin?,fil,spent,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+delivered,delivered to the mall,en,spent,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,delivered na sa mall,fil,spent,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,dropped off at the street stall,en,spent,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,naihatid na sa street stall,fil,spent,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,"Mall kiosk done, all delivered",en,spent,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,"tapos na sa Mall kiosk, naihatid lahat",fil,spent,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,delivery done at the stall,en,spent,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,tapos na ang delivery sa stall,fil,spent,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,just delivered at the Mall kiosk,en,spent,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,kaka-deliver ko lang sa Mall kiosk,fil,spent,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,"delivered, street stall",en,spent,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,"delivered na, street stall",fil,spent,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,mall kiosk: delivered,en,spent,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,mall kiosk: naihatid na,fil,spent,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,finished the stall delivery,en,spent,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,natapos ko na ang delivery sa stall,fil,spent,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,the mall kiosk has its bibingka now,en,spent,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,nasa mall kiosk na ang bibingka nila,fil,spent,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,handed the trays over at the street stall,en,spent,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,naibigay ko na ang tray sa street stall,fil,spent,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+capacity,can we do 200 classic on Dec 24?,en,spent,owner,,Classic,,200,,,,,,,"{""scenario"": ""capacity""}"
+capacity,kaya ba ang 200 classic sa Dec 24,fil,spent,owner,,Classic,,200,,,,,,,"{""scenario"": ""capacity""}"
+capacity,is there oven room for 100 ube on Saturday?,en,spent,owner,,Ube,,100,,,,,,,"{""scenario"": ""capacity""}"
+capacity,may lugar pa ba sa oven para sa 100 ube sa Sabado?,fil,spent,owner,,Ube,,100,,,,,,,"{""scenario"": ""capacity""}"
+capacity,can the ovens bake 150 special tomorrow?,en,spent,owner,,Special,,150,,,,,,,"{""scenario"": ""capacity""}"
+capacity,kaya ba ng oven ang 150 special bukas?,fil,spent,owner,,Special,,150,,,,,,,"{""scenario"": ""capacity""}"
+capacity,"300 classic on Dec 23, possible?",en,spent,owner,,Classic,,300,,,,,,,"{""scenario"": ""capacity""}"
+capacity,"300 classic sa Dec 23, kaya ba?",fil,spent,owner,,Classic,,300,,,,,,,"{""scenario"": ""capacity""}"
+capacity,do we have room for 72 salted egg on Friday?,en,spent,owner,,Salted egg,,72,,,,,,,"{""scenario"": ""capacity""}"
+capacity,may puwang pa ba para sa 72 salted egg sa Biyernes?,fil,spent,owner,,Salted egg,,72,,,,,,,"{""scenario"": ""capacity""}"
+capacity,can the oven handle 96 puto bumbong on Dec 31?,en,spent,owner,,Puto bumbong,,96,,,,,,,"{""scenario"": ""capacity""}"
+capacity,kaya ba ng oven ang 96 puto bumbong sa Dec 31?,fil,spent,owner,,Puto bumbong,,96,,,,,,,"{""scenario"": ""capacity""}"
+capacity,can we fit 240 classic on Nov 30?,en,spent,owner,,Classic,,240,,,,,,,"{""scenario"": ""capacity""}"
+capacity,kasya pa ba ang 240 classic sa Nov 30?,fil,spent,owner,,Classic,,240,,,,,,,"{""scenario"": ""capacity""}"
+capacity,is 60 cheese overload doable on Sunday?,en,spent,owner,,Cheese overload,,60,,,,,,,"{""scenario"": ""capacity""}"
+capacity,kaya ba ang 60 cheese overload sa Linggo?,fil,spent,owner,,Cheese overload,,60,,,,,,,"{""scenario"": ""capacity""}"
+capacity,can we make 180 ube for Dec 22?,en,spent,owner,,Ube,,180,,,,,,,"{""scenario"": ""capacity""}"
+capacity,kaya ba nating gumawa ng 180 ube para sa Dec 22?,fil,spent,owner,,Ube,,180,,,,,,,"{""scenario"": ""capacity""}"
+capacity,oven capacity for 120 special on Saturday?,en,spent,owner,,Special,,120,,,,,,,"{""scenario"": ""capacity""}"
+capacity,kapasidad ng oven para sa 120 special sa Sabado?,fil,spent,owner,,Special,,120,,,,,,,"{""scenario"": ""capacity""}"
+plan,what's the bake list for tomorrow?,en,tune,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,ano ang listahan ng lulutuin bukas?,fil,tune,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,"Mia, the production plan for tomorrow please",en,gate,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,"Mia, pakibigay ang production plan bukas",fil,gate,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,how many batches are we baking on Wednesday?,en,tune,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,ilang batch ang lulutuin natin sa Miyerkules?,fil,tune,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,"give me the plan for tomorrow, per item",en,gate,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,"ibigay mo ang plano bukas, bawat item",fil,gate,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,what does the commissary bake tomorrow?,en,tune,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,ano ang lulutuin ng commissary bukas?,fil,tune,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,what's the plan for Friday?,en,gate,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,ano ang plano sa Biyernes?,fil,gate,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,how many pieces go to the Street stall in tomorrow's plan?,en,tune,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,ilang piraso ang para sa Street stall sa plano bukas?,fil,tune,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,"Nonoy here, what do we bake tomorrow and how much?",en,gate,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,"si Nonoy ito, ano at ilan ang lulutuin bukas?",fil,gate,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,tomorrow's baking schedule?,en,tune,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,iskedyul ng luto bukas?,fil,tune,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,what are the batch counts in the draft plan?,en,gate,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+plan,ilan ang batch sa draft na plano?,fil,gate,head,,,,,,,,,,,"{""scenario"": ""plan""}"
+confirm_plan,"ok, lock it in",en,tune,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"sige, i-lock na",fil,tune,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,yes confirm,en,gate,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"oo, i-confirm",fil,gate,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"that plan is good, go ahead",en,tune,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"maayos ang planong iyan, tuloy",fil,tune,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,approve it,en,gate,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,aprubahan mo na,fil,gate,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"sure, we'll bake that",en,tune,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"sige, iyan ang lulutuin namin",fil,tune,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,confirm the draft,en,gate,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,i-confirm ang draft,fil,gate,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"good as is, confirm",en,tune,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"ayos na yan, confirm",fil,tune,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,go with the draft,en,gate,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,ituloy ang draft,fil,gate,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"noted, approve",en,tune,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"noted, aprubado na",fil,tune,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"yes Mia, that's the plan",en,gate,head,"Plan for 2026-11-11 (draft), 120 oven minutes free:
+Classic: 3 batches, 144 pieces
+Special: 2 batches, 72 pieces
+Ube: 1 batches, 36 pieces",,,,,,,,,,"{""scenario"": ""confirm""}"
+confirm_plan,"oo Mia, iyan na ang plano",fil,gate,head,"Plano para sa 2026-11-11 (draft), 120 minuto ng oven ang bakante:
+Classic: 3 batch, 144 piraso
+Special: 2 batch, 72 piraso
+Ube: 1 batch, 36 piraso",,,,,,,,,,"{""scenario"": ""confirm""}"
+plan,does tomorrow's plan include the pre-orders?,en,tune,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,kasama na ba ang mga pre-order sa plano bukas?,fil,tune,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,show tomorrow's plan with the order pieces,en,gate,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,ipakita ang plano bukas kasama ang piraso ng order,fil,gate,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,how many order pieces are in the Mall kiosk line of the plan?,en,tune,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,ilang piraso ng order ang nasa linya ng Mall kiosk sa plano?,fil,tune,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,"plan for tomorrow, orders included",en,gate,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,"plano bukas, kasama ang mga order",fil,gate,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,is the 24-piece order counted in the plan?,en,tune,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,bilang na ba sa plano ang order na 24 piraso?,fil,tune,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,what part of tomorrow's batches is for orders?,en,gate,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,aling bahagi ng batch bukas ang para sa order?,fil,gate,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,"plan with the confirmed orders, please",en,tune,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,"plano kasama ang kumpirmadong order, pakiusap",fil,tune,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,are the Street stall orders in tomorrow's batches?,en,gate,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,kasama ba ang order ng Street stall sa batch bukas?,fil,gate,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,"the plan, with orders and forecast",en,tune,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,"ang plano, may order at forecast",fil,tune,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,how many orders did the plan pick up for Wednesday?,en,gate,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+plan,ilang order ang nakuha ng plano para sa Miyerkules?,fil,gate,head,,,,,,,,,,,"{""scenario"": ""orders""}"
+change_plan,put 2 more batches of ube,en,tune,head,,Ube,,2,,,,,add,,"{""scenario"": ""change""}"
+change_plan,dagdagan pa ng 2 batch ang ube,fil,tune,head,,Ube,,2,,,,,add,,"{""scenario"": ""change""}"
+change_plan,reduce classic by 2 batches,en,gate,head,,Classic,,2,,,,,remove,,"{""scenario"": ""change""}"
+change_plan,bawasan ang classic ng 2 batch,fil,gate,head,,Classic,,2,,,,,remove,,"{""scenario"": ""change""}"
+change_plan,special should be 4 batches,en,tune,head,,Special,,4,,,,,set,,"{""scenario"": ""change""}"
+change_plan,4 na batch dapat ang special,fil,tune,head,,Special,,4,,,,,set,,"{""scenario"": ""change""}"
+change_plan,add one batch to salted egg,en,gate,head,,Salted egg,,1,,,,,add,,"{""scenario"": ""change""}"
+change_plan,dagdag isang batch sa salted egg,fil,gate,head,,Salted egg,,1,,,,,add,,"{""scenario"": ""change""}"
+change_plan,minus 1 batch on cheese overload,en,tune,head,,Cheese overload,,1,,,,,remove,,"{""scenario"": ""change""}"
+change_plan,bawas ng 1 batch ang cheese overload,fil,tune,head,,Cheese overload,,1,,,,,remove,,"{""scenario"": ""change""}"
+change_plan,change puto bumbong to 3 batches,en,gate,head,,Puto bumbong,,3,,,,,set,,"{""scenario"": ""change""}"
+change_plan,palitan sa 3 batch ang puto bumbong,fil,gate,head,,Puto bumbong,,3,,,,,set,,"{""scenario"": ""change""}"
+change_plan,one extra batch of classic for tomorrow,en,tune,head,,Classic,,1,,,,,add,,"{""scenario"": ""change""}"
+change_plan,isang extra na batch ng classic para bukas,fil,tune,head,,Classic,,1,,,,,add,,"{""scenario"": ""change""}"
+change_plan,"ube, 1 batch less",en,gate,head,,Ube,,1,,,,,remove,,"{""scenario"": ""change""}"
+change_plan,"ube, bawas 1 batch",fil,gate,head,,Ube,,1,,,,,remove,,"{""scenario"": ""change""}"
+change_plan,set special at exactly 2 batches,en,tune,head,,Special,,2,,,,,set,,"{""scenario"": ""change""}"
+change_plan,eksaktong 2 batch ang special,fil,tune,head,,Special,,2,,,,,set,,"{""scenario"": ""change""}"
+change_plan,increase cheese overload by 2 batches,en,gate,head,,Cheese overload,,2,,,,,add,,"{""scenario"": ""change""}"
+change_plan,dagdagan ng 2 batch ang cheese overload,fil,gate,head,,Cheese overload,,2,,,,,add,,"{""scenario"": ""change""}"
+batch_sheet,what do I need for the classic batches tomorrow?,en,tune,head,,Classic,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,ano ang kailangan ko sa batch ng classic bukas?,fil,tune,head,,Classic,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,ube batch sheet,en,gate,head,,Ube,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,ang batch sheet ng ube,fil,gate,head,,Ube,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,how much sugar goes into the special?,en,tune,head,,Special,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,ilang asukal ang kailangan sa special?,fil,tune,head,,Special,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,how many duck eggs for the salted egg batches?,en,gate,head,,Salted egg,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,ilang itlog na maalat para sa batch ng salted egg?,fil,gate,head,,Salted egg,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,what's the batch cost for cheese overload?,en,tune,head,,Cheese overload,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,magkano ang gastos kada batch ng cheese overload?,fil,tune,head,,Cheese overload,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,how many banana leaves for the puto bumbong?,en,gate,head,,Puto bumbong,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,ilang dahon ng saging para sa puto bumbong?,fil,gate,head,,Puto bumbong,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,send the classic batch sheet,en,tune,head,,Classic,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,ipadala ang batch sheet ng classic,fil,tune,head,,Classic,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,special ingredient list and cost per piece,en,gate,head,,Special,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,listahan ng sangkap ng special at gastos kada piraso,fil,gate,head,,Special,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,how many trays of eggs for tomorrow's ube?,en,tune,head,,Ube,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,ilang tray ng itlog para sa ube bukas?,fil,tune,head,,Ube,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,cl batch sheet pls,en,gate,head,,Classic,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+batch_sheet,cl batch sheet po,fil,gate,head,,Classic,,,,,,,,,"{""scenario"": ""batch_sheet""}"
+set_recipe,"classic recipe update: 46 pcs, 2 kg flour, 1 tray eggs, 5 coco, 1 pack bl, 50 min",en,tune,owner,,Classic,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"update sa recipe ng classic: 46 piraso, 2 kg flour, 1 tray itlog, 5 niyog, 1 pack dahon, 50 min",fil,tune,owner,,Classic,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"ube: 36 pieces, 2 kg rice flour, 1 tray egg, 1 kg sugar, 6 coco, 55 min",en,gate,owner,,Ube,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"recipe ng ube: 36 piraso, 2 kg rice flour, 1 tray itlog, 1 kg asukal, 6 niyog, 55 min",fil,gate,owner,,Ube,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"for the special: 40 pcs a batch, 2 kg rf, 1 tray egg, 1 kg sugar, 1 pack bl, 45 min",en,tune,owner,,Special,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"para sa special: 40 piraso bawat batch, 2 kg rf, 1 tray itlog, 1 kg asukal, 1 pack dahon, 45 min",fil,tune,owner,,Special,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"salted egg recipe: 36 pcs, 2 kg rf, 1 tray eggs, 10 maalat, 1 kg sugar, 45 min",en,gate,owner,,Salted egg,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"recipe ng salted egg: 36 piraso, 2 kg rf, 1 tray itlog, 10 maalat, 1 kg asukal, 45 min",fil,gate,owner,,Salted egg,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"cheese overload: 32 pcs, 2 kg flour, 600 g cheese, 1 tray eggs, 1 kg sugar, 45 min",en,tune,owner,,Cheese overload,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"cheese overload: 32 piraso, 2 kg flour, 600 g keso, 1 tray itlog, 1 kg asukal, 45 min",fil,tune,owner,,Cheese overload,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"puto bumbong: 50 pcs per batch, 3 kg rf, 1 kg sugar, 2 pack bl, 25 min",en,gate,owner,,Puto bumbong,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"puto bumbong: 50 piraso kada batch, 3 kg rf, 1 kg asukal, 2 pack dahon, 25 min",fil,gate,owner,,Puto bumbong,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"cl recipe: 48 pcs, 2 kg rf, 1 tray egg, 6 niyog, 40 min",en,tune,owner,,Classic,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"recipe ng cl: 48 piraso, 2 kg rf, 1 tray itlog, 6 niyog, 40 min",fil,tune,owner,,Classic,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"save this for ube: 38 pcs, 2.5 kg rf, 1 tray eggs, 1 kg sugar, 1 pack bl, 50 min",en,gate,owner,,Ube,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"i-save ito para sa ube: 38 piraso, 2.5 kg rf, 1 tray itlog, 1 kg asukal, 1 pack dahon, 50 min",fil,gate,owner,,Ube,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"special recipe, per batch: 36 pcs; 2 kg rf; 1 tray egg; 1 kg sugar; 45 min",en,tune,owner,,Special,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"recipe ng special, kada batch: 36 piraso; 2 kg rf; 1 tray itlog; 1 kg asukal; 45 min",fil,tune,owner,,Special,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"new classic recipe: 52 pieces, 2 kg rice flour, 2 trays eggs, 6 coconut, 1 kg sugar, 45 mins",en,gate,owner,,Classic,,,,,,,,,"{""scenario"": ""recipe""}"
+set_recipe,"bagong recipe ng classic: 52 piraso, 2 kg rice flour, 2 tray itlog, 6 niyog, 1 kg asukal, 45 minutos",fil,gate,owner,,Classic,,,,,,,,,"{""scenario"": ""recipe""}"
+record_batch,"classic batch 1 done, 47 ok 1 burnt",en,tune,head,,Classic,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,"classic batch 1 tapos, 47 ok 1 sunog",fil,tune,head,,Classic,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 3 ube: 35 good 1 dropped,en,gate,head,,Ube,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 3 ube: 35 maayos 1 nahulog,fil,gate,head,,Ube,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,"special batch 2, 34 ok, 2 undercooked",en,tune,head,,Special,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,"special batch 2, 34 ok, 2 hilaw",fil,tune,head,,Special,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 2 salted egg 36 ok,en,gate,head,,Salted egg,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 2 salted egg 36 ok lahat,fil,gate,head,,Salted egg,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,"batch 1 cheese overload: 33 good, 3 burnt",en,tune,head,,Cheese overload,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,"batch 1 cheese overload: 33 maayos, 3 sunog",fil,tune,head,,Cheese overload,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,"puto bumbong batch 2: 46 ok, 2 other",en,gate,head,,Puto bumbong,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,"puto bumbong batch 2: 46 ok, 2 iba",fil,gate,head,,Puto bumbong,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,cl batch 5 48 ok,en,tune,head,,Classic,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,cl batch 5 48 ok lahat,fil,tune,head,,Classic,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,done with ube batch 4: 36 ok,en,gate,head,,Ube,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,tapos ang ube batch 4: 36 ok,fil,gate,head,,Ube,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch no. 3 special: 35 ok 1 dropped,en,tune,head,,Special,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch no. 3 special: 35 ok 1 nahulog,fil,tune,head,,Special,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 6 classic 44 pcs ok 4 undercooked,en,gate,head,,Classic,,,,,,,,,"{""scenario"": ""batch""}"
+record_batch,batch 6 classic 44 piraso ok 4 hilaw,fil,gate,head,,Classic,,,,,,,,,"{""scenario"": ""batch""}"
+dispatch,what's on tomorrow's delivery to us?,en,tune,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ano ang laman ng delivery sa amin bukas?,fil,tune,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,what's the commissary delivering to the Mall kiosk tomorrow?,en,gate,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ano ang ide-deliver ng commissary sa Mall kiosk bukas?,fil,gate,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,how many trays arrive with tomorrow's delivery?,en,tune,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ilang tray ang darating sa delivery bukas?,fil,tune,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,"dispatch for the Mall kiosk, please",en,gate,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,dispatch para sa Mall kiosk po,fil,gate,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,how many classic pieces are on our delivery?,en,tune,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ilang piraso ng classic ang nasa delivery namin?,fil,tune,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,what comes on the next delivery?,en,gate,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ano ang darating sa susunod na delivery?,fil,gate,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,is the dispatch for our kiosk packed yet?,en,tune,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,naka-pack na ba ang dispatch para sa kiosk namin?,fil,tune,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,how many pieces come on our delivery tomorrow?,en,gate,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ilang piraso ang darating sa delivery namin bukas?,fil,gate,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,send the Mall kiosk delivery list,en,tune,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,ipadala ang listahan ng delivery ng Mall kiosk,fil,tune,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,when does our delivery arrive tomorrow?,en,gate,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+dispatch,anong oras darating ang delivery namin bukas?,fil,gate,kiosk,,,,,,,,,,,"{""scenario"": ""dispatch""}"
+delivered,Mall kiosk delivery done,en,tune,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,tapos ang delivery sa Mall kiosk,fil,tune,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,street stall received the trays,en,gate,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,natanggap na ng street stall ang mga tray,fil,gate,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,dropped everything at the mall kiosk,en,tune,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,naibaba ko na lahat sa mall kiosk,fil,tune,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,"Berto here, street stall delivered",en,gate,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,"si Berto ito, delivered na ang street stall",fil,gate,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,"at the mall kiosk now, delivery handed over",en,tune,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,"nandito na sa mall kiosk, naiabot na ang delivery",fil,tune,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,stall delivery complete,en,gate,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,kumpleto na ang delivery sa stall,fil,gate,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,"mall: delivered, all trays",en,tune,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,"mall: naihatid na, lahat ng tray",fil,tune,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,"done at the street stall, delivered",en,gate,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,"tapos sa street stall, naihatid na",fil,gate,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,the Mall kiosk got its delivery,en,tune,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,natanggap na ng Mall kiosk ang delivery nila,fil,tune,driver,,,,,,,,Mall kiosk,,,"{""scenario"": ""delivered""}"
+delivered,"unloaded at the street stall, all good",en,gate,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+delivered,"nai-unload na sa street stall, ayos lahat",fil,gate,driver,,,,,,,,Street stall,,,"{""scenario"": ""delivered""}"
+capacity,room in the ovens for 250 classic on Dec 20?,en,tune,owner,,Classic,,250,,,,,,,"{""scenario"": ""capacity""}"
+capacity,may puwang pa ba sa oven para sa 250 classic sa Dec 20?,fil,tune,owner,,Classic,,250,,,,,,,"{""scenario"": ""capacity""}"
+capacity,could we bake 90 ube on Friday?,en,gate,owner,,Ube,,90,,,,,,,"{""scenario"": ""capacity""}"
+capacity,makakaluto ba tayo ng 90 ube sa Biyernes?,fil,gate,owner,,Ube,,90,,,,,,,"{""scenario"": ""capacity""}"
+capacity,"how about 200 special on Dec 24, will it fit?",en,tune,owner,,Special,,200,,,,,,,"{""scenario"": ""capacity""}"
+capacity,"200 special sa Dec 24, kakasya ba?",fil,tune,owner,,Special,,200,,,,,,,"{""scenario"": ""capacity""}"
+capacity,"48 salted egg on Saturday, enough oven time?",en,gate,owner,,Salted egg,,48,,,,,,,"{""scenario"": ""capacity""}"
+capacity,"48 salted egg sa Sabado, may oras pa ba ang oven?",fil,gate,owner,,Salted egg,,48,,,,,,,"{""scenario"": ""capacity""}"
+capacity,is there oven time for 80 cheese overload on Dec 30?,en,tune,owner,,Cheese overload,,80,,,,,,,"{""scenario"": ""capacity""}"
+capacity,may oras pa ba ang oven para sa 80 cheese overload sa Dec 30?,fil,tune,owner,,Cheese overload,,80,,,,,,,"{""scenario"": ""capacity""}"
+capacity,can we squeeze in 120 puto bumbong on Dec 25?,en,gate,owner,,Puto bumbong,,120,,,,,,,"{""scenario"": ""capacity""}"
+capacity,maisisingit pa ba ang 120 puto bumbong sa Dec 25?,fil,gate,owner,,Puto bumbong,,120,,,,,,,"{""scenario"": ""capacity""}"
+capacity,can the ovens do 4 batches of classic on Saturday?,en,tune,owner,,Classic,,4,,,,,,,"{""scenario"": ""capacity""}"
+capacity,kaya ba ng oven ang 4 batch ng classic sa Sabado?,fil,tune,owner,,Classic,,4,,,,,,,"{""scenario"": ""capacity""}"
+capacity,"150 ube for a party on Dec 19, doable?",en,gate,owner,,Ube,,150,,,,,,,"{""scenario"": ""capacity""}"
+capacity,"150 ube para sa party sa Dec 19, kaya ba?",fil,gate,owner,,Ube,,150,,,,,,,"{""scenario"": ""capacity""}"
+capacity,do the ovens have space for 100 special on Sunday?,en,tune,owner,,Special,,100,,,,,,,"{""scenario"": ""capacity""}"
+capacity,may espasyo pa ba ang oven para sa 100 special sa Linggo?,fil,tune,owner,,Special,,100,,,,,,,"{""scenario"": ""capacity""}"
+capacity,will 360 classic fit in the ovens on Dec 23?,en,gate,owner,,Classic,,360,,,,,,,"{""scenario"": ""capacity""}"
+capacity,kakasya ba sa oven ang 360 classic sa Dec 23?,fil,gate,owner,,Classic,,360,,,,,,,"{""scenario"": ""capacity""}"
+plan,plan tmrw,en,short,head,,,,,,,,,,,"{""scenario"": ""short""}"
+change_plan,add 1 batch ube,en,short,head,,Ube,,1,,,,,,,"{""scenario"": ""short""}"
+change_plan,less classic 2 batch,en,short,head,,Classic,,2,,,,,,,"{""scenario"": ""short""}"
+confirm_plan,plan ok go,en,short,owner,,,,,,,,,,,"{""scenario"": ""short""}"
+batch_sheet,batch sheet sp,en,short,head,,Special,,,,,,,,,"{""scenario"": ""short""}"
+record_batch,batch2 cl 45 ok 3 burnt,en,short,head,,Classic,,,,,,,,,"{""scenario"": ""short""}"
+set_recipe,recipe ube 36 pcs 2kg flour,en,short,head,,Ube,,,,,,,,,"{""scenario"": ""short""}"
+delivered,delivered mall,en,short,driver,,,,,,,,,,,"{""scenario"": ""short""}"
+dispatch,whats coming to mall,en,short,clerk,,,,,,,,,,,"{""scenario"": ""short""}"
+capacity,capacity 200 cl dec 24,en,short,owner,,Classic,,200,,,,,,,"{""scenario"": ""short""}"
+ask,ube 2,en,short,head,,Ube,,2,,,,,,,"{""scenario"": ""short""}"
+ask,done,en,short,driver,,,,,,,,,,,"{""scenario"": ""short""}"
+plan,ano lutuin bukas,fil,short,head,,,,,,,,,,,"{""scenario"": ""short""}"
+change_plan,dagdag 1 batch se,fil,short,head,,Salted egg,,1,,,,,,,"{""scenario"": ""short""}"
+change_plan,bawas ube 1 batch,fil,short,head,,Ube,,1,,,,,,,"{""scenario"": ""short""}"
+confirm_plan,sige go na plano,fil,short,owner,,,,,,,,,,,"{""scenario"": ""short""}"
+batch_sheet,ilang itlog para sa cl,fil,short,head,,Classic,,,,,,,,,"{""scenario"": ""short""}"
+record_batch,batch1 sp 40 ok 2 sunog,fil,short,head,,Special,,,,,,,,,"{""scenario"": ""short""}"
+set_recipe,recipe se 36 piraso 45 min,fil,short,head,,Salted egg,,,,,,,,,"{""scenario"": ""short""}"
+delivered,hatid na sa street po,fil,short,driver,,,,,,,,,,,"{""scenario"": ""short""}"
+dispatch,ano dadalhin samin bukas,fil,short,clerk,,,,,,,,,,,"{""scenario"": ""short""}"
+capacity,kaya ba 150 ube sab,fil,short,owner,,Ube,,150,,,,,,,"{""scenario"": ""short""}"
+ask,classic 3,fil,short,head,,Classic,,3,,,,,,,"{""scenario"": ""short""}"
+ask,ok na po,fil,short,driver,,,,,,,,,,,"{""scenario"": ""short""}"

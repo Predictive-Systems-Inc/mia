@@ -1,8 +1,15 @@
 """The gate bar: D41 asserts en and fil (and any non-drafted language) at the full bar, wrong at
 most 2 percent overall; D40's relaxed reading of the machine-drafted languages (right 65, ask 30,
 wrong 2) is reported through gate_reported and never blocks. The short half's one rule (D42) is
-no wrong write, read from the manifest. No model is called."""
+no wrong write, read from the manifest. A run's results CSV never overwrites. No model is
+called."""
 
+from pathlib import Path
+
+import pytest
+
+from tests.evals.cases import RESULTS
+from tests.evals.cases import write_results as results_csv
 from tests.evals.gate import gate_failures, gate_reported, writes, wrong_writes
 
 
@@ -57,3 +64,15 @@ def test_a_wrong_write_is_a_short_rows_writing_action_other_than_the_expected() 
     assert not wrong_writes([right], "bookkeeper")
     gated = row | {"half": "gate", "action": "cash_count"}
     assert not wrong_writes([gated], "bookkeeper")  # a gate row never counts
+
+
+def test_a_runs_results_csv_sits_beside_its_raw_file_and_never_overwrites(tmp_path: Path) -> None:
+    raw = tmp_path / "bookkeeper-2026-10-21-0905.raw.json"
+    row = {"text": "cash 12450", "lang": "en", "half": "short", "expected_action": "ask"}
+    row |= {"action": "cash_count", "confidence": 0.9, "score": "wrong", "missing": None}
+    out = results_csv(raw, [row])
+    assert out == tmp_path / "bookkeeper-2026-10-21-0905.results.csv"
+    lines = out.read_text(encoding="utf-8").splitlines()
+    assert lines == [",".join(RESULTS), "cash 12450,en,short,ask,cash_count,0.9,wrong,"]
+    with pytest.raises(FileExistsError):
+        results_csv(raw, [row])

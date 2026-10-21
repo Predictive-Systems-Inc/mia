@@ -40,6 +40,7 @@ from mia.core.models import Actor, Branch, Person, UsageCloudRequest
 from mia.settings import get_settings
 from mia.templates.retail.models import RetailIngredient, RetailItem
 from tests.evals import gate
+from tests.evals.cases import write_results
 from tests.evals.inventory_manager_cases import CASES, GATED_LANGS, Case
 
 pytestmark = pytest.mark.evals
@@ -251,6 +252,7 @@ def test_decider(engine: Engine, session: Session, ferinos: Ferinos) -> None:
     print(f"\nconfusions: {summary['confusions']}\nwall {wall:.0f} s")
     text = json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1)
     report.write_text(text + "\n", encoding="utf-8")
+    write_results(report, results)  # a spreadsheet of the run
     wrong = gate.wrong_writes(results, MANIFEST.id)
     assert not wrong, [(r["text"], gate.decided(r)) for r in wrong]  # D42, the short half
     if gated_rows:  # a tune-only run has no gate to assert

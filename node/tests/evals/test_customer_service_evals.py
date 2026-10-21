@@ -35,6 +35,7 @@ from mia.settings import get_settings
 from mia.templates.retail.models import RetailItem
 from tests.conftest import Shop
 from tests.evals import gate
+from tests.evals.cases import write_results
 from tests.evals.customer_service_cases import CASES, GATED_LANGS, TODAY, Case, on
 
 pytestmark = pytest.mark.evals
@@ -178,6 +179,7 @@ def test_decider(engine: Engine, session: Session, cs: Shop) -> None:
         print(json.dumps({"short": gate.by_language(short, _row)}, indent=1))
     text = json.dumps({"gated": gated, "results": results}, ensure_ascii=False, indent=1)
     report.write_text(text + "\n", encoding="utf-8")
+    write_results(report, results)  # a spreadsheet of the run
     wrong = gate.wrong_writes(results, MANIFEST.id)
     assert not wrong, [(r["text"], gate.decided(r)) for r in wrong]  # D42, the short half
     if gated_rows:  # a tune-only run has no gate to assert

@@ -16,7 +16,8 @@ from mia.templates.retail.models import RetailIngredient, RetailItem
 from mia.templates.retail.seed import BRANCHES
 from tests.conftest import PP_TODAY, PP_TOMORROW, Shop
 from tests.evals import gate
-from tests.evals.production_planner_cases import CASES, GATED_LANGS, SCENARIOS, TODAY
+from tests.evals.cases import HEADER, header, read
+from tests.evals.production_planner_cases import CASES, DRAFT, GATED_LANGS, SCENARIOS, TODAY
 
 FRESH = [c for c in CASES if c.half in ("tune", "gate")]
 LONG = [c for c in CASES if c.half != "short"]
@@ -79,6 +80,7 @@ def test_expected_inputs_roles_and_previous() -> None:
         assert set(c.expected) == INPUTS.get(c.expected_action, set()), c
         assert c.role == roles.get(c.expected_action, "head"), c
         assert bool(c.previous) == (c.scenario == "confirm"), c
+        assert c.previous in ("", DRAFT[c.lang]), c  # the CSV keeps the reply keys' text
         assert c.expected.get("direction", "set") in DIRECTIONS, c
         assert c.expected.get("kiosk", "Mall kiosk") in {name for name, *_ in BRANCHES}, c
 
@@ -226,3 +228,7 @@ def test_the_gate_is_the_d40_bar() -> None:
     assert gate_failures(gated(80, 15, 2)) == []
     assert gate_failures(gated(80, 15, 3)) == ["wrong 0.03", "fil wrong 0.03"]
     assert gate_failures(gated(79, 16, 0)) == ["fil right 0.79", "fil ask 0.16"]
+
+
+def test_the_csv_has_the_shared_header_and_every_row_parses() -> None:
+    assert header("production_planner") == HEADER and len(read("production_planner")) == len(CASES)

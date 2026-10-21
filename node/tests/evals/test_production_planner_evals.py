@@ -38,6 +38,7 @@ from mia.settings import get_settings
 from mia.templates.retail.models import RetailItem
 from tests.conftest import PP_TOMORROW, Shop
 from tests.evals import gate
+from tests.evals.cases import write_results
 from tests.evals.production_planner_cases import CASES, GATED_LANGS, TODAY, Case
 
 pytestmark = pytest.mark.evals
@@ -207,6 +208,7 @@ def test_decider(
         {"gated": gated, "results": results}, ensure_ascii=False, indent=1, default=str
     )
     report.write_text(text + "\n", encoding="utf-8")
+    write_results(report, results)  # a spreadsheet of the run
     wrong = gate.wrong_writes(results, MANIFEST.id)
     assert not wrong, [(r["text"], gate.decided(r)) for r in wrong]  # D42, the short half
     if gated_rows:  # a tune-only run has no gate to assert

@@ -38,6 +38,7 @@ from mia.core.models import Actor, Branch, Person, UsageCloudRequest
 from mia.settings import get_settings
 from mia.templates.retail.models import RetailItem
 from tests.evals import gate
+from tests.evals.cases import write_results
 from tests.evals.sales_cases import CASES, GATED_LANGS, Case
 
 pytestmark = pytest.mark.evals
@@ -248,6 +249,7 @@ def test_sales_supervisor_decider(engine: Engine, session: Session, ferinos: Fer
         json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8",
     )
+    write_results(report, results)  # a spreadsheet of the run
     wrong = gate.wrong_writes(results, MANIFEST.id)
     assert not wrong, [(r["text"], gate.decided(r)) for r in wrong]  # D42, the short half
     if "gate" in halves.split(","):  # a gate run that selects no gate rows never passes

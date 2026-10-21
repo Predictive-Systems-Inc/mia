@@ -17,6 +17,7 @@ from mia.templates.retail.seed import ITEMS
 from tests.conftest import BM_TODAY
 from tests.evals import gate
 from tests.evals.branch_manager_cases import CASES, GATED_LANGS, SCENARIOS, TODAY
+from tests.evals.cases import HEADER, header, read
 
 NAMES = {name.casefold() for name, _, _ in ITEMS}
 MENU = [RetailItem(name=n, short_codes=c, price=p, currency="PHP") for n, c, p in ITEMS]
@@ -188,3 +189,7 @@ def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path:
     path.write_text("{}")
     with pytest.raises(FileExistsError, match="branch-manager-2026-10-20-2305"):
         _report_path(now, tmp_path)
+
+
+def test_the_csv_has_the_shared_header_and_every_row_parses() -> None:
+    assert header("branch_manager") == HEADER and len(read("branch_manager")) == len(CASES)

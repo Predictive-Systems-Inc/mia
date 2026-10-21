@@ -106,7 +106,10 @@ mia/
     config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ and org/ferinos/ (instructions, settings.yaml),
                             ollama/ (Modelfiles for local models, ADR 004)
     tests/                  unit tests; auth/ (login flows); evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
-                            and intents.py for intent classification; router_cases.py and
+                            and intents.py for intent classification; cases/ (one CSV of test
+                            messages per agent, <agent_id>.csv, and router.csv, with the shared
+                            loader the <id>_cases.py modules build their cases with, and a
+                            README of the columns); router_cases.py and
                             test_router_eval.py for the real-Jev router eval; sales_cases.py,
                             test_sales_cases.py (offline shape check) and
                             test_sales_supervisor_evals.py for the real-Jev sales decider eval;

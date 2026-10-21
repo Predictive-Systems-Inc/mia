@@ -14,6 +14,7 @@ from mia.agents.parsing import find_tender
 from tests.conftest import BK_TODAY
 from tests.evals import gate
 from tests.evals.bookkeeper_cases import CASES, GATED_LANGS, SCENARIOS, TODAY
+from tests.evals.cases import HEADER, header, read
 
 RESEARCH = Path(__file__).parents[3] / "docs" / "research"
 FRESH = [c for c in CASES if c.half != "spent"]
@@ -66,7 +67,7 @@ def test_no_fresh_text_was_ever_scored() -> None:
 
 
 def test_the_actions_are_the_planned_ones() -> None:
-    planned = {action for action, _, _ in SCENARIOS.values()} | {"reply_only", "expense"}
+    planned = {action for action, _ in SCENARIOS.values()} | {"reply_only", "expense"}
     assert {c.expected_action for c in LONG} == planned
     assert planned <= set(ACTIONS)
 
@@ -158,3 +159,7 @@ def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path:
     path.write_text("{}")
     with pytest.raises(FileExistsError, match="bookkeeper-2026-10-21-0905"):
         _report_path(now, tmp_path)
+
+
+def test_the_csv_has_the_shared_header_and_every_row_parses() -> None:
+    assert header("bookkeeper") == HEADER and len(read("bookkeeper")) == len(CASES)

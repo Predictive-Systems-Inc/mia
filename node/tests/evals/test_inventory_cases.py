@@ -9,6 +9,7 @@ from mia.agents.inventory_manager.actions import ACTIONS
 from mia.agents.parsing import menu_tokens, pre_parse, strip_times
 from mia.templates.retail.seed import INGREDIENTS, ITEMS
 from tests.evals import gate
+from tests.evals.cases import HEADER, header, read
 from tests.evals.inventory_manager_cases import CASES, FRESH, GATED_LANGS, SCENARIOS, SYNONYMS
 
 ROWS = [(name, codes) for name, codes, *_ in ITEMS] + [(n, c) for n, c, *_ in INGREDIENTS]
@@ -148,3 +149,7 @@ def test_the_short_half_is_short_and_new() -> None:
     assert not gate.short_failures("inventory_manager", rows)
     assert not gate.short_reused(c.text for c in SHORT)
     assert {name for c in SHORT for name, _ in c.expected_items} <= NAMES
+
+
+def test_the_csv_has_the_shared_header_and_every_row_parses() -> None:
+    assert header("inventory_manager") == HEADER and len(read("inventory_manager")) == len(CASES)

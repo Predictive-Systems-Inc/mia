@@ -7,7 +7,8 @@ from itertools import combinations
 from pathlib import Path
 
 from mia.agents.registry import AGENTS
-from tests.evals.router_cases import CASES, GATED_LANGS, PENDING, REPORTED_LANGS, Case
+from tests.evals.cases import HEADER, header, read
+from tests.evals.router_cases import CASES, GATED_LANGS, PENDING, REPORTED_LANGS, ROUTED, Case
 
 
 def _grouped(cases: list[Case]) -> dict[tuple[str, str], list[Case]]:
@@ -220,3 +221,10 @@ def test_kiosk_stock_and_counts_stay_off_the_planner() -> None:
         ("sales_supervisor", "count for the stall: 9 special, 4 cheese overload"),
     } <= gate
     assert SPEC.router_description.endswith("not kiosk stock, not sales counts.")
+
+
+def test_the_csv_has_the_shared_header_and_routed_names_its_agents() -> None:
+    """router.csv's header is the shared one and every row parses; ROUTED (which the scaffold
+    reads) is the agents with cases."""
+    assert header("router") == HEADER and len(read("router")) == len(CASES)
+    assert {c.expected for c in CASES} - {"any", "small_talk"} == set(ROUTED)

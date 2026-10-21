@@ -7,6 +7,7 @@ from collections import Counter
 from mia.agents.hr_officer.actions import ACTIONS, WHICH
 from mia.agents.parsing import find_dates
 from tests.evals import gate
+from tests.evals.cases import HEADER, header, read
 from tests.evals.hr_officer_cases import CASES, GATED_LANGS, SCENARIOS, TODAY, on
 
 SLOTS = {"file_leave": {"start", "end"}, "holiday_pay": {"day"}, "contributions": {"which"}}
@@ -95,3 +96,7 @@ def test_the_halves_are_selected_by_name() -> None:
 
     assert {c.half for c in _selected(CASES, "tune,gate")} == {"tune", "gate"}
     assert {c.half for c in _selected(CASES, "short")} == {"short"}
+
+
+def test_the_csv_has_the_shared_header_and_every_row_parses() -> None:
+    assert header("hr_officer") == HEADER and len(read("hr_officer")) == len(CASES)

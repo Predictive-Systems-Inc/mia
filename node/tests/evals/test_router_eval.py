@@ -34,6 +34,7 @@ from mia.core.db import utcnow
 from mia.core.egress import EgressContext, egress_context
 from mia.core.models import Actor, Branch, Event, Person, UsageCloudRequest
 from mia.settings import get_settings
+from tests.evals.cases import write_results
 from tests.evals.gate import gate_failures
 from tests.evals.router_cases import CASES, GATED_LANGS, Case
 
@@ -202,6 +203,7 @@ def test_router(engine: Engine, branch: Branch) -> None:
         json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8",
     )
+    write_results(report, results, intent="expected", predicted="agent")  # a spreadsheet
     assert not gate_failures(summary["gated"]), gate_failures(summary["gated"])
 
 

@@ -9,6 +9,7 @@ from mia.agents.parsing import menu_tokens, pre_parse
 from mia.agents.sales_supervisor.actions import ACTIONS
 from mia.templates.retail.seed import ITEMS as MENU
 from tests.evals import gate
+from tests.evals.cases import HEADER, header, read
 from tests.evals.sales_cases import CASES, GATED_LANGS, SCENARIOS
 
 RESEARCH = Path(__file__).parents[3] / "docs" / "research"
@@ -118,3 +119,7 @@ def test_the_short_half_is_short_and_new() -> None:
     ]
     assert not gate.short_failures("sales_supervisor", rows)
     assert not gate.short_reused(c.text for c in SHORT)
+
+
+def test_the_csv_has_the_shared_header_and_every_row_parses() -> None:
+    assert header("sales_supervisor") == HEADER and len(read("sales_supervisor")) == len(CASES)
