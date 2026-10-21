@@ -854,3 +854,9 @@ Format for each entry:
 - Question: Who may add a user from the chat, with which roles, and how is their phone linked?
 - Assumed answer: admin only (the owner inherits) through the branch manager; roles clerk, staff, supervisor or admin, never owner; the phone is linked by the invite (the LINK code and the wa.me link the admin forwards), or by a Philippine mobile number the admin types (normalised to 639XXXXXXXXX, stored as the WhatsApp address, redacted in the events, shown by its last four digits). A number goes only to a clerk, staff or supervisor, to an admin only when the owner sends it, never to the owner, never to a person who already has one and never away from another person.
 - Blocking: no.
+
+## Q118: Sales tables from the ERP designs
+- Where: docs/superpowers/specs/2026-10-22-sales-operations-design.md (mapped from docs/reference/odoo-schema, Odoo 17.0 point of sale); node/mia/core/models.py, node/migrations/versions/0000_initial
+- Question: May the data standard gain four core sales tables for receipt-level sales, `sales_sessions` (a clerk's shift, opening float to closing count, Odoo pos.session), `sales_receipts` (one sale or refund, Odoo pos.order), `sales_receipt_lines` (Odoo pos.order.line) and `sales_payments` (by tender, Odoo pos.payment), with `sales_counts` kept as the source of a day until a receipts date is set per kiosk, never both? The spec's section 11 lists the six yes-or-no questions.
+- Assumed answer: core, data standard 1.9, after the owner's yes; nothing is built until then.
+- Blocking: yes, until answered.
