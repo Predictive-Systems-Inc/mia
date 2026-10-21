@@ -282,32 +282,34 @@ def _as_correction(d: Decision) -> Decision:
 
 
 def _as_closure(d: Decision, answers: dict[str, Any], q: Query) -> Decision:
-    """An absence or incident held back for a closure (missing CLOSURE) runs close_day when the
-    sender is head staff (SUPERVISING), Jev was sure, the message has no clock time and the day
-    is the one it names; else it stays a clarify, close_day offered first when complete."""
+    """An absence or incident held back for a closure (missing CLOSURE) always stays a clarify
+    that asks (a whole-day closure cancels every shift: "sarado ang CR bukas" must never close
+    the kiosk on its own). The absence and incident are never offered; close_day is the first
+    button for head staff (SUPERVISING) when its inputs are complete (the day the message names
+    when Jev picked none), and runs only on the tap."""
     if d.missing != CLOSURE:
         return d
-    reader = Reader(answers, q)
-    args, missing = _retail_args("close_day", reader)
+    others = [
+        a
+        for a in d.alternatives
+        if a.action not in ("record_absence", "report_site_problem", "close_day")
+    ]
+    if not SUPERVISING & set(q.role.split(", ")):
+        return d.model_copy(update={"alternatives": others[:3]})
+    args, missing = _retail_args("close_day", Reader(answers, q))
     named = _named_days(q)
     if args.get("date") is None and len(named) == 1:
         args, missing = {**args, "date": next(iter(named))}, None
     if missing is not None:
-        return d
-    sure = min([d.confidence, *reader.confidences]) >= shared.THRESHOLD
-    if sure and not q.times and SUPERVISING & set(q.role.split(", ")):
-        return Decision(
-            action="close_day", args=args, confidence=d.confidence, raw_action=d.raw_action
-        )
+        return d.model_copy(update={"alternatives": others[:3]})
     close = Alternative(action="close_day", args=args, probability=d.confidence)
-    others = [a for a in d.alternatives if a.action != "close_day"]
     return d.model_copy(update={"alternatives": [close, *others][:3]})
 
 
 def parse(answers: dict[str, Any], q: Query) -> Decision:
     """The shared parse over the template's actions (actions_for) and argument mapping; a
-    held-back check-out becomes correct_time (_as_correction), a held-back closure close_day
-    (_as_closure)."""
+    held-back check-out becomes correct_time (_as_correction), a held-back closure asks with
+    close_day first (_as_closure)."""
     d = _as_correction(shared.parse(answers, q, actions=actions_for(), args=_args))
     return _as_closure(d, answers, q)
 

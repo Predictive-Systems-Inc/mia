@@ -290,14 +290,24 @@ def _closures(session: Session) -> list[Any]:
     return list(session.exec(select(RetailClosure).where(RetailClosure.date != NOV_1)).all())
 
 
-def test_a_closure_read_as_an_absence_closes_the_day_for_head_staff_in_filipino(
+def test_a_closure_read_as_an_absence_asks_and_closes_the_day_on_the_tap_in_filipino(
     session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The fresh gate rows (2056): "sarado sa Nobyembre 6" is the kiosk's closure, never the
-    sender's absence; a supervisor's runs close_day."""
+    sender's absence. It always asks; close_day is a supervisor's first button and runs only on
+    the tap (a whole-day closure cancels every shift)."""
     marites = rs[1]["Marites"]
     _answers(monkeypatch, "record_absence", date="2026-11-06", reason="other")
-    _turn(session, marites, "sarado sa Nobyembre 6, may company outing")
+    first = _turn(session, marites, "sarado sa Nobyembre 6, may company outing")
+    label = t("intent.shift_supervisor.close_day", marites.language)
+    never = {
+        t(f"intent.shift_supervisor.{key}", marites.language)
+        for key in ("report_absence", "site_problem")
+    }
+    options = _quick(first).options
+    assert options[0] == label and not never & set(options)
+    assert _closures(session) == [] and not _tool_calls(session)
+    _turn(session, marites, label, first.thread_id)
     assert not session.exec(select(Absence).where(Absence.person_id == marites.id)).all()
     assert [c.date for c in _closures(session)] == [dt.date(2026, 11, 6)]
 
@@ -331,9 +341,11 @@ def test_a_waray_closure_read_as_an_incident_is_no_incident(
     marites = _speaking(session, rs[1]["Marites"], "war")
     n = len(session.exec(select(Incident)).all())
     _answers(monkeypatch, "report_site_problem", problem_kind="equipment")
-    _turn(session, marites, "waray abri ha Biyernes, may brownout an mall")
-    assert len(session.exec(select(Incident)).all()) == n
-    assert [c.date for c in _closures(session)] == [dt.date(2026, 10, 30)]  # Friday, close_day
+    first = _turn(session, marites, "waray abri ha Biyernes, may brownout an mall")
+    assert _quick(first).options[0] == t("intent.shift_supervisor.close_day", "war")
+    assert len(session.exec(select(Incident)).all()) == n and _closures(session) == []
+    _turn(session, marites, t("intent.shift_supervisor.close_day", "war"), first.thread_id)
+    assert [c.date for c in _closures(session)] == [dt.date(2026, 10, 30)]  # Friday, on the tap
 
 
 @pytest.mark.parametrize(

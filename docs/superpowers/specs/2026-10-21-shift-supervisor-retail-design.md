@@ -213,6 +213,10 @@ swap, closures. 6. New tools and actions, the decider. 7. Chat turn, scenarios 1
 
 ## Carried over
 
+- The cleaning absence default stays as it is: an absence Jev gives no date is written for today
+  even when the message names another day ("tomorrow"), because the frozen cleaning tests pin it;
+  the named-day check (`decider._off_day`) runs in retail only; owned by
+  shift_supervisor/decider.py.
 - A check-out naming a clock time is held as a correction when the time is more than five
   minutes from the branch's clock (`decider.CHECK_OUT_NOW`); the comparison is within one day,
   so a time across midnight (23:58 named at 00:01) reads as far off and asks; owned by
