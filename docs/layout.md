@@ -77,6 +77,11 @@ mia/
                             period and bank readers); the four tables it reads from the HR
                             officer and the inventory manager are core (1.6)
         production_planner/ Production Planner: the mia agent scaffold shape (turn.py, actions.py, ...)
+                            plus models.py (recipes, plans, batches, dispatches), forecast.py
+                            (pure: the same-weekday forecast, demand, whole batches and the
+                            split per kiosk), capacity.py (pure: free oven minutes and pieces
+                            for a day) and words.py (the number, batch report and recipe
+                            readers); the customer orders it counts are core (1.8)
         <role>/skill/       role.yaml, public.yaml, data/, reports/ (ADR 013)
       skills/               classifier runtime and per-turn routing (ADR 013)
       chat/                 blocks.py, service.py, router.py, channels.py (notifications, calls),
@@ -118,6 +123,8 @@ mia/
                             and test_bookkeeper_evals.py for the bookkeeper's;
                             shift_retail_cases.py, test_shift_retail_cases.py and
                             test_shift_retail_evals.py for the retail shift supervisor's;
+                            production_planner_cases.py, test_production_planner_cases.py and
+                            test_production_planner_evals.py for the production planner's;
                             <id>_cases.py and
                             test_<id>_evals.py from the scaffold)
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,

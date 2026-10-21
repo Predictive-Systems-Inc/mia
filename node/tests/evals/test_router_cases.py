@@ -148,14 +148,29 @@ def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path:
 
 
 def test_short_cash_routes_to_the_bookkeeper() -> None:
-    """Q108 in the fresh gate half: "kulang ang cash" is the bookkeeper's and LPG out the
-    inventory manager's, and the shift supervisor's description says so ("not ... stock, cash")."""
+    """Q108 in the 21 Oct (second) gate half, spent in router-2026-10-21-0301: "kulang ang cash"
+    is the bookkeeper's and LPG out the inventory manager's, and the shift supervisor's
+    description says so ("not ... stock, cash")."""
     from mia.agents.shift_supervisor.turn import SPEC
 
-    gate = {(c.expected, c.text) for c in CASES if c.half == "gate"}
+    gate = {(c.expected, c.text) for c in CASES if c.half == "spent"}
     assert {
         ("bookkeeper", "kulang ang cash ngayong gabi"),
         ("inventory_manager", "ubos na ang LPG"),
     } <= gate
     contrast = SPEC.router_description.split("; not ")[1]
     assert "cash" in contrast and "stock" in contrast
+
+
+def test_kiosk_stock_and_counts_stay_off_the_planner() -> None:
+    """The fresh gate half asks kiosk stock and a commissary receipt of the inventory manager and
+    counts of the sales supervisor, and the planner's description ends on that contrast."""
+    from mia.agents.production_planner.turn import SPEC
+
+    gate = {(c.expected, c.text) for c in CASES if c.half == "gate"}
+    assert {
+        ("inventory_manager", "received 40 classic from the commissary"),
+        ("inventory_manager", "how many trays of classic are left at the Mall kiosk?"),
+        ("sales_supervisor", "count for the stall: 9 special, 4 cheese overload"),
+    } <= gate
+    assert SPEC.router_description.endswith("not kiosk stock, not sales counts.")

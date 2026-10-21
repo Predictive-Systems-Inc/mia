@@ -274,6 +274,7 @@ Format for each entry:
 - The HR officer's Filipino keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Filipino keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 - The shift supervisor's retail Filipino keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
+- The production planner's Filipino keys (`pp.*`, `intent.production_planner.*`, `agent.production_planner.label`) and its Filipino number and waste reason words (`NUMBER_WORDS`, `REASON_WORDS` in mia/agents/production_planner/words.py) are drafts under the same note.
 
 ## Q29: Review of the Cebuano strings
 - Where: node/mia/i18n/ceb.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -285,6 +286,7 @@ Format for each entry:
 - The HR officer's Cebuano keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Cebuano keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 - The shift supervisor's retail Cebuano keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
+- The production planner's Cebuano keys (`pp.*`, `intent.production_planner.*`, `agent.production_planner.label`) and its Cebuano number and waste reason words (`NUMBER_WORDS`, `REASON_WORDS` in mia/agents/production_planner/words.py) are drafts under the same note.
 
 ## Q30: Review of the Ilocano strings
 - Where: node/mia/i18n/ilo.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -296,6 +298,7 @@ Format for each entry:
 - The HR officer's Ilocano keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Ilocano keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 - The shift supervisor's retail Ilocano keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
+- The production planner's Ilocano keys (`pp.*`, `intent.production_planner.*`, `agent.production_planner.label`) and its Ilocano number and waste reason words (`NUMBER_WORDS`, `REASON_WORDS` in mia/agents/production_planner/words.py) are drafts under the same note.
 
 ## Q31: Review of the Hiligaynon strings
 - Where: node/mia/i18n/hil.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -307,6 +310,7 @@ Format for each entry:
 - The HR officer's Hiligaynon keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Hiligaynon keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 - The shift supervisor's retail Hiligaynon keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
+- The production planner's Hiligaynon keys (`pp.*`, `intent.production_planner.*`, `agent.production_planner.label`) and its Hiligaynon number and waste reason words (`NUMBER_WORDS`, `REASON_WORDS` in mia/agents/production_planner/words.py) are drafts under the same note.
 
 ## Q32: Review of the Waray strings
 - Where: node/mia/i18n/war.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -318,6 +322,7 @@ Format for each entry:
 - The HR officer's Waray keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Waray keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 - The shift supervisor's retail Waray keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
+- The production planner's Waray keys (`pp.*`, `intent.production_planner.*`, `agent.production_planner.label`) and its Waray number and waste reason words (`NUMBER_WORDS`, `REASON_WORDS` in mia/agents/production_planner/words.py) are drafts under the same note.
 
 ## Q33: Review of the Bikol strings
 - Where: node/mia/i18n/bcl.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -329,6 +334,7 @@ Format for each entry:
 - The HR officer's Bikol keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Bikol keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 - The shift supervisor's retail Bikol keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
+- The production planner's Bikol keys (`pp.*`, `intent.production_planner.*`, `agent.production_planner.label`) and its Bikol number and waste reason words (`NUMBER_WORDS`, `REASON_WORDS` in mia/agents/production_planner/words.py) are drafts under the same note.
 
 ## Q34: Review of the Kapampangan strings
 - Where: node/mia/i18n/pam.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -340,6 +346,7 @@ Format for each entry:
 - The HR officer's Kapampangan keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Kapampangan keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 - The shift supervisor's retail Kapampangan keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
+- The production planner's Kapampangan keys (`pp.*`, `intent.production_planner.*`, `agent.production_planner.label`) and its Kapampangan number and waste reason words (`NUMBER_WORDS`, `REASON_WORDS` in mia/agents/production_planner/words.py) are drafts under the same note.
 
 ## Q35: Review of the Pangasinan strings
 - Where: node/mia/i18n/pag.py; spec 2026-10-18-multi-agent-routing-design.md
@@ -351,6 +358,7 @@ Format for each entry:
 - The HR officer's Pangasinan keys (`hr.*`, `intent.hr_officer.*`) are drafts under the same note.
 - The branch manager's Pangasinan keys (`bm.*`, `intent.branch_manager.*`) are drafts under the same note.
 - The shift supervisor's retail Pangasinan keys (`retail.*`, `shift.*`, `intent.shift_supervisor.*`) are drafts under the same note.
+- The production planner's Pangasinan keys (`pp.*`, `intent.production_planner.*`, `agent.production_planner.label`) and its Pangasinan number and waste reason words (`NUMBER_WORDS`, `REASON_WORDS` in mia/agents/production_planner/words.py) are drafts under the same note.
 
 ## Q36: Accountants and viewers have no agent
 - Where: node/config/policies/policy.csv (no `agent:*` line for `accountant` or `viewer`); node/mia/chat/access.py
@@ -685,6 +693,42 @@ Format for each entry:
 - Assumed answer: floor 500 pesos; 20,000 pesos undeposited for two days; profit subtracts fees, expenses, supplier spend and payroll, with cost of goods and waste at cost shown as lines (no double count).
 - Blocking: no.
 
+## Q91: Data standard 1.8, customer orders in core
+- Where: node/mia/agents/customer_service/models.py, node/mia/core/models.py, node/migrations/versions/0000_initial.py
+- Question: May `customer_service_orders` move to core as `customer_orders` so the production planner counts confirmed orders (planned as 1.7; the incident kinds took 1.7, so this is 1.8, ADR 020)?
+- Answer (21 Oct 2026, D39): yes; customer orders move to core as `customer_orders` with the same fields and redaction (customers stay with customer_service).
+- Blocking: no (answered).
+
+## Q92: The commissary is a Branch plus a setting
+- Where: node/mia/core/models.py (Branch), node/config/org/ferinos/settings.yaml
+- Question: A third Branch named in `production_planner.commissary`, or a `kind` column on Branch?
+- Answer (21 Oct 2026, D39): yes; the commissary is a third Branch of Ferino's named in `production_planner.commissary` (no branch column).
+- Blocking: no (answered).
+
+## Q93: Leftovers carried to the next day
+- Where: node/mia/agents/production_planner/models.py (`production_planner_recipes.keeps_overnight`)
+- Question: Which items may be sold the day after baking?
+- Assumed answer: none; `keeps_overnight` stays false, so the expected leftover is 0.
+- Blocking: no.
+
+## Q94: Who the driver is
+- Where: node/config/policies/policy.csv, node/mia/templates/retail/seed.py
+- Question: A new role `driver`, or staff at the commissary with the skill `driver`?
+- Assumed answer: staff with the skill `driver`, granted only `confirm_delivery` and their own dispatch list.
+- Blocking: no.
+
+## Q95: Matching a dispatch to a receipt
+- Where: node/mia/agents/inventory_manager/tools.py (receive_delivery), node/mia/agents/production_planner/due.py (the match tick)
+- Question: Match by kiosk, business date and item, or add a dispatch id to `stock_events`?
+- Assumed answer: by kiosk, business date and item, no core column, one dispatch per kiosk and day.
+- Blocking: no.
+
+## Q96: Commissary staff and kiosk data
+- Where: node/config/policies/policy.csv, node/mia/core/rbac.py
+- Question: May the agent role read the served kiosks' counts and stock while the head reads only plan rows, and kiosk supervisors only their own kiosk's dispatch?
+- Answer (21 Oct 2026, D39): yes; the planner's agent role reads the served kiosks' sales counts and stock events while no person gains a cross-branch right (the commissary head reads plan rows, a kiosk supervisor their own dispatch).
+- Blocking: no (answered).
+
 ## Q97: The bookkeeper's tax table
 - Where: node/mia/agents/bookkeeper/tax.py (TABLES_AS_OF 2026-01)
 - Question: Are the dated rates (VAT 12 percent from February 2006; percentage tax 1 percent from July 2020 and 3 percent from July 2023), VAT as 12/112 of VAT-inclusive gross, and the deadline as the quarter's end plus 25 days (2550Q, 2551Q) right for Ferino's?
@@ -782,4 +826,10 @@ Format for each entry:
 - Where: production_planner forecast.dispatch_split (plan section Task 2; the tie rule in the plan)
 - Question: When no kiosk has a same-weekday history (every forecast None, so every demand is 0), how are the pieces of a whole batch split between the kiosks?
 - Assumed answer: evenly, the remainder to the first kiosk in `serves`; whenever any kiosk has a forecast, the plan's rule holds (each kiosk its demand, the surplus to the larger forecast, a tie to the first in `serves`).
+- Blocking: no.
+
+## Q114: The production planner's own assumptions
+- Where: node/mia/agents/production_planner (forecast.py, capacity.py, due.py), node/mia/templates/retail/seed.py, node/config/org/ferinos/settings.yaml
+- Question: Four choices the plan made without an owner's word: (1) when the kiosks' demands add up to more than the whole batches hold, which kiosk gets fewer pieces; (2) what happens to a draft plan nobody confirmed by the start of production; (3) are the ovens one pool of minutes or separate ovens per item; (4) how long does each recipe bake?
+- Assumed answer: (1) the shortfall comes off the kiosk with the larger forecast; (2) a draft nobody confirmed by 03:00, the start of production, stands as the day's plan; (3) one pool of oven minutes (ovens times the production window, less the planned batches times each recipe's oven minutes); (4) 45 minutes for every seeded recipe until the owner enters hers.
 - Blocking: no.

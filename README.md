@@ -292,6 +292,20 @@ bar; `MIA_EVAL_HALVES=tune` or `gate` runs one half):
 `MIA_DECIDER=jev uv run pytest node/tests/evals/test_shift_retail_evals.py -m evals -s`
 (needs `MIA_TYPESAFE_KEY`; writes `docs/research/shift-supervisor-retail-<date>-<HHMM>.raw.json`).
 
+The production planner plans the commissary's baking for the kiosks it serves: at 14:00 the head
+gets tomorrow's draft plan (per item the batches and pieces and the split per kiosk, from the
+same-weekday forecast, confirmed customer orders and leftovers) and confirms it with "ok"; the
+head changes a line within the free oven minutes, asks for an item's batch sheet (ingredients
+and cost per batch and per piece) and reports each batch's good pieces and waste; the owner
+enters recipes and asks the oven capacity for a date; the dispatch list per kiosk goes to the
+head and the driver, the driver confirms each delivery, a kiosk supervisor reads their own
+kiosk's list, and an hour after a kiosk opens a short receipt is flagged to the head and the
+owner. Every number is read and worked out by code. It answers only with `MIA_DECIDER=jev`. Its
+decider eval (600 synthetic messages in six languages, gated on the gate half at the Q40 bar;
+`MIA_EVAL_HALVES=tune` or `gate` runs one half):
+`MIA_DECIDER=jev uv run pytest node/tests/evals/test_production_planner_evals.py -m evals -s`
+(needs `MIA_TYPESAFE_KEY`; writes `docs/research/production-planner-<date>-<HHMM>.raw.json`).
+
 To evaluate a model: `MIA_EVAL_MODEL=gateway/<route>` or `local/<model>`, then
 `uv run pytest node/tests/evals -m evals`.
 

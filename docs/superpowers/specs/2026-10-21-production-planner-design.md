@@ -217,3 +217,25 @@ work (draft plan, dispatch, match tick, closing yield). 7. Ten languages. 8. Eva
   customer service spec, after this agent ships).
 - bookkeeper: batch waste at cost and cost per piece from recipes, after a promotion of
   `production_planner_batches` (owner: the bookkeeper spec).
+- production_planner (as built, 21 Oct 2026): the served kiosks' sales counts, stock events and
+  customer orders are read by the agent role alone (`read_all` on the agent, D39, Q96); no human
+  role gains a cross-branch right.
+- the kiosk agents: their due work skips a branch that is not a shop (the `is_shop` guard,
+  `retail_hours.is_shop`), so the commissary gets no kiosk message; `retail_hours.shops` keeps the commissary out of an owner's "every branch".
+- shift_supervisor: kiosk staff only cover across kiosks; commissary staff (the driver) are never
+  cover candidates (Q112).
+- production_planner forecast: with no forecast at any kiosk the pieces of a whole batch are
+  split evenly, the remainder to the first kiosk in `serves` (Q113).
+- seed: the kiosks' receipts of the seeded dispatches are written straight as `stock_events`
+  rows, and the seed loads its own role, until `receive_delivery` takes item lines (owner: the
+  inventory manager spec).
+- production_planner match tick: a short dispatch is flagged only an hour after it arrived (an
+  08:35 dispatch was flagged at 08:50), and it is never matched again after a later receipt.
+- production_planner tests: the `send_after` asserts were dropped, because Message has no
+  `send_after` field.
+- production_planner capacity: `CapacityOut` carries no item name, so `capacity_text` lists the
+  free pieces per item.
+- production_planner gates (docs/research/2026-10-21-production-planner-gate.md): the decider
+  gate failed (wrong 2.7%, right below 80% in fil, ceb, hil, war and bcl; en passes) and the
+  router gate failed (wrong 4.5%, hil, war and bcl below the bar); reported as they are, a rerun
+  of either needs fresh gate seeds.
