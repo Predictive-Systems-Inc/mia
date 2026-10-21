@@ -11,6 +11,7 @@ from typing import Any
 from mia.agents.decider import Decision
 from mia.agents.production_planner.tools import (
     BatchOut,
+    CapacityInput,
     CapacityOut,
     DispatchOut,
     PlanOut,
@@ -228,11 +229,18 @@ def dispatch_card(rows: list[DispatchOut], names: Names, lang: str) -> tuple[lis
     return [*blocks, QuickRepliesBlock(options=list(options))], options
 
 
-def capacity_text(out: CapacityOut, names: Names, lang: str) -> str:
-    """Whether the pieces asked about fit (when an item and pieces were asked) and the free
-    oven minutes of the day, then each item's free pieces."""
+def capacity_text(
+    out: CapacityOut, names: Names, lang: str, asked: CapacityInput | None = None
+) -> str:
+    """The item and pieces asked (when both were asked), whether they fit and the free oven
+    minutes of the day, then each item's free pieces."""
     key = {None: "pp.capacity.free", True: "pp.capacity.fits", False: "pp.capacity.no_fit"}
-    lines = [t(key[out.fits], lang, date=out.day.isoformat(), minutes=out.minutes_free)]
+    day = out.day.isoformat()
+    lines = []
+    if asked is not None and asked.item_id is not None and asked.pieces is not None:
+        item = names.get(asked.item_id, "")
+        lines.append(t("pp.capacity.asked", lang, pieces=asked.pieces, item=item, date=day))
+    lines.append(t(key[out.fits], lang, date=day, minutes=out.minutes_free))
     for item_id, pieces in out.per_item.items():
         lines.append(t("pp.capacity.item", lang, item=names.get(item_id, ""), pieces=pieces))
     return "\n".join(lines)

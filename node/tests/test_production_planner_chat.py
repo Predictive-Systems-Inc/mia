@@ -342,7 +342,9 @@ def test_capacity_counts_ovens_hours_and_planned_batches(
         "c",
     )
     text = _turn(session, pp_en[1]["Rosa"], "kaya ba ang 200 classic sa Dec 24").text()
-    assert out.fits and text == replies.capacity_text(out, names(session), EN)
+    asked = t("pp.capacity.asked", EN, pieces=200, item="Classic", date="2026-12-24")
+    fits = t("pp.capacity.fits", EN, date="2026-12-24", minutes=out.minutes_free)
+    assert out.fits and text.splitlines()[:2] == [asked, fits]
 
 
 def test_order_notes_never_reach_the_plan(

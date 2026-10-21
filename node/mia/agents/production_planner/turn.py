@@ -263,7 +263,8 @@ def _result(
     elif tool == "confirm_delivery":
         return _delivered(session, deps, thread, tools.DispatchOut.model_validate(out), known)
     else:  # capacity
-        text = replies.capacity_text(tools.CapacityOut.model_validate(out), known, lang)
+        assert isinstance(inp, tools.CapacityInput)
+        text = replies.capacity_text(tools.CapacityOut.model_validate(out), known, lang, inp)
     return reply_text(session, deps, thread, text)
 
 
