@@ -84,8 +84,8 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `MIA_EVAL_MODEL=local/<model> uv run pytest node/tests/evals/test_intent_classification.py -m evals -s` | English intent classification over docs/capabilities.md (held-out split; `MIA_EVAL_INTENT_SPLIT=all`, `MIA_EVAL_REPORT=file.json`) |
 | `MIA_DECIDER=jev MIA_EVAL_RUNS=1 uv run pytest node/tests/evals/test_shift_supervisor_evals.py -m evals -s` | The shift supervisor suite through Jev (spec docs/superpowers/specs/2026-10-17-jev-decider-design.md; needs `MIA_TYPESAFE_KEY`, demo data only) |
 | `uv run pytest node/tests/evals/test_jev_action_eval.py -m evals -s` | Jev's action choice on the intent set (`MIA_EVAL_INTENT_SPLIT`, `MIA_EVAL_INTENT_LANG`, `MIA_EVAL_REPORT`; skips without `MIA_TYPESAFE_KEY`) |
-| `MIA_TYPESAFE_KEY=... uv run pytest node/tests/evals/test_router_eval.py -m evals -s` | The agent router through real Jev over six agents and nine languages, plus a deferral check (synthetic data; prints the table, writes `docs/research/router-<date>.raw.json`; skips without `MIA_TYPESAFE_KEY`) |
-| `MIA_DECIDER=jev uv run pytest node/tests/evals/test_sales_supervisor_evals.py -m evals -s` | The sales supervisor's Jev decider over 540 synthetic messages in six languages (gate: right at least 90% per language, wrong at most 2%; writes `docs/research/sales-supervisor-<date>-<HHMM>.raw.json`; needs `MIA_TYPESAFE_KEY`) |
+| `MIA_TYPESAFE_KEY=... uv run pytest node/tests/evals/test_router_eval.py -m evals -s` | The agent router through real Jev over the eight Ferino's agents in English, Filipino and Finnish (the cases in `node/tests/evals/cases/router.csv`; prints the table, writes the raw json and a results CSV under `docs/research/`; skips without `MIA_TYPESAFE_KEY`) |
+| `MIA_DECIDER=jev uv run pytest node/tests/evals/test_sales_supervisor_evals.py -m evals -s` | The sales supervisor's Jev decider over the messages in `node/tests/evals/cases/sales_supervisor.csv` in English and Filipino (`MIA_EVAL_HALVES` picks tune, gate or short; the gate bar is D41, the short half asserts no wrong write; writes the raw json and a results CSV under `docs/research/`; needs `MIA_TYPESAFE_KEY`) |
 | `MIA_DECIDER=jev uv run pytest node/tests/evals/test_sales_supervisor_scenarios.py -m evals -s` | The sales supervisor's chat scenarios (agents/sales_supervisor/tests/scenarios.yaml) through real Jev on the Ferino's demo |
 | `uv run ruff check . && uv run ruff format --check . && uv run mypy node/mia` | Lint and types |
 | `uv run pre-commit install` | Run ruff, mypy and detect-secrets on every commit |
@@ -231,7 +231,7 @@ The inventory manager hears what the shop has: sell-outs with their time, counts
 leftovers and waste (a reason asked with buttons), low ingredients with an offer to draft an
 order, tomorrow's bake plan, what is low, supplier orders (a `risk: money` tool, approved by the
 owner on a card) and deliveries received. Like the sales supervisor it answers only with
-`MIA_DECIDER=jev`. Its decider eval (600 synthetic messages in six languages, gated on the
+`MIA_DECIDER=jev`. Its decider eval (the messages in `node/tests/evals/cases/`, English and Filipino, gated on the
 gate half at the Q40 bar):
 `MIA_DECIDER=jev uv run pytest node/tests/evals/test_inventory_manager_evals.py -m evals -s`
 (needs `MIA_TYPESAFE_KEY`; writes `docs/research/inventory-manager-<date>-<HHMM>.raw.json`).

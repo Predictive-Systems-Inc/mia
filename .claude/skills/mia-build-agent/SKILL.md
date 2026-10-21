@@ -55,7 +55,7 @@ item question only without a number group. Gate: every task reviewed clean, then
 whole-branch review, with the full checks green.
 
 ## 7. Gates
-Add ten seeds per gated language to `node/tests/evals/router_cases.py` (plus the contrast line
+Add ten seeds per gated language (en and fil, D42) to `node/tests/evals/cases/router.csv` with the intent column set to the agent id (plus the contrast line
 in the router description) and remove the id from `PENDING`. Run the router gate and the
 agent's decider gate (built on `tests/evals/gate.py`) at the Q40 bar, both on a fresh gate
 half, when `MIA_TYPESAFE_KEY` is set (Q52), and write the reports under docs/research/ in the
