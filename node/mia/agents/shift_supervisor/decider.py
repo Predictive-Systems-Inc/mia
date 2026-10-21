@@ -13,7 +13,7 @@ from typing import Any
 
 from mia.agents import decider as shared
 from mia.agents.decider import Alternative, DecideError, Decision, Reader
-from mia.agents.parsing import find_dates, has_negation
+from mia.agents.parsing import find_dates, has_negation, strip_times
 from mia.agents.shift_supervisor.actions import (
     ANOTHER_DAY,
     SUPERVISING,
@@ -39,8 +39,10 @@ CORRECTION_WORDS = frozenset({
     "correct", "correction",
 })  # fmt: skip
 
-# A late word with a clock time, or a negated arrive word ("indi ako kaabot sa opening, 11 na ako
-# maabot"), is a late notice, never a check-in now. "ma-late" reads as "ma" and "late".
+# A late word or a negated arrive word ("indi ako kaabot sa opening, 11 na ako maabot") with no
+# clock time at the branch's clock is a late notice, never a check-in now. "ma-late" reads as
+# "ma" and "late". LATE_WORDS, ARRIVE_WORDS, CLOSURE_WORDS, CLOSURE_PHRASES and FIRST_PERSON are
+# machine drafts beyond en and fil (Q28 to Q35).
 LATE_WORDS = frozenset({
     "late", "malate", "nalate", "maleleyt", "naleleyt", "maleyt", "naleyt", "atrasado",
     "maatrasado", "naatrasado", "ulahi", "maulahi", "naulahi", "mahuhuli", "mahuli", "delayed",
@@ -62,6 +64,7 @@ CLOSURE_PHRASES = (
 )  # fmt: skip
 FIRST_PERSON = frozenset({"ako", "ko", "ak", "i", "me", "my", "akon", "nako", "naku", "minä"})
 CLOSURE = "closure"  # the missing input of an absence or incident that names a closure
+HELD = ("record_absence", "report_site_problem")  # the picks a closure word holds back
 
 
 # A check-out time this far from the branch's clock is a time correction, never a check-out now.
@@ -86,15 +89,23 @@ def _not_now(q: Query) -> bool:
 
 
 def _late(q: Query) -> bool:
-    """True when the message is a late notice: a LATE_WORDS word with a clock time, or a
-    negation with an ARRIVE_WORDS word."""
-    late = bool(q.times) and _has_word(q.message, LATE_WORDS)
-    return late or (has_negation(q.message) and _has_word(q.message, ARRIVE_WORDS))
+    """True when the message is a late notice and names no clock time at the branch's clock
+    (_not_now; no clock time at all counts, "11 pa" is none): a LATE_WORDS word, or a negation
+    with an ARRIVE_WORDS word. "late ako, 9:15 na" sent at 9:15 is a check-in now."""
+    away = not q.times or _not_now(q)
+    late = _has_word(q.message, LATE_WORDS)
+    arrive = has_negation(q.message) and _has_word(q.message, ARRIVE_WORDS)
+    return away and (late or arrive)
 
 
 def _named_days(q: Query) -> set[str]:
-    """The ISO days the message names (parsing.find_dates; "en" so an English "May 5" counts)."""
-    return {d.isoformat() for _, d in find_dates(q.message, q.today, "en")}
+    """The ISO days the message names: parsing.find_dates in the sender's language, plus an
+    English pass for the month names (an English "May 5" from a fil sender) on the text without
+    its clock times, so fil "may 3 pm" ("there is", 3 pm) is never May 3."""
+    days = find_dates(q.message, q.today, q.lang)
+    if q.lang != "en":
+        days += find_dates(strip_times(q.message), q.today, "en")
+    return {d.isoformat() for _, d in days}
 
 
 def _off_day(day: str | None, q: Query) -> bool:
@@ -159,8 +170,6 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         reason = r.pick("reason", {"sick", "late", "leaving_early", "other"})
         part = r.pick("partial_day", {"morning", "afternoon", "whole_day"})
         person = r.pick("person", q.people, count_unstated=True)
-        if _closure(q):
-            return {}, CLOSURE
         if day == ANOTHER_DAY:
             return {}, "date"
         if _ambiguous(person, q):
@@ -208,8 +217,6 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         kind = r.pick("problem_kind", set(problem_kinds()))
         site = r.pick("site", q.sites)
         location = q.sites.get(site or "")
-        if _closure(q):  # "waray abri ha Biyernes": a closure, never an incident
-            return {}, CLOSURE
         if is_retail() and _has_word(q.message, STOCK_WORDS):  # stock (Q108): ask, any kind
             return {}, "problem_kind"
         return {"kind": kind, "text": q.message[:500], "location_name": location}, None
@@ -282,28 +289,40 @@ def _as_correction(d: Decision) -> Decision:
 
 
 def _as_closure(d: Decision, answers: dict[str, Any], q: Query) -> Decision:
-    """An absence or incident held back for a closure (missing CLOSURE) always stays a clarify
-    that asks (a whole-day closure cancels every shift: "sarado ang CR bukas" must never close
-    the kiosk on its own). The absence and incident are never offered; close_day is the first
-    button for head staff (SUPERVISING) when its inputs are complete (the day the message names
-    when Jev picked none), and runs only on the tap."""
-    if d.missing != CLOSURE:
+    """An absence or incident pick in a message that names a closure (_closure) always becomes a
+    clarify that asks: a whole-day closure cancels every shift, and "sarado ang CR bukas" (an
+    incident) or "sarado ang daan bukas, hindi makakapasok si Ana" (Ana's absence) is no
+    closure. close_day is the first button for head staff (SUPERVISING) when its inputs are
+    complete (the day the message names when Jev picked none; "uncertain" below THRESHOLD, as
+    shared.parse marks it); the absence or incident stays offered after it. Nothing runs
+    before a tap."""
+    if d.raw_action not in HELD or not _closure(q):
         return d
-    others = [
-        a
-        for a in d.alternatives
-        if a.action not in ("record_absence", "report_site_problem", "close_day")
-    ]
-    if not SUPERVISING & set(q.role.split(", ")):
-        return d.model_copy(update={"alternatives": others[:3]})
-    args, missing = _retail_args("close_day", Reader(answers, q))
-    named = _named_days(q)
-    if args.get("date") is None and len(named) == 1:
-        args, missing = {**args, "date": next(iter(named))}, None
-    if missing is not None:
-        return d.model_copy(update={"alternatives": others[:3]})
-    close = Alternative(action="close_day", args=args, probability=d.confidence)
-    return d.model_copy(update={"alternatives": [close, *others][:3]})
+    alternatives = [a for a in d.alternatives if a.action != "close_day"]
+    if d.action != "clarify":  # the pick itself, which shared.parse leaves out of the others
+        alternatives.insert(
+            0, Alternative(action=d.raw_action, args=d.args, probability=d.confidence)
+        )
+    if SUPERVISING & set(q.role.split(", ")):
+        reader = Reader(answers, q)
+        args, missing = _retail_args("close_day", reader)
+        named = _named_days(q)
+        if args.get("date") is None and len(named) == 1:
+            args, missing = {**args, "date": next(iter(named))}, None
+        if missing is None and min(reader.confidences, default=1.0) < shared.THRESHOLD:
+            missing = "uncertain"  # a button must not carry the input that was in doubt
+        close = Alternative(
+            action="close_day", args=args, probability=d.confidence, missing=missing
+        )
+        alternatives.insert(0, close)
+    return Decision(
+        action="clarify",
+        args=d.args,
+        confidence=d.confidence,
+        raw_action=d.raw_action,
+        alternatives=alternatives[:3],
+        missing=CLOSURE,
+    )
 
 
 def parse(answers: dict[str, Any], q: Query) -> Decision:

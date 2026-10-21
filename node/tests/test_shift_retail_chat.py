@@ -294,18 +294,15 @@ def test_a_closure_read_as_an_absence_asks_and_closes_the_day_on_the_tap_in_fili
     session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The fresh gate rows (2056): "sarado sa Nobyembre 6" is the kiosk's closure, never the
-    sender's absence. It always asks; close_day is a supervisor's first button and runs only on
-    the tap (a whole-day closure cancels every shift)."""
+    sender's absence on its own. It always asks; close_day is a supervisor's first button, the
+    absence stays offered after it, and the closure runs only on the tap (a whole-day closure
+    cancels every shift)."""
     marites = rs[1]["Marites"]
     _answers(monkeypatch, "record_absence", date="2026-11-06", reason="other")
     first = _turn(session, marites, "sarado sa Nobyembre 6, may company outing")
     label = t("intent.shift_supervisor.close_day", marites.language)
-    never = {
-        t(f"intent.shift_supervisor.{key}", marites.language)
-        for key in ("report_absence", "site_problem")
-    }
-    options = _quick(first).options
-    assert options[0] == label and not never & set(options)
+    absence = t("intent.shift_supervisor.report_absence", marites.language)
+    assert _quick(first).options[:2] == [label, absence]
     assert _closures(session) == [] and not _tool_calls(session)
     _turn(session, marites, label, first.thread_id)
     assert not session.exec(select(Absence).where(Absence.person_id == marites.id)).all()
@@ -329,7 +326,9 @@ def test_a_clerks_closure_read_as_an_absence_asks(
 ) -> None:
     ana = _speaking(session, rs[1]["Ana"], lang)
     _answers(monkeypatch, "record_absence", date="2026-11-06", reason="other")
-    _turn(session, ana, text)
+    options = _quick(_turn(session, ana, text)).options  # asks, never close_day for a clerk
+    assert t("intent.shift_supervisor.report_absence", lang) in options
+    assert t("intent.shift_supervisor.close_day", lang) not in options
     assert not session.exec(select(Absence).where(Absence.person_id == ana.id)).all()
     assert _closures(session) == [] and not _tool_calls(session)
 
@@ -342,7 +341,9 @@ def test_a_waray_closure_read_as_an_incident_is_no_incident(
     n = len(session.exec(select(Incident)).all())
     _answers(monkeypatch, "report_site_problem", problem_kind="equipment")
     first = _turn(session, marites, "waray abri ha Biyernes, may brownout an mall")
-    assert _quick(first).options[0] == t("intent.shift_supervisor.close_day", "war")
+    assert _quick(first).options[:2] == [
+        t(f"intent.shift_supervisor.{key}", "war") for key in ("close_day", "site_problem")
+    ]
     assert len(session.exec(select(Incident)).all()) == n and _closures(session) == []
     _turn(session, marites, t("intent.shift_supervisor.close_day", "war"), first.thread_id)
     assert [c.date for c in _closures(session)] == [dt.date(2026, 10, 30)]  # Friday, on the tap
@@ -368,8 +369,83 @@ def test_a_late_notice_read_as_a_check_in_never_checks_in(
     ana = _speaking(session, rs[1]["Ana"], lang)
     rs_pin(at(RS_TODAY, 8, 50))
     _answers(monkeypatch, "check_in")
-    _turn(session, ana, text)
+    reply = _turn(session, ana, text)
+    assert reply.text() == t("clarify.rephrase", lang)  # asks
     assert visit_of(session, ana, RS_TODAY).actual_start is None and not _tool_calls(session)
+
+
+def test_a_late_check_in_at_its_stated_time_checks_in(
+    session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    """ "late ako, 9:15 na" sent at 9:15 is a check-in now; "11 pa" at 9:00 is a late notice."""
+    ana = rs[1]["Ana"]
+    rs_pin(at(RS_TODAY, 9))
+    _answers(monkeypatch, "check_in")
+    reply = _turn(session, ana, "late ako, 11 pa ako makakarating")
+    assert reply.text() == t("clarify.rephrase", ana.language)
+    assert visit_of(session, ana, RS_TODAY).actual_start is None
+    rs_pin(at(RS_TODAY, 9, 15))
+    _turn(session, ana, "late ako, 9:15 na")
+    assert visit_of(session, ana, RS_TODAY).actual_start is not None
+
+
+@pytest.mark.parametrize(
+    ("lang", "text", "named"),
+    [
+        ("fil", "may 3 pm na meeting", set()),  # "may" is "there is", 3 pm a time
+        ("fil", "sarado sa June 5", {"2026-06-05"}),  # an English month from a fil sender
+        ("en", "closed May 3", {"2026-05-03"}),
+    ],
+)
+def test_the_named_days_read_the_senders_language(lang: str, text: str, named: set[str]) -> None:
+    q = decider.Query(
+        message=text, previous_mia_message="", role="clerk", today=RS_TODAY,
+        open_cover_request="", dates={}, visits={}, sites={}, people={}, checklist_items={},
+        last_cover_visit=None, lang=lang,
+    )  # fmt: skip
+    assert decider._named_days(q) == named
+
+
+def test_a_closed_restroom_asks_and_reports_the_incident_on_its_tap(
+    session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    """ "sarado ang CR bukas" is an incident, no closure: the incident stays a button."""
+    rs_pin(at(RS_TODAY, 14))
+    marites = rs[1]["Marites"]
+    n = len(session.exec(select(Incident)).all())
+    _answers(monkeypatch, "report_site_problem", problem_kind="site_problem")
+    first = _turn(session, marites, "sarado ang CR bukas")
+    label = t("intent.shift_supervisor.site_problem", marites.language)
+    assert _quick(first).options[:2] == [
+        t("intent.shift_supervisor.close_day", marites.language),
+        label,
+    ]
+    assert len(session.exec(select(Incident)).all()) == n and _closures(session) == []
+    _turn(session, marites, label, first.thread_id)
+    assert [r.text for r in session.exec(select(Incident)).all()][n:] == ["sarado ang CR bukas"]
+    assert _closures(session) == []
+
+
+def test_a_closed_road_asks_and_records_the_clerks_absence_on_its_tap(
+    session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    """ "sarado ang daan bukas, hindi makakapasok si Ana" is Ana's absence, no closure."""
+    rs_pin(at(RS_TODAY, 14))
+    marites, ana = rs[1]["Marites"], rs[1]["Ana"]
+    tomorrow = RS_TODAY + dt.timedelta(days=1)
+    _answers(
+        monkeypatch, "record_absence", person=ana.id, date=tomorrow.isoformat(), reason="other"
+    )
+    first = _turn(session, marites, "sarado ang daan bukas, hindi makakapasok si Ana")
+    label = t("intent.shift_supervisor.report_absence", marites.language)
+    assert _quick(first).options[:2] == [
+        t("intent.shift_supervisor.close_day", marites.language),
+        label,
+    ]
+    assert not session.exec(select(Absence).where(Absence.person_id == ana.id)).all()
+    _turn(session, marites, label, first.thread_id)
+    rows = session.exec(select(Absence).where(Absence.person_id == ana.id)).all()
+    assert [r.date for r in rows] == [tomorrow] and _closures(session) == []
 
 
 def test_a_late_notice_on_the_wrong_day_asks_in_hiligaynon(

@@ -92,17 +92,17 @@ ACTIONS: dict[str, Action] = {
         " ingredient with a unit and na lang, pa, bilin or left (4 kg asukal na lang, 1 tangke"
         " lpg na lang) is a count, report_stock. It is what is in the shop now, not buying:"
         " report_stock is what is in the shop now, place_order is buying, receive is a delivery"
-        " that came in. Also a question of how many of an item or ingredient are left or on"
-        " hand now (how many left, ilan pa, ilan ang natitira); never a question about how many"
-        " were sold.",
+        " that came in. Also a question of the present count of an item or ingredient at the"
+        " kiosk; never a question about how many were sold.",
         "record_events",
         ("kind", "reason", "time"),
         _label("report_stock"),
     ),
     "bake_plan": Action(
-        "The sender asks what to bake or prepare tomorrow, how many to make, whether to make"
-        " more or fewer of an item tomorrow (dagdagan, dugangan), or for the plan (bukas, ugma,"
-        " buwas and sa aga mean tomorrow; ihahanda, andamon, aandamon, ihanda mean prepare).",
+        "The sender asks how many of each item the kiosk needs on hand tomorrow, how many to"
+        " make, whether to make more or fewer of an item tomorrow (dagdagan, dugangan), or for"
+        " the plan (bukas, ugma, buwas and sa aga mean tomorrow; ihahanda, andamon, aandamon,"
+        " ihanda mean prepare).",
         "plan_tomorrow",
         (),
         _label("bake_plan"),

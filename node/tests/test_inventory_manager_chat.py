@@ -177,7 +177,8 @@ def test_a_waray_waste_read_as_a_count_asks_and_writes_nothing(
     ana = people_service.set_language(session, Actor.system(branch.id), people["Ana"], "war")
     session.commit()
     _answers(monkeypatch, "report_stock", kind="count", item_0=_id(session, "Classic"))
-    _turn(session, ana, "4 nga classic ginlabog")
+    reply = _turn(session, ana, "4 nga classic ginlabog")
+    assert reply.text() == t("clarify.rephrase", "war")  # asks
     assert _chat_rows(session) == []
 
 

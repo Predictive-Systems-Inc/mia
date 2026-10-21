@@ -304,6 +304,7 @@ class Query:
     roster: list[dict[str, Any]] = field(default_factory=list)  # the pattern's shifts, by code
     roster_unclear: list[str] = field(default_factory=list)  # pattern clauses code cannot read
     now: dt.time | None = None  # the branch's local clock (code's guards only, never sent)
+    lang: str = "en"  # the sender's language (code's date reading only, never sent)
 
 
 def _dates(today: dt.date) -> dict[str, str]:
@@ -436,6 +437,7 @@ def build_query(deps: AgentDeps, message: str, previous_mia_message: str) -> Que
         roster=shifts,
         roster_unclear=unclear,
         now=_local_now(branch.timezone),
+        lang=deps.lang,
     )
 
 

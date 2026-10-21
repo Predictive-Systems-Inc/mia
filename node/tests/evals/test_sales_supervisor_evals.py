@@ -204,7 +204,8 @@ def test_sales_supervisor_decider(engine: Engine, session: Session, ferinos: Fer
     _, staff = ferinos
     senders = {role: staff[name].id for role, name in SENDERS.items()}
     names = {i.id: i.name for i in session.exec(select(RetailItem)).all()}
-    cases = _selected(CASES, os.environ.get("MIA_EVAL_HALVES", "tune,gate"))
+    halves = os.environ.get("MIA_EVAL_HALVES", "tune,gate")
+    cases = _selected(CASES, halves)
 
     async def run() -> list[dict[str, Any]]:
         sem = asyncio.Semaphore(CONCURRENCY)
@@ -242,5 +243,7 @@ def test_sales_supervisor_decider(engine: Engine, session: Session, ferinos: Fer
         json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8",
     )
+    if "gate" in halves.split(","):  # a gate run that selects no gate rows never passes
+        assert summary["gated"]["all"]["n"], "the gate run selected no gate rows"
     failed = gate_failures(summary["gated"])  # the Q40 bar, as the router's
     assert not failed, failed

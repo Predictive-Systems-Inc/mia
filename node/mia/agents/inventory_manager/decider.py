@@ -74,8 +74,8 @@ WASTE_WORDS = frozenset({
     "waste", "wasted", "trash", "garbage", "threw", "thrown", "throw", "dropped", "spoiled",
     "expired", "burnt", "burned",
     "tapon", "itapon", "tinapon", "itinapon", "natapon", "basura", "basurahan", "sira",
-    "nasira", "sayang", "nasayang", "panis", "napanis", "sunog", "nasunog", "nahulog",
-    "labay", "ilabay", "gilabay", "gilabayan", "nausik", "usik", "napanos", "panos",
+    "nasira", "nasayang", "panis", "napanis", "sunog", "nasunog", "nahulog",
+    "ilabay", "gilabay", "gilabayan", "nausik", "usik", "napanos", "panos",
     "haboy", "ihaboy", "ginhaboy", "ginpanhaboy", "labog", "ilabog", "ginlabog", "ginlabugan",
     "pinanlabog",
 })  # fmt: skip

@@ -77,8 +77,9 @@ back other (the transport category text is not an ACTIONS description).
 | all | 207, 1, 62 (23.0%) | 216, 1, 53 (19.6%) |
 
 Pair label: parsing.py changed during the before run (21:30:29, as that run began). Kept (en
-improved, no wrong count rose). The fil wrong in both runs is the keep slot of
-decide_experiment_result (a go-back answer read as keep), not an action pick.
+improved, no wrong count rose). parsing.DAY_WORDS now reads the regional yesterday words for
+every agent, so part of the en gain may come from parsing.py rather than the descriptions. The fil
+wrong in both runs is the keep slot of decide_experiment_result (a go-back answer read as keep), not an action pick.
 
 Changes:
 - propose_experiment. Old: "... a price for a few weeks (dalawang linggo, duha ka semana). A trial, not a permanent price change." New: "... a price for a few weeks (dalawang linggo, duha ka semana); a markdown late in the day to waste less; a price one peso under the usual or between a small and a large size; a sender asking whether they may propose such a test or promo. A trial, not a permanent price change."
