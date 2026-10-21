@@ -247,10 +247,10 @@ SPEC = AgentSpec(
     manifest=MANIFEST,
     label_key=f"agent.{MANIFEST.id}.label",
     router_description=(
-        "Sales: clerks reporting how many of each item they sold and for how much, corrections"
-        " to a reported count (sorry, 4 special not 3), daily, morning and mid-day sales"
-        " totals, sales targets, how today compares, the best day, why sales went well; not"
-        " how much stock is left, not what to bake and not how a clerk is doing."
+        "Sales: clerks reporting how many of each item they sold and for how much, corrections to a"
+        " reported count (sorry, 4 special not 3), daily, morning and mid-day sales totals, sales"
+        " targets, how today compares, the best day, why sales went well; not how much stock is"
+        " left, not what to bake, not how a clerk is doing and not advice on how to sell more."
     ),
     handle_turn=handle_turn,
     run_due=due.run_due,

@@ -396,8 +396,8 @@ SPEC = AgentSpec(
     router_description=(
         "The commissary's production: tomorrow's plan per item and its batches, batch sheets and"
         " recipes, yield and waste of a batch, the dispatch to each kiosk and its delivery (the"
-        " driver's tapos na ang hatid, naihatid, delivery done), oven capacity for a date; not"
-        " kiosk stock, not sales counts."
+        " driver's tapos na ang hatid, naihatid, delivery done), what the driver brings to a kiosk,"
+        " oven capacity for a date; not kiosk stock, not sales counts."
     ),
     handle_turn=handle_turn,
     run_due=run_due,

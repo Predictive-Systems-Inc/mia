@@ -6,6 +6,15 @@ local time and never overwrites). Run once with
 `MIA_EVAL_HALVES=gate MIA_DECIDER=jev uv run pytest node/tests/evals/test_router_eval.py::test_router -m evals -s --no-cov`.
 No agent, description, case or harness changed before or during the run.
 
+**Note, 21 Oct 2026, after the run.** The router descriptions of five agents changed after
+`router-2026-10-21-2058` for the description gaps below: the shift supervisor's contrast gains
+"not opening hours, prices or who is the supervisor"; the sales supervisor's gains "not advice on
+how to sell more"; the branch manager names how to sell more and advice on low sales, upselling
+and who is in charge; the production planner names what the driver brings to a kiosk; the
+inventory manager's "what to prepare or bake tomorrow" became what a kiosk needs on hand tomorrow,
+with "not the commissary's production" in its contrast. The numbers in this report stand as run;
+they measure the old descriptions. This gate half is spent, so a rerun needs fresh seeds.
+
 **Result: the gate fails on wrong.** Wrong agent at >= 0.6 is 2.8% over all 570 gate rows (16
 rows; the bar is at most 2%), and over 2% in every gated language but en.
 

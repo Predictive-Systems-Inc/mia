@@ -429,12 +429,13 @@ SPEC = AgentSpec(
     manifest=MANIFEST,
     label_key=f"agent.{MANIFEST.id}.label",
     router_description=(
-        "Shifts and attendance: the roster and who works when, being sick, late or absent,"
-        " finding and answering cover, swapping shifts, a forgotten or wrong check-out time,"
-        " checking in and out, the day's plan and the week's roster, a kiosk closed for a day,"
-        " problems at a site or a kiosk (a broken stove, a delivery that never came, a"
-        " customer making trouble); for cleaning, visits, sites and cleaning checklists; for"
-        " retail, shifts, kiosks and cover; not sales counts, stock, cash or pay."
+        "Shifts and attendance: the roster and who works when, being sick, late or absent, finding"
+        " and answering cover, swapping shifts, a forgotten or wrong check-out time, checking in"
+        " and out, the day's plan and the week's roster, a kiosk closed for a day, problems at a"
+        " site or a kiosk (a broken stove, a delivery that never came, a customer making trouble);"
+        " for cleaning, visits, sites and cleaning checklists; for retail, shifts, kiosks and"
+        " cover; not sales counts, stock, cash or pay, not opening hours, prices or who is the"
+        " supervisor."
     ),
     handle_turn=handle_turn,
     run_due=_run_due,

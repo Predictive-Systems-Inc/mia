@@ -284,10 +284,11 @@ SPEC = AgentSpec(
     manifest=MANIFEST,
     label_key=f"agent.{MANIFEST.id}.label",
     router_description=(
-        "Stock: items sold out or running low, how many are left, leftovers (trays left over) and"
-        " waste (items thrown away) at closing, what to prepare or bake tomorrow, ingredients and"
-        " packaging to buy before a day, placing supplier orders (not who approves them); not how"
-        " many were sold. A sell-out message is stock."
+        "Kiosk stock: items sold out or running low at a kiosk, how many are left, leftovers (trays"
+        " left over) and waste (items thrown away) at closing, how many of each item a kiosk needs"
+        " on hand tomorrow, ingredients and packaging to buy before a day, placing supplier orders"
+        " (not who approves them); not how many were sold and not the commissary's production. A"
+        " sell-out message is stock."
     ),
     handle_turn=handle_turn,
     run_due=due.run_due,
