@@ -52,12 +52,8 @@ def _people_named(session: Session, name: str) -> list[Person]:
     return list(session.exec(select(Person).where(Person.name == name)))
 
 
-# The typed message itself (its row and the thread title) is chat.service's, not this tool's.
-CHAT_ROWS = ("chat_messages.created", "chat_threads.created")
-
-
 def _no_digits_in_events(session: Session) -> None:
-    for e in session.exec(select(Event).where(Event.action.not_in(CHAT_ROWS))):  # type: ignore[attr-defined]
+    for e in session.exec(select(Event)):
         text = json.dumps([e.before, e.after])
         assert not any(d in text for d in DIGITS), e.action
 

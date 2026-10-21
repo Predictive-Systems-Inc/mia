@@ -47,7 +47,8 @@ def _store(
     """Store the user message (and a new thread when needed) and commit it.
 
     With create=True an unknown thread_id starts a new thread with that id (AG-UI clients name
-    their threads); a thread of another person is never continued.
+    their threads); a thread of another person is never continued. A mobile number is masked
+    in the title (before it is cut) and in every event; the message row keeps the text as typed.
     """
     if session.get(Branch, person.branch_id) is None:
         raise ChatError("person has no branch")
@@ -59,7 +60,10 @@ def _store(
         if thread_id and not create:
             raise ChatError("thread not found")
         new = Thread(
-            branch_id=person.branch_id, person_id=person.id, agent_id=DEFAULT, title=text[:60]
+            branch_id=person.branch_id,
+            person_id=person.id,
+            agent_id=DEFAULT,
+            title=events.mask_phones(text)[:60],
         )
         if thread_id:
             new.id = thread_id

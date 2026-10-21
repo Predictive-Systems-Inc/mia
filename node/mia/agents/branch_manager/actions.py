@@ -18,6 +18,7 @@ from mia.agents.branch_manager import MANIFEST
 from mia.agents.branch_manager.models import Strategy
 from mia.agents.decider import NOT_STATED, Action
 from mia.agents.parsing import find_dates, find_prices, has_negation, menu_tokens
+from mia.core.events import mask_phones
 from mia.core.models import Branch, Person
 from mia.core.people import HUMAN_ROLES
 from mia.templates.retail import hours as retail_hours
@@ -417,7 +418,7 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
     lists, so the egress pseudonymiser reads each), the judgments in the questions. The option
     texts are catalogue names, numbers, dates, people and fixed text, never message words."""
     state = {
-        "message": PHONE_TEXT.sub("<number>", q.message),  # a phone number never leaves
+        "message": mask_phones(q.message),  # a phone number never leaves
         "previous_mia_message": q.previous_mia_message or None,
         "sender_role": q.role,
         "today": q.today.isoformat(),

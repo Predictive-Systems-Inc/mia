@@ -7,6 +7,7 @@ previous hash plus the canonical JSON of the row, so any edit breaks verify_chai
 
 import hashlib
 import json
+import re
 from collections.abc import Iterable
 from typing import Any
 
@@ -70,15 +71,39 @@ def _last_hash(session: Session) -> str:
 
 REDACTED = "<redacted>"
 
+# A Philippine mobile number as people type it: 09171234567, +63 917 123 4567, 63-917-123-4567,
+# (0917) 123.4567, 9171234567, up to two of space . - ( ) between digits. A run inside a word
+# (an id, a hash) or touching more digits is not one; amounts and dates never have this shape.
+PH_MOBILE_TEXT = re.compile(
+    r"(?<![\w+])(?:\+?\s?63|\(?0)?[\s().-]{0,2}9(?:[\s().-]{0,2}\d){9}(?!\w)"
+)
+
+
+def mask_phones(text: str) -> str:
+    """The text with every Philippine mobile number replaced by "<number ...4567>" (its last
+    four digits); a text without one is returned unchanged."""
+    return PH_MOBILE_TEXT.sub(lambda m: f"<number ...{re.sub(r'\D', '', m[0])[-4:]}>", text)
+
+
+def _masked(value: Any) -> Any:
+    if isinstance(value, str):
+        return mask_phones(value)
+    if isinstance(value, list):
+        return [_masked(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _masked(v) for k, v in value.items()}
+    return value
+
 
 def snapshot(row: SQLModel | None, redact: Iterable[str] = ()) -> dict[str, Any] | None:
     """JSON-safe copy of a row for before/after values. Fields named in the model's
-    `__redact__` and in `redact` are replaced by "<redacted>" so secrets never enter events."""
+    `__redact__` and in `redact` are replaced by "<redacted>" so secrets never enter events,
+    and a mobile number in any text is masked (mask_phones): the chain is never rewritable."""
     if row is None:
         return None
     data = row.model_dump(mode="json")
     hidden = set(getattr(row, "__redact__", ())) | set(redact)
-    return {k: (REDACTED if k in hidden and v is not None else v) for k, v in data.items()}
+    return {k: (REDACTED if k in hidden and v is not None else _masked(v)) for k, v in data.items()}
 
 
 def emit(
