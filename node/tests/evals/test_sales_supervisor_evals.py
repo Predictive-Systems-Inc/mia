@@ -10,7 +10,9 @@ asserts run over the gate half only; the tune half is for tuning the action desc
 MIA_EVAL_HALVES picks the halves (default "tune,gate"; "tune" for a tuning run, "gate" for the
 gate run); the spent half (rows scored in an earlier run) never runs. The fresh gate half, for
 the D40 rerun:
-MIA_EVAL_HALVES=gate MIA_DECIDER=jev uv run pytest node/tests/evals/test_sales_supervisor_evals.py -m evals -s"""
+MIA_EVAL_HALVES=gate MIA_DECIDER=jev uv run pytest node/tests/evals/test_sales_supervisor_evals.py -m evals -s
+The short half (D42), printed per language, its one assertion no wrong write (gate.wrong_writes):
+MIA_EVAL_HALVES=short MIA_DECIDER=jev uv run pytest node/tests/evals/test_sales_supervisor_evals.py -m evals -s"""
 
 import asyncio
 import datetime as dt
@@ -35,7 +37,7 @@ from mia.core.egress import EgressContext, egress_context
 from mia.core.models import Actor, Branch, Person, UsageCloudRequest
 from mia.settings import get_settings
 from mia.templates.retail.models import RetailItem
-from tests.evals.gate import gate_failures
+from tests.evals import gate
 from tests.evals.sales_cases import CASES, GATED_LANGS, Case
 
 pytestmark = pytest.mark.evals
@@ -238,12 +240,17 @@ def test_sales_supervisor_decider(engine: Engine, session: Session, ferinos: Fer
     _print("gate half by language (asserted)", summary["gated"]["by_language"])
     _print("gate half by scenario", summary["gated"]["by_scenario"])
     _print("gate half (asserted)", {"all": summary["gated"]["all"]})
+    short = [r for r in results if r["half"] == "short"]
+    if short:
+        _print("short half by language (D42, no wrong write asserted)", _table(short, "lang"))
     print(f"\nconfusions: {summary['confusions']}\nwall {wall:.0f} s")
     report.write_text(
         json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8",
     )
+    wrong = gate.wrong_writes(results, MANIFEST.id)
+    assert not wrong, [(r["text"], gate.decided(r)) for r in wrong]  # D42, the short half
     if "gate" in halves.split(","):  # a gate run that selects no gate rows never passes
         assert summary["gated"]["all"]["n"], "the gate run selected no gate rows"
-    failed = gate_failures(summary["gated"])  # the Q40 bar, as the router's
+    failed = gate.gate_failures(summary["gated"])  # the Q40 bar, as the router's
     assert not failed, failed

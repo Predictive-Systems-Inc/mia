@@ -27,7 +27,13 @@ Jev picks (rule 7), and the shape test checks it: each expected number is a word
 candidate, each batch report a words.batch parse, each recipe a full words.recipe parse (one
 part per comma, units and short codes code knows), each added or removed item a line of the
 drafted plan, and each fresh item ask names that one item (words.named). No change text names
-"today" (subong, karon, yana), which would ask for the plan of another day."""
+"today" (subong, karon, yana), which would ask for the plan of another day.
+
+The short half (SHORT, D42): twelve en and twelve fil messages as the commissary head, the
+owner, the driver and a kiosk clerk type on a phone (lowercase, no punctuation, digits, one to
+six words), the en and fil written apart, not translations; two per language are ambiguous and
+should ask ("ask"). Its one rule is no wrong write (gate.wrong_writes); its expected item and
+number are reported, never a bar."""
 
 import datetime as dt
 from dataclasses import dataclass, field
@@ -42,9 +48,10 @@ class Case:
     scenario: str
     text: str
     expected_action: str  # an ACTIONS key
-    role: str  # head (Nonoy, the commissary), owner (Rosa), driver (Berto), kiosk (Marites)
+    # head (Nonoy, the commissary), owner (Rosa), driver (Berto), kiosk (Marites), clerk (Ana)
+    role: str
     previous: str = ""  # Mia's last message in the thread
-    half: Literal["tune", "gate", "spent"] = "tune"  # spent: scored before, never run again
+    half: Literal["tune", "gate", "spent", "short"] = "tune"  # spent: scored, never run again
     # item (an item name), kiosk (a branch name), direction (a DIRECTIONS key), number (a count)
     expected: dict[str, Any] = field(default_factory=dict)
 
@@ -991,9 +998,39 @@ FRESH: dict[str, list[Row]] = {
     "capacity": F_CAPACITY,
 }
 
+ASK, CLERK = "ask", "clerk"
+# The short half (D42): (language, sender role, text, expected action or "ask", expected)
+SHORT: list[tuple[str, str, str, str, dict[str, Any]]] = [
+    ("en", HEAD, "plan tmrw", "plan", NONE),
+    ("en", HEAD, "add 1 batch ube", "change_plan", _i("Ube", number=1)),
+    ("en", HEAD, "less classic 2 batch", "change_plan", _i("Classic", number=2)),
+    ("en", OWNER, "plan ok go", "confirm_plan", NONE),
+    ("en", HEAD, "batch sheet sp", "batch_sheet", _i("Special")),
+    ("en", HEAD, "batch2 cl 45 ok 3 burnt", "record_batch", _i("Classic")),
+    ("en", HEAD, "recipe ube 36 pcs 2kg flour", "set_recipe", _i("Ube")),
+    ("en", DRIVER, "delivered mall", "delivered", NONE),
+    ("en", CLERK, "whats coming to mall", "dispatch", NONE),
+    ("en", OWNER, "capacity 200 cl dec 24", "capacity", _i("Classic", number=200)),
+    ("en", HEAD, "ube 2", ASK, _i("Ube", number=2)),
+    ("en", DRIVER, "done", ASK, NONE),
+    ("fil", HEAD, "ano lutuin bukas", "plan", NONE),
+    ("fil", HEAD, "dagdag 1 batch se", "change_plan", _i("Salted egg", number=1)),
+    ("fil", HEAD, "bawas ube 1 batch", "change_plan", _i("Ube", number=1)),
+    ("fil", OWNER, "sige go na plano", "confirm_plan", NONE),
+    ("fil", HEAD, "ilang itlog para sa cl", "batch_sheet", _i("Classic")),
+    ("fil", HEAD, "batch1 sp 40 ok 2 sunog", "record_batch", _i("Special")),
+    ("fil", HEAD, "recipe se 36 piraso 45 min", "set_recipe", _i("Salted egg")),
+    ("fil", DRIVER, "hatid na sa street po", "delivered", NONE),
+    ("fil", CLERK, "ano dadalhin samin bukas", "dispatch", NONE),
+    ("fil", OWNER, "kaya ba 150 ube sab", "capacity", _i("Ube", number=150)),
+    ("fil", HEAD, "classic 3", ASK, _i("Classic", number=3)),
+    ("fil", DRIVER, "ok na po", ASK, NONE),
+]
+
 
 def _cases() -> list[Case]:
-    """The spent rows (half "spent"), then the fresh rows (even seeds tune, odd seeds gate)."""
+    """The spent rows (half "spent"), the fresh rows (even seeds tune, odd seeds gate), then
+    the short half."""
     return [
         Case(lang, scenario, text, action, role,
              previous=DRAFT[lang] if scenario == "confirm" else "",
@@ -1002,6 +1039,9 @@ def _cases() -> list[Case]:
         for scenario, (_, action, role, _) in SCENARIOS.items()
         for n, (expected, *texts) in enumerate(rows_of[scenario])
         for lang, text in zip(GATED_LANGS, texts, strict=True)
+    ] + [
+        Case(lang, "short", text, action, role, half="short", expected=expected)
+        for lang, role, text, action, expected in SHORT
     ]  # fmt: skip
 
 

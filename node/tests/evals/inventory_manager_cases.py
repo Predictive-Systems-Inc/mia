@@ -13,7 +13,12 @@ Halves: every 19 Oct row (TEXTS, the first tune half with the spent first gate h
 and GATE_TEXTS, the 19 Oct gate half) is spent, both halves ran; the harness never runs a spent
 row. FRESH_TEXTS (21 Oct, for the D40 rerun) is the fresh set: ten new seeds per scenario, the
 even seeds the tune half and the odd seeds the gate half; message n of a scenario is one seed
-in every language, so a seed's languages share a half."""
+in every language, so a seed's languages share a half.
+
+The short half (SHORT, D42): twelve en and twelve fil messages as clerks, head staff and the
+owner type on a phone (lowercase, no punctuation, digits, one to six words), the en and fil
+written apart, not translations; two per language are ambiguous and should ask ("ask"). Its one
+rule is no wrong write (gate.wrong_writes); its expected items are reported, never a bar."""
 
 from dataclasses import dataclass, field
 from typing import Literal
@@ -27,7 +32,7 @@ class Case:
     expected_action: str
     role: str  # clerk (Ana), supervisor (Marites) or owner (Rosa)
     previous: str = ""  # Mia's last message in the thread
-    half: Literal["tune", "gate", "spent"] = "tune"
+    half: Literal["tune", "gate", "spent", "short"] = "tune"
     # report_stock: sold_out, count, leftover, waste, low, or on_hand (a count or leftover
     # question with no number: Mia answers how many are left)
     expected_kind: str = ""
@@ -2793,6 +2798,35 @@ FRESH_TEXTS: dict[str, dict[str, list[str]]] = {
     },
 }
 
+ASK = "ask"
+# The short half (D42): (language, sender role, text, expected action or "ask", expected items)
+SHORT: list[tuple[str, str, str, str, list[tuple[str, int | None]]]] = [
+    ("en", C, "ube 5 left", "report_stock", [(UBE, 5)]),
+    ("en", C, "sold out cl", "report_stock", [(CL, None)]),
+    ("en", C, "3 sp thrown burnt", "report_stock", [(SP, 3)]),
+    ("en", C, "eggs low 1 tray", "report_stock", [(EGGS, 1)]),
+    ("en", S, "what to bake tmrw", "bake_plan", []),
+    ("en", S, "whats low", "whats_low", []),
+    ("en", S, "need to order anything", "whats_low", []),
+    ("en", O, "order 10 trays eggs", "place_order", [(EGGS, 10)]),
+    ("en", S, "buy 5 kg flour", "place_order", [(RF, 5)]),
+    ("en", C, "delivery came 30 coco", "receive", [(COCO, 30)]),
+    ("en", C, "ube", ASK, []),
+    ("en", C, "eggs 10", ASK, []),
+    ("fil", C, "5 ube nlng", "report_stock", [(UBE, 5)]),
+    ("fil", C, "ubos na cl", "report_stock", [(CL, None)]),
+    ("fil", C, "2 sp tapon sunog", "report_stock", [(SP, 2)]),
+    ("fil", C, "konti nlng itlog", "report_stock", [(EGGS, None)]),
+    ("fil", S, "ilan gagawin bukas", "bake_plan", []),
+    ("fil", S, "ano kulang sa stock", "whats_low", []),
+    ("fil", S, "may ioorder ba tayo", "whats_low", []),
+    ("fil", O, "bili 10 tray itlog", "place_order", [(EGGS, 10)]),
+    ("fil", S, "order 3 lpg pls", "place_order", [(LPG, 3)]),
+    ("fil", C, "dumating na 20 niyog", "receive", [(COCO, 20)]),
+    ("fil", C, "itlog po", ASK, []),
+    ("fil", C, "ilan pa ube", ASK, []),
+]
+
 
 def _spent() -> list[Case]:
     """Every message of the 19 Oct sets (TEXTS with SCENARIOS' seeds, GATE_TEXTS with
@@ -2825,3 +2859,7 @@ def _fresh() -> list[Case]:
 
 
 CASES: list[Case] = _spent() + _fresh()
+CASES += [
+    Case(lang, "short", text, action, role, "", "short", expected_items=items)
+    for lang, role, text, action, items in SHORT
+]

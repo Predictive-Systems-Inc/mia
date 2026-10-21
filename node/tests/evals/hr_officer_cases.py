@@ -10,7 +10,13 @@ Lunes", "Dec 25", "bukas"); the run pins today to TODAY, a Monday, so weekday ph
 and Christmas is inside the fourteen days a holiday question picks from. find_dates reads no
 "tomorrow" or "today" word in hil, war or bcl and no "next week" there or in ceb, so those
 leave messages name the weekday or the date (the shape test checks every leave date is a
-candidate). Expected inputs are offsets from TODAY ("+7d"), resolved by on()."""
+candidate). Expected inputs are offsets from TODAY ("+7d"), resolved by on().
+
+The short half (SHORT, D42): twelve en and twelve fil messages as clerks and the owner type on a
+phone (lowercase, no punctuation, digits, one to six words), the en and fil written apart, not
+translations; two per language are ambiguous and should ask ("ask"). Its one rule is no wrong
+write (gate.wrong_writes); its expected slots are reported, never a bar. Its dates were written
+for a Tuesday in November (PP_TODAY): "dec 2" and "nov 30" are past on this TODAY."""
 
 import datetime as dt
 from dataclasses import dataclass, field
@@ -25,7 +31,7 @@ class Case:
     expected_action: str
     role: str  # a role of a seeded Ferino's person (clerk Ana, supervisor Marites, owner Rosa)
     previous: str = ""  # Mia's last message in the thread
-    half: Literal["tune", "gate"] = "tune"
+    half: Literal["tune", "gate", "short"] = "tune"
     # file_leave {"start", "end"} and holiday_pay {"day"} as offsets; contributions {"which"}
     expected_slots: dict[str, str] = field(default_factory=dict)
 
@@ -383,6 +389,35 @@ def _role(scenario: str, seed: int) -> str:
     return "supervisor" if scenario == "my_hours" and seed >= 8 else "clerk"
 
 
+ASK = "ask"
+# The short half (D42): (language, sender role, text, expected action or "ask", slots)
+SHORT: list[tuple[str, str, str, str, dict[str, str]]] = [
+    ("en", "clerk", "my hrs this cutoff", "my_hours", NONE),
+    ("en", "clerk", "when payday", "payday", NONE),
+    ("en", "clerk", "13th month how much", "thirteenth", NONE),
+    ("en", "clerk", "sss deduction last pay", "contributions", NONE),
+    ("en", "clerk", "vl dec 2 to 3", "file_leave", {"start": "2026-12-02"}),
+    ("en", "clerk", "sick leave tmrw pls", "file_leave", {"start": "+1d"}),
+    ("en", "clerk", "leave left", "leave_balance", NONE),
+    ("en", "clerk", "holiday pay nov 30", "holiday_pay", {"day": "2026-11-30"}),
+    ("en", "clerk", "resend payslip pls", "my_payslip", NONE),
+    ("en", "owner", "need coe ana", "certificate", NONE),
+    ("en", "clerk", "cutoff", ASK, NONE),
+    ("en", "clerk", "nov 30", ASK, {"day": "2026-11-30"}),
+    ("fil", "clerk", "ilang oras ko ngayong cutoff", "my_hours", NONE),
+    ("fil", "clerk", "kelan sweldo natin", "payday", NONE),
+    ("fil", "clerk", "magkano 13th month ko", "thirteenth", NONE),
+    ("fil", "clerk", "philhealth kaltas ko", "contributions", NONE),
+    ("fil", "clerk", "pa file vl biyernes", "file_leave", {"start": "+4d"}),
+    ("fil", "clerk", "day off ako sab pls", "file_leave", {"start": "+5d"}),
+    ("fil", "clerk", "ilan pa leave ko", "leave_balance", NONE),
+    ("fil", "clerk", "holiday ba lunes", "holiday_pay", {"day": "+7d"}),
+    ("fil", "clerk", "payslip ko po ulit", "my_payslip", NONE),
+    ("fil", "owner", "pa coe kay liza", "certificate", NONE),
+    ("fil", "clerk", "sahod", ASK, NONE),
+    ("fil", "clerk", "leave po", ASK, NONE),
+]
+
 CASES: list[Case] = [
     Case(
         lang=lang,
@@ -396,4 +431,7 @@ CASES: list[Case] = [
     for scenario, rows in SEEDS.items()
     for i, (slots, *texts) in enumerate(rows)
     for lang, text in zip(GATED_LANGS, texts, strict=True)
+] + [
+    Case(lang, "short", text, action, role, half="short", expected_slots=slots)
+    for lang, role, text, action, slots in SHORT
 ]

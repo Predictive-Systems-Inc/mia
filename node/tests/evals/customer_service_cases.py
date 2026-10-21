@@ -16,7 +16,13 @@ cover their review. The run pins today to TODAY, a Tuesday (the cs fixture seeds
 the same day, so Mila's 15:00 pickup is today's one order on the staff side). Orders name their
 counts in digits, their time as code reads it (8am, 5:30pm, alas 4) and their day with a word
 find_dates reads (bukas, ugma, buwas, sa aga, a weekday, or none for today); the shape test
-checks each one parses to the expected lines, time and day."""
+checks each one parses to the expected lines, time and day.
+
+The short half (SHORT, D42): twelve en and twelve fil messages as customers and clerks type on
+a phone (lowercase, no punctuation, digits, one to six words), the en and fil written apart, not
+translations; two per language are ambiguous and should ask ("ask"). Its side is its role (a
+customer, or staff). Its one rule is no wrong write (gate.wrong_writes); its expected lines,
+time, day and language are reported, never a bar."""
 
 import datetime as dt
 from dataclasses import dataclass, field
@@ -31,7 +37,7 @@ class Case:
     expected_action: str
     role: str  # customer (the seeded Mila), or a seeded person's role (clerk, supervisor)
     previous: str = ""  # Mia's last message in the thread
-    half: Literal["tune", "gate", "spent"] = "tune"
+    half: Literal["tune", "gate", "spent", "short"] = "tune"
     expected_language: str = ""  # language_switch only: the language asked for
     # place_order only: (item name, quantity) in message order, "HH:MM", a day offset "+Nd"
     expected_lines: tuple[tuple[str, int], ...] = field(default_factory=tuple)
@@ -601,6 +607,36 @@ def _staff(actions: tuple[str, ...], rows: list[Row], half: Literal["gate"] | No
     ]
 
 
+ASK, CU = "ask", "customer"
+# The short half (D42): (language, sender role, text, expected action or "ask", order lines,
+# pickup time, day offset, language asked for)
+SHORT: list[tuple[str, str, str, str, tuple[tuple[str, int], ...], str, str, str]] = [
+    ("en", CU, "open now", "hours", (), "", "", ""),
+    ("en", CU, "what time u close", "hours", (), "", "", ""),
+    ("en", CU, "how much ube", "prices", (), "", "", ""),
+    ("en", CU, "menu pls", "prices", (), "", "", ""),
+    ("en", CU, "order 10 classic pickup 3pm", "place_order", (("Classic", 10),), "15:00", "+0d", ""),
+    ("en", CU, "is my order ready", "order_status", (), "", "", ""),
+    ("en", CU, "deliver to marikina", "delivery_area", (), "", "", ""),
+    ("en", CU, "bibingka was cold", "complaint", (), "", "", ""),
+    ("en", CU, "cancel my order pls", "cancel_order", (), "", "", ""),
+    ("en", "clerk", "pickups today", "staff_orders_today", (), "", "", ""),
+    ("en", CU, "10 ube", ASK, (), "", "", ""),
+    ("en", CU, "tmrw 3pm", ASK, (), "", "", ""),
+    ("fil", CU, "open pa kau ngayon", "hours", (), "", "", ""),
+    ("fil", CU, "hm po ung special", "prices", (), "", "", ""),
+    ("fil", CU, "pa order 12 cl bukas", "place_order", (("Classic", 12),), "", "+1d", ""),
+    ("fil", CU, "ready na order ko", "order_status", (), "", "", ""),
+    ("fil", CU, "may deliver sa pasig", "delivery_area", (), "", "", ""),
+    ("fil", CU, "kulang order ko 2", "complaint", (), "", "", ""),
+    ("fil", CU, "cancel ko na po", "cancel_order", (), "", "", ""),
+    ("fil", CU, "english pls", "language_switch", (), "", "", "en"),
+    ("fil", "clerk", "may pickup ba today", "staff_orders_today", (), "", "", ""),
+    ("fil", "clerk", "ready na kay mila", "staff_mark_ready", (), "", "", ""),
+    ("fil", CU, "pano po", ASK, (), "", "", ""),
+    ("fil", CU, "yung order", ASK, (), "", "", ""),
+]  # fmt: skip
+
 CASES: list[Case] = [
     *_plain(SEEDS, None),
     *_orders(PLACE_ORDER, None),
@@ -617,5 +653,10 @@ CASES: list[Case] = [
         Case(lang, scenario, text, action, "customer", expected_language=lang if asked is None else asked)
         for scenario, action, asked, *texts in TUNE_ONLY
         for lang, text in zip(GATED_LANGS, texts, strict=True)
+    ],
+    *[
+        Case(lang, "short", text, action, role, half="short", expected_language=asked,
+             expected_lines=lines, expected_time=at, expected_day=day)
+        for lang, role, text, action, lines, at, day, asked in SHORT
     ],
 ]  # fmt: skip

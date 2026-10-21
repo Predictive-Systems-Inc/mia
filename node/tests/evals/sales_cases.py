@@ -10,7 +10,12 @@ even seeds tune, its odd seeds gate.
 
 Synthetic, written by Claude, not native speakers (D18). English seeds come first; the five
 Philippine languages are drafts for a kiosk clerk texting on a phone, and Q28 to Q35 cover
-their review. Item names and short codes are the seed's (mia/templates/retail/seed.py)."""
+their review. Item names and short codes are the seed's (mia/templates/retail/seed.py).
+
+The short half (SHORT, D42): twelve en and twelve fil messages as clerks, head staff and the
+owner type on a phone (lowercase, no punctuation, digits, one to six words), the en and fil
+written apart, not translations; two per language are ambiguous and should ask ("ask"). Its one
+rule is no wrong write (gate.wrong_writes); its expected items are reported, never a bar."""
 
 from dataclasses import dataclass, field
 from typing import Literal
@@ -18,7 +23,7 @@ from typing import Literal
 from mia.i18n import t
 
 # spent: scored in an earlier gate run, never run again; tune and gate: the fresh set.
-Half = Literal["tune", "spent", "gate"]
+Half = Literal["tune", "spent", "gate", "short"]
 
 
 @dataclass(frozen=True)
@@ -2188,12 +2193,43 @@ FRESH_TEXTS: dict[str, dict[str, list[str]]] = {
     },
 }
 
+ASK = "ask"
+WHY_EN, WHY_FIL = t("sales.why", "en"), t("sales.why", "fil")
+# The short half (D42): (language, sender role, text, expected action or "ask", expected items,
+# Mia's last message)
+SHORT: list[tuple[str, str, str, str, list[tuple[str, int]], str]] = [
+    ("en", C, "sp 5 cl 8 ube 3", "report_sales", [(SP, 5), (CL, 8), (UBE, 3)], ""),
+    ("en", C, "ube 7 se 4", "report_sales", [(UBE, 7), (SE, 4)], ""),
+    ("en", C, "sorry cl 6 not 8", "correct_sales", [(CL, 6)], ""),
+    ("en", S, "sales so far", "sales_today", [], ""),
+    ("en", O, "how much today mall", "sales_today", [], ""),
+    ("en", O, "sales yday", "sales_period", [], ""),
+    ("en", O, "best day this wk", "sales_period", [], ""),
+    ("en", O, "target 4500 tmrw", "set_target", [], ""),
+    ("en", S, "payday crowd", "why_answer", [], WHY_EN),
+    ("en", C, "thx mia", "reply_only", [], ""),
+    ("en", C, "cl 8 or 9", ASK, [], ""),
+    ("en", C, "ube pls", ASK, [], ""),
+    ("fil", C, "cl 10 sp 4 ube 6", "report_sales", [(CL, 10), (SP, 4), (UBE, 6)], ""),
+    ("fil", C, "benta ko 5 se 3 co", "report_sales", [(SE, 5), (CO, 3)], ""),
+    ("fil", C, "mali pala ube 4 dapat", "correct_sales", [(UBE, 4)], ""),
+    ("fil", S, "kumusta benta ngayon", "sales_today", [], ""),
+    ("fil", O, "magkano na tayo today", "sales_today", [], ""),
+    ("fil", O, "benta kahapon street", "sales_period", [], ""),
+    ("fil", O, "benta nung isang linggo", "sales_period", [], ""),
+    ("fil", O, "target bukas 5000", "set_target", [], ""),
+    ("fil", S, "sweldo kasi dami tao", "why_answer", [], WHY_FIL),
+    ("fil", C, "sige tnx po", "reply_only", [], ""),
+    ("fil", C, "ube pa", ASK, [], ""),
+    ("fil", S, "yung kahapon", ASK, [], ""),
+]
+
 
 def _cases() -> list[Case]:
     """Every message in every gated language: TEXTS and GATE_TEXTS spent (both halves scored on
     19 Oct), FRESH_TEXTS seed n tune when n is even and gate when odd, so message n of a
     scenario falls in one half in every language. The why answers follow Mia's why question in
-    that language."""
+    that language. Then the short half."""
     out = []
     for lang in GATED_LANGS:
         for scenario, (action, roles) in SCENARIOS.items():
@@ -2208,6 +2244,8 @@ def _cases() -> list[Case]:
                 for n, (text, role, expected) in enumerate(rows):
                     half: Half = ("tune" if n % 2 == 0 else "gate") if fresh else "spent"
                     out.append(Case(lang, scenario, text, action, role, expected, previous, half))
+    for lang, role, text, action, items, previous in SHORT:
+        out.append(Case(lang, "short", text, action, role, items, previous, "short"))
     return out
 
 

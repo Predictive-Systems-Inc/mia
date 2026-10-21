@@ -6,14 +6,17 @@ from collections import Counter
 
 from mia.agents.hr_officer.actions import ACTIONS, WHICH
 from mia.agents.parsing import find_dates
+from tests.evals import gate
 from tests.evals.hr_officer_cases import CASES, GATED_LANGS, SCENARIOS, TODAY, on
 
 SLOTS = {"file_leave": {"start", "end"}, "holiday_pay": {"day"}, "contributions": {"which"}}
 OFFSET = re.compile(r"\+(\d+)d")
+LONG = [c for c in CASES if c.half != "short"]
+SHORT = [c for c in CASES if c.half == "short"]
 
 
 def test_ten_cases_per_language_and_scenario_five_per_half() -> None:
-    counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
+    counts = Counter((c.lang, c.scenario, c.half) for c in LONG)
     assert set(counts) == {
         (lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in ("tune", "gate")
     }
@@ -21,7 +24,7 @@ def test_ten_cases_per_language_and_scenario_five_per_half() -> None:
 
 
 def test_every_action_but_clarify_has_cases_and_no_pair_repeats() -> None:
-    assert {c.expected_action for c in CASES} == set(ACTIONS) - {"clarify"}
+    assert {c.expected_action for c in LONG} == set(ACTIONS) - {"clarify"}
     pairs = [(c.lang, c.text) for c in CASES]
     assert len(pairs) == len(set(pairs)), Counter(pairs).most_common(3)
 
@@ -37,7 +40,7 @@ def test_no_tagalog() -> None:
 
 
 def test_expected_actions_roles_and_slots() -> None:
-    for c in CASES:
+    for c in LONG:
         assert c.expected_action in ACTIONS, c
         assert c.role in {"clerk", "supervisor", "owner"}, c
         assert (c.role == "owner") == (c.expected_action == "certificate"), c
@@ -49,7 +52,7 @@ def test_expected_actions_roles_and_slots() -> None:
 def test_slot_offsets_parse_and_the_dates_are_candidates() -> None:
     """A leave's start and end are dates find_dates gives build_query (Jev picks among them);
     a holiday's day is one of the fourteen days h0..h13."""
-    for c in CASES:
+    for c in LONG:
         if c.expected_action == "file_leave":
             found = {d.isoformat() for _, d in find_dates(c.text, TODAY, c.lang)}
             assert {on(c.expected_slots["start"]), on(c.expected_slots["end"])} <= found, c
@@ -76,3 +79,19 @@ def test_scoring() -> None:
     which |= {"expected_slots": {"which": "sss"}, "action": "contributions", "confidence": 0.8}
     assert _score(which | {"args": {"which": "sss"}}) == "right"
     assert _score(which | {"args": {"which": "all"}}) == "wrong"
+
+
+def test_the_short_half_is_short_and_new() -> None:
+    """D42: twelve en and twelve fil, two asks each, short and unpunctuated, an offered action,
+    no text in another half or a raw file."""
+    rows = [(c.lang, c.text, c.expected_action, "", None, None) for c in SHORT]
+    assert not gate.short_failures("hr_officer", rows)
+    assert not gate.short_reused(c.text for c in SHORT)
+    assert {c.role for c in SHORT} == {"clerk", "owner"}
+
+
+def test_the_halves_are_selected_by_name() -> None:
+    from tests.evals.test_hr_officer_evals import _selected
+
+    assert {c.half for c in _selected(CASES, "tune,gate")} == {"tune", "gate"}
+    assert {c.half for c in _selected(CASES, "short")} == {"short"}

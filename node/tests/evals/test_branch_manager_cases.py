@@ -15,11 +15,14 @@ from mia.agents.parsing import find_dates, find_prices, menu_tokens
 from mia.templates.retail.models import RetailItem
 from mia.templates.retail.seed import ITEMS
 from tests.conftest import BM_TODAY
+from tests.evals import gate
 from tests.evals.branch_manager_cases import CASES, GATED_LANGS, SCENARIOS, TODAY
 
 NAMES = {name.casefold() for name, _, _ in ITEMS}
 MENU = [RetailItem(name=n, short_codes=c, price=p, currency="PHP") for n, c, p in ITEMS]
 HALVES = ("tune", "spent", "gate")
+LONG = [c for c in CASES if c.half != "short"]
+SHORT = [c for c in CASES if c.half == "short"]
 STRATEGY_NAMES = {key.rsplit(".", 1)[1] for key, *_ in STRATEGIES}
 WRITES = {
     "how_to_sell": {"item"},
@@ -33,7 +36,7 @@ WRITES = {
 def test_ten_cases_per_language_scenario_and_half() -> None:
     """Per language and scenario: fifteen spent seeds (run 1's ten, run 2's five gate seeds) and
     ten fresh seeds, five tune and five gate."""
-    counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
+    counts = Counter((c.lang, c.scenario, c.half) for c in LONG)
     assert set(counts) == {(lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in HALVES}
     assert {h: n for (_, _, h), n in counts.items()} == {"tune": 5, "spent": 15, "gate": 5}
 
@@ -70,7 +73,7 @@ def test_no_pair_repeats_and_the_actions_are_the_planned_ones() -> None:
     pairs = [(c.lang, c.text) for c in CASES]
     assert len(pairs) == len(set(pairs)), Counter(pairs).most_common(3)
     planned = set(WRITES) | {"coaching_who", "weekly_summary", "monthly_letter"}
-    assert {c.expected_action for c in CASES} == planned
+    assert {c.expected_action for c in LONG} == planned
     assert planned <= set(ACTIONS)
 
 
@@ -81,7 +84,7 @@ def test_no_tagalog_and_no_bibingka_as_an_item() -> None:
 
 
 def test_expected_inputs_and_roles() -> None:
-    for c in CASES:
+    for c in LONG:
         assert set(c.expected) == WRITES.get(c.expected_action, set()), c
         assert c.role in {"clerk", "supervisor", "owner"}, c
         assert (c.role == "clerk") == (c.expected_action == "how_to_sell"), c
@@ -95,7 +98,7 @@ def test_expected_inputs_and_roles() -> None:
 
 
 def test_every_strategy_and_kind_has_a_typed_experiment() -> None:
-    experiments = [c.expected for c in CASES if c.expected_action == "propose_experiment"]
+    experiments = [c.expected for c in LONG if c.expected_action == "propose_experiment"]
     assert {e["strategy"] for e in experiments} == STRATEGY_NAMES | {""}
     assert {e["kind"] for e in experiments} == {"price", "promo", "bundle"}
 
@@ -153,6 +156,27 @@ def test_the_halves_are_selected_by_name_and_the_spent_half_never() -> None:
     assert {c.half for c in _selected(CASES, "tune")} == {"tune"}
     assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
     assert not any(c.half == "spent" for c in _selected(CASES, "tune,gate,spent"))
+    assert {c.half for c in _selected(CASES, "short")} == {"short"}
+
+
+def test_the_short_half_is_short_and_new() -> None:
+    """D42: twelve en and twelve fil, two asks each, short and unpunctuated, an offered action,
+    the price a find_prices candidate, the item seeded and typed, no text in another half or a
+    raw file."""
+    rows = [
+        (
+            c.lang,
+            c.text,
+            c.expected_action,
+            c.expected.get("item", ""),
+            c.expected.get("price"),
+            None,
+        )
+        for c in SHORT
+    ]
+    assert not gate.short_failures("branch_manager", rows)
+    assert not gate.short_reused(c.text for c in SHORT)
+    assert {c.role for c in SHORT} == {"owner", "supervisor"} and not any(c.previous for c in SHORT)
 
 
 def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:

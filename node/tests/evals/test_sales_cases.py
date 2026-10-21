@@ -8,10 +8,13 @@ from pathlib import Path
 from mia.agents.parsing import menu_tokens, pre_parse
 from mia.agents.sales_supervisor.actions import ACTIONS
 from mia.templates.retail.seed import ITEMS as MENU
+from tests.evals import gate
 from tests.evals.sales_cases import CASES, GATED_LANGS, SCENARIOS
 
 RESEARCH = Path(__file__).parents[3] / "docs" / "research"
 PER_HALF = {"tune": 5, "gate": 5, "spent": 20}
+LONG = [c for c in CASES if c.half != "short"]
+SHORT = [c for c in CASES if c.half == "short"]
 
 
 def _folded(half: str) -> set[str]:
@@ -20,7 +23,7 @@ def _folded(half: str) -> set[str]:
 
 def test_ten_cases_per_language_scenario_and_half() -> None:
     """Ten fresh messages per language and scenario (five tune, five gate), twenty spent."""
-    counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
+    counts = Counter((c.lang, c.scenario, c.half) for c in LONG)
     assert set(counts) == {
         (lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in PER_HALF
     }
@@ -57,6 +60,7 @@ def test_the_halves_are_selected_by_name_and_the_spent_half_never() -> None:
     assert {c.half for c in _selected(CASES, "tune")} == {"tune"}
     assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
     assert not any(c.half == "spent" for c in _selected(CASES, "tune,gate,spent"))
+    assert {c.half for c in _selected(CASES, "short")} == {"short"}
 
 
 def test_a_tune_only_run_has_an_empty_gate() -> None:
@@ -69,7 +73,7 @@ def test_a_tune_only_run_has_an_empty_gate() -> None:
 
 def test_expected_actions_are_actions_and_counts_name_items() -> None:
     for c in CASES:
-        assert c.expected_action in ACTIONS, c
+        assert c.expected_action in ACTIONS or (c.half == "short" and c.expected_action == "ask")
         assert bool(c.expected_items) == (c.expected_action in ("report_sales", "correct_sales"))
 
 
@@ -101,3 +105,16 @@ def test_why_answers_follow_the_why_question() -> None:
 
 def test_no_tagalog() -> None:
     assert not any("tagalog" in c.text.casefold() for c in CASES)
+
+
+def test_the_short_half_is_short_and_new() -> None:
+    """D42: twelve en and twelve fil, two asks each, short and unpunctuated, an offered action,
+    the first expected item seeded and typed with its count, no text in another half or a raw
+    file."""
+    first = [c.expected_items[0] if c.expected_items else ("", None) for c in SHORT]
+    rows = [
+        (c.lang, c.text, c.expected_action, i, None, n)
+        for c, (i, n) in zip(SHORT, first, strict=True)
+    ]
+    assert not gate.short_failures("sales_supervisor", rows)
+    assert not gate.short_reused(c.text for c in SHORT)

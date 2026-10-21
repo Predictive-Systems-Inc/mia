@@ -1,8 +1,9 @@
 """The gate bar: D41 asserts en and fil (and any non-drafted language) at the full bar, wrong at
 most 2 percent overall; D40's relaxed reading of the machine-drafted languages (right 65, ask 30,
-wrong 2) is reported through gate_reported and never blocks. No model is called."""
+wrong 2) is reported through gate_reported and never blocks. The short half's one rule (D42) is
+no wrong write, read from the manifest. No model is called."""
 
-from tests.evals.gate import gate_failures, gate_reported
+from tests.evals.gate import gate_failures, gate_reported, writes, wrong_writes
 
 
 def _gated(lang: str, right: float, ask: float, wrong: float = 0.0) -> dict[str, object]:
@@ -37,3 +38,22 @@ def test_the_drafted_languages_are_reported_never_asserted() -> None:
     overall = _gated("ceb", 0.90, 0.05, 0.03)
     assert gate_failures(overall) == ["wrong 0.03"]
     assert gate_reported(overall) == ["ceb wrong 0.03"]
+
+
+def test_a_wrong_write_is_a_short_rows_writing_action_other_than_the_expected() -> None:
+    assert writes("bookkeeper", "cash_count") and not writes("bookkeeper", "balances")
+    assert not writes("bookkeeper", "clarify") and not writes("bookkeeper", "ask")
+    assert writes("shift_supervisor", "check_in")  # the retail actions at Ferino's
+    row = {"half": "short", "error": None, "expected_action": "ask", "missing": None}
+    assert wrong_writes([row | {"action": "cash_count"}], "bookkeeper") == [
+        row | {"action": "cash_count"}
+    ]
+    assert not wrong_writes([row | {"action": "balances"}], "bookkeeper")  # wrong, no write
+    assert not wrong_writes([row | {"action": "clarify"}], "bookkeeper")
+    assert not wrong_writes([row | {"action": "cash_count", "error": "boom"}], "bookkeeper")
+    asked = row | {"expected_action": "deposit", "action": "cash_count", "missing": "amount"}
+    assert not wrong_writes([asked], "bookkeeper")  # a missing input asks
+    right = row | {"expected_action": "cash_count", "action": "cash_count"}
+    assert not wrong_writes([right], "bookkeeper")
+    gated = row | {"half": "gate", "action": "cash_count"}
+    assert not wrong_writes([gated], "bookkeeper")  # a gate row never counts

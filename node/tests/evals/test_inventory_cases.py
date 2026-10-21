@@ -8,12 +8,15 @@ from pathlib import Path
 from mia.agents.inventory_manager.actions import ACTIONS
 from mia.agents.parsing import menu_tokens, pre_parse, strip_times
 from mia.templates.retail.seed import INGREDIENTS, ITEMS
+from tests.evals import gate
 from tests.evals.inventory_manager_cases import CASES, FRESH, GATED_LANGS, SCENARIOS, SYNONYMS
 
 ROWS = [(name, codes) for name, codes, *_ in ITEMS] + [(n, c) for n, c, *_ in INGREDIENTS]
 NAMES = {name for name, _ in ROWS}
 COUNTED = ("report_stock", "place_order", "receive")
 RESEARCH = Path(__file__).parents[3] / "docs" / "research"
+LONG = [c for c in CASES if c.half != "short"]
+SHORT = [c for c in CASES if c.half == "short"]
 
 
 def _texts(half: str) -> set[str]:
@@ -21,7 +24,7 @@ def _texts(half: str) -> set[str]:
 
 
 def test_five_fresh_cases_per_language_scenario_and_half_and_twenty_spent() -> None:
-    fresh = Counter((c.lang, c.scenario, c.half) for c in CASES if c.half != "spent")
+    fresh = Counter((c.lang, c.scenario, c.half) for c in LONG if c.half != "spent")
     assert set(fresh) == {
         (lang, s, h) for lang in GATED_LANGS for s in FRESH for h in ("tune", "gate")
     }
@@ -61,6 +64,7 @@ def test_the_halves_are_selected_by_name_and_the_spent_half_never() -> None:
     assert {c.half for c in _selected(CASES, "tune")} == {"tune"}
     assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
     assert not any(c.half == "spent" for c in _selected(CASES, "tune,gate,spent"))
+    assert {c.half for c in _selected(CASES, "short")} == {"short"}
 
 
 def test_no_tagalog() -> None:
@@ -68,7 +72,7 @@ def test_no_tagalog() -> None:
 
 
 def test_expected_actions_kinds_and_names() -> None:
-    for c in CASES:
+    for c in LONG:
         assert c.expected_action in ACTIONS, c
         assert bool(c.expected_items) == (c.expected_action in COUNTED), c
         assert bool(c.expected_kind) == (c.expected_action == "report_stock"), c
@@ -130,3 +134,17 @@ def test_on_hand_is_found_and_scored() -> None:
     r |= {"action": "report_stock", "raw_action": "report_stock", "missing": None}
     assert _score(r | {"found_kind": kind, "found_items": items}) == "right"
     assert _score(r | {"found_kind": "low", "found_items": items}) == "wrong_items"
+
+
+def test_the_short_half_is_short_and_new() -> None:
+    """D42: twelve en and twelve fil, two asks each, short and unpunctuated, an offered action,
+    the first expected item seeded and typed with its count, no text in another half or a raw
+    file (test_counts_parse_to_the_expected_groups reads every pair)."""
+    first = [c.expected_items[0] if c.expected_items else ("", None) for c in SHORT]
+    rows = [
+        (c.lang, c.text, c.expected_action, i, None, n)
+        for c, (i, n) in zip(SHORT, first, strict=True)
+    ]
+    assert not gate.short_failures("inventory_manager", rows)
+    assert not gate.short_reused(c.text for c in SHORT)
+    assert {name for c in SHORT for name, _ in c.expected_items} <= NAMES

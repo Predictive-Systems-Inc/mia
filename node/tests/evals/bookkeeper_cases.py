@@ -12,6 +12,11 @@ Spent rows (SPENT_*): the first set, whose tune and gate halves were both scored
 names) are the D40 rerun's seeds: no fresh text was ever scored (shape test), and they cover the
 intents of the 0054 gate's wrong and ask rows in other words.
 
+The short half (SHORT, D42): twelve en and twelve fil messages as head staff and the owner type
+on a phone (lowercase, no punctuation, digits, one to six words), the en and fil written apart,
+not translations; two per language are ambiguous and should ask ("ask"). Its one rule is no
+wrong write (gate.wrong_writes); its expected amount is reported, never a bar.
+
 Synthetic, written by Claude, not native speakers (D18). English seeds come first; the five
 Philippine languages are drafts for head staff or the owner texting on a phone, and Q28 to Q35
 cover their review. Amounts are written as head staff type them ("12,450", "₱3,210", "P500",
@@ -33,7 +38,7 @@ class Case:
     expected_action: str
     role: str  # a role of a seeded Ferino's person (supervisor Marites, owner Rosa)
     previous: str = ""  # Mia's last message in the thread
-    half: Literal["tune", "gate", "spent"] = "tune"
+    half: Literal["tune", "gate", "spent", "short"] = "tune"
     # amount (minor units), provider (a SETTLERS or PLATFORMS value), category (CATEGORIES),
     # kind (petty cash: spend or refill)
     expected: dict[str, Any] = field(default_factory=dict)
@@ -1093,10 +1098,39 @@ SPENT: dict[str, list[Row]] = {
     "profit": SPENT_PROFIT,
 }
 
+ASK = "ask"
+# The short half (D42): (language, sender role, text, expected action or "ask", expected)
+SHORT: list[tuple[str, str, str, str, dict[str, Any]]] = [
+    ("en", SUPERVISOR, "cash count 9870", "cash_count", _a(9870)),
+    ("en", SUPERVISOR, "drawer 15200 closing", "cash_count", _a(15200)),
+    ("en", SUPERVISOR, "gcash 3210 yday", "settlement", _a(3210)),
+    ("en", OWNER, "maya in 1850", "settlement", _a(1850)),
+    ("en", OWNER, "grab payout 8900", "payout", _a(8900)),
+    ("en", OWNER, "foodpanda sent 4300", "payout", _a(4300)),
+    ("en", SUPERVISOR, "paid electric 2300", "expense", _a(2300)),
+    ("en", SUPERVISOR, "petty 150 ice", "petty_cash", _a(150)),
+    ("en", OWNER, "deposited 20000 bdo", "deposit", _a(20000)),
+    ("en", OWNER, "petty cash left", "balances", NONE),
+    ("en", SUPERVISOR, "12450", ASK, _a(12450)),
+    ("en", OWNER, "gcash", ASK, NONE),
+    ("fil", SUPERVISOR, "bilang pera 11300", "cash_count", _a(11300)),
+    ("fil", SUPERVISOR, "closing 13250 po", "cash_count", _a(13250)),
+    ("fil", SUPERVISOR, "pasok gcash 2780 kahapon", "settlement", _a(2780)),
+    ("fil", OWNER, "nag remit grab 7650", "payout", _a(7650)),
+    ("fil", SUPERVISOR, "bayad kuryente 2100", "expense", _a(2100)),
+    ("fil", SUPERVISOR, "bayad sa tubero 800", "expense", _a(800)),
+    ("fil", SUPERVISOR, "petty 200 pamasahe", "petty_cash", _a(200)),
+    ("fil", SUPERVISOR, "dagdag petty 1000", "petty_cash", _a(1000)),
+    ("fil", OWNER, "deposito 15000 bpi", "deposit", _a(15000)),
+    ("fil", OWNER, "kita ng oktubre", "profit", NONE),
+    ("fil", SUPERVISOR, "3200 kahapon", ASK, _a(3200)),
+    ("fil", OWNER, "bayad na", ASK, NONE),
+]
+
 
 def _cases() -> list[Case]:
-    """The fresh rows halved by seed parity, the fresh security asks tune-only, and every spent
-    row (and spent security ask) with half "spent"."""
+    """The fresh rows halved by seed parity, the fresh security asks tune-only, every spent
+    row (and spent security ask) with half "spent", and the short half."""
     cases = [
         Case(lang, scenario, text, action, role, expected=expected,
              half="spent" if spent else "tune" if n % 2 == 0 else "gate")
@@ -1110,6 +1144,10 @@ def _cases() -> list[Case]:
         for half, rows in (("tune", SECURITY), ("spent", SPENT_SECURITY))
         for action, (expected, *texts) in rows
         for lang, text in zip(GATED_LANGS, texts, strict=True)
+    ]
+    cases += [
+        Case(lang, "short", text, action, role, half="short", expected=expected)
+        for lang, role, text, action, expected in SHORT
     ]
     return cases
 

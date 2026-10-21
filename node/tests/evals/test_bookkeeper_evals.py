@@ -8,7 +8,9 @@ with the case's role (supervisor Marites, owner Rosa). MIA_EVAL_HALVES picks the
 (raw_action), the tool input, the seconds and the usage-row tokens. The gate reads the gate half
 only; the tune half is for tuning the action descriptions. Spent rows (both halves scored in
 earlier runs) are never selected. The D40 rerun on the fresh gate half:
-MIA_EVAL_HALVES=gate MIA_DECIDER=jev uv run pytest node/tests/evals/test_bookkeeper_evals.py -m evals -s"""
+MIA_EVAL_HALVES=gate MIA_DECIDER=jev uv run pytest node/tests/evals/test_bookkeeper_evals.py -m evals -s
+The short half (D42), printed per language, its one assertion no wrong write (gate.wrong_writes):
+MIA_EVAL_HALVES=short MIA_DECIDER=jev uv run pytest node/tests/evals/test_bookkeeper_evals.py -m evals -s"""
 
 import asyncio
 import datetime as dt
@@ -164,10 +166,15 @@ def test_decider(engine: Engine, session: Session, bk_shop: Shop) -> None:
         "by_language": {k: _row(v) for k, v in sorted(by_lang.items())},
     }
     print(json.dumps(gated, indent=1))
+    short = [r for r in results if r["half"] == "short"]
+    if short:
+        print(json.dumps({"short": gate.by_language(short, _row)}, indent=1))
     text = json.dumps(
         {"gated": gated, "results": results}, ensure_ascii=False, indent=1, default=str
     )
     report.write_text(text + "\n", encoding="utf-8")
+    wrong = gate.wrong_writes(results, MANIFEST.id)
+    assert not wrong, [(r["text"], gate.decided(r)) for r in wrong]  # D42, the short half
     if gated_rows:  # a tune-only run has no gate to assert
         failed = gate.gate_failures(gated)  # the Q40 bar, as the router's
         assert not failed, failed

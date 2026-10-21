@@ -15,9 +15,12 @@ from mia.agents.production_planner.actions import ACTIONS, DIRECTIONS, commissar
 from mia.templates.retail.models import RetailIngredient, RetailItem
 from mia.templates.retail.seed import BRANCHES
 from tests.conftest import PP_TODAY, PP_TOMORROW, Shop
+from tests.evals import gate
 from tests.evals.production_planner_cases import CASES, GATED_LANGS, SCENARIOS, TODAY
 
-FRESH = [c for c in CASES if c.half != "spent"]
+FRESH = [c for c in CASES if c.half in ("tune", "gate")]
+LONG = [c for c in CASES if c.half != "short"]
+SHORT = [c for c in CASES if c.half == "short"]
 RAW = Path(__file__).parents[3] / "docs" / "research"
 
 # The inputs each action is scored on (beyond the action itself).
@@ -33,7 +36,7 @@ INPUTS = {
 
 def test_ten_cases_per_language_scenario_and_half() -> None:
     """Per language and scenario: five fresh tune and five fresh gate seeds, ten spent."""
-    counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
+    counts = Counter((c.lang, c.scenario, c.half) for c in LONG)
     halves = ("tune", "gate", "spent")
     assert set(counts) == {(lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in halves}
     assert {n for (*_, h), n in counts.items() if h != "spent"} == {5}
@@ -69,10 +72,10 @@ def test_no_case_names_tagalog() -> None:
 
 
 def test_expected_inputs_roles_and_previous() -> None:
-    assert {c.expected_action for c in CASES} <= set(ACTIONS) - {"reply_only", "clarify"}
+    assert {c.expected_action for c in LONG} <= set(ACTIONS) - {"reply_only", "clarify"}
     roles = {"set_recipe": "owner", "capacity": "owner", "dispatch": "kiosk"}
     roles |= {"delivered": "driver"}
-    for c in CASES:
+    for c in LONG:
         assert set(c.expected) == INPUTS.get(c.expected_action, set()), c
         assert c.role == roles.get(c.expected_action, "head"), c
         assert bool(c.previous) == (c.scenario == "confirm"), c
@@ -101,7 +104,7 @@ def test_recipes_parse_in_full_and_changed_items_are_planned(
     every added or removed item is a line of the drafted plan, so those decisions never ask
     for the recipe or the plan."""
     ingredients = session.exec(select(RetailIngredient)).all()
-    for c in CASES:
+    for c in LONG:
         if c.expected_action == "set_recipe":
             p = words.recipe(c.text, ingredients)
             assert p and p.batch_yield and p.oven_minutes and p.lines and not p.unknown, c
@@ -110,7 +113,7 @@ def test_recipes_parse_in_full_and_changed_items_are_planned(
     plan = tools.draft_plan(session, home, PP_TOMORROW)
     names = {i.id: i.name for i in session.exec(select(RetailItem))}
     planned = {names[x["item_id"]] for x in plan.lines if x["batches"] > 0}
-    for c in CASES:
+    for c in LONG:
         if c.expected.get("direction") in ("add", "remove"):
             assert c.expected["item"] in planned, (c, planned)
     singles = [(i.name, [i.name, *i.short_codes]) for i in session.exec(select(RetailItem))]
@@ -178,6 +181,26 @@ def test_the_halves_are_selected_by_name() -> None:
     assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
     assert not _selected(CASES, "spent")
     assert _selected(CASES, "tune,gate,spent") == FRESH
+    assert _selected(CASES, "short") == SHORT
+
+
+def test_the_short_half_is_short_and_new() -> None:
+    """D42: twelve en and twelve fil, two asks each, short and unpunctuated, an offered action,
+    the item seeded and typed, the number typed, no text in another half or a raw file."""
+    rows = [
+        (
+            c.lang,
+            c.text,
+            c.expected_action,
+            c.expected.get("item", ""),
+            None,
+            c.expected.get("number"),
+        )
+        for c in SHORT
+    ]
+    assert not gate.short_failures("production_planner", rows)
+    assert not gate.short_reused(c.text for c in SHORT)
+    assert {c.role for c in SHORT} == {"head", "owner", "driver", "clerk"}
 
 
 def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:

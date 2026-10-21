@@ -4,11 +4,15 @@ node/tests/evals/test_hr_officer_evals.py -m evals -s (needs MIA_TYPESAFE_KEY; s
 case list is empty). Each case runs build_query and decider.decide on Ferino's seeded demo
 through egress (pseudonymised, rule 6), with today pinned to the case set's TODAY. Each result
 keeps Jev's own pick (raw_action), the seconds and the usage-row tokens. The gate reads the
-gate half only; the tune half is for tuning the action descriptions."""
+gate half only; the tune half is for tuning the action descriptions. MIA_EVAL_HALVES picks the
+halves (default "tune,gate"). The short half (D42), printed per language, its one assertion no
+wrong write (gate.wrong_writes):
+MIA_EVAL_HALVES=short MIA_DECIDER=jev uv run pytest node/tests/evals/test_hr_officer_evals.py -m evals -s"""
 
 import asyncio
 import datetime as dt
 import json
+import os
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -43,6 +47,12 @@ def _report_path(now: dt.datetime) -> Path:
     if path.exists():
         raise FileExistsError(f"refusing to overwrite {path}")
     return path
+
+
+def _selected(cases: list[Case], halves: str) -> list[Case]:
+    """The cases of the named halves (comma-separated)."""
+    wanted = set(halves.split(","))
+    return [c for c in cases if c.half in wanted]
 
 
 def _deps(session: Session, case: Case, person_id: str) -> AgentDeps:
@@ -121,10 +131,11 @@ def test_decider(engine: Engine, session: Session, ferinos: Ferinos) -> None:
     report = _report_path(dt.datetime.now().astimezone())  # before the run, not after it
     _, staff = ferinos
     senders = {c.role: next(p.id for p in staff.values() if c.role in p.roles) for c in CASES}
+    selected = _selected(CASES, os.environ.get("MIA_EVAL_HALVES", "tune,gate"))
 
     async def run() -> list[dict[str, Any]]:
         sem = asyncio.Semaphore(4)
-        cases = enumerate(CASES)
+        cases = enumerate(selected)
         return list(
             await asyncio.gather(*(_one(i, c, engine, senders[c.role], sem) for i, c in cases))
         )
@@ -145,7 +156,13 @@ def test_decider(engine: Engine, session: Session, ferinos: Ferinos) -> None:
         "by_language": {k: _row(v) for k, v in sorted(by_lang.items())},
     }
     print(json.dumps(gated, indent=1))
+    short = [r for r in results if r["half"] == "short"]
+    if short:
+        print(json.dumps({"short": gate.by_language(short, _row)}, indent=1))
     text = json.dumps({"gated": gated, "results": results}, ensure_ascii=False, indent=1)
     report.write_text(text + "\n", encoding="utf-8")
-    failed = gate.gate_failures(gated)  # the Q40 bar, as the router's
-    assert not failed, failed
+    wrong = gate.wrong_writes(results, MANIFEST.id)
+    assert not wrong, [(r["text"], gate.decided(r)) for r in wrong]  # D42, the short half
+    if gated_rows:  # a tune-only or short-only run has no gate to assert
+        failed = gate.gate_failures(gated)  # the Q40 bar, as the router's
+        assert not failed, failed

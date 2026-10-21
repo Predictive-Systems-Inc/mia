@@ -18,7 +18,12 @@ cover their review. Items are named as clerks type them (Classic, Salted egg, Bo
 no strategy. Prices are digits find_prices reads; a price change names its day with a word
 find_dates reads (a weekday, "Nov 1", "Nobyembre 2", bukas, ugma, buwas, sa aga). The run pins
 today to TODAY, the bm fixture's Monday, so the weekdays resolve the same on every run; the
-shape test checks each expected price, date and short code is a candidate code gives Jev."""
+shape test checks each expected price, date and short code is a candidate code gives Jev.
+
+The short half (SHORT, D42): twelve en and twelve fil messages as the owner and head staff type
+on a phone (lowercase, no punctuation, digits, one to six words), the en and fil written apart,
+not translations; two per language are ambiguous and should ask ("ask"). Its one rule is no
+wrong write (gate.wrong_writes); its expected item and price are reported, never a bar."""
 
 import datetime as dt
 from dataclasses import dataclass, field
@@ -33,7 +38,7 @@ class Case:
     expected_action: str
     role: str  # a role of a seeded Ferino's person (clerk Ana, supervisor Marites, owner Rosa)
     previous: str = ""  # Mia's last message in the thread
-    half: Literal["tune", "spent", "gate"] = "tune"
+    half: Literal["tune", "spent", "gate", "short"] = "tune"
     # item (a seeded item name), price (minor units), code, keep, strategy (a name_key's last
     # part, reported only), kind (price, promo or bundle, reported only)
     expected: dict[str, Any] = field(default_factory=dict)
@@ -1266,8 +1271,41 @@ def _cases(seeds: dict[str, list[Row]], *, spent: bool, five: bool = False) -> l
     ]
 
 
+ASK = "ask"
+# The short half (D42): (language, sender role, text, expected action or "ask", expected)
+SHORT: list[tuple[str, str, str, str, dict[str, Any]]] = [
+    ("en", "owner", "how is ana doing", "coaching_who", NONE),
+    ("en", "owner", "who needs coaching", "coaching_who", NONE),
+    ("en", "supervisor", "tips to sell more sp", "how_to_sell", {"item": "Special"}),
+    ("en", "owner", "try classic 49 1 wk", "propose_experiment", _p("Classic", 49)),
+    ("en", "owner", "hows the promo", "experiment_status", NONE),
+    ("en", "owner", "keep new price", "decide_experiment_result", NONE),
+    ("en", "owner", "classic 48 from monday", "change_price", _p("Classic", 48)),
+    ("en", "owner", "use ch for overload", "set_short_code", {"item": "Cheese overload"}),
+    ("en", "owner", "week numbers pls", "weekly_summary", NONE),
+    ("en", "owner", "this month vs last", "monthly_letter", NONE),
+    ("en", "owner", "classic 48", ASK, _p("Classic", 48)),
+    ("en", "owner", "ube price", ASK, {"item": "Ube"}),
+    ("fil", "owner", "kmusta benta ni liza", "coaching_who", NONE),
+    ("fil", "owner", "sino mahina sa team", "coaching_who", NONE),
+    ("fil", "supervisor", "pano mabenta ube", "how_to_sell", {"item": "Ube"}),
+    ("fil", "owner", "subukan 45 sp ngayong linggo", "propose_experiment", _p("Special", 45)),
+    ("fil", "owner", "ok ba yung test", "experiment_status", NONE),
+    ("fil", "owner", "balik sa dati presyo", "decide_experiment_result", NONE),
+    ("fil", "owner", "gawing 52 se simula lunes", "change_price", _p("Salted egg", 52)),
+    ("fil", "owner", "gawin bx code ng box", "set_short_code", {"item": "Box of 4"}),
+    ("fil", "owner", "benta ngayong linggo vs target", "weekly_summary", NONE),
+    ("fil", "owner", "report ng buwan pls", "monthly_letter", NONE),
+    ("fil", "owner", "sp 45", ASK, _p("Special", 45)),
+    ("fil", "owner", "presyo", ASK, NONE),
+]
+
 CASES: list[Case] = [
     *_cases({s: rows for s, (_, rows) in SEEDS.items()}, spent=True),
     *_cases(GATE_SEEDS, spent=True, five=True),
     *_cases(FRESH_SEEDS, spent=False),
+    *(
+        Case(lang, "short", text, action, role, half="short", expected=expected)
+        for lang, role, text, action, expected in SHORT
+    ),
 ]

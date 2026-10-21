@@ -18,13 +18,18 @@ and "Nov 1" resolve the same on every run. Every roster pattern is one code read
 parsing.find_times candidate (shape test). The spent hil, war and bcl patterns write "-" for the
 range; the fresh ones also use "tubtob" (hil, war) and "sagkod" (bcl), which code reads since fix
 wave B. The fresh rows follow the code's rule 7 guards: a check-out names no clock time, an
-incident names no "ran out" word, and a cover ask names the stall and a day."""
+incident names no "ran out" word, and a cover ask names the stall and a day.
+
+The short half (SHORT, D42): twelve en and twelve fil messages as clerks and head staff type on
+a phone (lowercase, no punctuation, digits, one to six words), the en and fil written apart, not
+translations; two per language are ambiguous and should ask ("ask"). Its one rule is no wrong
+write (gate.wrong_writes); its expected dates are reported, never a bar."""
 
 import datetime as dt
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-Half = Literal["tune", "gate", "spent"]  # spent: scored in an earlier run, never selected
+Half = Literal["tune", "gate", "spent", "short"]  # spent: scored in an earlier run, never selected
 
 
 @dataclass(frozen=True)
@@ -1392,6 +1397,35 @@ FRESH: dict[str, list[Row]] = {
 }
 KINDS = {"equipment": "equipment", "no_delivery": "no_delivery", "customer": "customer"}
 
+ASK = "ask"
+# The short half (D42): (language, sender role, text, expected action or "ask", expected)
+SHORT: list[tuple[str, str, str, str, dict[str, Any]]] = [
+    ("en", "clerk", "late 15m traffic", "record_absence", {"date": _d(0)}),
+    ("en", "clerk", "sick tmrw cant come", "record_absence", {"date": _d(1)}),
+    ("en", "clerk", "here now opening", "check_in", NONE),
+    ("en", "clerk", "done going home", "check_out", NONE),
+    ("en", "clerk", "my sched tmrw", "get_my_visits", {"date": _d(1)}),
+    ("en", "supervisor", "roster this wk", "week_roster", NONE),
+    ("en", "supervisor", "who can cover ana tmrw", "find_replacements", {"date": _d(1)}),
+    ("en", "clerk", "swap w liza fri", "swap", {"date": FRI}),
+    ("en", "clerk", "forgot time out left 9pm", "correct_time", NONE),
+    ("en", "clerk", "oven broken", "report_site_problem", NONE),
+    ("en", "clerk", "liza fri", ASK, NONE),
+    ("en", "clerk", "9pm", ASK, NONE),
+    ("fil", "clerk", "late ako 10 mins", "record_absence", {"date": _d(0)}),
+    ("fil", "clerk", "masakit ulo ko absent muna", "record_absence", {"date": _d(0)}),
+    ("fil", "clerk", "andito na me sa kiosk", "check_in", NONE),
+    ("fil", "clerk", "out na ko tnx", "check_out", NONE),
+    ("fil", "clerk", "sched ko bukas", "get_my_visits", {"date": _d(1)}),
+    ("fil", "supervisor", "sino pwede kay ana bukas", "find_replacements", {"date": _d(1)}),
+    ("fil", "clerk", "palit kami ni liza sab", "swap", {"date": SAT}),
+    ("fil", "clerk", "nakalimutan ko time out 9pm", "correct_time", NONE),
+    ("fil", "clerk", "sira ref", "report_site_problem", NONE),
+    ("fil", "supervisor", "sarado mall sa sabado", "close_day", {"date": SAT}),
+    ("fil", "clerk", "bukas po", ASK, NONE),
+    ("fil", "clerk", "liza po", ASK, NONE),
+]
+
 
 def _half(fresh: bool, n: int) -> Half:
     return "spent" if not fresh else "tune" if n % 2 == 0 else "gate"
@@ -1407,6 +1441,9 @@ def _cases() -> list[Case]:
         for fresh, rows in ((False, spent), (True, FRESH[scenario]))
         for n, (expected, *texts) in enumerate(rows)
         for lang, text in zip(GATED_LANGS, texts, strict=True)
+    ] + [
+        Case(lang, "short", text, action, role, half="short", expected=expected)
+        for lang, role, text, action, expected in SHORT
     ]  # fmt: skip
 
 

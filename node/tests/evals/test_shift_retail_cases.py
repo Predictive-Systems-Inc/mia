@@ -12,6 +12,7 @@ from mia.agents.parsing import find_times
 from mia.agents.shift_supervisor import roster
 from mia.agents.shift_supervisor.actions import RETAIL_ACTIONS, RETAIL_PROBLEM_KINDS
 from tests.conftest import RS_TODAY
+from tests.evals import gate
 from tests.evals.shift_retail_cases import CASES, GATED_LANGS, SCENARIOS, TODAY
 
 # The inputs each action is scored on (beyond the action itself).
@@ -32,6 +33,8 @@ RESEARCH = Path(__file__).parents[3] / "docs" / "research"
 SCORED = [
     RESEARCH / f"shift-supervisor-retail-2026-10-21-{t}.raw.json" for t in ("0303", "0305", "0306")
 ]
+LONG = [c for c in CASES if c.half != "short"]
+SHORT = [c for c in CASES if c.half == "short"]
 
 
 def _key(text: str) -> str:
@@ -40,7 +43,7 @@ def _key(text: str) -> str:
 
 def test_ten_cases_per_language_scenario_and_half() -> None:
     """Per language and scenario: five fresh tune and five fresh gate seeds, ten spent."""
-    counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
+    counts = Counter((c.lang, c.scenario, c.half) for c in LONG)
     halves = {"tune": 5, "gate": 5, "spent": 10}
     want = {(lang, s, h): n for lang in GATED_LANGS for s in SCENARIOS for h, n in halves.items()}
     assert counts == want
@@ -64,7 +67,7 @@ def test_no_fresh_text_was_ever_scored() -> None:
 
 
 def test_the_actions_are_retail_actions() -> None:
-    assert {c.expected_action for c in CASES} <= set(RETAIL_ACTIONS)
+    assert {c.expected_action for c in LONG} <= set(RETAIL_ACTIONS)
     assert "checklist" not in RETAIL_ACTIONS  # Q109: no checklists at a kiosk
 
 
@@ -74,7 +77,7 @@ def test_no_case_names_tagalog() -> None:
 
 def test_expected_inputs_and_roles() -> None:
     dates = {(TODAY + dt.timedelta(days=n)).isoformat() for n in range(-7, 14)}  # actions._dates
-    for c in CASES:
+    for c in LONG:
         assert set(c.expected) == INPUTS.get(c.expected_action, set()), c
         assert c.expected.get("date", TODAY.isoformat()) in dates, c
         assert c.expected.get("kind", "equipment") in RETAIL_PROBLEM_KINDS, c
@@ -147,6 +150,16 @@ def test_the_halves_are_selected_by_name() -> None:
     assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
     assert {c.half for c in _selected(CASES, "tune,gate,spent")} == {"tune", "gate"}
     assert _selected(CASES, "spent") == []
+    assert _selected(CASES, "short") == SHORT
+
+
+def test_the_short_half_is_short_and_new() -> None:
+    """D42: twelve en and twelve fil, two asks each, short and unpunctuated, an offered retail
+    action, no text in another half or a raw file."""
+    rows = [(c.lang, c.text, c.expected_action, "", None, None) for c in SHORT]
+    assert not gate.short_failures("shift_supervisor", rows)
+    assert not gate.short_reused(c.text for c in SHORT)
+    assert {c.role for c in SHORT} == {"clerk", "supervisor"}
 
 
 def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:

@@ -12,10 +12,13 @@ from mia.agents.bookkeeper import words
 from mia.agents.bookkeeper.actions import ACTIONS, CATEGORIES, PETTY, PROVIDERS
 from mia.agents.parsing import find_tender
 from tests.conftest import BK_TODAY
+from tests.evals import gate
 from tests.evals.bookkeeper_cases import CASES, GATED_LANGS, SCENARIOS, TODAY
 
 RESEARCH = Path(__file__).parents[3] / "docs" / "research"
 FRESH = [c for c in CASES if c.half != "spent"]
+LONG = [c for c in CASES if c.half != "short"]
+SHORT = [c for c in CASES if c.half == "short"]
 
 INPUTS = {
     "cash_count": {"amount"},
@@ -29,7 +32,7 @@ INPUTS = {
 def test_ten_cases_per_language_and_scenario_split_by_seed() -> None:
     """Per language and scenario: five fresh tune and five fresh gate seeds and ten spent ones;
     security is tune-only, four fresh and four spent per language."""
-    counts = Counter((c.lang, c.scenario, c.half) for c in CASES if c.scenario != "security")
+    counts = Counter((c.lang, c.scenario, c.half) for c in LONG if c.scenario != "security")
     halves = {"tune": 5, "gate": 5, "spent": 10}
     want = {(lang, s, h): n for lang in GATED_LANGS for s in SCENARIOS for h, n in halves.items()}
     assert counts == want
@@ -64,7 +67,7 @@ def test_no_fresh_text_was_ever_scored() -> None:
 
 def test_the_actions_are_the_planned_ones() -> None:
     planned = {action for action, _, _ in SCENARIOS.values()} | {"reply_only", "expense"}
-    assert {c.expected_action for c in CASES} == planned
+    assert {c.expected_action for c in LONG} == planned
     assert planned <= set(ACTIONS)
 
 
@@ -74,7 +77,7 @@ def test_no_tagalog() -> None:
 
 def test_expected_inputs_and_roles() -> None:
     owner_asks = {"journal", "tax_quarter", "profit"}
-    for c in CASES:
+    for c in LONG:
         want = INPUTS.get(c.expected_action, set())
         if c.expected_action == "petty_cash":
             want = {"amount", "kind"} | ({"category"} if c.expected["kind"] == "spend" else set())
@@ -134,6 +137,16 @@ def test_the_halves_are_selected_by_name() -> None:
     assert {c.half for c in _selected(CASES, "tune")} == {"tune"}
     assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
     assert {c.half for c in _selected(CASES, "tune,gate,spent")} == {"tune", "gate"}
+    assert {c.half for c in _selected(CASES, "short")} == {"short"}
+
+
+def test_the_short_half_is_short_new_and_parses() -> None:
+    """D42: twelve en and twelve fil, two asks each, short and unpunctuated, an offered action,
+    the amount a words.amounts candidate, no text in another half or a raw file."""
+    rows = [(c.lang, c.text, c.expected_action, "", c.expected.get("amount"), None) for c in SHORT]
+    assert not gate.short_failures("bookkeeper", rows)
+    assert not gate.short_reused(c.text for c in SHORT)
+    assert {c.role for c in SHORT} == {"supervisor", "owner"} and not any(c.previous for c in SHORT)
 
 
 def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:

@@ -11,7 +11,9 @@ find_replacements visit). MIA_EVAL_HALVES picks the halves of the fresh rows (de
 "tune,gate"; "tune" for a tuning run, "gate" for the gate run); the spent rows, scored in the
 runs of 21 Oct 2026, are never selected. Each result keeps Jev's own pick (raw_action), the tool
 input and what it resolves to, the seconds and the usage-row tokens. The gate reads the gate
-half only; the tune half is for tuning the retail action descriptions."""
+half only; the tune half is for tuning the retail action descriptions. The short half (D42),
+printed per language, its one assertion no wrong write (gate.wrong_writes):
+MIA_EVAL_HALVES=short MIA_DECIDER=jev uv run pytest node/tests/evals/test_shift_retail_evals.py -m evals -s"""
 
 import asyncio
 import datetime as dt
@@ -190,10 +192,15 @@ def test_decider(engine: Engine, session: Session, rs_shop: Shop) -> None:
         "by_language": {k: _row(v) for k, v in sorted(by_lang.items())},
     }
     print(json.dumps(gated, indent=1))
+    short = [r for r in results if r["half"] == "short"]
+    if short:
+        print(json.dumps({"short": gate.by_language(short, _row)}, indent=1))
     text = json.dumps(
         {"gated": gated, "results": results}, ensure_ascii=False, indent=1, default=str
     )
     report.write_text(text + "\n", encoding="utf-8")
+    wrong = gate.wrong_writes(results, MANIFEST.id)
+    assert not wrong, [(r["text"], gate.decided(r)) for r in wrong]  # D42, the short half
     if gated_rows:  # a tune-only run has no gate to assert
         failed = gate.gate_failures(gated)  # the Q40 bar, as the router's
         assert not failed, failed

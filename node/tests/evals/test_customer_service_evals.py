@@ -7,7 +7,9 @@ the case set's TODAY. MIA_EVAL_HALVES picks the halves (default "tune,gate"; "tu
 run); the spent gate half of run 1 is never run. A customer case acts for the seeded customer Mila, a staff case for a
 seeded clerk or supervisor. Each result keeps Jev's own pick (raw_action), the seconds and the
 usage-row tokens. The gate reads the gate half only; the tune half is for tuning the action
-descriptions."""
+descriptions. The short half (D42), its side by its role, printed per language, its one
+assertion no wrong write (gate.wrong_writes):
+MIA_EVAL_HALVES=short MIA_DECIDER=jev uv run pytest node/tests/evals/test_customer_service_evals.py -m evals -s"""
 
 import asyncio
 import datetime as dt
@@ -57,7 +59,8 @@ def _selected(cases: list[Case], halves: str) -> list[Case]:
 
 
 def _side(case: Case) -> str:
-    return "staff" if case.scenario == "staff" else "customer"
+    """The customer side for the seeded customer, else the staff side (scenario 8)."""
+    return "customer" if case.role == "customer" else "staff"
 
 
 async def _one(
@@ -170,8 +173,13 @@ def test_decider(engine: Engine, session: Session, cs: Shop) -> None:
         "by_language": {k: _row(v) for k, v in sorted(by_lang.items())},
     }
     print(json.dumps(gated, indent=1))
+    short = [r for r in results if r["half"] == "short"]
+    if short:
+        print(json.dumps({"short": gate.by_language(short, _row)}, indent=1))
     text = json.dumps({"gated": gated, "results": results}, ensure_ascii=False, indent=1)
     report.write_text(text + "\n", encoding="utf-8")
+    wrong = gate.wrong_writes(results, MANIFEST.id)
+    assert not wrong, [(r["text"], gate.decided(r)) for r in wrong]  # D42, the short half
     if gated_rows:  # a tune-only run has no gate to assert
         failed = gate.gate_failures(gated)  # the Q40 bar, as the router's
         assert not failed, failed
