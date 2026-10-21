@@ -200,5 +200,5 @@ def test_the_gate_is_the_d40_bar() -> None:
         return {"all": _row(rows), "by_language": {"fil": _row(rows)}}
 
     assert gate_failures(gated(80, 15, 2)) == []
-    assert gate_failures(gated(80, 15, 3)) == ["wrong 0.03"]
+    assert gate_failures(gated(80, 15, 3)) == ["wrong 0.03", "fil wrong 0.03"]
     assert gate_failures(gated(79, 16, 0)) == ["fil right 0.79", "fil ask 0.16"]
