@@ -85,6 +85,23 @@ def test_template_without_params_has_no_components(wa: WhatsAppAdapter) -> None:
     assert p.body["template"] == {"name": "mia_new_message", "language": {"code": "en"}}
 
 
+def test_fil_and_ceb_templates_are_sent_only_once_approved(
+    wa: WhatsAppAdapter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """fil and ceb are registered (drafts in docs/whatsapp-setup.md) but Meta must approve them
+    first: until MIA_WA_TEMPLATE_LANGS lists them, a fil call falls back to an approved one."""
+    call = TemplateCall(name="mia_new_message", lang="fil")
+    assert wa.render_template(ADDR, call).body["template"]["language"] == {"code": "fi"}
+    monkeypatch.setenv("MIA_WA_TEMPLATE_LANGS", "fil,ceb")
+    get_settings.cache_clear()
+    approved = WhatsAppAdapter(get_settings())
+    assert approved.render_template(ADDR, call).body["template"]["language"] == {"code": "fil"}
+    ceb = TemplateCall(name="mia_login_code", lang="ceb", params=["123456"])
+    assert approved.render_template(ADDR, ceb).body["template"]["language"] == {"code": "ceb"}
+    english = TemplateCall(name="mia_new_message", lang="en")  # not approved on this number
+    assert approved.render_template(ADDR, english).body["template"]["language"] == {"code": "fil"}
+
+
 @pytest.mark.parametrize(
     "call",
     [

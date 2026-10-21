@@ -186,6 +186,7 @@ class Query:
     times: dict[str, str] = field(default_factory=dict)  # t0 -> "08:00"
     dates: dict[str, str] = field(default_factory=dict)  # d0 -> ISO date
     areas: list[DeliveryArea] = field(default_factory=list)
+    menu_words: tuple[str, ...] = ()  # the org's words for every item (calc.price_items)
     orders: dict[str, str] = field(default_factory=dict)  # staff: id -> "15:00, 10 Classic"
     complaints: dict[str, str] = field(default_factory=dict)  # staff: id -> "logged ... 14:05"
     corrected: bool = False
@@ -307,6 +308,7 @@ def build_query(
         times={tid: at.strftime("%H:%M") for tid, at in find_times(message)},
         dates={i: d.isoformat() for i, d in find_dates(message, today, lang)},
         areas=list(orgconfig.load().delivery_areas),
+        menu_words=tuple(orgconfig.load().customer_service.menu_words),
         orders=orders,
         complaints=_complaints(session, branch) if side == "staff" else {},
         corrected=was_corrected(message),

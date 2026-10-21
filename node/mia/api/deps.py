@@ -92,6 +92,15 @@ def _loopback(request: Request) -> bool:
         return False
 
 
+def direct_loopback(request: Request) -> bool:
+    """True only for a loopback peer with no Cloudflare header (not tunnelled from outside)."""
+    return (
+        _loopback(request)
+        and "cf-connecting-ip" not in request.headers
+        and "cf-ray" not in request.headers
+    )
+
+
 def check_mode(settings: Settings) -> None:
     """Refuse dev mode on anything but localhost (called at startup)."""
     host = urlsplit(settings.MIA_PUBLIC_URL).hostname or ""
@@ -115,11 +124,7 @@ def _dev_header(request: Request, session: Session) -> AuthContext | None:
     actor_id = request.headers.get("x-mia-actor")
     if settings.MIA_AUTH_MODE != "dev" or not actor_id or request.url.path.startswith("/auth/"):
         return None
-    if (
-        not _loopback(request)
-        or "cf-connecting-ip" in request.headers
-        or "cf-ray" in request.headers
-    ):
+    if not direct_loopback(request):
         return None
     person = session.get(Person, actor_id)
     if person is None or person.status != "active":

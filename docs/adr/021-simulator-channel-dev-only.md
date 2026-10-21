@@ -30,5 +30,8 @@ impersonate any linked staff number and drive the OTP login over the channel.
 - Tests run in dev mode (the test conftest) or register `SimAdapter` directly, so they are
   unchanged. node/tests/channels/test_sim_dev_only.py pins the required mode refusal (webhook
   404, nothing stored, the CLI refuses) and the dev mode path.
-- A dev node is still reachable by anyone who can reach its port (for example bound to 0.0.0.0 on
-  a LAN); `MIA_SIM_SECRET` closes that for the sim webhook.
+- A dev node may still be bound to 0.0.0.0 (or run in docker with the default localhost URL),
+  so the startup check alone does not keep the LAN out. The sim webhook therefore checks each
+  request: it answers 404 unless the peer is loopback and no `cf-connecting-ip` or `cf-ray`
+  header is present (the same check as the dev actor header, `deps.direct_loopback`).
+  `MIA_SIM_SECRET` remains a second guard.

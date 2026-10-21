@@ -147,13 +147,16 @@ def test_how_many_are_left_answers_the_count_in_filipino(
     ube = _id(session, "Ube")
     _answers(monkeypatch, "report_stock", kind="count", item=ube)
     asked = _turn(session, people["Rosa"], "ilang ube ang natitira sa Mall kiosk?")
-    assert asked.text() == t("stock.not_counted", FIL, item="Ube")
+    kiosk = session.get(Branch, people["Rosa"].branch_id)  # named: she may own several
+    assert kiosk is not None
+    assert asked.text() == t("stock.not_counted", FIL, item="Ube", branch=kiosk.name)
     _answers(monkeypatch, "report_stock", kind="count", item_0=ube)
     _turn(session, people["Ana"], "5 ube na lang")
     counts = len(_logged(session, "stock.counted"))
     _answers(monkeypatch, "report_stock", kind="leftover", item=ube)  # natitira read as leftover
     reply = _turn(session, people["Rosa"], "ilang ube ang natitira sa Mall kiosk?")
-    assert reply.text() == t("stock.counted", FIL, quantity="5", item="Ube") == "5 Ube ang natira."
+    said = t("stock.on_hand", FIL, quantity="5", item="Ube", branch=kiosk.name)
+    assert reply.text() == said == f"5 Ube ang natira sa {kiosk.name}."
     assert len(_logged(session, "stock.counted")) == counts
     asked_rows = select(StockEvent).where(col(StockEvent.kind).in_(("count", "leftover")))
     assert all(r.quantity is not None for r in session.exec(asked_rows).all())
@@ -195,6 +198,22 @@ def test_waste_without_a_reason_asks_one(
     reply = _turn(session, people["Ana"], burnt, asked.thread_id)
     assert reply.text() == t("stock.waste", FIL, quantity="8", item="Classic", reason=burnt)
     assert [r.reason for r in _mine(session, people["Ana"], "waste")] == ["burnt"]
+
+
+def test_waste_without_a_number_asks_how_many_and_records_nothing(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A waste with no number was stored with quantity None (" Ube ang itinapon: ...") and
+    counted as 0 in the waste totals; it asks how many instead (rule 7)."""
+    _, people = ferinos
+    _answers(monkeypatch, "report_stock", kind="waste", reason="burnt", item=_id(session, "Ube"))
+    reply = _turn(session, people["Ana"], "nagtapon ng ube, nasunog")
+    assert (
+        reply.text()
+        == t("stock.ask.waste_quantity", FIL, item="Ube")
+        == ("Ilang Ube ang itinapon?")
+    )
+    assert not _mine(session, people["Ana"], "waste")
 
 
 def test_an_unsure_reason_asks_with_the_reason_buttons(

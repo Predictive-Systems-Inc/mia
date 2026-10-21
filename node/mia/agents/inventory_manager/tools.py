@@ -168,6 +168,8 @@ class EventIn(BaseModel):
     def _one_subject(self) -> "EventIn":
         if (self.item_id is None) == (self.ingredient_id is None):
             raise ValueError("an event is about one item or one ingredient")
+        if self.kind == "waste" and self.quantity is None:
+            raise ValueError("a waste states how many")  # totals must never count None as 0
         return self
 
 
@@ -336,6 +338,7 @@ class OnHandOutput(BaseModel):
     name: str
     quantity: int | None
     unit: str | None
+    branch: str  # named in the reply: the owner may be asking about another branch
 
 
 def on_hand(deps: AgentDeps, args: OnHandInput, tool_call_id: str) -> OnHandOutput:
@@ -348,18 +351,24 @@ def on_hand(deps: AgentDeps, args: OnHandInput, tool_call_id: str) -> OnHandOutp
         if ing is None:
             raise LookupError(f"no ingredient {args.ingredient_id!r} at this branch")
         rows = _stock_rows(deps.session, deps.branch.id, ["count", "received"])
-        return OnHandOutput(name=ing.name, quantity=_on_hand(rows).get(ing.id), unit=ing.unit)
+        left = _on_hand(rows).get(ing.id)
+        return OnHandOutput(name=ing.name, quantity=left, unit=ing.unit, branch=deps.branch.name)
     _check(deps, ITEMS, "read", tool_call_id)
     item = _items(deps.session, deps.branch.id).get(args.item_id or "")
     if item is None:
         raise LookupError(f"no item {args.item_id!r} at this branch")
     today = _business_day(deps, deps.branch, utcnow(), tool_call_id)
-    counts = [
-        r
-        for r in _stock_rows(deps.session, deps.branch.id, ["count"])
-        if r.item_id == item.id and r.business_date == today and r.quantity is not None
-    ]
-    return OnHandOutput(name=item.name, quantity=counts[-1].quantity if counts else None, unit=None)
+    stmt = (
+        select(StockEvent)
+        .where(StockEvent.branch_id == deps.branch.id)
+        .where(StockEvent.kind == "count")
+        .where(StockEvent.item_id == item.id)
+        .where(StockEvent.business_date == today)
+        .where(col(StockEvent.quantity).is_not(None))
+    )
+    last = max(deps.session.exec(stmt), key=lambda r: (r.at, r.id), default=None)  # _stock_rows
+    quantity = last.quantity if last else None
+    return OnHandOutput(name=item.name, quantity=quantity, unit=None, branch=deps.branch.name)
 
 
 # ---- plan_tomorrow ------------------------------------------------------------------------

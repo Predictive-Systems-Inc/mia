@@ -47,7 +47,7 @@ def texts_to(sim: SimAdapter, address: str = ADDR) -> list[str]:
 
 @pytest.fixture
 def client(branch: object, sim: SimAdapter) -> TestClient:
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))  # sim is loopback only
 
 
 def test_subscription_handshake(client: TestClient, sim: SimAdapter) -> None:

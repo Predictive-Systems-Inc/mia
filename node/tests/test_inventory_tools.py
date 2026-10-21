@@ -120,6 +120,16 @@ def test_a_receipt_and_a_bad_time_are_no_report(session: Session, ferinos: Ferin
             EventIn(kind="sold_out", item_id=item(session, "Ube"), at=bad)
 
 
+def test_a_waste_or_a_delivery_without_a_number_is_refused(
+    session: Session, ferinos: Ferinos
+) -> None:
+    with pytest.raises(ValidationError):
+        EventIn(kind="waste", item_id=item(session, "Ube"), reason="burnt")
+    for bad in (0, None):
+        with pytest.raises(ValidationError):
+            LineIn(ingredient_id=ingredient(session, "Eggs"), quantity=bad)  # type: ignore[arg-type]
+
+
 def test_a_sell_out_stores_no_quantity(session: Session, ferinos: Ferinos) -> None:
     _, people = ferinos
     args = RecordEventsInput(

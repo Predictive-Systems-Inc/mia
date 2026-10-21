@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     MIA_WA_PHONE_NUMBER_ID: str = ""
     MIA_WA_NUMBER: str = ""
     MIA_WA_GRAPH_URL: str = "https://graph.facebook.com/v26.0"
+    # Template languages approved in this number's WhatsApp Manager; no other is ever sent.
+    MIA_WA_TEMPLATE_LANGS: str = "fi,en"
 
     @property
     def db_url(self) -> str:

@@ -54,9 +54,31 @@ def test_dev_mode_still_serves_the_sim_webhook(
     monkeypatch: pytest.MonkeyPatch, session: Session
 ) -> None:
     mode(monkeypatch, "dev")
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         assert post_signed(client) == 200
     assert len(session.exec(select(ChannelInbound)).all()) == 1
+
+
+@pytest.mark.usefixtures("branch", "sim_enabled")
+def test_dev_mode_refuses_the_sim_webhook_from_the_lan(
+    monkeypatch: pytest.MonkeyPatch, session: Session
+) -> None:
+    mode(monkeypatch, "dev")
+    with TestClient(app, client=("192.168.1.20", 50000)) as client:
+        assert post_signed(client) == 404
+    assert session.exec(select(ChannelInbound)).all() == []
+
+
+@pytest.mark.usefixtures("branch", "sim_enabled")
+def test_dev_mode_refuses_the_sim_webhook_through_the_tunnel(
+    monkeypatch: pytest.MonkeyPatch, session: Session
+) -> None:
+    mode(monkeypatch, "dev")
+    headers = _hub_sign("sim-secret")(BODY) | {"cf-ray": "8a1b2c3d4e5f-MNL"}
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        status = client.post("/channels/sim/webhook", content=BODY, headers=headers).status_code
+    assert status == 404
+    assert session.exec(select(ChannelInbound)).all() == []
 
 
 def test_dev_mode_takes_the_sim_secret_from_the_environment(

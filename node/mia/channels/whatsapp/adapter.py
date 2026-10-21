@@ -53,6 +53,7 @@ class WhatsAppAdapter:
         self.graph_url = settings.MIA_WA_GRAPH_URL.rstrip("/")
         url = f"{self.graph_url}/{settings.MIA_WA_PHONE_NUMBER_ID}/messages"
         self.messages_url = url
+        self.template_langs = {x.strip() for x in settings.MIA_WA_TEMPLATE_LANGS.split(",")}
         self.client = httpx.AsyncClient(
             transport=ChannelTransport(transport),
             headers={"Authorization": f"Bearer {settings.MIA_WA_TOKEN}"},
@@ -173,13 +174,18 @@ class WhatsAppAdapter:
         return out
 
     def render_template(self, address: str, call: TemplateCall) -> ChannelPayload:
-        """A registered template. Raises ValueError for unknown names or wrong parameter counts."""
+        """A registered template in an approved language (MIA_WA_TEMPLATE_LANGS): the call's,
+        else the first approved one. Raises ValueError for unknown names, wrong parameter counts
+        and a template with no approved language (an unapproved one is never sent)."""
         spec = TEMPLATES.get(call.name)
         if spec is None:
             raise ValueError(f"template {call.name!r} is not registered")
         if len(call.params) != spec.params:
             raise ValueError(f"template {call.name!r} takes {spec.params} parameters")
-        lang = call.lang if call.lang in spec.langs else spec.langs[0]
+        approved = [lang for lang in spec.langs if lang in self.template_langs]
+        if not approved:
+            raise ValueError(f"template {call.name!r} has no approved language")
+        lang = call.lang if call.lang in approved else approved[0]
         template: dict[str, Any] = {"name": call.name, "language": {"code": lang}}
         if call.params:
             params = [{"type": "text", "text": p} for p in call.params]

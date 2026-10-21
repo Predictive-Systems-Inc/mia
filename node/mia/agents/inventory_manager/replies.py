@@ -100,9 +100,9 @@ def tool_reply(
     if tool == "on_hand":
         left = OnHandOutput.model_validate(out)
         if left.quantity is None:
-            return _text("stock.not_counted", lang, item=left.name)
+            return _text("stock.not_counted", lang, item=left.name, branch=left.branch)
         quantity = " ".join(filter(None, [format_int(left.quantity, lang), left.unit]))
-        return _text("stock.counted", lang, quantity=quantity, item=left.name)
+        return _text("stock.on_hand", lang, quantity=quantity, item=left.name, branch=left.branch)
     if tool == "low_stock":
         low = LowStockOutput.model_validate(out).ingredients
         if not low:

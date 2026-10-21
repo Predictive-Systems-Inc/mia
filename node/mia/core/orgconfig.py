@@ -72,11 +72,13 @@ class DeliveryArea(BaseModel):
 
 class CustomerServiceSettings(BaseModel):
     """Limits for the customer service: items per order, inbound messages per hour per address,
-    and public turns (each one Jev request) per hour across the whole node."""
+    and public turns (each one Jev request) per hour across the whole node; menu_words are the
+    org's generic words for every item ("bibingka" at Ferino's)."""
 
     max_order_quantity: int = 50
     messages_per_hour: int = 30
     public_calls_per_hour: int = 600
+    menu_words: list[str] = Field(default_factory=list)  # a price question on one asks the menu
 
 
 class BranchManagerSettings(BaseModel):

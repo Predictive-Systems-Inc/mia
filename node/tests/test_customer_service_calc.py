@@ -67,15 +67,25 @@ def test_items_match_by_name_or_code_as_whole_words() -> None:
     assert calc.match_items("ubos na ba", items) == []
 
 
-def test_a_price_question_on_one_item_by_a_code_alone_is_the_menu() -> None:
+def test_a_price_question_on_the_menu_word_alone_is_the_menu() -> None:
     """Smoke test 21 Oct: "magkano ang bibingka?" listed only Classic (bibingka is one of its
-    codes and the word for every item). One item named only by a code asks for the menu (no
-    ids); a whole name, or two items, keep the items."""
+    codes and the org's word for every item). The menu word alone asks for the menu (no ids);
+    a whole name, or two items, keep the items."""
     items = {"c": ("Classic", "cl", "bibingka"), "u": ("Ube", "ube"), "p": ("Puto bumbong", "pb")}
-    assert calc.price_items("magkano ang bibingka?", items) == []
-    assert calc.price_items("magkano ang classic?", items) == ["c"]
-    assert calc.price_items("magkano ang ube", items) == ["u"]
-    assert calc.price_items("magkano ang bibingka at puto bumbong?", items) == ["c", "p"]
+    menu = ("bibingka",)
+    assert calc.price_items("magkano ang bibingka?", items, menu) == []
+    assert calc.price_items("magkano ang classic?", items, menu) == ["c"]
+    assert calc.price_items("magkano ang ube", items, menu) == ["u"]
+    assert calc.price_items("magkano ang bibingka at puto bumbong?", items, menu) == ["c", "p"]
+
+
+def test_a_price_question_on_any_other_code_is_that_one_item() -> None:
+    """Review 21 Oct: "magkano ang pb" listed the whole menu; a code that is not a menu word
+    keeps its one item, and with no menu words configured every code does."""
+    items = {"c": ("Classic", "cl", "bibingka"), "u": ("Ube", "ube"), "p": ("Puto bumbong", "pb")}
+    assert calc.price_items("magkano ang pb", items, ("bibingka",)) == ["p"]
+    assert calc.price_items("magkano ang cl?", items, ("bibingka",)) == ["c"]
+    assert calc.price_items("magkano ang bibingka?", items) == ["c"]
 
 
 def test_last_four_reads_the_digits() -> None:

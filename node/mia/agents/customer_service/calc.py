@@ -103,14 +103,16 @@ def match_items(text: str, items: Mapping[str, Sequence[str]]) -> list[str]:
     ]
 
 
-def price_items(text: str, items: Mapping[str, Sequence[str]]) -> list[str]:
-    """The items a price question asks about (match_items); one item named only by a code is
-    the whole menu (no ids): a word like bibingka is a code of Classic and the word for every
-    item, and a customer asking "magkano ang bibingka?" wants the list."""
-    # ponytail: a single code-only hit lists the menu ("magkano ang coffee" too); a generic
-    # word per org in the settings if the long answer bothers anyone
+def price_items(
+    text: str, items: Mapping[str, Sequence[str]], menu_words: Sequence[str] = ()
+) -> list[str]:
+    """The items a price question asks about (match_items); one item named only by one of the
+    org's menu words is the whole menu (no ids): bibingka is a code of Classic and the word for
+    every item at Ferino's, so "magkano ang bibingka?" wants the list, while "magkano ang pb"
+    is the one item."""
     hits = match_items(text, items)
-    if len(hits) == 1 and not _names(text, items[hits[0]][0]):
+    generic = set(fold(text).split()) & {fold(w) for w in menu_words}
+    if len(hits) == 1 and generic and not _names(text, items[hits[0]][0]):
         return []
     return hits
 

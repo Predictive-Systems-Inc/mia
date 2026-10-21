@@ -29,7 +29,7 @@ are a later phase (see the last section).
 | inventory_manager | clerks, baker, owner | stock, sell-outs, leftovers and waste, what to bake, supplier orders |
 | bookkeeper | head staff, owner | cash count, expenses, deposits, GCash and Maya settlements, VAT and BIR |
 | hr_officer | all staff, owner | hours, payroll, 13th month, leave, SSS, PhilHealth, Pag-IBIG, hiring, onboarding |
-| branch_manager | owner | branches, menu, prices, short codes, people, permits, weekly summary, coaching, experiments |
+| branch_manager | owner, clerks (their own coaching, morning message, cheers) | branches, menu, prices, short codes, people, permits, weekly summary, coaching, experiments |
 
 **Four to add, in the order a shop needs them**
 

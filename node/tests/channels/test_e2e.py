@@ -49,7 +49,7 @@ def test_whole_demo_over_a_channel(
     link: LinkFn,
     daytime: Callable[[], datetime],
 ) -> None:
-    client = TestClient(app)
+    client = TestClient(app, client=("127.0.0.1", 50000))  # sim is loopback only
     sanna, juha, mikael = people["Sanna"], people["Juha"], people["Mikael"]
 
     # A supervisor adds and invites a new person, who links by sending the code.

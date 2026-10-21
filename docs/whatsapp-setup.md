@@ -59,8 +59,9 @@ for authentication templates; use it when it does, these are the texts otherwise
 
 ### Filipino (`fil`) and Cebuano (`ceb`), for Ferino's
 Machine drafts until a native speaker reviews them (Q28 to Q35). Create each template again in
-these languages. `node/mia/channels/whatsapp/templates.py` lists only `fi` and `en` today, so
-add `fil` and `ceb` to each template's `langs` there once Meta approves them.
+these languages. `node/mia/channels/whatsapp/templates.py` registers `fil` and `ceb`, but Mia
+sends only the languages in `MIA_WA_TEMPLATE_LANGS` (default `fi,en`), so add `fil,ceb` there once
+Meta approves them (a Ferino's number with only these: `MIA_WA_TEMPLATE_LANGS=fil,ceb`).
 
 | Name | `fil` body and buttons | `ceb` body and buttons |
 |---|---|---|
