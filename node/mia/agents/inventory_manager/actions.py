@@ -84,14 +84,17 @@ def _label(action: str) -> str:
 
 ACTIONS: dict[str, Action] = {
     "report_stock": Action(
-        "The sender tells what is in the shop now or what happened to stock: sold out (ubos,"
-        " wala na), a count left (5 ube, 2 trays of eggs), leftovers at closing, things thrown"
-        " away with maybe a reason, or running low (needing more of something, with no"
+        "The sender tells what is in the shop now or what happened to stock: sold out or out"
+        " (ubos, wala na), a count left (5 ube, 2 trays of eggs), leftovers at closing, things"
+        " thrown away, binned, broken or wasted with or without a number or a reason, or running"
+        " low or almost finished (needing more of something, with no"
         " number, is running low: kailangan pa ng, kinahanglan pa og). A number of an"
         " ingredient with a unit and na lang, pa, bilin or left (4 kg asukal na lang, 1 tangke"
         " lpg na lang) is a count, report_stock. It is what is in the shop now, not buying:"
         " report_stock is what is in the shop now, place_order is buying, receive is a delivery"
-        " that came in. Not a question about how many were sold.",
+        " that came in. Also a question of how many of an item or ingredient are left or on"
+        " hand now (how many left, ilan pa, ilan ang natitira); never a question about how many"
+        " were sold.",
         "record_events",
         ("kind", "reason", "time"),
         _label("report_stock"),

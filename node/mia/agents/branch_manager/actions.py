@@ -170,8 +170,9 @@ ACTIONS: dict[str, Action] = {
         " probaran ta <price> an <item>, i-test ang <item> sa <price>, i-trial); several"
         " pieces for one price (i-promo natin: 3 Classic sa 110, 2 kape sa 45); a bundle or"
         " combo at a price; a higher price for an item that sells out; a price for a few weeks"
-        " (dalawang linggo, duha ka semana)."
-        " A trial, not a permanent price change.",
+        " (dalawang linggo, duha ka semana); a markdown late in the day to waste less; a price"
+        " one peso under the usual or between a small and a large size; a sender asking whether"
+        " they may propose such a test or promo. A trial, not a permanent price change.",
         "propose_experiment",
         ("item", "price", "start", "kind", "strategy"),
         _label("propose_experiment"),
@@ -209,7 +210,8 @@ ACTIONS: dict[str, Action] = {
     "set_short_code": Action(
         "The sender wants a short code or nickname for an item, used when typing counts"
         " (gawing sp ang code ng special, use cl for classic, short code, give the item the"
-        " code cho). The message names the item and one short code word.",
+        " code cho). The message names the item and one short code word, in either order: the"
+        " code first then the item, or the item first then the code.",
         "set_short_code",
         ("item", "code"),
         _label("set_short_code"),
@@ -225,7 +227,8 @@ ACTIONS: dict[str, Action] = {
     "monthly_letter": Action(
         "The sender asks for the month's numbers letter: sales, best sellers and experiments of"
         " the month (monthly report, buwanang ulat, the numbers this month, binulan or"
-        " binulanang report, a report of the bulan).",
+        " binulanang report, a report of the bulan), also how this month compares with last"
+        " month (is this month better than last month).",
         "monthly_letter",
         (),
         _label("monthly_letter"),

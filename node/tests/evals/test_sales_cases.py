@@ -59,6 +59,14 @@ def test_the_halves_are_selected_by_name_and_the_spent_half_never() -> None:
     assert not any(c.half == "spent" for c in _selected(CASES, "tune,gate,spent"))
 
 
+def test_a_tune_only_run_has_an_empty_gate() -> None:
+    from tests.evals.test_sales_supervisor_evals import _gated
+
+    gated = _gated([{"half": "tune", "lang": "fil", "score": "right", "kind": "ok", "tokens": 1}])
+    assert gated["all"]["n"] == 0 and gated["all"]["wrong"] == 0
+    assert gated["by_language"] == {}
+
+
 def test_expected_actions_are_actions_and_counts_name_items() -> None:
     for c in CASES:
         assert c.expected_action in ACTIONS, c

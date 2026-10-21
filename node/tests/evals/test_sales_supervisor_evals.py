@@ -149,11 +149,11 @@ def _score(r: dict[str, Any]) -> str:
 
 
 def _row(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    n = len(rows)
+    n = len(rows) or 1  # a tune-only run has no gate rows
     secs = sorted(r["seconds"] for r in rows if r.get("seconds"))
     count = {s: sum(r["score"] == s for r in rows) for s in SCORES}
     return {
-        "n": n,
+        "n": len(rows),
         **{s: round(c / n, 3) for s, c in count.items()},
         "errors": sum(r["kind"] == "error" for r in rows),
         "p50": round(secs[len(secs) // 2], 2) if secs else 0.0,

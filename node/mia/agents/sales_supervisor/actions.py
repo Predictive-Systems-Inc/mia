@@ -75,7 +75,8 @@ ACTIONS: dict[str, Action] = {
         "The sender corrects an item's count already reported: the new number with a"
         " correction word in any language: not (hindi, dili, indi, diri, bako), should be"
         " (dapat, unta), wrong or mistake (mali, sala, sayop), sorry, make it (gawin, himoa,"
-        " himua, gibuhon), change or fix (ayusin, usba, ilisan, tadongon). Examples: sorry, 4"
+        " himua, gibuhon, also make <item> <number>), change or fix (ayusin, usba, ilisan,"
+        " tadongon). Examples: sorry, 4"
         " special not 3; 5 classic hindi 6; kape dapat 6; himoa nga 9 ang special. A correction"
         " word makes it a correction even when only one number is left.",
         "correct_count",
@@ -84,7 +85,9 @@ ACTIONS: dict[str, Action] = {
     ),
     "sales_today": Action(
         "The sender asks how sales are going today: how much or how many were sold so far,"
-        " today's total, how a branch is doing now, or how close today's target is.",
+        " today's total, how a branch is doing now, or how close today's target is, also a"
+        " request to see or get an update of today's numbers or sales. A question, never a"
+        " report of counts.",
         "today",
         ("branch",),
         f"intent.{MANIFEST.id}.sales_today",
@@ -92,8 +95,10 @@ ACTIONS: dict[str, Action] = {
     "sales_period": Action(
         "The sender asks for sales over a period (yesterday, this week, last month, the best"
         " day, how a weekday went, whether a past target was hit), for the branch, all branches"
-        " or one item, including which branch (or where) sells most of an item or a comparison"
-        " of branches. A 'kumusta' (how was) about a weekday or a past day (kumusta ang Sabado,"
+        " or one item, including which branch (or where) sells most of an item, one item's"
+        " sales per branch on a past day, or a comparison of branches; an item name with a past"
+        " day and no count is this question, never a report. A 'kumusta' (how was) about a"
+        " weekday or a past day (kumusta ang Sabado,"
         " kumusta kita kan Domingo) is a question about that day's sales.",
         "period_report",
         ("period", "branch"),
