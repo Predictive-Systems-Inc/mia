@@ -245,3 +245,10 @@ pricing, competitor prices.
   every fixed number in a `bm.*` string is a placeholder fed from the constants
   (`tools.WORDED`); `retail_item_prices.set_by` is the person who set the price, None for the
   system, and the approval and people ids are foreign keys.
+- 21 Oct 2026, people from the chat (Q117): `add_person` (an admin adds a clerk, staff,
+  supervisor or admin, never an owner, through people.add_person, then the invite or a linked
+  number) and `set_phone` (a Philippine mobile number linked through linking.link_phone, the
+  address redacted in channel.linked, the last four digits in replies). Review finding, account
+  takeover: a linked number acts as the person and receives their WhatsApp login, so a number
+  goes only to a clerk, staff or supervisor, to an admin only from the owner, never to the
+  owner, never as a second number (no silent replace) and never away from another person.

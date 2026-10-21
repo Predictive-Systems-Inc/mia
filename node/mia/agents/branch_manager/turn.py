@@ -25,11 +25,11 @@ from mia.agents.sales_supervisor.tools import _currency
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import reply_text, store_reply
-from mia.core import events, orgconfig
+from mia.core import auth, events, orgconfig
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
-from mia.core.models import Event, Message, Thread
+from mia.core.models import Event, Message, Person, Thread
 from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied, Resource, get_rbac
 from mia.i18n import t
@@ -41,6 +41,18 @@ _BINDINGS = {b.tool_id: b for b in tools.BINDINGS}  # importing tools registers 
 _DECIDE_TOOL = Resource(kind="tool", name=f"{MANIFEST.id}.decide_experiment")
 OWN_SUGGESTION = "bm.strategy.seasonal"  # the agent's own suggestion (Q74): last year's month
 MAX_OPTIONS = 5  # proposal buttons; a QuickRepliesBlock holds six
+PEOPLE_TOOLS = ("add_person", "set_phone")
+# A people action missing an input asks for it; set_phone's person is asked as a name.
+PERSON_ASKS = {"name": "bm.person.ask_name", "role": "bm.person.ask_role",
+               "phone": "bm.person.ask_phone", "person": "bm.person.ask_who"}  # fmt: skip
+PERSON_REFUSALS = {
+    "person_exists": "bm.person.exists",
+    "phone_invalid": "bm.person.ask_phone",
+    "phone_taken": "bm.person.phone_taken",
+    "phone_set": "bm.person.phone_set",
+    "phone_role": "bm.person.phone_role",
+}
+PHONE_EXAMPLE = "0917 123 4567"
 
 
 def _last_question(session: Session, thread: Thread) -> Message | None:
@@ -398,6 +410,9 @@ def _result(
         blocks = replies.weekly(tools.WeeklyOutput.model_validate(out), names, currency, lang)
     elif tool == "monthly_letter":
         blocks = replies.monthly(tools.MonthlyOutput.model_validate(out), names, lang)
+    elif tool in PEOPLE_TOOLS:
+        days = auth.CODE_TTL["invite"].days
+        blocks = replies.person(tools.PersonOut.model_validate(out), days, lang)
     else:  # propose_experiment and change_price run on approve
         blocks = [TextBlock(text=t("reply.not_built", lang))]
     return store_reply(session, deps, thread, blocks)
@@ -438,17 +453,35 @@ def _run(
             starts_on = inp.starts_on
             found = _proposals(deps, starts_on) or []
             return _offer(session, deps, thread, found, starts_on, "bm.refused.no_strategy")
+        if tool in PEOPLE_TOOLS and out["message"] in PERSON_REFUSALS:
+            key = PERSON_REFUSALS[str(out["message"])]
+            who = deps.session.get(Person, str(args.get("person_id") or ""))
+            name = who.name if who is not None else str(args.get("name") or "")
+            text = t(key, deps.lang, name=name, example=PHONE_EXAMPLE)
+            return reply_text(session, deps, thread, text)
         key = replies.refusal_key(str(out["message"]))
         return reply_text(session, deps, thread, t(key, deps.lang, **tools.WORDED))
     return _result(session, deps, thread, tool, out)
+
+
+def _logged(decision: Decision) -> dict[str, Any]:
+    """The decision for its event, a phone number in its args or alternatives redacted."""
+    after = decision.model_dump(mode="json")
+    for args in [after["args"], *(a["args"] for a in after["alternatives"])]:
+        if args.get("phone"):
+            args["phone"] = events.REDACTED
+    return after
 
 
 def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) -> ChatReply:
     """Log the decision, then ask "Did you mean", run its tool through the guard, or word a
     conversation reply. A decision whose action is not one of ACTIONS (a tapped decision of
     another agent) asks to rephrase."""
-    after = decision.model_dump(mode="json")
+    after = _logged(decision)
     events.emit(session, "decision.made", ("thread", thread.id), None, after, deps.actor)
+    if decision.action == "clarify" and decision.raw_action in PEOPLE_TOOLS and decision.missing:
+        key = PERSON_ASKS.get(decision.missing, "clarify.rephrase")
+        return reply_text(session, deps, thread, t(key, deps.lang, example=PHONE_EXAMPLE))
     if decision.action == "clarify":
         return _did_you_mean(session, deps, thread, decision)
     spec = actions.ACTIONS.get(decision.action)

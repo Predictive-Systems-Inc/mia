@@ -52,14 +52,16 @@ from mia.agents.sales_supervisor.tools import (
     _live_counts,
     _share,
 )
+from mia.channels import linking
 from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
-from mia.core import approvals, events, orgconfig, store
+from mia.core import approvals, events, orgconfig, people, store
 from mia.core.db import utcnow
 from mia.core.models import (
     Actor,
     Approval,
     Branch,
+    ChannelIdentity,
     Person,
     SalesCount,
     SalesNote,
@@ -69,6 +71,7 @@ from mia.core.money import format_money
 from mia.core.rbac import Resource
 from mia.i18n import t
 from mia.i18n.strings import STRINGS
+from mia.settings import get_settings
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail import items
 from mia.templates.retail.models import (
@@ -1432,6 +1435,177 @@ def experiment_tick(
     return out
 
 
+# ---- add_person and set_phone --------------------------------------------------------------
+
+
+IDENTITIES = Resource(kind="data", name="core.channel_identity")
+BRANCHES = Resource(kind="data", name="core.branch")
+PersonRole = Literal["clerk", "staff", "supervisor", "admin"]  # never owner (Q117)
+
+
+class AddPersonInput(BaseModel):
+    name: str = Field(min_length=1)
+    role: PersonRole
+    branch_id: str | None = None  # None: the sender's branch
+    language: Literal["en", "fil"] = "fil"
+    phone: str | None = None
+
+
+class SetPhoneInput(BaseModel):
+    person_id: str
+    phone: str
+
+
+class PersonOut(BaseModel):
+    person_id: str
+    name: str
+    role: str
+    branch: str
+    created: bool = False  # add_person; set_phone links an existing person
+    phone_last4: str | None = None  # the number is linked: only its last four digits
+    invite_code: str | None = None  # no number: the LINK code and its wa.me link
+    invite_link: str | None = None
+
+
+def _phone(text: str | None) -> str | None:
+    """The normalised number (linking.ph_mobile), None for no text. LookupError phone_invalid."""
+    if text is None:
+        return None
+    address = linking.ph_mobile(text)
+    if address is None:
+        raise LookupError("phone_invalid")
+    return address
+
+
+def _held_by_other(session: Session, address: str, person_id: str | None) -> bool:
+    return any(
+        (row := linking.identity_for(session, c, address)) is not None
+        and row.person_id != person_id
+        for c in linking.PHONE_CHANNELS
+    )
+
+
+LINKABLE = frozenset({"clerk", "staff", "supervisor"})
+
+
+def _may_link(deps: AgentDeps, roles: Iterable[str]) -> bool:
+    """Whether the sender may attach a number to a person with these roles (account takeover
+    guard: a linked number acts as the person and receives their WhatsApp login): clerk, staff
+    and supervisor; an admin only for an owner sender; an owner never."""
+    rest = set(roles) - LINKABLE
+    return not rest or (rest == {"admin"} and "owner" in deps.person.roles)
+
+
+def _target_branch(deps: AgentDeps, branch_id: str | None) -> Branch:
+    branch = deps.session.get(Branch, branch_id) if branch_id else deps.branch
+    if branch is None or branch.organisation_id != deps.organisation_id:
+        raise LookupError("no_branch")
+    return branch
+
+
+def check_add_person(deps: AgentDeps, args: AddPersonInput, tool_call_id: str) -> None:
+    """The precheck of add_person: the branch is the organisation's, no active person of it
+    has the name (any case; person_exists), the phone is a PH mobile no one holds. LookupError."""
+    _check(deps, PEOPLE, "read", tool_call_id)
+    _check(deps, BRANCHES, "read", tool_call_id)
+    branch = _target_branch(deps, args.branch_id)
+    name = " ".join(args.name.split()).casefold()
+    here = deps.session.exec(
+        select(Person).where(Person.branch_id == branch.id).where(Person.status == "active")
+    ).all()
+    if any(p.name.casefold() == name for p in here):
+        raise LookupError("person_exists")
+    address = _phone(args.phone)
+    if address is not None and not _may_link(deps, [args.role]):
+        raise LookupError("phone_role")
+    if address is not None and _held_by_other(deps.session, address, None):
+        raise LookupError("phone_taken")
+
+
+def add_person(deps: AgentDeps, args: AddPersonInput, tool_call_id: str) -> PersonOut:
+    """Create the person through people.add_person (event person.created, then
+    person.language_chosen), the CLI's `mia person add`. A phone links them on WhatsApp
+    (linking.link_phone, the address redacted); without one, the invite `mia invite` makes (a
+    LINK code, single use, and the wa.me link when MIA_WA_NUMBER is set). Admin only (policy);
+    the tool is sensitive, so its tool.called event keeps only the person id."""
+    check_add_person(deps, args, tool_call_id)
+    _check(deps, PEOPLE, "write", tool_call_id)
+    branch = _target_branch(deps, args.branch_id)
+    person = people.add_person(
+        deps.session,
+        deps.actor,
+        branch_id=branch.id,
+        name=args.name,
+        roles=[args.role],
+        language=args.language,
+    )
+    out = PersonOut(
+        person_id=person.id, name=person.name, role=args.role, branch=branch.name, created=True
+    )
+    address = _phone(args.phone)
+    if address is not None:
+        _check(deps, IDENTITIES, "write", tool_call_id)
+        linking.link_phone(deps.session, deps.actor, person, address)
+        return out.model_copy(update={"phone_last4": address[-4:]})
+    try:
+        code = linking.create_code(deps.session, deps.actor, person, "invite")
+    except linking.LinkingError:
+        return out  # no master key on this node: the admin runs `mia invite` once it has one
+    link = linking.invite_link(code) if get_settings().MIA_WA_NUMBER else None
+    return out.model_copy(update={"invite_code": code, "invite_link": link})
+
+
+def _person_of_org(deps: AgentDeps, person_id: str) -> Person:
+    person = deps.session.get(Person, person_id)
+    branch = deps.session.get(Branch, person.branch_id) if person is not None else None
+    if person is None or branch is None or branch.organisation_id != deps.organisation_id:
+        raise LookupError("no_person")
+    return person
+
+
+def check_phone(deps: AgentDeps, args: SetPhoneInput, tool_call_id: str) -> None:
+    """The precheck of set_phone: an active person of the organisation the sender may link
+    (_may_link; else no_person, never a hint), with no WhatsApp number yet (phone_set: they
+    relink through LINK or the owner removes it, never a silent replace), and a PH mobile
+    number nobody else holds (phone_taken: never relinked). LookupError."""
+    _check(deps, PEOPLE, "read", tool_call_id)
+    person = _person_of_org(deps, args.person_id)
+    if person.status != "active" or not _may_link(deps, person.roles):
+        raise LookupError("no_person")
+    linked = deps.session.exec(
+        select(ChannelIdentity)
+        .where(ChannelIdentity.person_id == person.id)
+        .where(ChannelIdentity.channel == "whatsapp")
+        .where(ChannelIdentity.status == "active")
+    ).first()
+    if linked is not None:
+        raise LookupError("phone_set")
+    address = _phone(args.phone)
+    assert address is not None
+    if _held_by_other(deps.session, address, person.id):
+        raise LookupError("phone_taken")
+
+
+def set_phone(deps: AgentDeps, args: SetPhoneInput, tool_call_id: str) -> PersonOut:
+    """Link the number to an existing person on WhatsApp (linking.link_phone, event
+    channel.linked with the address redacted), so their messages act as them without the
+    invite. Admin only (policy), sensitive. Raises LookupError (check_phone)."""
+    check_phone(deps, args, tool_call_id)
+    _check(deps, IDENTITIES, "write", tool_call_id)
+    person = _person_of_org(deps, args.person_id)
+    address = _phone(args.phone)
+    assert address is not None
+    linking.link_phone(deps.session, deps.actor, person, address)
+    branch = deps.session.get(Branch, person.branch_id)
+    return PersonOut(
+        person_id=person.id,
+        name=person.name,
+        role=", ".join(person.roles),
+        branch=branch.name if branch else "",
+        phone_last4=address[-4:],
+    )
+
+
 # ---- bindings -----------------------------------------------------------------------------
 
 
@@ -1492,5 +1666,19 @@ BINDINGS = [
         monthly_letter,
         MonthlyInput,
         "Last month in numbers: sales against target, best days, per clerk, experiments.",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.add_person",
+        add_person,
+        AddPersonInput,
+        "Add a user with a role (clerk, staff, supervisor or admin) and invite or link them.",
+        precheck=check_add_person,
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.set_phone",
+        set_phone,
+        SetPhoneInput,
+        "Link a Philippine mobile number to a person so their WhatsApp messages act as them.",
+        precheck=check_phone,
     ),
 ]

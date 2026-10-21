@@ -13,6 +13,7 @@ from mia.agents.branch_manager.tools import (
     HowToSellOutput,
     ItemOut,
     MonthlyOutput,
+    PersonOut,
     WeeklyOutput,
 )
 from mia.agents.decider import Decision
@@ -157,6 +158,22 @@ def price_waiting(approval_id: str, summary: str, lang: str) -> list[Block]:
 def short_code(out: ItemOut, lang: str) -> list[Block]:
     """The item and every code it can now be typed as."""
     return _text("bm.short_code.set", lang, item=out.name, codes=", ".join(out.codes))
+
+
+def person(out: PersonOut, days: int, lang: str) -> list[Block]:
+    """add_person: who was added with which role where, then the invite to forward (the wa.me
+    link when there is one, the LINK code always) or the linked number by its last four digits;
+    set_phone: the linked number only. The full number is never worded."""
+    lines = []
+    if out.created:
+        lines.append(t("bm.person.added", lang, name=out.name, role=out.role, branch=out.branch))
+    if out.phone_last4 is not None:
+        lines.append(t("bm.person.phone_linked", lang, name=out.name, last4=out.phone_last4))
+    elif out.invite_code is not None:
+        key = "bm.person.invite" if out.invite_link else "bm.person.invite_code"
+        code, link = out.invite_code, out.invite_link
+        lines.append(t(key, lang, name=out.name, link=link, code=code, days=days))
+    return [TextBlock(text="\n".join(lines))]
 
 
 def weekly(out: WeeklyOutput, names: Names, currency: str, lang: str) -> list[Block]:

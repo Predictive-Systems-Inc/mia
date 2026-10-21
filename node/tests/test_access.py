@@ -130,3 +130,21 @@ def test_ferinos_clerks_are_offered_what_the_policy_lets_them_use(
         assert offered == may
         assert {"hr_officer", "branch_manager"} <= set(offered)
         assert not {"bookkeeper", "production_planner"} & set(offered)
+
+
+def test_only_admin_and_owner_are_offered_the_people_tools() -> None:
+    """Q117: adding a user and linking a number are admin tools; the owner inherits admin."""
+    from mia.core.models import Actor
+    from mia.core.people import HUMAN_ROLES
+    from mia.core.rbac import Resource, get_rbac
+
+    for tool in ("add_person", "set_phone"):
+        res = Resource(kind="tool", name=f"branch_manager.{tool}")
+        may = {
+            r
+            for r in HUMAN_ROLES
+            if get_rbac().check(
+                Actor.person(Person(name="x", roles=[r], branch_id="b")), res, "execute"
+            )
+        }
+        assert may == {"owner", "admin"}, tool

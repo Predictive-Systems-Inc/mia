@@ -848,3 +848,9 @@ Format for each entry:
 - Question: How do real staff messages from the local test become the labelled set Jev is measured against (a right or wrong tap in the chat after each agent pick, stored with the message and the pick, exportable as an eval set)?
 - Assumed answer: a decision.feedback event per tap on the thread, written through a service function, pseudonymised like the rest of the chain, exported by a CLI command into the short-message set's shape; no model is called on the tap.
 - Blocking: no.
+
+## Q117: Adding a user from the chat
+- Where: node/mia/agents/branch_manager (add_person, set_phone), node/mia/channels/linking.py (ph_mobile, link_phone), node/config/policies/policy.csv; the owner's "admin can add user" and "we also need to associate a mobile number to a person" (21 Oct 2026)
+- Question: Who may add a user from the chat, with which roles, and how is their phone linked?
+- Assumed answer: admin only (the owner inherits) through the branch manager; roles clerk, staff, supervisor or admin, never owner; the phone is linked by the invite (the LINK code and the wa.me link the admin forwards), or by a Philippine mobile number the admin types (normalised to 639XXXXXXXXX, stored as the WhatsApp address, redacted in the events, shown by its last four digits). A number goes only to a clerk, staff or supervisor, to an admin only when the owner sends it, never to the owner, never to a person who already has one and never away from another person.
+- Blocking: no.

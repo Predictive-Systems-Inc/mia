@@ -6,7 +6,15 @@ from functools import partial
 from typing import Any
 
 from mia.agents import decider as shared
-from mia.agents.branch_manager.actions import ACTIONS, CONVERSATION, KINDS, Query, build_request
+from mia.agents.branch_manager.actions import (
+    ACTIONS,
+    CONVERSATION,
+    KINDS,
+    PERSON_LANGUAGES,
+    PERSON_ROLES,
+    Query,
+    build_request,
+)
 from mia.agents.decider import NOT_STATED, Decision, Reader
 from mia.core.people import HUMAN_ROLES
 
@@ -59,6 +67,23 @@ def _change_price(r: Reader) -> tuple[dict[str, Any], str | None]:
     return args, "item" if not item else "price" if not price else None if day else "date"
 
 
+def _add_person(r: Reader) -> tuple[dict[str, Any], str | None]:
+    """The name from the code's candidates and a role ask when missing; the branch defaults to
+    the sender's (the tool's), the language to fil; a phone only when code found one."""
+    q: Query = r.q
+    name = _pick(r, "new_name", q.names)
+    role = r.pick("role", set(PERSON_ROLES))
+    branch = _pick(r, "branch", q.branches)
+    args = {
+        "name": q.names[name] if name else None,
+        "role": role,
+        "branch_id": branch,
+        "language": r.pick("language", set(PERSON_LANGUAGES)) or "fil",
+        "phone": q.phone or None,
+    }
+    return args, "name" if not name else None if role else "role"
+
+
 def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     """The tool input for one action and the required input that is missing, if any."""
     q: Query = r.q
@@ -80,6 +105,12 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         if item := _pick(r, "item", q.items):
             args["item_id"] = item
         return args, None
+    if action == "add_person":
+        return _add_person(r)
+    if action == "set_phone":
+        person = _pick(r, "person", q.people)
+        args = {"person_id": person, "phone": q.phone or None}
+        return args, "person" if not person else None if q.phone else "phone"
     if action == "decide_experiment_result":
         return {"keep": r.yes("keep")}, None
     if action == "reply_only":

@@ -30,6 +30,8 @@ STATUS_OF: dict[str, Status] = {
     "exhausted": "invalid",
 }
 LINK_TEXT = re.compile(r"^\s*LINK\s+(\d{6})\s*$", re.IGNORECASE)
+PH_MOBILE = re.compile(r"639\d{9}")
+PHONE_CHANNELS = ("whatsapp", "sim")  # the channels whose address is the phone number
 
 
 class LinkingError(RuntimeError):
@@ -69,6 +71,44 @@ def identity_for(session: Session, channel: str, address: str) -> ChannelIdentit
         .where(ChannelIdentity.address == address)
         .where(ChannelIdentity.status == "active")
     ).first()
+
+
+def ph_mobile(text: str) -> str | None:
+    """A Philippine mobile number as a channel address (E.164 digits without the plus, as
+    WhatsApp sends it: 639171234567) from 09171234567, +63 917 123 4567, 639171234567 or
+    9171234567; None for any other shape or a character other than digits, spaces, + . - ( )."""
+    if re.search(r"[^\d\s+().-]", text):
+        return None
+    digits = re.sub(r"\D", "", text)
+    if digits.startswith("09"):
+        digits = "63" + digits[1:]
+    elif digits.startswith("9"):
+        digits = "63" + digits
+    return digits if PH_MOBILE.fullmatch(digits) else None
+
+
+def link_phone(session: Session, actor: Actor, person: Person, address: str) -> None:
+    """Link the address to the person on WhatsApp and on every enabled phone channel (the sim
+    in dev), the row a redeemed code writes (event channel.linked, the address redacted). An
+    address the person already holds is kept. Raises LookupError("phone_taken") when another
+    person holds it on one of those channels, before anything is written: never relinked."""
+    from mia.channels import registry  # registry loads orgconfig; keep linking light
+
+    enabled = [a.channel_id for a in registry.enabled() if a.channel_id in PHONE_CHANNELS]
+    held = {c: identity_for(session, c, address) for c in dict.fromkeys(["whatsapp", *enabled])}
+    if any(row is not None and row.person_id != person.id for row in held.values()):
+        raise LookupError("phone_taken")
+    now = utcnow()
+    for channel in (c for c, row in held.items() if row is None):
+        identity = ChannelIdentity(
+            branch_id=person.branch_id,
+            person_id=person.id,
+            channel=channel,
+            address=address,
+            verified_at=now,
+            consent_at=now,
+        )
+        store.insert(session, identity, actor, action="channel.linked", redact=("address",))
 
 
 def _channel_actor(channel: str) -> Actor:

@@ -244,6 +244,11 @@ p, admin, *, tool:branch_manager.monthly_letter, execute, allow
 p, admin, *, data:branch_manager_*, read_all, allow
 p, admin, *, data:branch_manager_*, write_all, allow
 
+# admin: add a user from the chat (roles clerk, staff, supervisor or admin, never owner) and link
+# a mobile number to a person (Q117); data:core.* write above covers the person and identity rows
+p, admin, *, tool:branch_manager.add_person, execute, allow
+p, admin, *, tool:branch_manager.set_phone, execute, allow
+
 # supervisor (head staff): the closing count, settlements, payouts, expenses, petty cash, deposits
 # and balances of their branch; an expense over the limit waits for the owner; owner and admin
 # inherit

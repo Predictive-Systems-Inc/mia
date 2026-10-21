@@ -18,7 +18,8 @@ from mia.agents.branch_manager import MANIFEST
 from mia.agents.branch_manager.models import Strategy
 from mia.agents.decider import NOT_STATED, Action
 from mia.agents.parsing import find_dates, find_prices, has_negation, menu_tokens
-from mia.core.models import Person
+from mia.core.models import Branch, Person
+from mia.core.people import HUMAN_ROLES
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailItem
 
@@ -36,6 +37,25 @@ KINDS = {
     NOT_STATED: "The message does not say.",
 }
 LEADS = {"supervisor", "owner", "admin"}  # the senders who are offered the branch's people
+# The roles an admin may give from the chat (Q117): never owner, accountant or viewer.
+PERSON_ROLES = {
+    "clerk": "Clerk: sells at the counter and reports the counts (clerk, tindera, tindero,"
+    " kahera, cashier)",
+    "staff": "Staff: works a shift away from the counter (staff, crew, helper, baker, driver)",
+    "supervisor": "Supervisor: head staff of a kiosk or the commissary (supervisor, sup, head,"
+    " OIC, katiwala)",
+    "admin": "Admin: manages users and settings for the owner (admin)",
+}
+PERSON_LANGUAGES = {"en": "English", "fil": "Filipino or Taglish (Tagalog)"}
+# The words after which a new person's name comes ("si Maria", "user maria", "clerk Maria").
+NAME_MARKERS = frozenset(
+    {*PERSON_ROLES, "si", "kay", "ni", "user", "name", "pangalan", "phone", "number", "numero"}
+)
+NOT_NAMES = frozenset({"idagdag", "dagdag", "bagong", "bago", "new", "add", "user", "please"})
+MAX_NAMES = 4
+# A Philippine mobile number as typed (0917 123 4567, +63 917-123-4567, 9171234567); the tool
+# normalises it (linking.ph_mobile). Any other shape is not found, so the number is asked.
+PHONE_TEXT = re.compile(r"(?<![\d+])(?:\+?63|0)?[ -]?9\d{2}[ .-]?\d{3}[ .-]?\d{4}(?!\d)")
 CODE_WORD = re.compile(r"\w{2,6}")  # a whole token: "bag-o" and "i-set" are no code
 MAX_CODES = 4
 # Words that are never a new short code: the short function words of the six gated languages and
@@ -233,6 +253,21 @@ ACTIONS: dict[str, Action] = {
         (),
         _label("monthly_letter"),
     ),
+    "add_person": Action(
+        "The sender wants a new user or staff member added to Mia with a role, maybe at a kiosk"
+        " or the commissary and with a phone number (add user maria clerk mall, add clerk Ana,"
+        " new staff Ben, idagdag si Maria clerk sa mall, bagong clerk si Joy, bagong supervisor"
+        " sa commissary). A person who is not yet in Mia.",
+        "add_person",
+        ("new_name", "role", "branch", "language"),
+    ),
+    "set_phone": Action(
+        "The sender gives the mobile number of someone already in Mia, to link it to them"
+        " (number ni maria 0917..., set phone maria 0917..., phone ni ana 0998..., ito ang"
+        " numero ni Liza). Not a new person.",
+        "set_phone",
+        ("person",),
+    ),
     "reply_only": Action(
         "No action above fits: a greeting or thanks on its own (magandang umaga, hi, salamat),"
         " a goodbye, a question about who Mia is or what it can do, anything off topic, and any"
@@ -261,6 +296,9 @@ class Query:
     codes: dict[str, str] = field(default_factory=dict)  # c0 -> a message word, no code yet
     people: dict[str, str] = field(default_factory=dict)  # supervisors and leads: id -> name
     strategies: dict[str, str] = field(default_factory=dict)  # active catalogue: id -> text
+    names: dict[str, str] = field(default_factory=dict)  # n0 -> a new person's name, a word
+    branches: dict[str, str] = field(default_factory=dict)  # the organisation's: id -> name
+    phone: str = ""  # the first PHONE_TEXT run of the message, as typed; never sent to Jev
     next_open_day: str = ""  # ISO date: an experiment's start when none is said
     negated: bool = False  # a negation word (parsing.has_negation): a typed keep is asked
     lang: str = "en"
@@ -293,6 +331,26 @@ def code_candidates(message: str, items: Sequence[RetailItem]) -> list[str]:
     return sorted(kept, key=len)[:MAX_CODES]  # sorted is stable: message order within a length
 
 
+def name_candidates(message: str, taken: Sequence[str]) -> list[str]:
+    """The message's words that may be a new person's name, capitalised, at most MAX_NAMES: a
+    word after a NAME_MARKERS word or a capitalised word not first, of letters only, not a
+    marker, a role, a function word or a word of `taken` (the branch names). Pure; Jev picks.
+    ponytail: one word; a two-word name keeps its first word, join capitalised runs if it
+    matters."""
+    skip = NAME_MARKERS | NOT_NAMES | NOT_CODES | set(HUMAN_ROLES)
+    skip |= {w.casefold() for name in taken for w in name.split()}
+    tokens = [t.strip(".,:;!?\"'()") for t in message.split()]
+    found = [
+        w
+        for i, w in enumerate(tokens)
+        if w.isalpha()
+        and len(w) > 1
+        and w.casefold() not in skip
+        and (i > 0 and (tokens[i - 1].casefold() in NAME_MARKERS or w[0].isupper()))
+    ]
+    return list(dict.fromkeys(w.capitalize() for w in found))[:MAX_NAMES]
+
+
 def build_query(
     deps: AgentDeps, message: str, previous_mia_message: str, *, message_id: str | None = None
 ) -> Query:
@@ -303,7 +361,9 @@ def build_query(
     rows = session.exec(
         select(RetailItem).where(RetailItem.active).where(here).order_by(col(RetailItem.sort_order))
     ).all()
-    codes = code_candidates(message, rows)
+    phone = PHONE_TEXT.search(message)
+    words = PHONE_TEXT.sub(" ", message)  # a phone number is no price, date, code or name
+    codes = code_candidates(words, rows)
     people: dict[str, str] = {}
     if set(deps.person.roles) & LEADS:
         staff = session.exec(
@@ -314,6 +374,11 @@ def build_query(
         ).all()
         people = {p.id: p.name for p in staff}
     strategies = session.exec(select(Strategy).where(Strategy.active).order_by(col(Strategy.id)))
+    branches = session.exec(
+        select(Branch)
+        .where(Branch.organisation_id == deps.organisation_id)
+        .order_by(col(Branch.name))
+    ).all()
     return Query(
         message=message,
         previous_mia_message=previous_mia_message,
@@ -321,12 +386,17 @@ def build_query(
         today=deps.today,
         items={i.id: i.name for i in rows},
         prices=dict(
-            find_prices(message, deps.lang, menu_tokens((i.name, i.short_codes) for i in rows))
+            find_prices(words, deps.lang, menu_tokens((i.name, i.short_codes) for i in rows))
         ),
-        dates={i: d.isoformat() for i, d in find_dates(message, deps.today, deps.lang)},
+        dates={i: d.isoformat() for i, d in find_dates(words, deps.today, deps.lang)},
         codes={f"c{i}": w for i, w in enumerate(codes)},
         people=people,
         strategies={s.id: s.description for s in strategies},
+        names={
+            f"n{i}": w for i, w in enumerate(name_candidates(words, [b.name for b in branches]))
+        },
+        branches={b.id: b.name for b in branches},
+        phone=phone[0] if phone else "",
         next_open_day=_next_open_day(deps).isoformat(),
         negated=has_negation(message),
         lang=deps.lang,
@@ -347,13 +417,14 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
     lists, so the egress pseudonymiser reads each), the judgments in the questions. The option
     texts are catalogue names, numbers, dates, people and fixed text, never message words."""
     state = {
-        "message": q.message,
+        "message": PHONE_TEXT.sub("<number>", q.message),  # a phone number never leaves
         "previous_mia_message": q.previous_mia_message or None,
         "sender_role": q.role,
         "today": q.today.isoformat(),
         "prices": [_pesos(p) for p in q.prices.values()],
         "dates": list(q.dates.values()),
         "codes": list(q.codes.values()),
+        "names": list(q.names.values()),
     }
     unsaid = {NOT_STATED: "The message does not say, or none of these fits."}
     dates = {**q.dates, **unsaid}
@@ -402,7 +473,21 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
             },
         },
         "conversation": _choice("What kind of message is it?", CONVERSATION),
+        "role": _choice("Which role does the new person get?", {**PERSON_ROLES, **unsaid}),
+        "branch": _choice(
+            "At which kiosk or branch does the new person work?", {**q.branches, **unsaid}
+        ),
+        "language": _choice(
+            "In which language does the new person want Mia's replies?",
+            {**PERSON_LANGUAGES, **unsaid},
+        ),
     }
+    if q.names:
+        questions["new_name"] = _choice(
+            "Which word of `names` in the state is the new person's name? Each option is a"
+            " position in `names`, the first being 1.",
+            {**{n: f"Word {i + 1} of `names`" for i, n in enumerate(q.names)}, **unsaid},
+        )
     if q.people:
         questions["person"] = _choice(
             "Which staff member does `message` ask about? Not stated for the whole team.",
