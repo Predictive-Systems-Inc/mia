@@ -2,6 +2,7 @@
 test_bookkeeper_evals.py)."""
 
 import datetime as dt
+import json
 from collections import Counter
 from pathlib import Path
 
@@ -13,6 +14,9 @@ from mia.agents.parsing import find_tender
 from tests.conftest import BK_TODAY
 from tests.evals.bookkeeper_cases import CASES, GATED_LANGS, SCENARIOS, TODAY
 
+RESEARCH = Path(__file__).parents[3] / "docs" / "research"
+FRESH = [c for c in CASES if c.half != "spent"]
+
 INPUTS = {
     "cash_count": {"amount"},
     "settlement": {"amount", "provider"},
@@ -23,21 +27,38 @@ INPUTS = {
 
 
 def test_ten_cases_per_language_and_scenario_split_by_seed() -> None:
-    """Per language and scenario: five tune and five gate seeds; security is tune-only, four
-    per language."""
+    """Per language and scenario: five fresh tune and five fresh gate seeds and ten spent ones;
+    security is tune-only, four fresh and four spent per language."""
     counts = Counter((c.lang, c.scenario, c.half) for c in CASES if c.scenario != "security")
-    halves = ("tune", "gate")
-    assert set(counts) == {(lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in halves}
-    assert set(counts.values()) == {5}
+    halves = {"tune": 5, "gate": 5, "spent": 10}
+    want = {(lang, s, h): n for lang in GATED_LANGS for s in SCENARIOS for h, n in halves.items()}
+    assert counts == want
     security = Counter((c.lang, c.half) for c in CASES if c.scenario == "security")
-    assert security == {(lang, "tune"): 4 for lang in GATED_LANGS}
+    assert security == {(lang, h): 4 for lang in GATED_LANGS for h in ("tune", "spent")}
 
 
 def test_no_text_appears_in_both_halves_and_no_pair_repeats() -> None:
-    sets = {h: {c.text.casefold().strip() for c in CASES if c.half == h} for h in ("tune", "gate")}
+    """No fresh text is in both fresh halves or among the spent rows."""
+    halves = ("tune", "gate", "spent")
+    sets = {h: {c.text.casefold().strip() for c in CASES if c.half == h} for h in halves}
     assert not sets["tune"] & sets["gate"], sets["tune"] & sets["gate"]
+    fresh = sets["tune"] | sets["gate"]
+    assert not fresh & sets["spent"], fresh & sets["spent"]
     pairs = [(c.lang, c.text) for c in CASES]
     assert len(pairs) == len(set(pairs)), Counter(pairs).most_common(3)
+
+
+def test_no_fresh_text_was_ever_scored() -> None:
+    """A fresh text is in no recorded bookkeeper run (every docs/research raw file)."""
+    raws = sorted(RESEARCH.glob("bookkeeper-*.raw.json"))
+    assert raws
+    scored = {
+        r["text"].casefold().strip()
+        for path in raws
+        for r in json.loads(path.read_text(encoding="utf-8"))["results"]
+    }
+    seen = sorted({c.text for c in FRESH if c.text.casefold().strip() in scored})
+    assert not seen, seen
 
 
 def test_the_actions_are_the_planned_ones() -> None:
@@ -111,6 +132,7 @@ def test_the_halves_are_selected_by_name() -> None:
 
     assert {c.half for c in _selected(CASES, "tune")} == {"tune"}
     assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
+    assert {c.half for c in _selected(CASES, "tune,gate,spent")} == {"tune", "gate"}
 
 
 def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:

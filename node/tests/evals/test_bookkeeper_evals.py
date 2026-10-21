@@ -6,7 +6,9 @@ with today pinned to TODAY, never the run date. A case acts as the agent for a s
 with the case's role (supervisor Marites, owner Rosa). MIA_EVAL_HALVES picks the halves (default
 "tune,gate"; "tune" for a tuning run, "gate" for the gate run). Each result keeps Jev's own pick
 (raw_action), the tool input, the seconds and the usage-row tokens. The gate reads the gate half
-only; the tune half is for tuning the action descriptions."""
+only; the tune half is for tuning the action descriptions. Spent rows (both halves scored in
+earlier runs) are never selected. The D40 rerun on the fresh gate half:
+MIA_EVAL_HALVES=gate MIA_DECIDER=jev uv run pytest node/tests/evals/test_bookkeeper_evals.py -m evals -s"""
 
 import asyncio
 import datetime as dt
@@ -50,8 +52,8 @@ def _report_path(now: dt.datetime, folder: Path = RESEARCH) -> Path:
 
 
 def _selected(cases: list[Case], halves: str) -> list[Case]:
-    """The cases of the named halves (comma-separated)."""
-    wanted = set(halves.split(","))
+    """The cases of the named halves (comma-separated); never a spent row."""
+    wanted = set(halves.split(",")) - {"spent"}
     return [c for c in cases if c.half in wanted]
 
 
