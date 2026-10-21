@@ -64,13 +64,13 @@ def _direction(r: Reader) -> str | None:
 def _change(r: Reader) -> Args:
     """The new whole batches of the item: the plan's current batches plus, minus (never below
     0) or set to the number; pieces become ceil(pieces / batch yield) batches (a unit word of
-    the message wins over Jev's unit, batches when neither says). Missing: negated (a no), item
-    (also when the message names another or two, _item), direction (_direction), number, recipe
-    (pieces without a yield), or plan when an add or remove has no planned line to start from
-    (or names another date than the plan's)."""
+    the message wins over Jev's unit). Missing: negated (a no), item (also when the message
+    names another or two, _item), direction (_direction), number, unit (a number neither the
+    message nor Jev gives a unit), recipe (pieces without a yield), or plan when an add or
+    remove has no planned line to start from (or names another date than the plan's)."""
     q: Query = r.q
     (item, holds), n = _item(r), _number(r)
-    direction, unit = _direction(r), _unit(r) or "batches"
+    direction, unit = _direction(r), _unit(r)
     args: dict[str, Any] = {"item_id": item, "batches": None, "production_date": _date(r)}
     if q.negated:
         return args, "negated"
@@ -80,6 +80,8 @@ def _change(r: Reader) -> Args:
         return args, "direction"
     if n is None:
         return args, "number"
+    if unit is None:  # "dagdagan ng 40 ang ube": 40 batches or 40 pieces is asked, never guessed
+        return args, "unit"
     if unit == "pieces":
         if item not in q.batch_yields:
             return args, "recipe"

@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, call_tool
@@ -812,3 +813,23 @@ def test_served_refuses_without_the_agents_branch_read(
     deny(monkeypatch, MANIFEST.roles.agent_role, tools.BRANCHES, "read")
     with pytest.raises(PermissionDenied):
         tools.served(session, comm(session))
+
+
+def test_a_batch_is_one_row_per_plan_item_and_number(session: Session, pp: Ferinos) -> None:
+    """save_batch updates a repeated batch number (one row); a second row of the same plan, item
+    and batch number is refused by the unique constraint."""
+    plan, classic, head = draft(session), item(session, "Classic").id, pp[1]["Nonoy"]
+    for good in (30, 44):
+        row = tools.save_batch(
+            session, plan, BatchInput(item_id=classic, batch_no=1, good=good), head,
+            Actor.person(head),
+        )  # fmt: skip
+    rows = session.exec(select(Batch).where(Batch.plan_id == plan.id)).all()
+    assert [(b.batch_no, b.good) for b in rows] == [(1, 44)]
+    twin = Batch(
+        branch_id=plan.branch_id, plan_id=plan.id, item_id=classic, batch_no=1,
+        planned_yield=row.planned_yield, good=1, recorded_by=head.id, at=row.at,
+    )  # fmt: skip
+    with pytest.raises(IntegrityError), session.begin_nested():
+        store.insert(session, twin, Actor.person(head))
+    assert len(session.exec(select(Batch).where(Batch.plan_id == plan.id)).all()) == 1

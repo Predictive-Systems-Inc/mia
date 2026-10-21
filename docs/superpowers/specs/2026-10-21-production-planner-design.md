@@ -234,8 +234,9 @@ work (draft plan, dispatch, match tick, closing yield). 7. Ten languages. 8. Eva
   later receipt.
 - production_planner tests: the `send_after` asserts were dropped, because Message has no
   `send_after` field.
-- production_planner capacity: `CapacityOut` carries no item name, so `capacity_text` lists the
-  free pieces per item.
+- production_planner capacity: `CapacityOut` carries no item name; `capacity_text` heads the
+  reply with the item and pieces asked (`pp.capacity.asked`, from the tool input) when both were
+  asked, then whether they fit, the free oven minutes and each item's free pieces.
 - production_planner gates (docs/research/2026-10-21-production-planner-gate.md): the decider
   gate failed (wrong 2.7%, right below 80% in fil, ceb, hil, war and bcl; en passes) and the
   router gate failed (wrong 4.5%, hil, war and bcl below the bar); reported as they are, a rerun

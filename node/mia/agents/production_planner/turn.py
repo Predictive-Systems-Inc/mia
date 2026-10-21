@@ -6,9 +6,10 @@ A button's decision is kept in the decision.clarify_asked event of its question 
 notification, through remember) and runs only while it holds, and only when its action is one of
 ACTIONS: the plan card's Confirm until production starts (hours.start) on the plan's date (a
 "Did you mean" confirm holds only the day it was asked), a Delivered button to the end of its
-business date, any other button on the day it was asked. The recipe card's Save is a stored set_recipe decision with its args; a recipe typed in chat only
-shows the card. A confirm with a negation word ("hindi pa ok") shows the plan with its Confirm
-button, never confirms. No tool asks for an approval."""
+business date, any other button on the day it was asked. The recipe card's Save is a stored
+set_recipe decision with its args; a recipe typed in chat only shows the card. A confirm with
+a negation word ("hindi pa ok") shows the plan with its Confirm button, never confirms. No tool
+asks for an approval."""
 
 import asyncio
 import datetime as dt

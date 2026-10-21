@@ -549,3 +549,27 @@ def test_a_did_you_mean_confirm_holds_only_the_day_it_was_asked(
     _answers(monkeypatch, "reply_only", jev_on, conversation="other")
     _turn(session, nonoy, "Confirm", first.thread_id)
     assert plan_row(session).status == "draft" and len(jev_on) == 2
+
+
+def test_a_change_without_a_unit_asks_and_writes_nothing(
+    session: Session, pp_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ "dagdagan ng 40 ang ube": no unit word and none from Jev asks, never 40 batches."""
+    draft(session)
+    ube = item(session, "Ube").id
+    before = plan_batches(session, ube)
+    _answers(monkeypatch, "change_plan", item=ube, direction="add", number="n0")
+    text = _turn(session, pp_en[1]["Nonoy"], "dagdagan ng 40 ang ube").text()
+    assert (text, plan_batches(session, ube)) == (t("pp.ask.unit", EN), before)
+
+
+def test_a_remove_word_read_as_set_asks_and_writes_nothing(
+    session: Session, pp_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gate 0748: ceb "kuhai" (take off) that Jev reads as set asks the direction in chat."""
+    draft(session)
+    classic = item(session, "Classic").id
+    before = plan_batches(session, classic)
+    _answers(monkeypatch, "change_plan", item=classic, direction="set", number="n0", unit="batches")
+    text = _turn(session, pp_en[1]["Nonoy"], "kuhai og 1 ka batch ang classic").text()
+    assert (text, plan_batches(session, classic)) == (t("pp.ask.direction", EN), before)
