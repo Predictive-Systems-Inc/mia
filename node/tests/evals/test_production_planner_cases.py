@@ -2,18 +2,23 @@
 test_production_planner_evals.py)."""
 
 import datetime as dt
+import json
 from collections import Counter
 from pathlib import Path
 
 import pytest
 from sqlmodel import Session, select
 
+from mia.agents.parsing import find_dates, has_negation
 from mia.agents.production_planner import tools, words
 from mia.agents.production_planner.actions import ACTIONS, DIRECTIONS, commissary
 from mia.templates.retail.models import RetailIngredient, RetailItem
 from mia.templates.retail.seed import BRANCHES
 from tests.conftest import PP_TODAY, PP_TOMORROW, Shop
 from tests.evals.production_planner_cases import CASES, GATED_LANGS, SCENARIOS, TODAY
+
+FRESH = [c for c in CASES if c.half != "spent"]
+RAW = Path(__file__).parents[3] / "docs" / "research"
 
 # The inputs each action is scored on (beyond the action itself).
 INPUTS = {
@@ -27,11 +32,12 @@ INPUTS = {
 
 
 def test_ten_cases_per_language_scenario_and_half() -> None:
-    """Per language and scenario: five tune and five gate seeds."""
+    """Per language and scenario: five fresh tune and five fresh gate seeds, ten spent."""
     counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
-    halves = ("tune", "gate")
+    halves = ("tune", "gate", "spent")
     assert set(counts) == {(lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in halves}
-    assert set(counts.values()) == {5}
+    assert {n for (*_, h), n in counts.items() if h != "spent"} == {5}
+    assert {n for (*_, h), n in counts.items() if h == "spent"} == {10}
 
 
 def test_every_spec_scenario_but_8_and_10_is_asked() -> None:
@@ -39,10 +45,22 @@ def test_every_spec_scenario_but_8_and_10_is_asked() -> None:
 
 
 def test_no_text_appears_in_both_halves() -> None:
-    sets = {h: {c.text.casefold().strip() for c in CASES if c.half == h} for h in ("tune", "gate")}
+    sets = {h: {c.text.casefold().strip() for c in FRESH if c.half == h} for h in ("tune", "gate")}
     assert not sets["tune"] & sets["gate"], sets["tune"] & sets["gate"]
     pairs = [(c.lang, c.text) for c in CASES]
     assert len(pairs) == len(set(pairs)), Counter(pairs).most_common(3)
+
+
+def test_no_fresh_text_was_ever_scored() -> None:
+    """No fresh text is a spent row's or a text of an earlier run's raw file (casefolded)."""
+    raws = sorted(RAW.glob("production-planner-*.raw.json"))
+    assert raws, RAW
+    scored = {c.text.casefold().strip() for c in CASES if c.half == "spent"}
+    for raw in raws:
+        results = json.loads(raw.read_text(encoding="utf-8"))["results"]
+        scored |= {r["text"].casefold().strip() for r in results}
+    again = {c.text for c in FRESH if c.text.casefold().strip() in scored}
+    assert not again, again
 
 
 def test_no_case_names_tagalog() -> None:
@@ -94,6 +112,25 @@ def test_recipes_parse_in_full_and_changed_items_are_planned(
     for c in CASES:
         if c.expected.get("direction") in ("add", "remove"):
             assert c.expected["item"] in planned, (c, planned)
+    singles = [(i.name, [i.name, *i.short_codes]) for i in session.exec(select(RetailItem))]
+    for c in FRESH:
+        if "item" in c.expected:  # the item guard holds: the message names that one item
+            assert words.named(c.text, singles) == {c.expected["item"]}, c
+
+
+def test_fresh_changes_pass_the_guards() -> None:
+    """Every fresh change gets past the code guards when Jev picks right: one number, one
+    unit word, no negation, add and remove words that agree with the direction (none for a
+    set), and only the plan's date (tomorrow) for an add or remove."""
+    for c in FRESH:
+        if c.expected_action != "change_plan":
+            continue
+        direction = c.expected["direction"]
+        assert words.numbers(c.text, TODAY, c.lang) == {"n0": c.expected["number"]}, c
+        assert len(words.units(c.text)) == 1 and not has_negation(c.text), c
+        assert words.directions(c.text) == (set() if direction == "set" else {direction}), c
+        if direction != "set":
+            assert {d for _, d in find_dates(c.text, TODAY, c.lang)} <= {PP_TOMORROW}, c
 
 
 def test_scoring() -> None:
@@ -138,6 +175,8 @@ def test_the_halves_are_selected_by_name() -> None:
 
     assert {c.half for c in _selected(CASES, "tune")} == {"tune"}
     assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
+    assert not _selected(CASES, "spent")
+    assert _selected(CASES, "tune,gate,spent") == FRESH
 
 
 def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:

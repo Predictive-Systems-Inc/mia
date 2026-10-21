@@ -5,9 +5,11 @@ Run: MIA_DECIDER=jev uv run pytest node/tests/evals/test_production_planner_eval
 (pseudonymised, rule 6), with today pinned to TODAY, never the run date. A case acts as the
 agent for the seeded person of its role (head Nonoy of the commissary, owner Rosa, driver Berto,
 supervisor Marites of the Mall kiosk). MIA_EVAL_HALVES picks the halves (default "tune,gate";
-"tune" for a tuning run, "gate" for the gate run). Each result keeps Jev's own pick
-(raw_action), its slot picks resolved to an item name, a kiosk name, a direction and a number,
-the seconds and the usage-row tokens. The gate reads the gate half only."""
+"tune" for a tuning run, "gate" for the gate run); the spent rows (scored by the 0747 and 0748
+runs) are never selected. The fresh gate half, for the D40 rerun:
+MIA_EVAL_HALVES=gate MIA_DECIDER=jev uv run pytest node/tests/evals/test_production_planner_evals.py -m evals -s
+Each result keeps Jev's own pick (raw_action), its slot picks resolved to an item name, a kiosk
+name, a direction and a number, the seconds and the usage-row tokens. The gate reads the fresh gate half only."""
 
 import asyncio
 import datetime as dt
@@ -53,8 +55,8 @@ def _report_path(now: dt.datetime, folder: Path = RESEARCH) -> Path:
 
 
 def _selected(cases: list[Case], halves: str) -> list[Case]:
-    """The cases of the named halves (comma-separated)."""
-    wanted = set(halves.split(","))
+    """The cases of the named halves (comma-separated); never a spent row."""
+    wanted = set(halves.split(",")) - {"spent"}
     return [c for c in cases if c.half in wanted]
 
 
