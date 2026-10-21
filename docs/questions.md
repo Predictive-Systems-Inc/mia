@@ -842,3 +842,9 @@ Format for each entry:
 - Question: With all eight agents active at Ferino's, 13 of 29 plain staff messages got the "Is this about" buttons at router confidence 0.28 to 0.49 ("5 ube na lang", "ubos na ang ube", "batch 2 classic 45 ok 3 sunog", "buwanang ulat po", "delivered na sa mall"). Is the router good enough on the full agent list, or does it need more per agent?
 - Assumed answer: a router gate on the full Ferino's agent list with fresh seeds is the next eval; the learned routes (route_memory, learned per branch from the taps) reduce repeats, and the buttons now offer Jev's most likely agents, else the person's most recently used, first.
 - Blocking: no.
+
+## Q116: Labelled real messages from the local test
+- Where: the chat turn and the decider (every agent); docs/testing-ferinos.md
+- Question: How do real staff messages from the local test become the labelled set Jev is measured against (a right or wrong tap in the chat after each agent pick, stored with the message and the pick, exportable as an eval set)?
+- Assumed answer: a decision.feedback event per tap on the thread, written through a service function, pseudonymised like the rest of the chain, exported by a CLI command into the short-message set's shape; no model is called on the tap.
+- Blocking: no.
