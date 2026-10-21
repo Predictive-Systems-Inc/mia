@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     # without it MIA_NODE_SECRET is the key, so invites made before it keep working.
     MIA_MASTER_KEY_FILE: Path | None = None
     MIA_AUTH_MODE: Literal["required", "dev"] = "required"
+    # The sim channel's webhook secret (dev mode only, ADR 021); empty keeps the public default.
+    MIA_SIM_SECRET: str = ""
     # Peers allowed to set CF-Connecting-IP (the cloudflared container), comma separated.
     MIA_TRUSTED_PROXIES: str = ""
     MIA_WA_TOKEN: str = ""

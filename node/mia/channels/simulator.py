@@ -53,14 +53,14 @@ class SimAdapter:
     def __init__(
         self,
         capabilities: ChannelCapabilities | None = None,
-        secret: str = "sim-secret",
+        secret: str | None = None,
         *,
         on_demand: bool = False,
     ) -> None:
         from mia.channels.whatsapp.adapter import CAPABILITIES  # same limits as WhatsApp
 
         self.capabilities = capabilities or CAPABILITIES
-        self.secret = secret
+        self.secret = secret or "sim-secret"  # public default: registered in dev mode only
         self.media: dict[str, bytes] = {}  # media id -> bytes, for fetch_media
         self.sent: list[ChannelPayload] = []
         self.fail_next: str | None = None

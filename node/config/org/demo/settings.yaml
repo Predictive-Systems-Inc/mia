@@ -9,4 +9,5 @@ cover_confirmation:
                                # morning may be messaged (never called before quiet hours end)
 channels:                      # messaging channels (ADR 007); off unless enabled
   sim: {enabled: true}         # simulated channel for local trials: uv run mia channels sim
+                               # sim runs only in dev mode (loopback); ignored on a server
   whatsapp: {enabled: false}  # needs the MIA_WA_* settings, see docs/whatsapp-setup.md

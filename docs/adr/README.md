@@ -9,3 +9,4 @@ Planned for the initial build: 001 stack, 002 data standard v1.0 field list, 003
 - [018](018-data-standard-1-6-tender-orders-and-hr-tables.md) Data standard 1.6, a tender on sales counts, supplier orders and the HR tables shared
 - [019](019-data-standard-1-7-orders-and-incident-kinds.md) Data standard 1.7, the kiosk incident kinds (customer orders follow with the production planner)
 - [020](020-data-standard-1-8-customer-orders.md) Data standard 1.8, customer orders shared
+- [021](021-simulator-channel-dev-only.md) The simulator channel runs only in dev mode

@@ -61,6 +61,9 @@ router confidence 0.3 to 0.5); the others went straight to the agent named.
 | | | `delivered na sa mall` | production planner: delivery recorded (asks first) |
 | | | `ano ang dadalhin ko bukas?` | production planner: the dispatch list (asks first) |
 
+The sim channel runs only in dev mode (loopback); on a server (`MIA_AUTH_MODE=required`) it is
+ignored and `mia channels sim` refuses, since its webhook secret is public (ADR 021).
+
 A customer on the sim channel, from any unlinked number:
 
 ```
@@ -100,6 +103,7 @@ Cloudflare Tunnel) and docs/whatsapp-setup.md. The owner provides:
   docs/whatsapp-setup.md lists only Finnish (`fi`) and English (`en`) texts for `mia_new_message`
   and `mia_cover_request`, and `mia_login_code` (staff sign-in codes) still needs its text there.
   Until a template is approved, messages Mia starts outside the 24 hour window stay in the app.
+- The sim channel is ignored here: it runs only in dev mode (loopback), so phones use WhatsApp.
 - `MIA_AUTH_MODE=required` (the node refuses dev mode with a public URL), the master key, and
   `mia auth bootstrap --email <owner email>` with Rosa's authenticator enrolled within 24 hours.
 - The model keys: `MIA_TYPESAFE_KEY` with `MIA_DECIDER=jev`, and `MIA_MODEL` with its gateway

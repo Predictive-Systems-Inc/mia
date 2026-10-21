@@ -371,12 +371,15 @@ def channels_sim(args: argparse.Namespace) -> int:
     from mia.channels import outbox, registry
     from mia.channels.base import InboundMessage
     from mia.channels.inbound import handle_inbound
+    from mia.channels.setup import SIM_DEV_ONLY
     from mia.channels.simulator import SimAdapter
     from mia.core import store
     from mia.core.db import session_scope, utcnow
     from mia.core.ids import new_id
     from mia.core.models import Actor, ChannelInbound, Principal
 
+    if get_settings().MIA_AUTH_MODE != "dev":
+        raise SystemExit(SIM_DEV_ONLY)
     sim = registry.get("sim")
     if not isinstance(sim, SimAdapter) or sim not in registry.enabled():
         raise SystemExit("the sim channel is off: set channels.sim.enabled in the org settings")
