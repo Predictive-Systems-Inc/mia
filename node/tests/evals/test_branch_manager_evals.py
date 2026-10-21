@@ -1,13 +1,15 @@
-"""Real-Jev branch manager decider evaluation, asserted with the Q40 bar of tests/evals/gate.py.
-Run: MIA_DECIDER=jev uv run pytest node/tests/evals/test_branch_manager_evals.py -m evals -s
+"""Real-Jev branch manager decider evaluation, asserted with the D40 bar of tests/evals/gate.py.
+Run the fresh gate half (the D40 rerun):
+MIA_EVAL_HALVES=gate MIA_DECIDER=jev uv run pytest node/tests/evals/test_branch_manager_evals.py -m evals -s
 (needs MIA_TYPESAFE_KEY; skips while the case list is empty). Each case runs build_query and
 decider.decide on Ferino's seeded demo (the bm_shop fixture, seeded on the case set's TODAY)
 through egress (pseudonymised, rule 6), with today pinned to TODAY, never the run date. A case
 acts as the agent for a seeded person with the case's role (clerk Ana, supervisor Marites, owner
-Rosa). MIA_EVAL_HALVES picks the halves (default "tune,gate"; "tune" for a tuning run, "gate"
-for the gate run); the spent gate half of run 1 is never run. Each result keeps Jev's own pick (raw_action), the item by name, the
-strategy's name key, the seconds and the usage-row tokens. The gate reads the gate half only;
-the tune half is for tuning the action descriptions."""
+Rosa). MIA_EVAL_HALVES picks the fresh halves (default "tune,gate"; "tune" for a tuning run,
+"gate" for the gate run); the spent rows (every row scored in runs 1 and 2) are never run. Each
+result keeps Jev's own pick (raw_action), the item by name, the strategy's name key, the seconds
+and the usage-row tokens. The gate reads the fresh gate half only; the tune half is for tuning
+the action descriptions."""
 
 import asyncio
 import datetime as dt

@@ -2,6 +2,7 @@
 test_branch_manager_evals.py)."""
 
 import datetime as dt
+import json
 from collections import Counter
 from itertools import combinations
 from pathlib import Path
@@ -30,18 +31,35 @@ WRITES = {
 
 
 def test_ten_cases_per_language_scenario_and_half() -> None:
-    """Per language and scenario: ten seeds (five tune, five in the spent gate half of run 1)
-    and five fresh gate seeds."""
+    """Per language and scenario: fifteen spent seeds (run 1's ten, run 2's five gate seeds) and
+    ten fresh seeds, five tune and five gate."""
     counts = Counter((c.lang, c.scenario, c.half) for c in CASES)
     assert set(counts) == {(lang, s, h) for lang in GATED_LANGS for s in SCENARIOS for h in HALVES}
-    assert set(counts.values()) == {5}
+    assert {h: n for (_, _, h), n in counts.items()} == {"tune": 5, "spent": 15, "gate": 5}
 
 
 def test_no_text_appears_in_both_halves() -> None:
-    """The tune half, the spent gate half and the fresh gate half share no text (casefolded)."""
+    """The fresh tune half, the fresh gate half and the spent rows share no text (casefolded)."""
     sets = {h: {c.text.casefold().strip() for c in CASES if c.half == h} for h in HALVES}
     for a, b in combinations(HALVES, 2):
         assert not sets[a] & sets[b], (a, b, sets[a] & sets[b])
+
+
+def test_no_fresh_text_was_ever_scored() -> None:
+    """No fresh row's text (casefolded) is in any earlier branch manager raw file, and every
+    spent row's text is in one (the spent rows are the scored ones)."""
+    from tests.evals.test_branch_manager_evals import RESEARCH
+
+    raw = sorted(RESEARCH.glob("branch-manager-*.raw.json"))
+    assert raw
+    scored = {
+        r["text"].casefold().strip()
+        for path in raw
+        for r in json.loads(path.read_text(encoding="utf-8"))["results"]
+    }
+    fresh = {c.text.casefold().strip() for c in CASES if c.half != "spent"}
+    assert not fresh & scored, sorted(fresh & scored)
+    assert {c.text.casefold().strip() for c in CASES if c.half == "spent"} <= scored
 
 
 def test_no_pair_repeats_and_the_actions_are_the_planned_ones() -> None:
