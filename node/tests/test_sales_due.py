@@ -366,7 +366,7 @@ def test_a_late_closing_reports_after_midnight_under_its_own_date(
     for row in _hours(session, kiosk):
         store.update(session, row, {"closes": "23:00"}, Actor.system(kiosk.id))
     session.commit()
-    _report(session, people["Ana"], quantity=40)
+    _report(session, people["Ana"], quantity=100)  # PHP 4,500: over the day share of the target
     today = manila_at(15, 0).date()
     due.run_due(session, manila_at(22, 59))
     assert _notes(session, people["Marites"]) == []  # no missing list before 23:30

@@ -73,7 +73,7 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     if action == "place_order":
         return _place_order(r)
     if action == "prices":
-        return {"item_ids": calc.match_items(q.message, q.items)}, None
+        return {"item_ids": calc.price_items(q.message, q.items)}, None
     if action == "delivery_area":
         area = calc.match_area(q.message, q.areas)
         return {"area": area.name if area else None}, None

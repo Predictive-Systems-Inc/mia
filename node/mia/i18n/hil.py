@@ -72,6 +72,7 @@ STRINGS: dict[str, str | list[str]] = {
     "stock.sold_out": "Nagubos ang {item} sang {time}.",
     "stock.counted": "{quantity} nga {item} ang nabilin.",
     "stock.leftover": "{quantity} nga {item} ang nabilin.",
+    "stock.not_counted": "Wala pa sing isip sang {item} subong nga adlaw.",
     "stock.waste": "{quantity} nga {item} ang gintapon: {reason}.",
     "stock.low": "Natala: diutay na lang ang {ingredient}.",
     "stock.received": "Natigayon: {quantity} {unit} {ingredient}.",

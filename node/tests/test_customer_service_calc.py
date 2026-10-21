@@ -67,6 +67,17 @@ def test_items_match_by_name_or_code_as_whole_words() -> None:
     assert calc.match_items("ubos na ba", items) == []
 
 
+def test_a_price_question_on_one_item_by_a_code_alone_is_the_menu() -> None:
+    """Smoke test 21 Oct: "magkano ang bibingka?" listed only Classic (bibingka is one of its
+    codes and the word for every item). One item named only by a code asks for the menu (no
+    ids); a whole name, or two items, keep the items."""
+    items = {"c": ("Classic", "cl", "bibingka"), "u": ("Ube", "ube"), "p": ("Puto bumbong", "pb")}
+    assert calc.price_items("magkano ang bibingka?", items) == []
+    assert calc.price_items("magkano ang classic?", items) == ["c"]
+    assert calc.price_items("magkano ang ube", items) == ["u"]
+    assert calc.price_items("magkano ang bibingka at puto bumbong?", items) == ["c", "p"]
+
+
 def test_last_four_reads_the_digits() -> None:
     assert calc.last_four("+63 917 555 1234") == "1234"
     assert calc.last_four("sim-ab") == "m-ab"

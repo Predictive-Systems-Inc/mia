@@ -22,6 +22,7 @@ roles:
     - data:core.branch:read
     - tool:inventory_manager.record_events:execute
     - tool:inventory_manager.low_stock:execute
+    - tool:inventory_manager.on_hand:execute
     - tool:inventory_manager.plan_tomorrow:execute
     - tool:inventory_manager.draft_order:request
     - tool:inventory_manager.receive_delivery:execute
@@ -31,6 +32,7 @@ roles:
 tools:
   - {id: inventory_manager.record_events, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_ingredients, retail_branch_hours], writes: [stock_events]}
   - {id: inventory_manager.low_stock, kind: agent, risk: read, approval: never, reads: [retail_ingredients, retail_branch_hours, stock_events, branch]}
+  - {id: inventory_manager.on_hand, kind: agent, risk: read, approval: never, reads: [retail_items, retail_ingredients, retail_branch_hours, stock_events]}
   - {id: inventory_manager.plan_tomorrow, kind: agent, risk: read, approval: never, reads: [retail_items, retail_branch_hours, stock_events, branch]}
   - {id: inventory_manager.draft_order, kind: agent, risk: money, approval: always, reads: [retail_ingredients, retail_branch_hours, branch], writes: [supplier_orders, approval]}
   - {id: inventory_manager.receive_delivery, kind: agent, risk: write_internal, approval: never, reads: [retail_ingredients, retail_branch_hours, supplier_orders], writes: [stock_events, supplier_orders]}

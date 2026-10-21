@@ -835,3 +835,9 @@ Format for each entry:
 - Question: Four choices the plan made without an owner's word: (1) when the kiosks' demands add up to more than the whole batches hold, which kiosk gets fewer pieces; (2) what happens to a draft plan nobody confirmed by the start of production; (3) are the ovens one pool of minutes or separate ovens per item; (4) how long does each recipe bake?
 - Assumed answer: (1) the shortfall comes off the kiosk with the larger demand when the plan is split, and off the kiosk with the larger planned pieces when fewer good pieces are dispatched (forecast.dispatch_split), the first kiosk on a tie; not off the larger forecast; (2) a draft nobody confirmed by 03:00, the start of production, stands as the day's plan; (3) one pool of oven minutes (ovens times the production window, less the planned batches times each recipe's oven minutes); (4) 45 minutes for every seeded recipe until the owner enters hers.
 - Blocking: no.
+
+## Q115: The router with eight agents active
+- Where: node/mia/chat/agent_router.py, node/mia/chat/service.py (_ask_route, _offered), node/mia/chat/route_memory.py; the Ferino's local test of 21 Oct 2026
+- Question: With all eight agents active at Ferino's, 13 of 29 plain staff messages got the "Is this about" buttons at router confidence 0.28 to 0.49 ("5 ube na lang", "ubos na ang ube", "batch 2 classic 45 ok 3 sunog", "buwanang ulat po", "delivered na sa mall"). Is the router good enough on the full agent list, or does it need more per agent?
+- Assumed answer: a router gate on the full Ferino's agent list with fresh seeds is the next eval; the learned routes (route_memory, learned per branch from the taps) reduce repeats, and the buttons now offer Jev's most likely agents, else the person's most recently used, first.
+- Blocking: no.

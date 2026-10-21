@@ -8,6 +8,7 @@ steps; the agent's handle_turn answers the rest; the caller commits the reply.
 import asyncio
 import html
 import time
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -239,6 +240,39 @@ def _route_tapped(
 
 
 MAX_ROUTE_BUTTONS = 6  # QuickRepliesBlock allows six options
+RECENT_MESSAGES = 200  # how far back the person's recently used agents are read
+
+
+def _recent_agents(session: Session, person: Person) -> list[str]:
+    """The agents that answered this person, most recent first (their latest replies in any
+    of their threads). Reads only."""
+    rows = session.exec(
+        select(Message.agent_id)
+        .join(Thread, col(Thread.id) == Message.thread_id)
+        .where(Thread.person_id == person.id)
+        .where(Message.role == "assistant")
+        .where(col(Message.agent_id).is_not(None))
+        .order_by(col(Message.id).desc())
+        .limit(RECENT_MESSAGES)
+    ).all()
+    return list(dict.fromkeys(str(a) for a in rows))
+
+
+def _offered(
+    session: Session, person: Person, agents: list[AgentSpec], ranked: Sequence[str]
+) -> list[AgentSpec]:
+    """The agents offered as buttons: all of them up to MAX_ROUTE_BUTTONS (in the
+    organisation's order); over it, the most likely by Jev (`ranked`), then the person's most
+    recently used, then the organisation's order, cut to MAX_ROUTE_BUTTONS."""
+    if len(agents) <= MAX_ROUTE_BUTTONS:
+        return agents
+    recent = _recent_agents(session, person)
+
+    def rank(a: AgentSpec) -> tuple[int, int]:
+        jev_at = ranked.index(a.id) if a.id in ranked else len(ranked)
+        return jev_at, recent.index(a.id) if a.id in recent else len(recent)
+
+    return sorted(agents, key=rank)[:MAX_ROUTE_BUTTONS]  # stable: ties keep the org order
 
 
 def _ask_route(
@@ -249,15 +283,13 @@ def _ask_route(
     original_id: str | None = None,
     picked: str | None = None,
     confidence: float | None = None,
+    ranked: Sequence[str] = (),
 ) -> ChatReply:
     """ "Is this about" with one button per agent of the person; the tap answers the message
     (`original_id`, by default the thread's latest user message). The event keeps Jev's pick
-    and confidence (None without Jev) for the route memory. Over MAX_ROUTE_BUTTONS agents: that many
-    buttons, the agent Jev leaned to first (an owner of eight agents asked with all eight was a 500)."""
-    if len(agents) > MAX_ROUTE_BUTTONS:
-        # ponytail: the rest keep the organisation's order and the tail is dropped; a typed
-        # message is routed again, a ranked list from Jev if the dropped ones are missed
-        agents = sorted(agents, key=lambda a: a.id != picked)[:MAX_ROUTE_BUTTONS]
+    and confidence (None without Jev) for the route memory. Over MAX_ROUTE_BUTTONS agents the
+    buttons follow _offered (an owner of eight agents asked with all eight was a 500)."""
+    agents = _offered(session, deps.person, agents, ranked or ([picked] if picked else []))
     options = {t(a.label_key, deps.lang): a.id for a in agents}
     reply = store_reply(
         session,
@@ -356,7 +388,7 @@ def _settle(
         )
     if picked.kind == "ask" or picked.agent_id is None:
         p = picked.confidence if picked.raw is not None else None  # no Jev, no confidence
-        return _ask_route(session, deps, thread, agents, None, picked.raw, p)
+        return _ask_route(session, deps, thread, agents, None, picked.raw, p, picked.ranked)
     spec = AGENTS[picked.agent_id]
     chosen = _deps_for(deps, spec)
     if picked.kind == "switch":

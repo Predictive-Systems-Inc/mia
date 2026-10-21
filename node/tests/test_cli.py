@@ -1,11 +1,18 @@
 """The `mia` command on a fresh database: migrate, seed, chat, decide."""
 
+import logging
 import re
 from pathlib import Path
 
 import pytest
+from sqlmodel import Session, select
 
+from mia.agents.production_planner.models import Plan
 from mia.cli import main
+from mia.core.models import Event
+from mia.core.rbac import get_rbac
+from tests.conftest import PP_TODAY, PP_TOMORROW, Pin, Shop
+from tests.test_production_planner_tools import at
 
 
 def test_migrate_seed_chat_assign_confirm(
@@ -210,3 +217,22 @@ def test_tick_loads_the_agent_roles_first(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(api_main, "run_due_work", due)
     assert main(["tick"]) == 0
     assert calls == ["roles", "due"]
+
+
+def test_tick_runs_the_planners_due_draft_with_the_real_roles(
+    session: Session,
+    pp_shop: Shop,
+    pp_pin: Pin,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`mia tick` on the Ferino's seed at the draft hour: the production planner's due draft
+    runs under its own agent role (loaded by tick, not by the test fixtures), with no
+    PermissionDenied, and its event is emitted."""
+    pp_pin(at(PP_TODAY, 14, 5))
+    get_rbac.cache_clear()  # drop the roles the conftest fixtures loaded: tick loads its own
+    caplog.set_level(logging.ERROR)
+    assert main(["tick"]) == 0
+    assert "PermissionDenied" not in caplog.text and "failed" not in caplog.text
+    session.expire_all()
+    plan = session.exec(select(Plan).where(Plan.production_date == PP_TOMORROW)).one()
+    assert session.exec(select(Event).where(Event.entity_id == plan.id)).first() is not None

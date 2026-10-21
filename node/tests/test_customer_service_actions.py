@@ -76,6 +76,7 @@ def test_prices_name_the_items_by_code(cs: Shop, session: Session) -> None:
     d = decide(build(session, cs, "magkano ang bibingka at puto bumbong"), "prices")
     assert d.args == {"item_ids": [classic_id(session), item_id(session, "Puto bumbong")]}
     assert decide(build(session, cs, "menu po"), "prices").args == {"item_ids": []}
+    assert decide(build(session, cs, "magkano ang bibingka?"), "prices").args == {"item_ids": []}
 
 
 def test_a_delivery_area_question_reads_the_configured_areas(cs: Shop, session: Session) -> None:

@@ -72,6 +72,7 @@ STRINGS: dict[str, str | list[str]] = {
     "stock.sold_out": "Naibusen ti {item} idi {time}.",
     "stock.counted": "{quantity} nga {item} ti nabati.",
     "stock.leftover": "{quantity} nga {item} ti nabati.",
+    "stock.not_counted": "Awan pay ti bilang ti {item} ita nga aldaw.",
     "stock.waste": "{quantity} nga {item} ti naibelleng: {reason}.",
     "stock.low": "Naitala: bassit na laeng ti {ingredient}.",
     "stock.received": "Naawat: {quantity} {unit} {ingredient}.",

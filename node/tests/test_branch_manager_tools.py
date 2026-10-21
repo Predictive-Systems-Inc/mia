@@ -460,6 +460,23 @@ def test_the_weekly_summary_reads_sales_and_stock(session: Session, bm: Ferinos)
     assert [b.branch_id for b in mine.branches] == [kiosk.id]
 
 
+def test_the_weekly_target_is_seven_days_of_the_owners_month_target(
+    session: Session, bm: Ferinos
+) -> None:
+    """Smoke test 21 Oct: a weekly target of PHP 1,083.88 against PHP 28,718.50 in sales was
+    the seed's month target at a hundredth of its scale (PHP 4,800 a month). The owner's month
+    target is PHP 120,000; a week of October (31 open days) is seven day shares of it."""
+    from mia.core.models import SalesTarget
+
+    kiosk, people = bm
+    (row,) = session.exec(select(SalesTarget).where(SalesTarget.branch_id == kiosk.id)).all()
+    assert (row.period, row.amount, row.set_by) == ("month", 12_000_000, people["Rosa"].id)
+    out = tools.weekly_summary(deps_for(session, people["Rosa"]), WeeklyInput(), "w1")
+    week = next(b for b in out.branches if b.branch_id == kiosk.id)
+    assert week.target == 7 * ((12_000_000 + 15) // 31)  # PHP 27,096.79
+    assert week.amount / 2 < week.target < week.amount * 2  # on the scale of the seeded sales
+
+
 def test_the_monthly_letter_is_numbers(session: Session, bm: Ferinos) -> None:
     kiosk, people = bm
     deps = deps_for(session, people["Rosa"])

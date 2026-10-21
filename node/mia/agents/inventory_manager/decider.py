@@ -64,9 +64,14 @@ def _event(
     }
 
 
+ON_HAND = "on_hand"
+ASKS = ("count", "leftover")  # these kinds with no number ask how many are left
+
+
 def _report(r: Reader) -> tuple[dict[str, Any], str | None]:
     """record_events input. A bare count is `count`; a negation on a count simply records the
-    count (no correction action in v1). An unsure reason is not stated (it does not count
+    count (no correction action in v1). A count or leftover with no number is the question
+    how many are left: the event of the item, marked ON_HAND (the turn runs on_hand). An unsure reason is not stated (it does not count
     toward the confidence), so a waste asks for it with the reason buttons."""
     q: Query = r.q
     kind = r.pick("kind", set(KINDS))
@@ -84,6 +89,8 @@ def _report(r: Reader) -> tuple[dict[str, Any], str | None]:
             return {"events": []}, "item"
         if kind is None:
             return {"events": []}, "kind"
+        if kind in ASKS:  # no number: "how many are left", never a count of nothing
+            return _event(r, kind, ref, None, None) | {ON_HAND: True}, None
         events.append(_event(r, kind, ref, None, reason))
     args = {"events": events, "source_message_id": q.message_id}
     return args, "reason" if kind == "waste" and reason is None else None

@@ -13,6 +13,7 @@ from mia.agents.inventory_manager.tools import (
     EventOut,
     LowOut,
     LowStockOutput,
+    OnHandOutput,
     PlanOutput,
     ReceiveDeliveryOutput,
     RecordEventsOutput,
@@ -96,6 +97,12 @@ def tool_reply(
         plan = PlanOutput.model_validate(out)
         said = [TextBlock(text=t(f"stock.plan.{p.plan}", lang, item=p.item)) for p in plan.lines]
         return [*said, *(_text("stock.plan.heuristic", lang) if plan.note_heuristic else [])]
+    if tool == "on_hand":
+        left = OnHandOutput.model_validate(out)
+        if left.quantity is None:
+            return _text("stock.not_counted", lang, item=left.name)
+        quantity = " ".join(filter(None, [format_int(left.quantity, lang), left.unit]))
+        return _text("stock.counted", lang, quantity=quantity, item=left.name)
     if tool == "low_stock":
         low = LowStockOutput.model_validate(out).ingredients
         if not low:

@@ -432,3 +432,26 @@ def test_an_approval_without_input_is_refused(session: Session, ferinos: Ferinos
     assert approval.status == "pending"
     stmt = select(SupplierOrder).where(SupplierOrder.approval_id == approval.id)
     assert session.exec(stmt).all() == []
+
+
+def test_on_hand_is_todays_latest_count_or_none(session: Session, ferinos: Ferinos) -> None:
+    """An item: its latest count today (None before one); an ingredient: its latest count
+    plus deliveries since. Reads only; an unknown subject is refused."""
+    _, people = ferinos
+    ana = deps_for(session, people["Ana"])
+    ube, lpg = item(session, "Ube"), ingredient(session, "LPG")
+    assert tools.on_hand(ana, tools.OnHandInput(item_id=ube), "c1").quantity is None
+    for n, call in ((7, "c2"), (5, "c3")):
+        events = [EventIn(kind="count", item_id=ube, quantity=n)]
+        tools.record_events(ana, RecordEventsInput(events=events), call)
+    before = len(session.exec(select(StockEvent)).all())
+    out = tools.on_hand(ana, tools.OnHandInput(item_id=ube), "c4")
+    assert (out.name, out.quantity) == ("Ube", 5)
+    assert len(session.exec(select(StockEvent)).all()) == before
+    count = [EventIn(kind="count", ingredient_id=lpg, quantity=1)]
+    tools.record_events(ana, RecordEventsInput(events=count), "c5")
+    received = ReceiveDeliveryInput(lines=[LineIn(ingredient_id=lpg, quantity=2)])
+    tools.receive_delivery(deps_for(session, people["Marites"]), received, "c6")
+    assert tools.on_hand(ana, tools.OnHandInput(ingredient_id=lpg), "c7").quantity == 3
+    with pytest.raises(LookupError):
+        tools.on_hand(ana, tools.OnHandInput(item_id="nope"), "c8")

@@ -23,6 +23,7 @@ class Route:
     agent_id: str | None  # who answers; None when kind is "ask"
     confidence: float = 1.0
     raw: str | None = None  # Jev's pick as answered (None for the fallback)
+    ranked: tuple[str, ...] = ()  # the agents most likely first (Jev's probabilities)
 
 
 def build_request(
@@ -58,6 +59,13 @@ def fallback(agents: list[AgentSpec], active: str | None) -> Route:
     return Route("keep", active) if active else Route("ask", None)
 
 
+def _ranked(answer: dict[str, Any], ids: set[str], picked: str) -> tuple[str, ...]:
+    """The agents in Jev's probabilities, most likely first; without them, Jev's pick alone."""
+    probs = answer.get("probabilities") or {}
+    ranked = tuple(sorted((k for k in probs if k in ids), key=lambda k: -float(probs[k])))
+    return ranked or ((picked,) if picked in ids else ())
+
+
 def decide(answers: dict[str, Any], agents: list[AgentSpec], active: str | None) -> Route:
     """The spec's router table plus the follow-up's rows: a confident `unclear` with no active
     agent goes to the lead agent (agents[0]) with kind small_talk; with an agent active, another
@@ -71,19 +79,23 @@ def decide(answers: dict[str, Any], agents: list[AgentSpec], active: str | None)
     ids = {a.id for a in agents}
     if picked != UNCLEAR and picked not in ids:
         raise JevError(f"agent: {picked!r} is not an option")
+    try:
+        ranked = _ranked(answers["agent"], ids, picked)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise JevError(f"unexpected router probabilities: {exc!r}") from exc
     sure = confidence >= THRESHOLD and picked != UNCLEAR
     if active is not None:
         if picked in (active, UNCLEAR):
             return Route("keep", active, confidence, picked)
         if not sure:  # Q40: another agent, unsure: ask rather than keep silently
-            return Route("ask", None, confidence, picked)
+            return Route("ask", None, confidence, picked, ranked)
         return Route("switch", picked, confidence, picked)
     if picked == UNCLEAR and confidence >= THRESHOLD:
         # a confident "for no agent" is small talk: the lead agent greets back, no buttons
         return Route("small_talk", agents[0].id, confidence, picked)
     if sure:
         return Route("chosen", picked, confidence, picked)
-    return Route("ask", None, confidence, picked)
+    return Route("ask", None, confidence, picked, ranked)
 
 
 async def route(

@@ -109,9 +109,10 @@ p, admin, *, data:sales_notes, write, allow
 p, admin, *, data:sales_notes, read_all, allow
 p, admin, *, data:sales_notes, write_all, allow
 
-# clerk: report stock, ask what is low and the bake plan (own branch; no orders)
+# clerk: report stock, ask how many are left, what is low and the bake plan (own branch; no orders)
 p, clerk, *, tool:inventory_manager.record_events, execute, allow
 p, clerk, *, tool:inventory_manager.low_stock, execute, allow
+p, clerk, *, tool:inventory_manager.on_hand, execute, allow
 p, clerk, *, tool:inventory_manager.plan_tomorrow, execute, allow
 p, clerk, *, data:stock_events, write_own, allow
 p, clerk, *, data:stock_events, read_own, allow
@@ -120,6 +121,7 @@ p, clerk, *, data:retail_ingredients, read, allow
 # supervisor: the same, plus request a supplier order (it waits for the owner) and receive it
 p, supervisor, *, tool:inventory_manager.record_events, execute, allow
 p, supervisor, *, tool:inventory_manager.low_stock, execute, allow
+p, supervisor, *, tool:inventory_manager.on_hand, execute, allow
 p, supervisor, *, tool:inventory_manager.plan_tomorrow, execute, allow
 p, supervisor, *, tool:inventory_manager.draft_order, request, allow
 p, supervisor, *, tool:inventory_manager.receive_delivery, execute, allow

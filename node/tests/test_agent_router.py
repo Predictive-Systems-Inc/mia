@@ -2,7 +2,7 @@ import asyncio
 from typing import Any
 
 import pytest
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from mia.agents.registry import AGENTS
 from mia.chat import agent_router
@@ -182,6 +182,58 @@ def test_an_owner_of_eight_agents_is_asked_with_six_buttons_jevs_pick_first(
     assert len(buttons) == 6
     tapped = _turn(session, people["Helena"], buttons[0], asked.thread_id)
     assert tapped.agent_id == "production_planner"
+
+
+def _eight(monkeypatch: pytest.MonkeyPatch, decider: str = "jev") -> list[str]:
+    eight = orgconfig.load("ferinos").agents
+    assert len(eight) == 8
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings(agents=eight))
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", decider)
+    get_settings.cache_clear()
+    return eight
+
+
+def test_eight_agents_are_offered_by_jevs_probabilities(
+    session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With Jev's probabilities the six most likely are offered, most likely first: the last
+    two agents in the organisation's order are offered when Jev leans to them."""
+    eight = _eight(monkeypatch)
+    probs = {"bookkeeper": 0.3, "production_planner": 0.25, eight[0]: 0.2, eight[1]: 0.1}
+    monkeypatch.setattr(
+        jev, "_inner", lambda: fake_jev(lambda body: {"agent": choice("unclear", 0.4, probs)})
+    )
+    asked = _turn(session, people["Helena"], "hmm")
+    buttons = next(b.options for b in asked.blocks if isinstance(b, QuickRepliesBlock))
+    row = session.exec(select(Event).where(Event.action == "chat.route_asked")).one()
+    assert row.after is not None
+    ids = list(row.after["options"].values())
+    assert len(buttons) == 6
+    assert ids[:4] == ["bookkeeper", "production_planner", eight[0], eight[1]]
+
+
+def test_without_jev_eight_agents_are_offered_by_recent_use_first(
+    session: Session, people: dict[str, Person], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No Jev answer: the person's most recently used agent is offered first, so the last
+    agents in the organisation's order are not dropped for good; eight never raise."""
+    eight = _eight(monkeypatch)
+    helena = people["Helena"]
+    _router_answers(monkeypatch, [], "production_planner", 0.95)
+    used = _turn(session, helena, "ipadala ang production plan para bukas")
+    assert used.agent_id == "production_planner"
+    monkeypatch.setenv("MIA_DECIDER", "agent")  # the router is off: no Jev pick to order by
+    get_settings.cache_clear()
+    asked = _turn(session, helena, "hmm")  # a new thread, no active agent
+    buttons = next(b.options for b in asked.blocks if isinstance(b, QuickRepliesBlock))
+    row = session.exec(
+        select(Event).where(Event.action == "chat.route_asked").order_by(col(Event.id).desc())
+    ).first()
+    assert row is not None and row.after is not None
+    ids = list(row.after["options"].values())
+    assert len(buttons) == 6
+    assert ids == ["production_planner", *[a for a in eight if a != "production_planner"][:5]]
 
 
 def test_a_pending_question_keeps_its_agent_without_routing(

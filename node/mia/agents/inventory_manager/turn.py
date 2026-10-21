@@ -226,6 +226,8 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
         return _ask(session, deps, thread, *replies.ask_reason(decision, names, deps.lang))
     if decision.action == "clarify":
         return _did_you_mean(session, deps, thread, decision)
+    if decision.action == "report_stock" and decision.args.get(decider.ON_HAND):
+        return _run(session, deps, thread, "on_hand", decision.args)  # how many are left
     spec = actions.ACTIONS.get(decision.action)
     if spec is None:  # a tapped decision of another agent
         return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))

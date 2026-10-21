@@ -103,3 +103,30 @@ def test_a_stub_answers_that_it_is_not_available(
     reply = asyncio.run(stub.handle_turn(Turn(session, deps, thread, "hi", past, ctx)))
     assert reply.text() == t("reply.not_built", person.language) != t("reply.not_built", "en")
     assert "reply.not_built" in i18n.NEW_KEYS  # every language has it
+
+
+def test_ferinos_clerks_are_offered_what_the_policy_lets_them_use(
+    session: Session, ferinos: tuple[object, dict[str, Person]]
+) -> None:
+    """Smoke test 21 Oct: Ana, Liza and Pao were offered Branch Manager and HR Officer. That
+    is the policy: the hr officer spec (section 3, staff and clerk request leave and ask their
+    payslip) and the branch manager spec (section 3, a clerk asks how to sell more and reads
+    their own numbers; Policy: agent:branch_manager use for clerk). Never the bookkeeper (head
+    staff and up) or the production planner (denied to clerks); the offer is exactly the
+    agents of the org the clerk may use."""
+    from mia.core.models import Actor
+    from mia.core.rbac import Resource, get_rbac
+
+    _, people = ferinos
+    rbac = get_rbac()
+    for name in ("Ana", "Liza", "Pao"):
+        clerk = people[name]
+        offered = _ids(session, clerk)
+        may = [
+            a
+            for a in orgconfig.load().agents
+            if rbac.check(Actor.person(clerk), Resource(kind="agent", name=a), "use")
+        ]
+        assert offered == may
+        assert {"hr_officer", "branch_manager"} <= set(offered)
+        assert not {"bookkeeper", "production_planner"} & set(offered)

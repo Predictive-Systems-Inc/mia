@@ -315,6 +315,53 @@ def low_stock(deps: AgentDeps, args: LowStockInput, tool_call_id: str) -> LowSto
     )
 
 
+# ---- on_hand ------------------------------------------------------------------------------
+
+
+class OnHandInput(BaseModel):
+    item_id: str | None = None
+    ingredient_id: str | None = None
+
+    @model_validator(mode="after")
+    def _one_subject(self) -> "OnHandInput":
+        if (self.item_id is None) == (self.ingredient_id is None):
+            raise ValueError("one item or one ingredient")
+        return self
+
+
+class OnHandOutput(BaseModel):
+    """How many are left: an item's latest count on today's business date, an ingredient's
+    latest count plus deliveries since (low_ids); quantity None when not counted."""
+
+    name: str
+    quantity: int | None
+    unit: str | None
+
+
+def on_hand(deps: AgentDeps, args: OnHandInput, tool_call_id: str) -> OnHandOutput:
+    """How many of one item or ingredient are left at the person's branch (OnHandOutput).
+    Reads only. Raises LookupError for an item or ingredient the branch does not have."""
+    _check(deps, _as_reporter(STOCK, deps), "read", tool_call_id)
+    if args.ingredient_id is not None:
+        _check(deps, INGREDIENTS, "read", tool_call_id)
+        ing = _ingredients(deps.session, deps.branch.id).get(args.ingredient_id)
+        if ing is None:
+            raise LookupError(f"no ingredient {args.ingredient_id!r} at this branch")
+        rows = _stock_rows(deps.session, deps.branch.id, ["count", "received"])
+        return OnHandOutput(name=ing.name, quantity=_on_hand(rows).get(ing.id), unit=ing.unit)
+    _check(deps, ITEMS, "read", tool_call_id)
+    item = _items(deps.session, deps.branch.id).get(args.item_id or "")
+    if item is None:
+        raise LookupError(f"no item {args.item_id!r} at this branch")
+    today = _business_day(deps, deps.branch, utcnow(), tool_call_id)
+    counts = [
+        r
+        for r in _stock_rows(deps.session, deps.branch.id, ["count"])
+        if r.item_id == item.id and r.business_date == today and r.quantity is not None
+    ]
+    return OnHandOutput(name=item.name, quantity=counts[-1].quantity if counts else None, unit=None)
+
+
 # ---- plan_tomorrow ------------------------------------------------------------------------
 
 
@@ -644,6 +691,12 @@ BINDINGS = [
         low_stock,
         LowStockInput,
         "The ingredients at or under their reorder point, or reported low today.",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.on_hand",
+        on_hand,
+        OnHandInput,
+        "How many of one item (counted today) or ingredient are left.",
     ),
     ToolBinding(
         f"{MANIFEST.id}.plan_tomorrow",

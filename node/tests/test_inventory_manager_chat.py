@@ -137,6 +137,28 @@ def test_a_clerk_counts_what_is_left(
     assert len(_logged(session, "stock.counted")) >= 2
 
 
+def test_how_many_are_left_answers_the_count_in_filipino(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Smoke test 21 Oct: "ilang ube ang natitira" is a question, a count with no number. It
+    answers today's latest count (" Ube ang natira." with the count missing was a count
+    recorded with no quantity) and records nothing."""
+    _, people = ferinos
+    ube = _id(session, "Ube")
+    _answers(monkeypatch, "report_stock", kind="count", item=ube)
+    asked = _turn(session, people["Rosa"], "ilang ube ang natitira sa Mall kiosk?")
+    assert asked.text() == t("stock.not_counted", FIL, item="Ube")
+    _answers(monkeypatch, "report_stock", kind="count", item_0=ube)
+    _turn(session, people["Ana"], "5 ube na lang")
+    counts = len(_logged(session, "stock.counted"))
+    _answers(monkeypatch, "report_stock", kind="leftover", item=ube)  # natitira read as leftover
+    reply = _turn(session, people["Rosa"], "ilang ube ang natitira sa Mall kiosk?")
+    assert reply.text() == t("stock.counted", FIL, quantity="5", item="Ube") == "5 Ube ang natira."
+    assert len(_logged(session, "stock.counted")) == counts
+    asked_rows = select(StockEvent).where(col(StockEvent.kind).in_(("count", "leftover")))
+    assert all(r.quantity is not None for r in session.exec(asked_rows).all())
+
+
 def test_leftovers_are_echoed(
     session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

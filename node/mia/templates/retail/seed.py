@@ -90,7 +90,10 @@ INGREDIENTS: list[tuple[str, list[str], str, int, str | None, int | None]] = [
     ("LPG", ["lpg", "gas"], "tank", 1, "Metro Supply", 95000),
 ]
 # branch name, opens, closes, month target (centavos)
-BRANCHES = [("Mall kiosk", "09:00", "21:00", 480000), ("Street stall", "06:00", "19:00", 300000)]
+BRANCHES = [
+    ("Mall kiosk", "09:00", "21:00", 12_000_000),  # PHP 120,000, on the scale of the counts
+    ("Street stall", "06:00", "19:00", 10_000_000),
+]
 # The kitchen that bakes for both kiosks: a third branch without hours rows (it sells nothing,
 # retail_hours.is_shop), named in the production planner's settings (Q92).
 COMMISSARY = "Commissary"

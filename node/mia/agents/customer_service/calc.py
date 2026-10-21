@@ -103,6 +103,18 @@ def match_items(text: str, items: Mapping[str, Sequence[str]]) -> list[str]:
     ]
 
 
+def price_items(text: str, items: Mapping[str, Sequence[str]]) -> list[str]:
+    """The items a price question asks about (match_items); one item named only by a code is
+    the whole menu (no ids): a word like bibingka is a code of Classic and the word for every
+    item, and a customer asking "magkano ang bibingka?" wants the list."""
+    # ponytail: a single code-only hit lists the menu ("magkano ang coffee" too); a generic
+    # word per org in the settings if the long answer bothers anyone
+    hits = match_items(text, items)
+    if len(hits) == 1 and not _names(text, items[hits[0]][0]):
+        return []
+    return hits
+
+
 def match_item(words: str, items: Mapping[str, Sequence[str]]) -> str | None:
     """The one item a count group's words name: the only match, else the only one named by its
     whole name ("box of 4 bibingka" is the Box, bibingka only describing it); None otherwise."""
