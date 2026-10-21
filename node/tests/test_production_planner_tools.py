@@ -37,7 +37,7 @@ from mia.agents.sales_supervisor import due as sales_due
 from mia.chat.access import agents_for
 from mia.core import orgconfig, people, store
 from mia.core.models import Actor, Branch, Event, Message, Person, StockEvent, Thread
-from mia.core.rbac import get_rbac
+from mia.core.rbac import PermissionDenied, Rbac, Resource, get_rbac
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailIngredient, RetailItem
 from tests.conftest import PP_TODAY, PP_TOMORROW, Pin
@@ -648,3 +648,87 @@ def test_only_the_commissary_drafts_and_the_leftover_is_the_day_befores(
     left = tools.kiosk_data(session, comm(session), pp[0], PP_TOMORROW).leftovers
     assert left == {classic: 5}
     assert tools.kiosk_data(session, comm(session), pp[0], PP_TODAY + 2 * ONE_DAY).leftovers == {}
+
+
+def deny(monkeypatch: pytest.MonkeyPatch, role: str, resource: Resource, action: str) -> None:
+    """Rbac.require raises for that role, resource and action; every other check is real."""
+    real = Rbac.require
+
+    def require(self: Rbac, actor: Actor, res: Resource, act: str, **kw: Any) -> None:
+        if (actor.principal.id, res.obj, act) == (role, resource.obj, action):
+            raise PermissionDenied(role, f"{res.obj}:{act}")
+        real(self, actor, res, act, **kw)
+
+    monkeypatch.setattr(Rbac, "require", require)
+
+
+def test_an_admin_confirms_a_delivery_from_a_kiosk(
+    session: Session, pp: Ferinos, pp_pin: Pin
+) -> None:
+    call = caller(session, pp)
+    packed(session, pp[1], pp_pin)
+    pp[1]["Lea"] = people.add_person(
+        session, Actor.system(pp[0].id), branch_id=stall(session).id, name="Lea", roles=["admin"]
+    )
+    assert call("Lea", "confirm_delivery", DeliveredInput(kiosk_id=pp[0].id)) == "ok"
+    row = session.exec(
+        select(Dispatch)
+        .where(Dispatch.branch_id == pp[0].id)
+        .where(Dispatch.business_date == PP_TOMORROW)
+    ).one()
+    assert (row.status, row.delivered_by) == ("delivered", pp[1]["Lea"].id)
+
+
+def test_the_last_batch_reads_no_dispatch_before_the_agents_check(
+    session: Session, pp: Ferinos, pp_pin: Pin, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    call = caller(session, pp)
+    draft(session)
+    classic = item(session, "Classic").id
+    for line in plan_row(session).lines:  # one batch left in the plan: Classic batch 1
+        n = 1 if line["item_id"] == classic else 0
+        args = ChangePlanInput(item_id=line["item_id"], batches=n, production_date=PP_TOMORROW)
+        assert call("Nonoy", "change_plan", args) == "ok"
+    pp_pin(at(PP_TOMORROW, 4, 0))
+    deny(monkeypatch, MANIFEST.roles.agent_role, tools.DISPATCHES, "write_all")
+    reads: list[str] = []
+    real_exec = session.exec
+
+    def spy(statement: Any, *a: Any, **kw: Any) -> Any:
+        if Dispatch.__tablename__ in str(statement):
+            reads.append(str(statement))
+        return real_exec(statement, *a, **kw)
+
+    monkeypatch.setattr(session, "exec", spy)
+    assert call("Nonoy", "record_batch", BatchInput(item_id=classic, batch_no=1, good=48)) == (
+        "denied"
+    )
+    assert reads == []
+    monkeypatch.undo()
+    assert session.exec(select(Dispatch).where(Dispatch.business_date == PP_TOMORROW)).all() == []
+
+
+def test_a_kiosk_supervisors_recipe_is_refused_before_the_item_is_read(
+    session: Session, pp: Ferinos
+) -> None:
+    """The guard already refuses Marites the tool; the precheck itself also puts the rights
+    before the item: an unknown item is PermissionDenied for her, `item` for the owner."""
+    args = RecipeInput(
+        item_id="no-such-item",
+        batch_yield=50,
+        oven_minutes=45,
+        lines=[RecipeLine(ingredient_id=ing(session, "Eggs"), quantity_milli=1000)],
+    )
+    with pytest.raises(PermissionDenied):
+        tools.check_recipe(deps_for(session, pp[1]["Marites"]), args, "r")
+    with pytest.raises(LookupError, match="item"):
+        tools.check_recipe(deps_for(session, pp[1]["Rosa"]), args, "r")
+
+
+def test_plan_for_refuses_without_the_agents_plans_read(
+    session: Session, pp: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert tools.plan_for(session, comm(session).id, PP_TODAY - ONE_DAY) is not None
+    deny(monkeypatch, MANIFEST.roles.agent_role, tools.PLANS, "read")
+    with pytest.raises(PermissionDenied):
+        tools.plan_for(session, comm(session).id, PP_TODAY - ONE_DAY)

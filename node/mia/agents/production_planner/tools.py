@@ -915,10 +915,11 @@ class DeliveredInput(BaseModel):
 
 
 def check_driver(deps: AgentDeps, args: DeliveredInput, tool_call_id: str) -> None:
-    """The precheck of confirm_delivery: an owner or admin passes at any branch (they hold
-    write_all, spec section 3); anyone else is at the commissary and has the driver skill or
-    the supervisor role, else `not_driver`."""
+    """The precheck of confirm_delivery: an owner or admin passes at any branch after the
+    write_all check on dispatches (spec section 3; PermissionDenied without it); anyone else
+    is at the commissary and has the driver skill or the supervisor role, else `not_driver`."""
     if _is_lead(deps.person):
+        _check(deps, DISPATCHES, "write_all", tool_call_id)
         return
     at_commissary = deps.branch.id == _commissary(deps).id
     if not at_commissary or not (DRIVER in deps.person.skills or "supervisor" in deps.person.roles):
