@@ -18,7 +18,7 @@ from mia.agents.branch_manager import MANIFEST
 from mia.agents.branch_manager.models import Strategy
 from mia.agents.decider import NOT_STATED, Action
 from mia.agents.parsing import find_dates, find_prices, has_negation, menu_tokens
-from mia.core.events import mask_phones
+from mia.core.events import mask_phones, phone_candidates
 from mia.core.models import Branch, Person
 from mia.core.people import HUMAN_ROLES
 from mia.templates.retail import hours as retail_hours
@@ -54,9 +54,6 @@ NAME_MARKERS = frozenset(
 )
 NOT_NAMES = frozenset({"idagdag", "dagdag", "bagong", "bago", "new", "add", "user", "please"})
 MAX_NAMES = 4
-# A Philippine mobile number as typed (0917 123 4567, +63 917-123-4567, 9171234567); the tool
-# normalises it (linking.ph_mobile). Any other shape is not found, so the number is asked.
-PHONE_TEXT = re.compile(r"(?<![\d+])(?:\+?63|0)?[ -]?9\d{2}[ .-]?\d{3}[ .-]?\d{4}(?!\d)")
 CODE_WORD = re.compile(r"\w{2,6}")  # a whole token: "bag-o" and "i-set" are no code
 MAX_CODES = 4
 # Words that are never a new short code: the short function words of the six gated languages and
@@ -299,7 +296,7 @@ class Query:
     strategies: dict[str, str] = field(default_factory=dict)  # active catalogue: id -> text
     names: dict[str, str] = field(default_factory=dict)  # n0 -> a new person's name, a word
     branches: dict[str, str] = field(default_factory=dict)  # the organisation's: id -> name
-    phone: str = ""  # the first PHONE_TEXT run of the message, as typed; never sent to Jev
+    phone: str = ""  # the first phone_candidates span of the message, as typed; never to Jev
     next_open_day: str = ""  # ISO date: an experiment's start when none is said
     negated: bool = False  # a negation word (parsing.has_negation): a typed keep is asked
     lang: str = "en"
@@ -362,8 +359,12 @@ def build_query(
     rows = session.exec(
         select(RetailItem).where(RetailItem.active).where(here).order_by(col(RetailItem.sort_order))
     ).all()
-    phone = PHONE_TEXT.search(message)
-    words = PHONE_TEXT.sub(" ", message)  # a phone number is no price, date, code or name
+    # A mobile number as typed (events.phone_candidates, the normaliser linking.ph_mobile and
+    # the mask share) is no price, date, code or name; any other shape is not found, so asked.
+    spans = phone_candidates(message)
+    words = message
+    for start, end in reversed(spans):
+        words = words[:start] + " " + words[end:]
     codes = code_candidates(words, rows)
     people: dict[str, str] = {}
     if set(deps.person.roles) & LEADS:
@@ -397,7 +398,7 @@ def build_query(
             f"n{i}": w for i, w in enumerate(name_candidates(words, [b.name for b in branches]))
         },
         branches={b.id: b.name for b in branches},
-        phone=phone[0] if phone else "",
+        phone=message[spans[0][0] : spans[0][1]] if spans else "",
         next_open_day=_next_open_day(deps).isoformat(),
         negated=has_negation(message),
         lang=deps.lang,
@@ -418,7 +419,7 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
     lists, so the egress pseudonymiser reads each), the judgments in the questions. The option
     texts are catalogue names, numbers, dates, people and fixed text, never message words."""
     state = {
-        "message": mask_phones(q.message),  # a phone number never leaves
+        "message": mask_phones(q.message, keep_last=0),  # a phone number never leaves
         "previous_mia_message": q.previous_mia_message or None,
         "sender_role": q.role,
         "today": q.today.isoformat(),

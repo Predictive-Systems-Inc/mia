@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from mia.chat.blocks import TextBlock
-from mia.core import auth, keys, store
+from mia.core import auth, events, keys, store
 from mia.core.db import utcnow
 from mia.core.models import Actor, AuthCode, ChannelIdentity, Person, Principal
 from mia.i18n import t
@@ -30,7 +30,6 @@ STATUS_OF: dict[str, Status] = {
     "exhausted": "invalid",
 }
 LINK_TEXT = re.compile(r"^\s*LINK\s+(\d{6})\s*$", re.IGNORECASE)
-PH_MOBILE = re.compile(r"639\d{9}")
 PHONE_CHANNELS = ("whatsapp", "sim")  # the channels whose address is the phone number
 
 
@@ -76,15 +75,9 @@ def identity_for(session: Session, channel: str, address: str) -> ChannelIdentit
 def ph_mobile(text: str) -> str | None:
     """A Philippine mobile number as a channel address (E.164 digits without the plus, as
     WhatsApp sends it: 639171234567) from 09171234567, +63 917 123 4567, 639171234567 or
-    9171234567; None for any other shape or a character other than digits, spaces, + . - ( )."""
-    if re.search(r"[^\d\s+().-]", text):
-        return None
-    digits = re.sub(r"\D", "", text)
-    if digits.startswith("09"):
-        digits = "63" + digits[1:]
-    elif digits.startswith("9"):
-        digits = "63" + digits
-    return digits if PH_MOBILE.fullmatch(digits) else None
+    9171234567; None for any other shape or a character other than digits, spaces, + . - ( ).
+    It is events.ph_mobile, the normaliser events.mask_phones uses: whatever is linked is masked."""
+    return events.ph_mobile(text)
 
 
 def link_phone(session: Session, actor: Actor, person: Person, address: str) -> None:

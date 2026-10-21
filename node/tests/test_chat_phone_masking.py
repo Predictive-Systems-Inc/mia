@@ -1,13 +1,16 @@
 """A Philippine mobile number never reaches the event chain or a Jev request: events.mask_phones
-keeps its last four digits; the chat message row the UI shows keeps the text as typed."""
+keeps its last four digits on the chain and none at egress; the chat message row the UI shows
+keeps the text as typed. The mask and the linking parser share one normaliser."""
 
 import asyncio
 import json
+import random
 from typing import Any
 
 import pytest
 from sqlmodel import Session, select
 
+from mia.channels.linking import ph_mobile
 from mia.chat.service import run_turn
 from mia.core import jev
 from mia.core.egress import egress_context
@@ -28,8 +31,12 @@ SHAPES = [
     "9171234567",
     "917-123-4567",
     "0 9 1 7 1 2 3 4 5 6 7",
+    "0917-123-45-67",
+    "(0917) 123 4567",
+    "0917 - 123 -- 45 . 67",
 ]
 KEPT = ["12,450", "₱3,210", "9870", "2026-10-21", "0817 123 4567", "01J9171234567ABCDEFGHJKMNP"]
+NUMBER_DIGITS = ("9171234567", "917", "123", "4567")
 
 
 @pytest.mark.parametrize("typed", SHAPES)
@@ -41,7 +48,28 @@ def test_every_mobile_shape_is_masked_to_its_last_four(typed: str) -> None:
 
 @pytest.mark.parametrize("text", KEPT)
 def test_amounts_dates_landlines_and_ids_are_kept(text: str) -> None:
-    assert mask_phones(text) == text
+    assert mask_phones(text) == text and ph_mobile(text) is None
+
+
+def test_a_number_beside_a_date_or_an_amount_is_still_masked() -> None:
+    text = "on 2026-10-21 0917 123 4567 at 12,450"
+    assert mask_phones(text, keep_last=0) == "on 2026-10-21 <number> at 12,450"
+
+
+def test_a_random_mobile_with_random_separators_gets_the_same_decision_from_both() -> None:
+    """For any valid mobile with any separators, the parser accepts it and the mask hides it."""
+    rnd = random.Random(42)
+    for _ in range(200):
+        prefix = rnd.choice(["0", "+63", "63", ""])
+        digits = prefix.lstrip("+") + "9" + "".join(rnd.choice("0123456789") for _ in range(9))
+        typed = "".join(
+            d
+            + "".join(rnd.choice(" .-()") for _ in range(rnd.randint(0, 3)) if i < len(digits) - 1)
+            for i, d in enumerate(digits)
+        )
+        typed = ("+" if prefix.startswith("+") else "") + typed
+        assert ph_mobile(typed) == "63" + digits[-10:], typed
+        assert mask_phones(f"call {typed} now") == f"call <number ...{digits[-4:]}> now", typed
 
 
 def _events_text(session: Session) -> str:
@@ -89,4 +117,5 @@ def test_a_decider_request_leaves_with_the_number_masked(
             _run(_query(message=f"call {typed}, I owe ₱3,210 and 12,450"))
     assert len(seen) == len(SHAPES)
     for body in seen:
-        assert body["state"]["message"] == "call <number ...4567>, I owe ₱3,210 and 12,450"
+        assert body["state"]["message"] == "call <number>, I owe ₱3,210 and 12,450"
+        assert not any(d in json.dumps(body) for d in NUMBER_DIGITS)

@@ -305,16 +305,24 @@ def test_a_supervisor_is_refused_in_the_chat(
     assert _people_named(session, "Maria") == []
 
 
+@pytest.mark.parametrize(
+    "typed",
+    [TYPED, "0917-123-45-67", "(0917) 123 4567", "+63 917 - 123 -- 4567", "0 9 1 7 1 2 3 4 5 6 7"],
+)
 def test_a_phone_is_set_from_the_chat_and_never_sent_to_jev(
-    session: Session, bm: Ferinos, jev_on: None, monkeypatch: pytest.MonkeyPatch
+    session: Session, bm: Ferinos, jev_on: None, monkeypatch: pytest.MonkeyPatch, typed: str
 ) -> None:
+    """Extraction, the mask and the parser share events.phone_candidates: every shape the mask
+    hides is the number the tool links, and none of its digits reaches Jev."""
     kiosk, ppl = bm
     admin = _admin(session, kiosk, lang="fil")
     seen: list[dict[str, Any]] = []
     _answers(monkeypatch, "set_phone", seen, person=ppl["Ana"].id)
-    reply = _turn(session, admin, f"number ni ana {TYPED}")
+    reply = _turn(session, admin, f"number ni ana {typed}")
     assert reply == t("bm.person.phone_linked", "fil", name=ppl["Ana"].name, last4="4567")
-    assert not any(d in json.dumps(seen) for d in DIGITS)
+    assert linking.identity_for(session, "whatsapp", ADDRESS) is not None
+    assert seen[0]["state"]["message"].endswith(" <number>")
+    assert not any(d in json.dumps(seen) for d in (*DIGITS, "4567"))
     _no_digits_in_events(session)
     assert _turn(session, admin, "number ni ana 0917 123") == t(
         "bm.person.ask_phone", "fil", example="0917 123 4567"

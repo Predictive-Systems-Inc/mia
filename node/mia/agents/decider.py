@@ -145,15 +145,18 @@ def parse(
 def pseudonymised(body: dict[str, Any], pseudo: Pseudonymiser) -> dict[str, Any]:
     """The request with names replaced in the values that can carry them (the state, lists of
     strings item by item, and the option descriptions) and nowhere else, and every mobile
-    number in the state masked (events.mask_phones) so no agent sends one out: question keys, option
-    ids and instructions leave as they are. The shared pseudonymiser also takes words that start
-    with a name (a "Per" takes "person"), so it never sees the whole body."""
+    number in the state replaced by "<number>" (events.mask_phones, no digit left) so no agent
+    sends one out: question keys, option ids and instructions leave as they are. The shared
+    pseudonymiser also takes words that start with a name (a "Per" takes "person"), so it never
+    sees the whole body."""
 
     def clean(v: Any) -> Any:
         if isinstance(v, str):
-            return pseudo.apply(mask_phones(v))
+            return pseudo.apply(mask_phones(v, keep_last=0))
         if isinstance(v, list):
-            return [pseudo.apply(mask_phones(x)) if isinstance(x, str) else x for x in v]
+            return [
+                pseudo.apply(mask_phones(x, keep_last=0)) if isinstance(x, str) else x for x in v
+            ]
         return v
 
     state = {k: clean(v) for k, v in body["state"].items()}

@@ -71,18 +71,67 @@ def _last_hash(session: Session) -> str:
 
 REDACTED = "<redacted>"
 
-# A Philippine mobile number as people type it: 09171234567, +63 917 123 4567, 63-917-123-4567,
-# (0917) 123.4567, 9171234567, up to two of space . - ( ) between digits. A run inside a word
-# (an id, a hash) or touching more digits is not one; amounts and dates never have this shape.
-PH_MOBILE_TEXT = re.compile(
-    r"(?<![\w+])(?:\+?\s?63|\(?0)?[\s().-]{0,2}9(?:[\s().-]{0,2}\d){9}(?!\w)"
-)
+PH_MOBILE = re.compile(r"639\d{9}")  # E.164 digits without the plus
+DIGIT_RUN = re.compile(r"\d+")
+PHONE_GAP = re.compile(r"[\s().-]+")  # what may stand between the digit groups of a number
+MAX_GROUPS = 12  # a mobile has at most 12 digits, so at most 12 digit groups
 
 
-def mask_phones(text: str) -> str:
-    """The text with every Philippine mobile number replaced by "<number ...4567>" (its last
-    four digits); a text without one is returned unchanged."""
-    return PH_MOBILE_TEXT.sub(lambda m: f"<number ...{re.sub(r'\D', '', m[0])[-4:]}>", text)
+def ph_mobile(text: str) -> str | None:
+    """A Philippine mobile number as E.164 digits without the plus (639171234567) from
+    09171234567, +63 917 123 4567, 639171234567 or 9171234567; None for any other shape or a
+    character other than digits, spaces, + . - ( ). The one normaliser of the node."""
+    if re.search(r"[^\d\s+().-]", text):
+        return None
+    digits = re.sub(r"\D", "", text)
+    if digits.startswith("09"):
+        digits = "63" + digits[1:]
+    elif digits.startswith("9"):
+        digits = "63" + digits
+    return digits if PH_MOBILE.fullmatch(digits) else None
+
+
+def _wordy(text: str, i: int) -> bool:
+    return 0 <= i < len(text) and (text[i].isalpha() or text[i] == "_")
+
+
+def phone_candidates(text: str) -> list[tuple[int, int]]:
+    """The (start, end) spans of every Philippine mobile number in the text: runs of digit
+    groups with only spaces . - ( ) between them (a group touching a letter, as in an id, is
+    no part of one), cut from the left to the longest stretch ph_mobile accepts, a leading + or
+    ( included. Whatever ph_mobile accepts is found; amounts, dates and landlines are not."""
+    runs: list[list[tuple[int, int]]] = []
+    for m in DIGIT_RUN.finditer(text):
+        if _wordy(text, m.start() - 1) or _wordy(text, m.end()):
+            continue
+        if runs and PHONE_GAP.fullmatch(text[runs[-1][-1][1] : m.start()]):
+            runs[-1].append(m.span())
+        else:
+            runs.append([m.span()])
+    spans: list[tuple[int, int]] = []
+    for run in runs:
+        i = 0
+        while i < len(run):
+            for j in range(min(len(run), i + MAX_GROUPS) - 1, i - 1, -1):
+                start, end = run[i][0], run[j][1]
+                while start > 0 and text[start - 1] in "+(":
+                    start -= 1
+                if ph_mobile(text[start:end]):
+                    spans.append((start, end))
+                    i = j
+                    break
+            i += 1
+    return spans
+
+
+def mask_phones(text: str, keep_last: int = 4) -> str:
+    """The text with every phone_candidates span replaced by "<number ...4567>" (its last
+    `keep_last` digits), or by "<number>" with keep_last=0; without one it is unchanged."""
+    for start, end in reversed(phone_candidates(text)):
+        last = re.sub(r"\D", "", text[start:end])[-keep_last:] if keep_last > 0 else ""
+        shown = f"<number ...{last}>" if last else "<number>"
+        text = text[:start] + shown + text[end:]
+    return text
 
 
 def _masked(value: Any) -> Any:
