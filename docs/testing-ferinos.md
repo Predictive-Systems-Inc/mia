@@ -75,6 +75,43 @@ uv run mia channels sim "ready na ba order ko?" --from 639171234567
 The order waits for the kiosk: Marites, Ana and Liza each get "Bagong order" to confirm or reject.
 A pickup outside the kiosk's hours is refused with a request for another time.
 
+## A clerk's day
+
+One normal day at the Mall kiosk, from the first check-in to the closing cash count, in the order
+it happens (node/tests/test_day_sales_clerk.py, scenario 1, runs the same day with a pinned clock
+on Wednesday 28 Oct 2026: Ana 09:00 to 17:00, Liza 13:00 to 21:00). On the local node send each
+message at its time (or as close as the day allows: the business date is the kiosk's local date,
+and a count after 21:00 still belongs to the day). When the router asks "Tungkol ba ito sa:",
+tap the agent named. The amounts below use today's prices (Special is PHP 49.50 while the seeded
+price experiment runs); the cash count is the day's cash sales less 30 pesos.
+
+| Time | Person | Send | Expect |
+|---|---|---|---|
+| 09:00 | Ana | `nandito na ako` | shift supervisor: checked in at the Mall kiosk at 09:00 |
+| 12:00 | Ana | `sp 5 cl 8 ube 3` | sales supervisor: 5 Special, 8 Classic, 3 Ube; today's total against the target |
+| 13:00 | Liza | `nandito na ako` | shift supervisor: checked in; no missed check-in notice to Marites at 13:15 |
+| 14:00 | customer (sim) | `pa-order po 10 classic, pickup 6pm` | customer service: the order waits; Marites, Ana and Liza get "Bagong order" |
+| 14:05 | Marites | approve the order card in her chat | the customer is told the order is confirmed for 18:00 |
+| 16:00 | Ana | `ubos na ang ube` | inventory manager: Ube sold out at 16:00 |
+| 17:00 | Ana | `sp 4 cl 6` | sales supervisor: recorded as cash |
+| 17:01 | Ana | `ube 2 gcash` | sales supervisor: recorded as GCash (one tender per message; two in one message are asked) |
+| 17:02 | Ana | `uwi na ako` | shift supervisor: checked out, the timesheet drafted |
+| 20:30 | Liza | `sp 3 cl 5` | sales supervisor: recorded, the day's total |
+| 21:00 | Liza | `uwi na ako` | shift supervisor: checked out |
+| 21:10 | Marites | `bilang ng pera 1459` | bookkeeper: the count against the day's cash sales (total less the GCash), within the 100-peso threshold; Rosa is not told |
+| 22:05 | (tick) | `uv run mia tick` | Rosa: the end-of-day sales report against the target; Marites: the closing stock (Ube sold out at 16:00); no missing-count list, no cash count reminder |
+
+The customer line on the sim channel: `uv run mia channels sim "pa-order po 10 classic, pickup
+6pm" --from 639171234567`. With those prices the day's sales are PHP 1,579.00, of which PHP 90.00
+GCash, so the cash sales are PHP 1,489.00 and `bilang ng pera 1459` is 30 pesos short, within
+the threshold; `bilang ng pera 1339` (150 pesos short) tells Rosa the exact amount.
+
+Not built yet, so not in the day: a late notice ("late ako, 1:30 na ako makakarating") reaches
+nobody, head staff hears only from the missed check-in notice 15 minutes after the shift starts;
+no agent tells head staff of a slow day while the kiosk is open (the owner's report and the
+branch manager's evening nudge to the clerks compare with the target); the sales report goes to
+the owner, not to head staff.
+
 ## Adding a real person and linking a phone
 
 ```
