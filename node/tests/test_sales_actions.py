@@ -5,9 +5,11 @@ from typing import Any
 import pytest
 from sqlmodel import Session
 
-from mia.agents.decider import Reader
+from mia.agents.decider import DecideError, Reader
 from mia.agents.parsing import menu_tokens, pre_parse, was_corrected
 from mia.agents.sales_supervisor.actions import (
+    ACTIONS,
+    NOULS,
     Query,
     _period,
     _target_start,
@@ -17,6 +19,7 @@ from mia.agents.sales_supervisor.actions import (
 from mia.agents.sales_supervisor.decider import _args, _parse
 from mia.core.models import Branch, Person
 from mia.i18n import t
+from mia.settings import get_settings
 from mia.templates.retail.seed import ITEMS as MENU
 from tests.test_sales_tools import deps_for
 
@@ -266,3 +269,77 @@ def test_a_correction_by_rule_is_correct_sales_whatever_jevs_pick() -> None:
 def test_without_a_negation_jevs_pick_stands() -> None:
     d = _parsed("3 special 5 classic", "report_sales")
     assert d.action == "report_sales" and len(d.args["items"]) == 2
+
+
+def _nouls(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MIA_SALES_QUESTION", "nouls")
+    get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("mode", ["choice", "nouls"])
+def test_action_instructions_say_who_texts_and_carry_no_message_text(
+    monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    monkeypatch.setenv("MIA_SALES_QUESTION", mode)
+    get_settings.cache_clear()
+    request = build_request(query("zorblax 3 sp"), "m")
+    asks = [q for k, q in request["questions"].items() if k == "action" or k.startswith("is_")]
+    assert asks and len(asks) == (1 if mode == "choice" else len(NOULS))
+    for question in asks:
+        assert "zorblax" not in question["instructions"]
+        assert "`sender_role`" in question["instructions"]
+        assert "Filipino" in question["instructions"]
+
+
+def test_nouls_ask_a_yes_or_no_per_action_and_keep_the_slot_questions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    choice_keys = set(build_request(query("3 sp"), "m")["questions"])
+    _nouls(monkeypatch)
+    questions = build_request(query("3 sp"), "m")["questions"]
+    assert set(questions) == (choice_keys - {"action"}) | {f"is_{a}" for a in NOULS}
+    assert "clarify" not in NOULS
+    noul = questions["is_report_sales"]
+    assert noul["type"] == "noul"
+    assert noul["criteria"]["true"] == ACTIONS["report_sales"].description
+
+
+def _noul_parsed(message: str, **yes: float) -> Any:
+    answers: dict[str, Any] = {f"is_{a}": {"type": "noul", "noul": 0.02} for a in NOULS}
+    answers |= {f"is_{a}": {"type": "noul", "noul": p} for a, p in yes.items()}
+    answers |= {
+        "item_0": {"choice": "i1", "confidence": 0.9},
+        "item": {"choice": "not_stated", "confidence": 0.9},
+        "period": {"choice": "not_stated", "confidence": 0.9},
+        "branch": {"choice": "not_stated", "confidence": 0.9},
+    }
+    return _parse(answers, query(message))
+
+
+def test_nouls_pick_the_one_confident_action() -> None:
+    d = _noul_parsed("3 sp", report_sales=0.9, sales_today=0.3)
+    assert d.action == "report_sales" and d.confidence == pytest.approx(0.9)
+    assert d.args["items"] == [{"item_id": "i1", "quantity": 3}]
+    assert d.alternatives[0].action == "sales_today"
+
+
+def test_nouls_ask_with_both_buttons_when_two_are_confident() -> None:
+    d = _noul_parsed("3 sp", report_sales=0.9, sales_today=0.7, sales_period=0.5)
+    assert d.action == "clarify" and d.raw_action == "clarify"
+    assert [a.action for a in d.alternatives] == ["report_sales", "sales_today"]
+
+
+def test_nouls_ask_when_none_is_confident() -> None:
+    d = _noul_parsed("sales?", sales_today=0.5, sales_period=0.45)
+    assert d.action == "clarify" and d.raw_action == "sales_today"
+    assert [a.action for a in d.alternatives][:2] == ["sales_today", "sales_period"]
+
+
+def test_nouls_keep_the_correction_by_rule() -> None:
+    d = _noul_parsed("5 sp hindi 6", report_sales=0.9)
+    assert d.action == "correct_sales"
+
+
+def test_a_missing_noul_is_a_decide_error() -> None:
+    with pytest.raises(DecideError):
+        _parse({"is_report_sales": {"noul": 0.9}}, query("3 sp"))

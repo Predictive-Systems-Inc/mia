@@ -8,10 +8,11 @@ from functools import partial
 from typing import Any
 
 from mia.agents import decider as shared
-from mia.agents.decider import Decision, Reader
+from mia.agents.decider import THRESHOLD, DecideError, Decision, Reader
 from mia.agents.sales_supervisor.actions import (
     ACTIONS,
     NONE,
+    NOULS,
     THEMES,
     WEEKDAYS,
     Query,
@@ -133,10 +134,37 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     return {}, None  # clarify
 
 
+def _from_nouls(answers: dict[str, Any]) -> dict[str, Any]:
+    """The answers with the `is_<action>` yes probabilities turned into the one `action`
+    answer the shared parse reads (MIA_SALES_QUESTION=nouls). One yes at or above THRESHOLD
+    with every other below is that action; two or more at or above are clarify with only
+    those as alternatives (the Did you mean buttons); none at or above is the top yes at its
+    own probability, which the shared parse turns into clarify as for a choice. Answers that
+    already carry `action` (the choice question) pass unchanged."""
+    if "action" in answers:
+        return answers
+    try:
+        yes = {name: float(answers[f"is_{name}"]["noul"]) for name in NOULS}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DecideError(f"unexpected answer: {exc!r}") from exc
+    ranked = sorted(yes, key=lambda name: -yes[name])
+    confident = [name for name in ranked if yes[name] >= THRESHOLD]
+    if len(confident) > 1:
+        top = {
+            "choice": "clarify",
+            "confidence": yes[confident[1]],
+            "probabilities": {name: yes[name] for name in confident},
+        }
+    else:
+        top = {"choice": ranked[0], "confidence": yes[ranked[0]], "probabilities": yes}
+    return {**answers, "action": top}
+
+
 def _parse(answers: dict[str, Any], q: Query) -> Decision:
     """The shared parse, except that a correction by rule (a negation dropped a number from a
     single group) is `correct_sales` whatever Jev's action pick was; `raw_action` keeps Jev's
     pick and the confidence comes from the item pick only."""
+    answers = _from_nouls(answers)
     top = answers.get("action")
     if q.corrected and len(q.groups) == 1 and isinstance(top, dict):
         forced = {

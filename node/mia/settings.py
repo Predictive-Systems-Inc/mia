@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     MIA_TYPESAFE_URL: str = "https://api.typesafe.ai/v1/systemone"
     MIA_TYPESAFE_KEY: str = ""
     MIA_JEV_MODEL: str = "jev-1.13.0"  # pinned, so measurements compare
+    # The sales supervisor's action question (D42): one choice, or a yes-or-no per action.
+    MIA_SALES_QUESTION: Literal["choice", "nouls"] = "choice"
     # Who hears about Jev outages (spec 2026-10-18); empty: the log only.
     MIA_DEVELOPER_PERSON_ID: str = ""
     MIA_ORG: str = "demo"

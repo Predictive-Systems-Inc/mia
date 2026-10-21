@@ -53,13 +53,16 @@ def _only_sales(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: only))
 
 
-@pytest.fixture
-def jev_on(monkeypatch: pytest.MonkeyPatch, ferinos: Ferinos) -> list[dict[str, Any]]:
-    """Jev mode with the sales supervisor as the only agent (no routing); returns the Jev
-    requests seen."""
+@pytest.fixture(params=["choice", "nouls"])
+def jev_on(
+    monkeypatch: pytest.MonkeyPatch, ferinos: Ferinos, request: pytest.FixtureRequest
+) -> list[dict[str, Any]]:
+    """Jev mode with the sales supervisor as the only agent (no routing), under each action
+    question (MIA_SALES_QUESTION); returns the Jev requests seen."""
     _only_sales(monkeypatch)
     monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
     monkeypatch.setenv("MIA_DECIDER", "jev")
+    monkeypatch.setenv("MIA_SALES_QUESTION", request.param)
     get_settings.cache_clear()
     return []
 
@@ -77,10 +80,13 @@ def _answers(
     raw: dict[str, Any] | None = None,
     **slots: Any,
 ) -> None:
-    """Jev answers `action` with the slots; `raw` replaces whole answers (a custom confidence)."""
+    """Jev answers `action` with the slots; `raw` replaces whole answers (a custom confidence).
+    Under the nouls each action's yes is its probability (`action` at `confidence`)."""
 
     def answer(body: dict[str, Any]) -> dict[str, Any]:
-        out = answers_for(body, action, confidence, probabilities, **{**NOT_STATED, **slots})
+        yes = {f"is_{a}": p for a, p in (probabilities or {action: confidence}).items()}
+        given = {**NOT_STATED, **slots, **(yes if "action" not in body["questions"] else {})}
+        out = answers_for(body, action, confidence, probabilities, **given)
         return {**out, **(raw or {})}
 
     monkeypatch.setattr(jev, "_inner", lambda: fake_jev(answer, seen))
