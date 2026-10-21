@@ -289,7 +289,7 @@ week's roster from the owner's pattern, checks clerks in and out at the counter,
 and sick, finds cover from the other kiosk, swaps shifts, corrects a forgotten check-out, reports
 a broken stove, a missed delivery or a customer at the counter, sends the weekly roster on Sunday
 and closes a kiosk for a day. For a retail organisation it answers only with `MIA_DECIDER=jev`.
-Its decider eval (900 synthetic messages in six languages, gated on the gate half at the Q40
+Its decider eval (the messages in `node/tests/evals/cases/`, English and Filipino, gated on the gate half at the D41
 bar; `MIA_EVAL_HALVES=tune` or `gate` runs one half):
 `MIA_DECIDER=jev uv run pytest node/tests/evals/test_shift_retail_evals.py -m evals -s`
 (needs `MIA_TYPESAFE_KEY`; writes `docs/research/shift-supervisor-retail-<date>-<HHMM>.raw.json`).
@@ -303,7 +303,7 @@ enters recipes and asks the oven capacity for a date; the dispatch list per kios
 head and the driver, the driver confirms each delivery, a kiosk supervisor reads their own
 kiosk's list, and an hour after a kiosk opens a short receipt is flagged to the head and the
 owner. Every number is read and worked out by code. It answers only with `MIA_DECIDER=jev`. Its
-decider eval (600 synthetic messages in six languages, gated on the gate half at the Q40 bar;
+decider eval (the messages in `node/tests/evals/cases/`, English and Filipino, gated on the gate half at the D41 bar;
 `MIA_EVAL_HALVES=tune` or `gate` runs one half):
 `MIA_DECIDER=jev uv run pytest node/tests/evals/test_production_planner_evals.py -m evals -s`
 (needs `MIA_TYPESAFE_KEY`; writes `docs/research/production-planner-<date>-<HHMM>.raw.json`).
