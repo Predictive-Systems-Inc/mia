@@ -1,13 +1,20 @@
-"""Real-Jev router evaluation (spec 2026-10-18, Testing). Run:
-MIA_TYPESAFE_KEY=... uv run pytest node/tests/evals/test_router_eval.py -m evals -s
-Synthetic data only (D18). The spent gate half is never run. Prints per language, agent, group and half: right at >= 0.6, wrong
-at >= 0.6, ask-back rate, real messages answered as small talk, p50 and p95 latency, and cost
-(tokens) per message. The gate asserts run over the gate half only; the tune half is for tuning
-descriptions and thresholds."""
+"""Real-Jev router evaluation (spec 2026-10-18, Testing). Run from the repo root (the key,
+MIA_TYPESAFE_KEY, comes from the root .env): uv run pytest node/tests/evals/test_router_eval.py
+-m evals -s --no-cov. MIA_EVAL_HALVES picks the halves (default "tune,gate"; "tune" for a tuning
+run, "gate" for the gate run); the spent half is never run. The D40 rerun on the full Ferino's
+agent list (GATE_FERINOS_SEEDS and GATE_FERINOS_CONTEXT, the fresh gate half only):
+MIA_EVAL_HALVES=gate uv run pytest node/tests/evals/test_router_eval.py::test_router -m evals -s
+--no-cov. No org setting or fixture selects the agents: every case routes over ROSTER, every
+registered agent, which is the eight of config/org/ferinos (test_router_cases pins that), and
+the router request does not read MIA_ORG. Synthetic data only (D18). Prints per language,
+agent, group and half: right at >= 0.6, wrong at >= 0.6, ask-back rate, real messages answered
+as small talk, p50 and p95 latency, and cost (tokens) per message. The gate asserts run over the
+gate half only; the tune half is for tuning descriptions and thresholds."""
 
 import asyncio
 import datetime as dt
 import json
+import os
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -48,9 +55,10 @@ def _report_path(now: dt.datetime, folder: Path = RESEARCH) -> Path:
     return path
 
 
-def _selected(cases: list[Case]) -> list[Case]:
-    """The cases a run scores: the tune half and the fresh gate half, never the spent half."""
-    return [c for c in cases if c.half != "spent"]
+def _selected(cases: list[Case], halves: str = "tune,gate") -> list[Case]:
+    """The cases of the named halves (comma-separated) a run scores, never the spent half."""
+    wanted = set(halves.split(",")) - {"spent"}
+    return [c for c in cases if c.half in wanted]
 
 
 def _needs_key() -> None:
@@ -159,7 +167,7 @@ def _print(title: str, table: dict[str, Any]) -> None:
 def test_router(engine: Engine, branch: Branch) -> None:
     _needs_key()
     report = _report_path(dt.datetime.now().astimezone())  # before the run, not after it
-    cases = _selected(CASES)
+    cases = _selected(CASES, os.environ.get("MIA_EVAL_HALVES", "tune,gate"))
 
     async def run() -> list[dict[str, Any]]:
         sem = asyncio.Semaphore(CONCURRENCY)

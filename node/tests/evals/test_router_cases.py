@@ -1,6 +1,7 @@
 """Offline shape of the router eval set: every gated language covers every agent and group,
 and the tuning and gate halves are balanced. No model is called."""
 
+import json
 from collections import Counter, defaultdict
 from itertools import combinations
 from pathlib import Path
@@ -49,12 +50,42 @@ def test_halves_are_balanced_per_language_and_group() -> None:
 
 
 def test_the_fresh_gate_half_covers_every_agent() -> None:
+    """Ten singles per agent per gated language (GATE_FERINOS_SEEDS), and the context rows."""
     from tests.evals.test_router_eval import ROSTER
 
     for lang in GATED_LANGS:
-        gate = Counter(c.expected for c in CASES if c.lang == lang and c.half == "gate")
-        assert all(gate[a] >= 5 for a in ROSTER if a not in PENDING), (lang, gate)
+        gate = [c for c in CASES if c.lang == lang and c.half == "gate"]
+        singles = Counter(c.expected for c in gate if c.group == "single")
+        assert singles == {a: 10 for a in ROSTER if a not in PENDING}, (lang, singles)
+        context = Counter((c.group, c.expected == "any") for c in gate if c.group != "single")
+        assert context == {("follow_up", True): 5, ("follow_up", False): 5, ("switch", False): 5}
     assert not any(c.half == "gate" for c in CASES if c.lang not in GATED_LANGS)
+
+
+def test_no_fresh_text_was_ever_scored() -> None:
+    """No gate text (casefolded) is in any recorded router run, so the rerun reads fresh seeds."""
+    from tests.evals.test_router_eval import RESEARCH
+
+    raws = sorted(RESEARCH.glob("router-*.raw.json"))
+    assert raws
+    scored = {
+        r["text"].casefold().strip()
+        for path in raws
+        for r in json.loads(path.read_text(encoding="utf-8"))["results"]
+    }
+    gate = {c.text.casefold().strip() for c in CASES if c.half == "gate"}
+    assert not gate & scored, gate & scored
+
+
+def test_the_roster_is_the_full_ferinos_list() -> None:
+    """The router gate routes over all eight Ferino's agents, none pending; only a freshly
+    scaffolded agent (in PENDING) may be on the roster beside them."""
+    from mia.core import orgconfig
+    from tests.evals.test_router_eval import ROSTER
+
+    ferinos = set(orgconfig.load("ferinos").agents)
+    assert len(ferinos) == 8 and ferinos <= set(ROSTER) and not ferinos & PENDING
+    assert set(ROSTER) - ferinos <= PENDING
 
 
 def test_no_text_appears_in_both_halves() -> None:
@@ -73,6 +104,8 @@ def test_the_roster_is_every_agent_and_the_spent_half_is_never_run() -> None:
     assert ROSTER == list(AGENTS)
     assert {c.expected for c in CASES} - {"any", "small_talk"} <= set(ROSTER)
     assert not any(c.half == "spent" for c in _selected(CASES))
+    assert not any(c.half == "spent" for c in _selected(CASES, "tune,gate,spent"))
+    assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
 
 
 def test_gate_context_texts_are_not_singles() -> None:
@@ -162,11 +195,12 @@ def test_short_cash_routes_to_the_bookkeeper() -> None:
 
 
 def test_kiosk_stock_and_counts_stay_off_the_planner() -> None:
-    """The fresh gate half asks kiosk stock and a commissary receipt of the inventory manager and
-    counts of the sales supervisor, and the planner's description ends on that contrast."""
+    """The 21 Oct (third) gate half, spent in router-2026-10-21-0749, asks kiosk stock and a
+    commissary receipt of the inventory manager and counts of the sales supervisor, and the
+    planner's description ends on that contrast."""
     from mia.agents.production_planner.turn import SPEC
 
-    gate = {(c.expected, c.text) for c in CASES if c.half == "gate"}
+    gate = {(c.expected, c.text) for c in CASES if c.half == "spent"}
     assert {
         ("inventory_manager", "received 40 classic from the commissary"),
         ("inventory_manager", "how many trays of classic are left at the Mall kiosk?"),
