@@ -87,3 +87,28 @@ in fil and bcl (2).
 - "what do I bring to the stall" between the production planner (dispatch) and the inventory
   manager.
 - This gate half is spent; a rerun needs a fresh one.
+
+### Primary metric (D41)
+
+Primary metric (D41, en and fil at the full bar: wrong at most 2 percent, right at least 80, ask at most 15): en pass (right 91.1%, wrong 1 (1.1%), ask 7.8%); fil fail (right 81.1%, wrong 2 (2.2%), ask 15.6%: both on one row).
+
+The regional languages (ceb, hil, war, bcl) keep the D40 reading above, reported and not blocking (D41).
+
+fil wrong rows:
+
+- fil "buksan ang Mall kiosk ng 9 imbes na 10 mula ngayon": expected branch_manager, picked shift_supervisor at 0.78.
+- fil "ano ang dadalhin ko sa stall ngayong hapon?": expected production_planner, picked inventory_manager at 0.73.
+
+fil ask rows by cause (14; text and Jev's confidence):
+
+- branch_manager, right agent below 0.6 (3): "pakisend ang buod ng numbers natin sa Oktubre" 0.29; "itaas sa 85 ang special simula Lunes" 0.37; "Mia, paano ko mapapasubok sa customer ang ube?" 0.33
+- inventory_manager, right agent below 0.6 (2): "itinapon ko ang 7 salted egg, napanis na" 0.3; "gaano pa karami ang galapong natin sa stall?" 0.42
+- sales_supervisor, right agent below 0.6 (1): "ay, 6 na cheese overload pala, hindi 9" 0.55
+- sales_supervisor read as unclear (1): "kumusta ngayon kumpara noong nakaraang Sabado?" 0.52
+- inventory_manager read as shift_supervisor (1): "ano ang paubos na sa Mall kiosk?" 0.38
+- inventory_manager read as production_planner (1): "ilan pa ang puto bumbong natin ngayon?" 0.24
+- branch_manager read as shift_supervisor (1): "gawing supervisor si Ana sa stall" 0.54
+- branch_manager read as sales_supervisor (1): "may payo ka ba, laging mahina ang benta ko sa hapon" 0.46
+- production_planner read as inventory_manager (1): "naibaba ko na ang mga tray sa Mall kiosk, tapos na" 0.51
+- shift_supervisor, right agent below 0.6 (1): "tatlong oras nang late ang delivery ng cups, wala pa rin" 0.57
+- production_planner, right agent below 0.6 (1): "saka, ang batch 1 ng special ay 36 ang maayos" 0.45

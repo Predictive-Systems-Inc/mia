@@ -214,3 +214,20 @@ iyo?"; set_target 4; why_answer 3; sales_today 3; correct_sales 1). A missing in
 1). Another pick under 0.6: 7 (why_answer read as
 reply_only 3, report_sales read as sales_today 2, reply_only and sales_period read as
 sales_today 2). ceb's 16 and war's 15 asks are sales_period confidences and the "4 b4" counts.
+
+### Primary metric (D41)
+
+Primary metric (D41, en and fil at the full bar: wrong at most 2 percent, right at least 80, ask at most 15): en pass (right 97.8%, wrong 0 (0.0%), ask 2.2%); fil fail (right 82.2%, wrong 1 (2.2%), ask 15.6%: both on one row).
+
+The regional languages (ceb, hil, war, bcl) keep the D40 reading above, reported and not blocking (D41).
+
+fil wrong rows:
+
+- fil "bumaba ang mga taga-opisina para mag-lunch" (after Mia asked why sales went well): expected why_answer, picked reply_only at 0.71 (no write; the note is lost).
+
+fil ask rows by cause (7; text and Jev's confidence):
+
+- report_sales, right action below 0.6 (2): "4 b4 pa lang" 0.35; "2 pb lang po" 0.23
+- sales_period, missing items (2): "benta ng ube bawat branch noong nakaraang buwan" 0.43; "benta ng salted egg bawat kiosk ngayong linggo" 0.17
+- reply_only, right action below 0.6 (2): "ano ang itatawag ko sa iyo?" 0.49; "ayos, kita tayo mamaya" 0.35
+- why_answer, right action below 0.6 (1): "nagpatikim si Ana sa lahat nang libre" 0.53

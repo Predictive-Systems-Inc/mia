@@ -272,3 +272,21 @@ plan read as clarify 4 and as dispatch 2, the orders share of tomorrow's batches
 read as clarify 3 and reply_only 1, the banana leaves of puto bumbong; confirm_plan read as plan
 2 and clarify 1, "ituloy ang draft"; dispatch read as reply_only 1; delivered read as dispatch
 1).
+
+### Primary metric (D41)
+
+Primary metric (D41, en and fil at the full bar: wrong at most 2 percent, right at least 80, ask at most 15): en pass (right 88.0%, wrong 0 (0.0%), ask 12.0%); fil fail (right 80.0%, wrong 0 (0.0%), ask 20.0%).
+
+The regional languages (ceb, hil, war, bcl) keep the D40 reading above, reported and not blocking (D41).
+
+fil wrong rows: none.
+
+fil ask rows by cause (10; text and Jev's confidence):
+
+- plan, right action below 0.6 (3): "ilan ang batch sa draft na plano?" 0.44; "kasama ba ang order ng Street stall sa batch bukas?" 0.2; "ilang order ang nakuha ng plano para sa Miyerkules?" 0.47
+- capacity, right action below 0.6 (2): "48 salted egg sa Sabado, may oras pa ba ang oven?" 0.53; "maisisingit pa ba ang 120 puto bumbong sa Dec 25?" 0.58
+- confirm_plan read as plan (1): "ituloy ang draft" 0.47
+- plan read as dispatch (1): "aling bahagi ng batch bukas ang para sa order?" 0.3
+- batch_sheet, missing recipe (1): "ilang dahon ng saging para sa puto bumbong?" 0.34
+- dispatch, right action below 0.6 (1): "anong oras darating ang delivery namin bukas?" 0.59
+- delivered, right action below 0.6 (1): "nai-unload na sa street stall, ayos lahat" 0.42

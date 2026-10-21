@@ -287,3 +287,24 @@ and hil the guard in `decider.parse` (`words.says_count`, "pagsira" a count word
 turns a confident expense pick into the count-or-expense ask; war has no such word in
 COUNT_WORDS ("han pagsira"), so there only the confidence under 0.6 made it an ask, and a
 confident pick would write an expense under the limit.
+
+### Primary metric (D41)
+
+Primary metric (D41, en and fil at the full bar: wrong at most 2 percent, right at least 80, ask at most 15): en pass (right 92.7%, wrong 0 (0.0%), ask 7.3%); fil fail (right 78.2%, wrong 1 (1.8%), ask 20.0%).
+
+The regional languages (ceb, hil, war, bcl) keep the D40 reading above, reported and not blocking (D41).
+
+fil wrong rows:
+
+- fil "pinunan ko ang petty cash, ₱3,500": expected petty_cash refill, picked petty_cash spend at 0.72 (writes a 3,500 petty spend; no guard).
+
+fil ask rows by cause (11; text and Jev's confidence):
+
+- settlement, right action below 0.6 (3): "pumasok na ang pera sa Maya, 1,185" 0.3; "paki-log ang Maya settlement 2,230" 0.12; "transfer ng Maya para sa benta ng Lunes: 3,015" 0.2
+- balances, missing amount (2): "magkano ang dadalhin ko sa bangko bukas?" 0.58; "ano pa ang laman ng petty cash box?" 0.52
+- cash_count, right action below 0.6 (1): "nakalimutan kong i-send ang bilang kagabi: 10,045" 0.58
+- payout, right action below 0.6 (1): "pumasok na ang Foodpanda payout ng nakaraang linggo, ₱4,275" 0.57
+- deposit, right action below 0.6 (1): "RCBC 12,300 naideposito na" 0.5
+- not_built, right action below 0.6 (1): "ipalista mo kay Tita Baby, sa Biyernes daw siya magbabayad" 0.41
+- profit read as reply_only (1): "kumikita ba tayo ngayong buwan o hindi?" 0.51
+- profit, missing amount (1): "kita bawas gastos noong nakaraang buwan?" 0.54

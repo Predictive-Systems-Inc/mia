@@ -213,3 +213,23 @@ slots). reply_only below 0.6: 9 ("salamat gid", "sige, mopauli na ko"). whats_lo
 item 8, low confidence 4). report_stock read as clarify: 3 ("pila na lang co?"). The rest, 11:
 bake_plan 4, place_order 3, a count read as place_order 1, "how does this work?" read as
 clarify 1, whats_low missing lines 1, receive 1. bcl's 24 asks spread over the same causes.
+
+### Primary metric (D41)
+
+Primary metric (D41, en and fil at the full bar: wrong at most 2 percent, right at least 80, ask at most 15): en pass (right 91.7%, wrong 0 (0.0%), ask 8.3%); fil fail (right 75.0%, wrong 0 (0.0%), ask 25.0%).
+
+The regional languages (ceb, hil, war, bcl) keep the D40 reading above, reported and not blocking (D41).
+
+fil wrong rows: none.
+
+fil ask rows by cause (15; text and Jev's confidence):
+
+- report_stock, right action below 0.6 (6): "tira pagkatapos ng shift 2 classic 3 special" 0.27; "6 pb tira ngayong araw" 0.38; "special na tira ngayong gabi, 6 pcs" 0.53; "gaano pa karami ang rice flour sa stock" 0.41; "may kape pa ba? ilan" 0.38; "ilan pang se ang hindi pa nabebenta?" 0.39
+- report_stock read as reply_only (2): "1 se ang tira pagsara" 0.35; "4 classic itinapon" 0.3
+- report_stock, missing lines (1): "naubusan kami ng salted egg mga 1:30pm" 0.43
+- report_stock, missing reason (1): "3 pb tumigas, tinapon" 0.79
+- report_stock, missing item_0 (1): "1 sp tinapon sa basurahan" 0.6
+- whats_low, right action below 0.6 (1): "pakita ng mga paubos na stock" 0.39
+- whats_low, missing item (1): "low stock report nga po" 0.54
+- reply_only, right action below 0.6 (1): "kita tayo sa susunod na shift" 0.59
+- report_stock read as clarify (1): "ilan na lang co?" 0.26

@@ -476,3 +476,18 @@ block in every language: "curious if Special moves faster at 43, can we test"; m
 pick under 0.6: 5, all war (coaching read as how_to_sell, how_to_sell and a monthly letter read
 as clarify, the "waray trial" price read as an experiment, "pira an aton kita han Oktubre?"
 read as an experiment at 0.21). war's 15 asks are the experiment block plus those five.
+
+### Primary metric (D41)
+
+Primary metric (D41, en and fil at the full bar: wrong at most 2 percent, right at least 80, ask at most 15): en fail (right 84.4%, wrong 0 (0.0%), ask 15.6%: 7 asks against the 6 allowed, one row); fil pass (right 88.9%, wrong 0 (0.0%), ask 11.1%).
+
+The regional languages (ceb, hil, war, bcl) keep the D40 reading above, reported and not blocking (D41).
+
+fil wrong rows: none.
+
+fil ask rows by cause (5; text and Jev's confidence):
+
+- propose_experiment, right action below 0.6 (2): "bilang test, mag-alok ng premium na salted egg sa 60 sa tabi ng karaniwan" 0.33; "subukan ang merienda set: Box of 4 sa 149 ngayong buwan" 0.33
+- set_short_code, right action below 0.6 (1): "simula ngayon bf na ang ita-type ng clerk para sa Box of 4" 0.55
+- weekly_summary, right action below 0.6 (1): "mas maganda ba o mas pangit ang linggong ito kaysa noong nakaraan?" 0.51
+- monthly_letter, right action below 0.6 (1): "aling mga araw ngayong buwan ang pinakamataas ang benta?" 0.41
