@@ -15,6 +15,7 @@ The short half (D42), printed per language, its one assertion no wrong write (ga
 MIA_EVAL_HALVES=short MIA_DECIDER=jev uv run pytest node/tests/evals/test_sales_supervisor_evals.py -m evals -s"""
 
 import asyncio
+import dataclasses
 import datetime as dt
 import json
 import os
@@ -88,10 +89,10 @@ def _deps(session: Session, case: Case, person_id: str) -> AgentDeps:
 
 
 def _items(action: str, args: dict[str, Any], names: dict[str, str]) -> list[tuple[str, int]]:
-    """The (item name, quantity) pairs a count or correction would record."""
-    if action not in ("report_sales", "correct_sales"):
+    """The (item name, quantity) pairs a count, correction, receipt or refund would record."""
+    if action not in ("report_sales", "correct_sales", "record_receipt", "refund_receipt"):
         return []
-    counts = (args.get("items") or []) if action == "report_sales" else [args]
+    counts = [args] if action == "correct_sales" else (args.get("items") or [])
     return [(names.get(str(c.get("item_id")), "?"), int(c.get("quantity") or 0)) for c in counts]
 
 
@@ -105,6 +106,7 @@ async def _one(
         with Session(engine, expire_on_commit=False) as session:
             deps = _deps(session, case, person_id)
             query = await asyncio.to_thread(build_query, deps, case.text, case.previous)
+            query = dataclasses.replace(query, source=case.source)  # a receipts row's kiosk
             ctx = EgressContext(
                 session=session,
                 actor=deps.actor,

@@ -57,6 +57,7 @@ SHORT_LANGS = ("en", "fil")
 EVALS = Path(__file__).parent
 RESEARCH = EVALS.parents[2] / "docs" / "research"
 ShortRow = tuple[str, str, str, str, int | None, int | None]  # lang text action item amount number
+SHORT_ROWS = {"sales_supervisor": 16}  # its four receipt rows per language; twelve otherwise
 
 
 def actions(agent: str) -> dict[str, Any]:
@@ -128,8 +129,8 @@ def _seed() -> tuple[frozenset[str], dict[str, frozenset[str]], frozenset[str]]:
 
 
 def short_failures(agent: str, rows: list[ShortRow]) -> list[str]:
-    """What is wrong with an agent's short half, empty when well formed: twelve rows per
-    language (en and fil only) with two asks, one to six lowercase unpunctuated words, unique
+    """What is wrong with an agent's short half, empty when well formed: SHORT_ROWS rows per
+    language (twelve unless named; en and fil only) with two asks, one to six lowercase unpunctuated words, unique
     texts, an expected action the agent offers (or "ask"), an amount the agent's parser finds,
     an item that is seeded and typed (its code, or one of its seeded name's codes) and a number
     that is typed."""
@@ -141,7 +142,8 @@ def short_failures(agent: str, rows: list[ShortRow]) -> list[str]:
     out = []
     counts = Counter(lang for lang, *_ in rows)
     asks = Counter(lang for lang, _, action, *_ in rows if action == ASK)
-    if counts != dict.fromkeys(SHORT_LANGS, 12) or asks != dict.fromkeys(SHORT_LANGS, 2):
+    size = SHORT_ROWS.get(agent, 12)
+    if counts != dict.fromkeys(SHORT_LANGS, size) or asks != dict.fromkeys(SHORT_LANGS, 2):
         out.append(f"counts {dict(counts)}, asks {dict(asks)}")
     texts = [_fold(text) for _, text, *_ in rows]
     out += [f"repeated {t}" for t, n in Counter(texts).items() if n > 1]

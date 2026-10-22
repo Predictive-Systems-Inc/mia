@@ -15,14 +15,23 @@ Steps no agent does today are left out, not faked (each named where it would be)
 """
 
 import pytest
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from mia.agents.bookkeeper.models import CashCount
 from mia.agents.customer_service.models import Customer, CustomerMessage
 from mia.agents.sales_supervisor import tools as sales_tools
 from mia.agents.shift_supervisor.rules import fmt_date, word_key
-from mia.core import approvals, db, orgconfig
-from mia.core.models import Actor, CustomerOrder, SalesCount, StockEvent
+from mia.core import approvals, db, orgconfig, sales
+from mia.core.models import (
+    Actor,
+    Approval,
+    CustomerOrder,
+    SalesCount,
+    SalesPayment,
+    SalesReceipt,
+    SalesSession,
+    StockEvent,
+)
 from mia.core.money import format_money
 from mia.i18n import t
 from mia.templates.retail import hours as retail_hours
@@ -381,3 +390,83 @@ def test_a_late_clerk_is_reported_to_head_staff_once(day: Day, session: Session)
     )
     liza_notices = [m for m in day.told("Marites") if liza.name in m]
     assert (liza_notices.count(notice), liza_notices.count(missed)) == (1, 0)
+
+
+# ---- 6. a receipts day ------------------------------------------------------------------------
+
+
+def test_a_receipts_day_at_the_mall_kiosk(day: Day, session: Session) -> None:
+    """The Mall kiosk on receipts from RS_TODAY with a PHP 1,000.00 float: Ana's check-in opens
+    her drawer, three receipts are rung in the chat, the third voided through head staff's card,
+    and Marites's count closes the drawer. Assumes Q119 (the chat is the till until a POS
+    exists). Liza's shift is not exercised: she opens no drawer here, so the count closes
+    Ana's alone."""
+    day.full = day.full.model_copy(deep=True)
+    day.full.sales.receipts_from = {"Mall kiosk": RS_TODAY}
+    day.full.sales.opening_float = {"Mall kiosk": 100_000}
+    day._only(None)
+    cash, gcash = t("bk.tender.cash", FIL), t("bk.tender.gcash", FIL)
+
+    opened = check_in(day, "Ana", 9)
+    assert "sales.session_opened" in opened.actions()
+    assert t("retail.check_in.drawer", FIL, float=money(100_000)) in opened.text()
+
+    rung = [
+        ((10, 15), "resibo 2 cl 1 ube cash 125", ["Classic", "Ube"], "2 Classic, 1 Ube", 12_500, cash),
+        ((11, 30), "2 classic 1 special gcash", ["Classic", "Special"], "2 Classic, 1 Special", 12_950, gcash),
+        ((12, 5), "r 3 ube cash", ["Ube"], "3 Ube", 13_500, cash),
+    ]  # fmt: skip
+    for no, ((hour, minute), text, names, lines, total, tender) in enumerate(rung, start=1):
+        day.at(hour, minute)
+        ids = {f"item_{k}": _item(session, name).id for k, name in enumerate(names)}
+        said = day.say("Ana", SS, text, "record_receipt", conversation="other", **ids)
+        assert said.text() == t(
+            "sales.receipt.recorded", FIL, no=str(no), lines=lines, total=money(total),
+            tender=tender,
+        )  # fmt: skip
+    receipts = session.exec(select(SalesReceipt).order_by(col(SalesReceipt.receipt_no))).all()
+    assert [(r.receipt_no, r.total) for r in receipts] == [
+        ("1", 12_500), ("2", 12_950), ("3", 13_500),
+    ]  # fmt: skip
+    paid = {r.receipt_id: r.tender for r in session.exec(select(SalesPayment))}
+    assert [paid[r.id] for r in receipts] == ["cash", "gcash", "cash"]
+
+    day.at(12, 10)
+    asked = day.say("Ana", SS, "void 3 mali", "void_receipt", conversation="other")
+    card = t(
+        "sales.void.card", FIL, who="Ana", no="3", lines="3 Ube", total=money(13_500),
+        tender=cash, reason="void 3 mali",
+    )  # fmt: skip
+    assert day.told("Marites", step=asked) == [card]
+    (approval,) = session.exec(select(Approval).where(Approval.type == sales.VOID)).all()
+    day.at(12, 30)
+    marites = Actor.person(day.people["Marites"])
+    approvals.decide(session, approval.id, marites, "approved", stepped_up_at=db.utcnow())
+    session.commit()
+    third = receipts[2]
+    session.refresh(third)
+    assert third.status == "voided"
+    assert day.told("Ana", SS)[-1] == t("sales.void.done", FIL, no="3")
+
+    check_out(day, "Ana", 17, 2)
+    day.at(17, 5)
+    counted = day.say("Marites", BK, "bilang ng pera 1125", "cash_count", amount="p0")
+    (drawer,) = session.exec(select(SalesSession)).all()
+    assert (drawer.state, drawer.counted, drawer.expected, drawer.difference) == (
+        "closed", 112_500, 112_500, 0,
+    )  # fmt: skip
+    assert counted.text() == t(
+        "bk.count.drawer.within", FIL, clerk="Ana", counted=money(112_500),
+        expected=money(112_500), float=money(100_000), cash=money(12_500), difference=money(0),
+    )  # fmt: skip
+    row = closing(day)
+    assert (row.counted, row.expected, row.difference) == (112_500, 112_500, 0)
+
+    day.at(22, 5)
+    night = day.tick()
+    owner = [m for m in day.told("Rosa", SS, step=night) if "Mall kiosk" in m]
+    assert len(owner) == 1 and money(25_450) in owner[0]
+    assert day.counts(RS_TODAY) == []
+    kiosk = day.shop.kiosk.id
+    assert sales.day_sales(session, kiosk, RS_TODAY).by_tender == {"cash": 12_500, "gcash": 12_950}
+    assert {r.business_date for r in receipts} == {RS_TODAY}

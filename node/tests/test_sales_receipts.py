@@ -18,6 +18,7 @@ from mia.agents.bookkeeper.models import CashCount
 from mia.agents.bookkeeper.tools import CashCountInput, ExpenseInput
 from mia.agents.sales_supervisor import MANIFEST as SS
 from mia.agents.sales_supervisor import due as ss_due
+from mia.agents.sales_supervisor import replies as ss_replies
 from mia.agents.sales_supervisor import tools as ss_tools
 from mia.agents.sales_supervisor.actions import build_query
 from mia.agents.sales_supervisor.tools import (
@@ -1473,3 +1474,94 @@ def test_a_refund_naming_an_item_jev_did_not_pick_asks_which_items(
     reply = _turn(session, rs[1]["Ana"], "refund ube resibo 1")
     assert reply.text() == t("sales.refund.which_items", "fil", no="1")
     assert _cards(session, sales.REFUND) == []
+
+
+# ---- Task 5: the receipt tables checked wherever day_sales reads them; the reads' wording ----
+
+BK_CALLS: dict[str, Callable[[AgentDeps], object]] = {
+    "record_cash_count": lambda d: bk_tools.record_cash_count(
+        d, CashCountInput(counted=100_000), "c"
+    ),
+    "record_settlement": lambda d: bk_tools.record_settlement(
+        d, bk_tools.SettlementInput(provider="gcash", amount=0, start=RS_TODAY, end=RS_TODAY), "c"
+    ),
+    "record_payout": lambda d: bk_tools.record_payout(
+        d, bk_tools.PayoutInput(provider="grab", amount=0, start=RS_TODAY, end=RS_TODAY), "c"
+    ),
+    "tax_quarter": lambda d: bk_tools.tax_quarter(
+        d, bk_tools.TaxInput(quarter_start=RS_TODAY), "c"
+    ),
+    "monthly_profit": lambda d: bk_tools.monthly_profit(
+        d, bk_tools.ProfitInput(month=RS_TODAY), "c"
+    ),
+}
+RECEIPT_TABLE_NAMES = ("sales_receipts", "sales_receipt_lines", "sales_payments")
+
+
+@pytest.mark.parametrize("table", RECEIPT_TABLE_NAMES)
+@pytest.mark.parametrize("tool", sorted(BK_CALLS))
+def test_the_bookkeeper_tools_over_tender_sales_check_the_receipt_tables(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin,
+    tool: str, table: str,
+) -> None:  # fmt: skip
+    """tender_sales reads day_sales, the receipt tables on a receipts day: each tool over it
+    checks all three, so a denied one stops the tool before any write."""
+    receipts_kiosk(monkeypatch)
+    drawer(session, rs)
+    rs_pin(at(RS_TODAY, 17, 5))
+    written = select(Event).where(~col(Event.action).startswith("rbac."))
+    before = len(session.exec(written).all())
+    monkeypatch.setattr(get_rbac(), "require", _deny_on(table))
+    with pytest.raises(PermissionDenied):
+        BK_CALLS[tool](bk_deps(session, rs[1]["Rosa"]))
+    assert len(session.exec(written).all()) == before  # only the checks' own audit rows
+
+
+@pytest.mark.parametrize("tool", sorted(BK_CALLS))
+def test_the_bookkeeper_manifest_declares_the_receipt_reads(tool: str) -> None:
+    from mia.agents.bookkeeper import MANIFEST as BK
+
+    (spec,) = [s for s in BK.tools if s.name == tool]
+    assert set(RECEIPT_TABLE_NAMES) <= set(spec.reads), spec.reads
+
+
+@pytest.mark.parametrize("table", RECEIPT_TABLE_NAMES)
+def test_sales_today_checks_every_receipt_table(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, table: str
+) -> None:
+    _day(session, rs, monkeypatch)
+    monkeypatch.setattr(get_rbac(), "require", _deny_on(table))
+    with pytest.raises(PermissionDenied):
+        ss_tools.today(ss_deps(session, rs[1]["Marites"]), ss_tools.TodayInput(), "c")
+
+
+def _receipts_out(kind: str, status: str, total: int) -> ss_tools.ReceiptsOutput:
+    line = ss_tools.ReceiptLineOut(
+        item_id="u", item="Ube", quantity=-1 if kind == "refund" else 1, unit_price=4_500,
+        line_total=total,
+    )  # fmt: skip
+    r = ss_tools.ReceiptOut(
+        receipt_no="4", kind=kind, status=status, time="15:00", lines=[line], total=total,
+        tender="cash", currency="PHP",
+    )  # fmt: skip
+    paid = {"cash": total} if status == "paid" else {}
+    return ss_tools.ReceiptsOutput(
+        branch="Mall kiosk", receipts=[r], by_tender=paid, total=total, currency="PHP"
+    )
+
+
+def test_an_all_voided_day_says_no_receipts_yet() -> None:
+    blocks = ss_replies.receipts_read(_receipts_out("sale", "voided", 4_500), "today", "fil")
+    assert [b.text for b in blocks if isinstance(b, TextBlock)] == [
+        t("sales.receipts.today_empty", "fil", branch="Mall kiosk")
+    ]
+
+
+def test_the_last_receipt_says_it_is_a_refund() -> None:
+    blocks = ss_replies.receipts_read(_receipts_out("refund", "paid", -4_500), "last", "fil")
+    assert [b.text for b in blocks if isinstance(b, TextBlock)] == [
+        t(
+            "sales.receipts.last_refund", "fil", no="4", time="15:00", lines="1 Ube",
+            total=money(4_500), tender=t("bk.tender.cash", "fil"),
+        )
+    ]  # fmt: skip

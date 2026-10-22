@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.evals import gate
 from tests.evals.cases import RESULTS
 from tests.evals.cases import write_results as results_csv
 from tests.evals.gate import gate_failures, gate_reported, writes, wrong_writes
@@ -130,3 +131,22 @@ def test_a_cases_row_with_extra_or_missing_fields_is_refused(
     _csv(tmp_path, monkeypatch, ",".join(HEADER) + "\n" + ",".join(row) + "\n")
     with pytest.raises(ValueError, match="line 2: 16 fields"):
         read("x")
+
+
+def test_the_sales_supervisors_short_half_has_sixteen_rows_per_language() -> None:
+    """SHORT_ROWS: sixteen per language for the sales supervisor (its receipt rows), twelve for
+    every other agent; two asks each either way."""
+    from tests.evals.gate import short_failures
+
+    def rows(n: int) -> list[gate.ShortRow]:
+        return [
+            (lang, f"x {lang} {i}", "ask" if i < 2 else "reply_only", "", None, None)
+            for lang in ("en", "fil")
+            for i in range(n)
+        ]
+
+    def size(agent: str, n: int) -> list[str]:
+        return [f for f in short_failures(agent, rows(n)) if f.startswith("counts")]
+
+    assert size("sales_supervisor", 16) == [] and size("sales_supervisor", 12) != []
+    assert size("bookkeeper", 12) == [] and size("bookkeeper", 16) != []

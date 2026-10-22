@@ -418,10 +418,11 @@ class TodayOutput(BaseModel):
 
 def _branch_today(deps: AgentDeps, branch: Branch, tool_call_id: str) -> BranchToday:
     """The branch's business date from its one source (sales.day_sales), after the read check
-    on that source's table (counts, or receipts on a receipts kiosk)."""
+    on that source's tables (counts, or the three receipt tables on a receipts kiosk)."""
     day = _business_day(deps, branch, tool_call_id)
-    source = COUNTS if sales.source_of(branch, day) == "counts" else RECEIPT_TABLES[0]
-    _check(deps, _as_reporter(source, deps), "read", tool_call_id)
+    tables = [COUNTS] if sales.source_of(branch, day) == "counts" else RECEIPT_TABLES
+    for table in tables:
+        _check(deps, _as_reporter(table, deps), "read", tool_call_id)
     sums = sales.day_sales(deps.session, branch.id, day).by_item
     names = _names(deps.session)
     items = [

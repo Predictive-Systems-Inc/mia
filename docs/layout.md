@@ -55,7 +55,9 @@ mia/
                             tests/scenarios.yaml (and scenarios_en.yaml)
         sales_supervisor/   manifest.yaml, job.md, prompts/, actions.py and decider.py (Jev),
                             tools.py, calc.py, due.py, replies.py, turn.py,
-                            tests/scenarios.yaml (chat scenarios); its tables are core (1.5)
+                            tests/scenarios.yaml (chat scenarios); its tables are core (1.5);
+                            the chat till on a receipts kiosk: record, void, refund and read
+                            receipts
         inventory_manager/  Inventory Manager: the mia agent scaffold shape (turn.py, actions.py, ...);
                             its tables are core (1.5, 1.6)
         hr_officer/         HR Officer: the mia agent scaffold shape (turn.py, actions.py, ...);
@@ -108,7 +110,8 @@ mia/
     config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ and org/ferinos/ (instructions, settings.yaml),
                             ollama/ (Modelfiles for local models, ADR 004)
     tests/                  unit tests (test_data_standard_<n>.py pins each data standard change,
-                            test_data_standard_1_9.py the sales operations tables); auth/ (login flows); evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
+                            test_data_standard_1_9.py the sales operations tables;
+                            test_sales_receipts.py the chat till); auth/ (login flows); evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
                             and intents.py for intent classification; cases/ (one CSV of test
                             messages per agent, <agent_id>.csv, and router.csv, with the shared
                             loader the <id>_cases.py modules build their cases with, and a

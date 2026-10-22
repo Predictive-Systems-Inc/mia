@@ -340,3 +340,39 @@ counts) and the human rights in policy.csv. Waiting for the till or a receipt en
   count; `drawer_out` in the session's expected cash (it lives with the bookkeeper today).
 - A running experiment's `to_price` at the till: `experiment_id` is stored as given, the unit
   price is the dated price.
+
+### Sales receipts in the chat (22 Oct 2026, plan 2026-10-22-sales-receipts-chat)
+
+Built by that plan: the chat path (a clerk on a receipts kiosk rings a receipt with `source`
+chat at the dated price, `sales_supervisor.record_receipt`; a count typed there is rung as a
+receipt and a receipt typed on a counts kiosk is a count, said once); the void and refund cards
+(`sales_supervisor.void_receipt` raises `sales.void` for head staff, `refund_receipt` raises
+`sales.refund` for the owner or admin with `evidence["amount"]` the computed amount, each
+approval used once); the session at check-in (a clerk's check-in on a receipts kiosk opens her
+drawer with the branch's `sales.opening_float`) and at the count (the bookkeeper's closing count
+closes the earliest open drawer and names the others); the moves onto `day_sales` (the sales
+supervisor's today, the owner's report and the closing reminder, the bookkeeper's
+`tender_sales`), and the clerk's receipts read in the chat (`read_receipts`, today or last). The
+end to end day is `test_a_receipts_day_at_the_mall_kiosk` in tests/test_day_sales_clerk.py.
+
+Still carried over:
+
+- Split tender and discounts (senior, PWD) in the chat; a receipt has one tender and no discount.
+- The app's check-in route (`mia/api/schedule.py`) opens no session; the chat is a receipts
+  kiosk's check-in path (Q125).
+- `period_report` on receipts (it reads the counts).
+- `drawer_out` in the session's own expected cash (the count's expected holds it, Q122).
+- A session's handover float (each session opens with the branch's float).
+- Voiding a sale together with its refunds (refused in v1).
+- A running experiment's `to_price` at the till (the unit price is the dated price).
+- The owner's report total from `by_tender` once receipt discounts exist (it sums `by_item`,
+  before the discount, today).
+- `_morning` and `_why` read counts only on a receipts day.
+- A clerk's `today` totals are branch-wide while her receipts list is her own.
+- `tender_sales` over a month or quarter is one `day_sales` query pair per day.
+- A refund is paid only from the requester's own drawer (Q127).
+- Head staff cannot request a refund in the chat.
+- Jev's not-stated item on a refund asks which items instead of widening to the whole sale.
+- A stale drawer is closed by the next count, the CashCount dated by the closing date.
+- The money guard does not recognise a `sales.void` approval in `deps.approved` (it fails
+  closed: an approved void runs through its handler, never a second tool call).

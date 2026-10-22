@@ -1015,6 +1015,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "sales.receipts.tender": "{tender} {amount}",
         "sales.receipts.last": "Last receipt #{no} at {time}: {lines}, {total} {tender}.",
         "sales.receipts.last_voided": "Last receipt #{no} at {time}: {lines}, {total} {tender} (voided).",
+        "sales.receipts.last_refund": "Last receipt #{no} at {time} is a refund: {lines}, {total} {tender} back.",
         "intent.sales_supervisor.read_receipts": "Receipts",
     },
     "fi": {
@@ -2020,6 +2021,7 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "sales.receipts.tender": "{tender} {amount}",
         "sales.receipts.last": "Viimeisin kuitti #{no} klo {time}: {lines}, {total} {tender}.",
         "sales.receipts.last_voided": "Viimeisin kuitti #{no} klo {time}: {lines}, {total} {tender} (mitätöity).",
+        "sales.receipts.last_refund": "Viimeisin kuitti #{no} klo {time} on hyvitys: {lines}, {total} {tender} takaisin.",
         "intent.sales_supervisor.read_receipts": "Kuitit",
     },
 }

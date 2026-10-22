@@ -231,18 +231,26 @@ def _tender(tender: str, lang: str) -> str:
 
 def receipts_read(out: ReceiptsOutput, which: str, lang: str) -> list[Block]:
     """Today's receipts (how many were paid, the total and each tender in TENDERS order), or
-    the last one with its time, lines, total and tender (voided said); none yet says so."""
-    if not out.receipts:
+    the last one with its time, lines, total and tender (voided or refund said); none yet, or
+    none paid for today, says so."""
+    paid = sum(r.status == "paid" for r in out.receipts)
+    if not out.receipts or (which != "last" and not paid):
         return _text("sales.receipts.today_empty", lang, branch=out.branch)
     if which == "last":
         r = out.receipts[-1]
+        if r.status == "voided":
+            key = "sales.receipts.last_voided"
+        elif r.kind == "refund":
+            key = "sales.receipts.last_refund"
+        else:
+            key = "sales.receipts.last"
         return _text(
-            "sales.receipts.last_voided" if r.status == "voided" else "sales.receipts.last",
+            key,
             lang,
             no=r.receipt_no,
             time=r.time,
             lines=_lines([(abs(x.quantity), x.item) for x in r.lines], lang),
-            total=format_money(r.total, r.currency, lang),
+            total=format_money(abs(r.total), r.currency, lang),
             tender=_tender(r.tender, lang),
         )
     tenders = ", ".join(
@@ -255,7 +263,6 @@ def receipts_read(out: ReceiptsOutput, which: str, lang: str) -> list[Block]:
         for x in TENDERS
         if out.by_tender.get(x)
     )
-    paid = sum(r.status == "paid" for r in out.receipts)
     return _text(
         "sales.receipts.today",
         lang,

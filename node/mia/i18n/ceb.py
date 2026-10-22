@@ -709,5 +709,6 @@ STRINGS: dict[str, str | list[str]] = {
     "sales.receipts.tender": "{tender} {amount}",
     "sales.receipts.last": "Katapusang resibo #{no} sa {time}: {lines}, {total} {tender}.",
     "sales.receipts.last_voided": "Katapusang resibo #{no} sa {time}: {lines}, {total} {tender} (na-void).",
+    "sales.receipts.last_refund": "Ang katapusang resibo #{no} sa {time} usa ka refund: {lines}, {total} {tender} gibalik.",
     "intent.sales_supervisor.read_receipts": "Mga resibo",
 }

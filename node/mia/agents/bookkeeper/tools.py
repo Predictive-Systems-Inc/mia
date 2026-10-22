@@ -40,6 +40,7 @@ from mia.agents.bookkeeper.models import (
 from mia.agents.sales_supervisor.tools import (
     COUNTS,
     ITEMS,
+    RECEIPT_TABLES,
     _branch,
     _business_day,
     _check,
@@ -177,6 +178,8 @@ ORDERS = Resource(kind="data", name=SupplierOrder.__tablename__)
 STOCK = Resource(kind="data", name=StockEvent.__tablename__)
 TAX = Resource(kind="data", name=TaxFigure.__tablename__)
 SESSIONS = Resource(kind="data", name=SalesSession.__tablename__)
+# What tender_sales reads (sales.day_sales): the counts, or the receipt tables on a receipts day.
+SOURCES = [COUNTS, *RECEIPT_TABLES]
 DEFAULT_LANGUAGE = "en"
 
 
@@ -300,7 +303,8 @@ def record_cash_count(deps: AgentDeps, args: CashCountInput, tool_call_id: str) 
     each count is its own drawer, so no earlier alert is withdrawn. LookupError("no_session")
     before any write when no drawer is open."""
     _check(deps, CASH, "write", tool_call_id)
-    _check(deps, COUNTS, "read", tool_call_id)
+    for source in SOURCES:
+        _check(deps, source, "read", tool_call_id)
     _read(deps, [deps.branch], [CASH, EXPENSES, DEPOSITS], tool_call_id)
     day = _closing_day(deps, args, tool_call_id)
     if sales.source_of(deps.branch, day) == "receipts":
@@ -478,7 +482,8 @@ class MatchOut(BaseModel):
 def _matched(
     deps: AgentDeps, args: SettlementInput | PayoutInput, percent: int, tool_call_id: str
 ) -> tuple[int, calc.Match, str]:
-    _check(deps, COUNTS, "read", tool_call_id)
+    for source in SOURCES:
+        _check(deps, source, "read", tool_call_id)
     if args.end < args.start:
         raise LookupError("end is before start")
     sales = tender_sales(deps.session, deps.branch.id, args.provider, args.start, args.end)
@@ -1018,7 +1023,7 @@ def tax_quarter(deps: AgentDeps, args: TaxInput, tool_call_id: str) -> TaxOutput
     """The quarter's VAT or percentage tax figure (the regime from settings, tax.quarter_tax)
     per branch: every branch the person may read_all, else their own. Input VAT comes from the
     quarter's expenses plus the previous quarter's excess (_carried)."""
-    branches = _all_or_own(deps, [COUNTS, EXPENSES, TAX], tool_call_id)
+    branches = _all_or_own(deps, [*SOURCES, EXPENSES, TAX], tool_call_id)
     day = args.quarter_start or _business_day(deps, deps.branch, tool_call_id)
     start, end = tax.quarter_of(day)
     regime = _settings().tax_regime
@@ -1129,7 +1134,7 @@ def monthly_profit(deps: AgentDeps, args: ProfitInput, tool_call_id: str) -> Pro
     expenses, received supplier orders and payroll (payslip totals). Needs read_all on
     data:payslips first (owner and admin); covers every branch, or the one named."""
     _check(deps, PAYSLIPS, "read_all", tool_call_id)
-    resources = [COUNTS, EXPENSES, ORDERS, STOCK, ITEMS]
+    resources = [*SOURCES, EXPENSES, ORDERS, STOCK, ITEMS]
     if args.branch_id is None:
         branches = _all_or_own(deps, resources, tool_call_id)
     else:

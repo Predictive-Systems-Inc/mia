@@ -5,7 +5,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from mia.agents.parsing import menu_tokens, pre_parse
+from mia.agents.parsing import menu_tokens, pre_parse, strip_receipt
 from mia.agents.sales_supervisor.actions import ACTIONS
 from mia.templates.retail.seed import ITEMS as MENU
 from tests.evals import gate
@@ -75,11 +75,24 @@ def test_a_tune_only_run_has_an_empty_gate() -> None:
 def test_expected_actions_are_actions_and_counts_name_items() -> None:
     for c in CASES:
         assert c.expected_action in ACTIONS or (c.half == "short" and c.expected_action == "ask")
-        assert bool(c.expected_items) == (c.expected_action in ("report_sales", "correct_sales"))
+        assert bool(c.expected_items) == (c.expected_action in ITEM_ACTIONS)
+
+
+def test_receipt_rows_run_on_a_receipts_kiosk_and_type_the_receipt_number() -> None:
+    """The receipt rows carry source receipts (every other row counts), and the number a void
+    or refund row types is the one code strips from it (rule 7: code reads the number)."""
+    receipt = {"record_receipt", "void_receipt", "refund_receipt", "read_receipts"}
+    for c in CASES:
+        assert c.source == ("receipts" if c.expected_action in receipt else "counts"), c
+    rows = [r for r in read("sales_supervisor") if r.intent in ("void_receipt", "refund_receipt")]
+    assert len(rows) == 4
+    for r in rows:
+        assert strip_receipt(r.message).receipt_no == r.extra["receipt_no"], r
 
 
 # Words in the cases that name an item but are no name word or short code: Jev maps them.
 SYNONYMS = {"Box of 4": {"boxes", "kahon"}}
+ITEM_ACTIONS = ("report_sales", "correct_sales", "record_receipt", "refund_receipt")
 
 
 def test_counts_parse_to_the_expected_groups() -> None:
@@ -91,9 +104,9 @@ def test_counts_parse_to_the_expected_groups() -> None:
         name: menu_tokens([(name, codes)]) | SYNONYMS.get(name, set()) for name, codes, _ in MENU
     }
     for c in CASES:
-        if c.expected_action not in ("report_sales", "correct_sales"):
+        if c.expected_action not in ITEM_ACTIONS:
             continue
-        groups, _ = pre_parse(c.text, tokens)
+        groups, _ = pre_parse(strip_receipt(c.text).text, tokens)
         assert len(groups) == len(c.expected_items), c
         for group, (item, quantity) in zip(groups, c.expected_items, strict=True):
             assert group.quantity == quantity, c
@@ -109,7 +122,7 @@ def test_no_tagalog() -> None:
 
 
 def test_the_short_half_is_short_and_new() -> None:
-    """D42: twelve en and twelve fil, two asks each, short and unpunctuated, an offered action,
+    """D42: sixteen en and sixteen fil (gate.SHORT_ROWS), two asks each, short and unpunctuated, an offered action,
     the first expected item seeded and typed with its count, no text in another half or a raw
     file."""
     first = [c.expected_items[0] if c.expected_items else ("", None) for c in SHORT]
