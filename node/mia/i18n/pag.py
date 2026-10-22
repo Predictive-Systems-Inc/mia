@@ -28,7 +28,7 @@ STRINGS: dict[str, str | list[str]] = {
     "cli.forgotten": "Nalingwan ni: {route}",
     "language.set": "Sige, {language} so usaren ko.",
     "sales.why": "Nalagpasan yo so target natan! Akin a mapia so benta, ya panmoriran yo?",
-    "sales.recorded": "Natala la, {when}.",
+    "sales.recorded": "Natala la {lines}, {when}.",
     "sales.recorded.line": "{quantity} {item}",
     "sales.target_part": " manlapud ed {share} ({percent}%)",
     "sales.corrected": "Naayos la: {quantity} {item} (dati: {previous}).",

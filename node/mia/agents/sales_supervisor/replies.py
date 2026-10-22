@@ -98,7 +98,13 @@ def tool_reply(tool: str, out: dict[str, Any], args: dict[str, Any], lang: str) 
         return receipts_read(ReceiptsOutput.model_validate(out), str(args.get("which")), lang)
     if tool == "record_counts":
         rec = RecordCountsOutput.model_validate(out)  # the owner's ask: no running total
-        return _text("sales.recorded", lang, when=_when(rec.business_date, rec.reported_at, lang))
+        lines = _lines([(c.quantity, c.item) for c in rec.recorded], lang)
+        # ponytail: a count has one tender (two in a message ask first); the first row's speaks
+        tender = rec.recorded[0].tender if rec.recorded else "cash"
+        if tender != "cash":
+            lines += f" ({t(f'bk.tender.{tender}', lang) if tender in TENDERS else tender})"
+        when = _when(rec.business_date, rec.reported_at, lang)
+        return _text("sales.recorded", lang, lines=lines, when=when)
     if tool == "correct_count":
         cor = CorrectCountOutput.model_validate(out)
         quantity, previous = (

@@ -111,8 +111,8 @@ def _counted(session: Session) -> list[Event]:
 
 
 def _recorded(text: str, lang: str = "fil") -> bool:
-    """The count's reply: "Recorded, <date>, <time>." in the language, with no money."""
-    head = t("sales.recorded", lang, when="").removesuffix(".")
+    """The count's reply: "Recorded <items>, <date>, <time>." in the language, no money."""
+    head = t("sales.recorded", lang, lines="", when="").split(" ")[0].rstrip(",")
     return text.startswith(head) and "₱" not in text
 
 
@@ -321,8 +321,8 @@ def test_today_reply_shows_the_share_of_the_target_reached() -> None:
 
 
 def test_a_count_is_answered_with_recorded_and_the_date_and_time() -> None:
-    """The owner's ask: "Recorded" and when (the business date, the local time it was said), no
-    lines, running total or target."""
+    """The owner's asks: "Recorded", what was recorded (the tender when not cash) and when (the
+    business date, the local time it was said); no running total or target."""
     from mia.agents.sales_supervisor.replies import tool_reply
 
     line = {"count_id": "c", "item_id": "i1", "item": "Special", "quantity": 3, "amount": 13500}
@@ -334,11 +334,17 @@ def test_a_count_is_answered_with_recorded_and_the_date_and_time() -> None:
         "currency": "PHP",
         "target_share": 3600000,
     }
+    two = line | {"item": "Classic", "quantity": 5, "tender": "cash"}
+    out["recorded"].append(two)
     assert tool_reply("record_counts", out, {}, "en")[0].text == (  # type: ignore[union-attr]
-        "Recorded, Fri 23 Oct, 12:05."
+        "Recorded 3 Special, 5 Classic, Fri 23 Oct, 12:05."
     )
     fi = tool_reply("record_counts", out, {}, "fi")[0].text  # type: ignore[union-attr]
-    assert fi == "Kirjattu, 23.10. klo 12.05."
+    assert fi == "Kirjattu 3 Special, 5 Classic, 23.10. klo 12.05."
+    out["recorded"] = [line | {"item": "Ube", "quantity": 2, "tender": "gcash"}]
+    assert tool_reply("record_counts", out, {}, "en")[0].text == (  # type: ignore[union-attr]
+        "Recorded 2 Ube (GCash), Fri 23 Oct, 12:05."
+    )
 
 
 def test_owner_sets_a_month_target_and_today_uses_its_share(
