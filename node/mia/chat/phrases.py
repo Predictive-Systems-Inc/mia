@@ -77,8 +77,10 @@ def reads(agent_id: str) -> set[str]:
     spec = AGENTS.get(agent_id)
     if spec is None:
         return set()
-    risks = {tool.name: tool.risk for tool in spec.manifest.tools}
-    return {name for name, a in teachable(agent_id).items() if risks.get(str(a.tool)) == "read"}
+    # a read tool that still declares writes (hr_officer's resend_payslip sends a message) is
+    # not a pure read, so a phrase never picks it
+    pure = {t.name for t in spec.manifest.tools if t.risk == "read" and not t.writes}
+    return {name for name, a in teachable(agent_id).items() if str(a.tool) in pure}
 
 
 def has_letter(key: str) -> bool:
@@ -148,6 +150,8 @@ def _fold(found: Sequence[Event], branch_id: str) -> list[Phrase]:
     for ev in found:
         a = ev.after or {}
         key = str(a.get("key", ""))
+        if not has_letter(key):  # a bare-number key from before fddf7a0 is never a phrase
+            continue
         if ev.action == RETIRED:
             keys.pop(key, None)
         elif ev.action == TAUGHT:

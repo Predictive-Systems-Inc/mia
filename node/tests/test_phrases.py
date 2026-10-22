@@ -108,6 +108,25 @@ def test_the_fold_teaches_retires_and_counts_the_version(
     assert phrases.phrasebook(session, branch) == (2, {})
 
 
+def test_a_read_tool_that_declares_writes_is_never_picked_by_a_phrase() -> None:
+    """hr_officer's my_payslip runs resend_payslip: risk read, but it sends a message."""
+    assert "my_payslip" in phrases.teachable("hr_officer")
+    assert "my_payslip" not in phrases.reads("hr_officer")
+    assert "sales_today" in phrases.reads("sales_supervisor")
+
+
+def test_an_old_bare_number_key_is_dropped_by_the_fold(
+    session: Session, ferinos: tuple[Any, dict[str, Person]]
+) -> None:
+    """A "#" tap written before keys needed a letter never becomes a phrase."""
+    from mia.core import events
+
+    rosa = _rosa(ferinos)
+    after = {"key": "#", "agent_id": "sales_supervisor", "action": "sales_today"}
+    events.emit(session, phrases.CONFIRMED, ("person", rosa.id), None, after, Actor.person(rosa))
+    assert phrases.phrasebook(session, rosa.branch_id)[1] == {}
+
+
 # ---- routing and deciding ------------------------------------------------------------------
 
 
