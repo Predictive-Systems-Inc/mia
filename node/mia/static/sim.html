@@ -371,7 +371,7 @@ document.querySelector("[data-next]").onclick = () => {
 };
 document.querySelector("[data-reset]").onclick = () => setClock({reset: true});
 
-// The App drawer: the person's approval cards from /notifications, decided as in index.html.
+// The App drawer: the person's approvals inbox (/approvals), decided as in index.html.
 async function openDrawer(v) {
   const d = v.drawer;
   d.replaceChildren();
@@ -384,9 +384,16 @@ async function openDrawer(v) {
   bar.append(name);
   const list = el("div", "list");
   d.append(bar, list);
-  const res = await fetch("/notifications", {headers: {"X-Mia-Actor": v.p.person_id}});
+  // The approvals inbox: every approval this person may decide (a void or refund card arrives as
+  // text on the phone, so it is not among the chat's approval_card blocks).
+  const res = await fetch("/approvals", {headers: {"X-Mia-Actor": v.p.person_id}});
   if (!res.ok) { list.append(el("div", "sys", `No app for this person (${res.status}).`)); return; }
-  const cards = (await res.json()).flatMap(n => n.blocks).filter(b => b.type === "approval_card").reverse();
+  const cards = (await res.json()).filter(a => a.status === "pending").map(a => ({
+    title: a.summary, approval_id: a.id, status: a.status,
+    fields: Object.entries(a.evidence || {})
+      .filter(([k, x]) => ["amount", "receipt_no", "reason"].includes(k) && x !== null && x !== "")
+      .map(([k, x]) => ({label: k.replace("_", " "), value: String(x)})),
+  }));
   if (!cards.length) list.append(el("div", "sys", "No approvals waiting."));
   for (const block of cards) list.append(renderCard(v, block, list));
 }
