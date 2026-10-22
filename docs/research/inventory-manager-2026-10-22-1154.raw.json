@@ -1,0 +1,962 @@
+{
+ "summary": {
+  "model": "jev-1.13.0",
+  "wall_seconds": 2.5,
+  "gated": {
+   "all": {
+    "n": 0,
+    "right": 0.0,
+    "wrong": 0.0,
+    "wrong_items": 0.0,
+    "ask": 0.0,
+    "other": 0.0,
+    "errors": 0,
+    "p50": 0.0,
+    "p95": 0.0,
+    "tokens": 0
+   },
+   "by_language": {},
+   "by_scenario": {}
+  },
+  "tune": {
+   "all": {
+    "n": 0,
+    "right": 0.0,
+    "wrong": 0.0,
+    "wrong_items": 0.0,
+    "ask": 0.0,
+    "other": 0.0,
+    "errors": 0,
+    "p50": 0.0,
+    "p95": 0.0,
+    "tokens": 0
+   },
+   "by_language": {}
+  },
+  "confusions": [
+   [
+    "ask -> report_stock (wrong)",
+    2
+   ],
+   [
+    "whats_low -> whats_low (ask)",
+    1
+   ],
+   [
+    "ask -> clarify (ask)",
+    1
+   ],
+   [
+    "report_stock -> report_stock (ask)",
+    1
+   ],
+   [
+    "bake_plan -> bake_plan (ask)",
+    1
+   ],
+   [
+    "whats_low -> place_order (ask)",
+    1
+   ],
+   [
+    "ask -> reply_only (ask)",
+    1
+   ]
+  ]
+ },
+ "results": [
+  {
+   "i": 0,
+   "lang": "en",
+   "scenario": "short",
+   "text": "ube 5 left",
+   "expected_action": "report_stock",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "Ube",
+     5
+    ]
+   ],
+   "expected_missing": null,
+   "action": "report_stock",
+   "error": null,
+   "missing": null,
+   "raw_action": "report_stock",
+   "confidence": 0.71,
+   "args": {
+    "events": [
+     {
+      "kind": "count",
+      "item_id": "01M5GVY3XN3S6ZD5PF77VKQAZ5",
+      "ingredient_id": null,
+      "quantity": 5,
+      "unit": null,
+      "reason": null,
+      "at": null
+     }
+    ],
+    "source_message_id": null
+   },
+   "seconds": 0.38372287491802126,
+   "found_kind": "count",
+   "found_items": [
+    [
+     "Ube",
+     5
+    ]
+   ],
+   "tokens": 3738,
+   "score": "right"
+  },
+  {
+   "i": 1,
+   "lang": "en",
+   "scenario": "short",
+   "text": "sold out cl",
+   "expected_action": "report_stock",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "Classic",
+     null
+    ]
+   ],
+   "expected_missing": null,
+   "action": "report_stock",
+   "error": null,
+   "missing": null,
+   "raw_action": "report_stock",
+   "confidence": 0.98,
+   "args": {
+    "events": [
+     {
+      "kind": "sold_out",
+      "item_id": "01M5GVY3XMCMFVE5HBB54KR53P",
+      "ingredient_id": null,
+      "quantity": null,
+      "unit": null,
+      "reason": null,
+      "at": null
+     }
+    ],
+    "source_message_id": null
+   },
+   "seconds": 0.3613449999829754,
+   "found_kind": "sold_out",
+   "found_items": [
+    [
+     "Classic",
+     null
+    ]
+   ],
+   "tokens": 3730,
+   "score": "right"
+  },
+  {
+   "i": 2,
+   "lang": "en",
+   "scenario": "short",
+   "text": "3 sp thrown burnt",
+   "expected_action": "report_stock",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "Special",
+     3
+    ]
+   ],
+   "expected_missing": null,
+   "action": "report_stock",
+   "error": null,
+   "missing": null,
+   "raw_action": "report_stock",
+   "confidence": 0.92,
+   "args": {
+    "events": [
+     {
+      "kind": "waste",
+      "item_id": "01M5GVY3XKXSD1CKV4WQ5CTR3Q",
+      "ingredient_id": null,
+      "quantity": 3,
+      "unit": null,
+      "reason": "burnt",
+      "at": null
+     }
+    ],
+    "source_message_id": null
+   },
+   "seconds": 0.6490451249992475,
+   "found_kind": "waste",
+   "found_items": [
+    [
+     "Special",
+     3
+    ]
+   ],
+   "tokens": 3740,
+   "score": "right"
+  },
+  {
+   "i": 3,
+   "lang": "en",
+   "scenario": "short",
+   "text": "eggs low 1 tray",
+   "expected_action": "report_stock",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "Eggs",
+     1
+    ]
+   ],
+   "expected_missing": null,
+   "action": "report_stock",
+   "error": null,
+   "missing": null,
+   "raw_action": "report_stock",
+   "confidence": 0.94,
+   "args": {
+    "events": [
+     {
+      "kind": "low",
+      "item_id": null,
+      "ingredient_id": "01M5GVY3XVC3DVF8Z0BSXYQ88J",
+      "quantity": 1,
+      "unit": "tray",
+      "reason": null,
+      "at": null
+     }
+    ],
+    "source_message_id": null
+   },
+   "seconds": 0.3663285420043394,
+   "found_kind": "low",
+   "found_items": [
+    [
+     "Eggs",
+     1
+    ]
+   ],
+   "tokens": 3741,
+   "score": "right"
+  },
+  {
+   "i": 4,
+   "lang": "en",
+   "scenario": "short",
+   "text": "what to bake tmrw",
+   "expected_action": "bake_plan",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [],
+   "expected_missing": null,
+   "action": "bake_plan",
+   "error": null,
+   "missing": null,
+   "raw_action": "bake_plan",
+   "confidence": 0.93,
+   "args": {},
+   "seconds": 0.4335174160078168,
+   "found_kind": "",
+   "found_items": [],
+   "tokens": 3719,
+   "score": "right"
+  },
+  {
+   "i": 5,
+   "lang": "en",
+   "scenario": "short",
+   "text": "whats low",
+   "expected_action": "whats_low",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [],
+   "expected_missing": null,
+   "action": "whats_low",
+   "error": null,
+   "missing": null,
+   "raw_action": "whats_low",
+   "confidence": 0.98,
+   "args": {},
+   "seconds": 0.37814733397681266,
+   "found_kind": "",
+   "found_items": [],
+   "tokens": 3714,
+   "score": "right"
+  },
+  {
+   "i": 6,
+   "lang": "en",
+   "scenario": "short",
+   "text": "need to order anything",
+   "expected_action": "whats_low",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [],
+   "expected_missing": null,
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "raw_action": "whats_low",
+   "confidence": 0.45,
+   "args": {},
+   "seconds": 0.3168995000887662,
+   "found_kind": "",
+   "found_items": [],
+   "tokens": 3717,
+   "score": "ask"
+  },
+  {
+   "i": 7,
+   "lang": "en",
+   "scenario": "short",
+   "text": "order 10 trays eggs",
+   "expected_action": "place_order",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "Eggs",
+     10
+    ]
+   ],
+   "expected_missing": null,
+   "action": "place_order",
+   "error": null,
+   "missing": null,
+   "raw_action": "place_order",
+   "confidence": 0.99,
+   "args": {
+    "supplier": "Aling Nena",
+    "lines": [
+     {
+      "ingredient_id": "01M5GVY3XVC3DVF8Z0BSXYQ88J",
+      "quantity": 10,
+      "unit": "tray"
+     }
+    ]
+   },
+   "seconds": 0.6662495420314372,
+   "found_kind": "",
+   "found_items": [
+    [
+     "Eggs",
+     10
+    ]
+   ],
+   "tokens": 3743,
+   "score": "right"
+  },
+  {
+   "i": 8,
+   "lang": "en",
+   "scenario": "short",
+   "text": "buy 5 kg flour",
+   "expected_action": "place_order",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "Rice flour",
+     5
+    ]
+   ],
+   "expected_missing": null,
+   "action": "place_order",
+   "error": null,
+   "missing": null,
+   "raw_action": "place_order",
+   "confidence": 0.81,
+   "args": {
+    "supplier": "Metro Supply",
+    "lines": [
+     {
+      "ingredient_id": "01M5GVY3XTBPA772YDPD9JWVYK",
+      "quantity": 5,
+      "unit": "kg"
+     }
+    ]
+   },
+   "seconds": 0.34914379101246595,
+   "found_kind": "",
+   "found_items": [
+    [
+     "Rice flour",
+     5
+    ]
+   ],
+   "tokens": 3742,
+   "score": "right"
+  },
+  {
+   "i": 9,
+   "lang": "en",
+   "scenario": "short",
+   "text": "delivery came 30 coco",
+   "expected_action": "receive",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "Coconut",
+     30
+    ]
+   ],
+   "expected_missing": null,
+   "action": "receive",
+   "error": null,
+   "missing": null,
+   "raw_action": "receive",
+   "confidence": 0.98,
+   "args": {
+    "lines": [
+     {
+      "ingredient_id": "01M5GVY3XVC3DVF8Z0BSXYQ88M",
+      "quantity": 30,
+      "unit": "pcs"
+     }
+    ]
+   },
+   "seconds": 0.36622454202733934,
+   "found_kind": "",
+   "found_items": [
+    [
+     "Coconut",
+     30
+    ]
+   ],
+   "tokens": 3740,
+   "score": "right"
+  },
+  {
+   "i": 10,
+   "lang": "en",
+   "scenario": "short",
+   "text": "ube",
+   "expected_action": "ask",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [],
+   "expected_missing": null,
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "raw_action": "clarify",
+   "confidence": 0.57,
+   "args": {},
+   "seconds": 0.3384254169650376,
+   "found_kind": "",
+   "found_items": [],
+   "tokens": 3729,
+   "score": "ask"
+  },
+  {
+   "i": 11,
+   "lang": "en",
+   "scenario": "short",
+   "text": "eggs 10",
+   "expected_action": "ask",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [],
+   "expected_missing": null,
+   "action": "report_stock",
+   "error": null,
+   "missing": null,
+   "raw_action": "report_stock",
+   "confidence": 0.78,
+   "args": {
+    "events": [
+     {
+      "kind": "count",
+      "item_id": null,
+      "ingredient_id": "01M5GVY3XVC3DVF8Z0BSXYQ88J",
+      "quantity": 10,
+      "unit": "tray",
+      "reason": null,
+      "at": null
+     }
+    ],
+    "source_message_id": null
+   },
+   "seconds": 0.35229266702663153,
+   "found_kind": "count",
+   "found_items": [
+    [
+     "Eggs",
+     10
+    ]
+   ],
+   "tokens": 3740,
+   "score": "wrong"
+  },
+  {
+   "i": 12,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "5 ube nlng",
+   "expected_action": "report_stock",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "Ube",
+     5
+    ]
+   ],
+   "expected_missing": null,
+   "action": "report_stock",
+   "error": null,
+   "missing": null,
+   "raw_action": "report_stock",
+   "confidence": 0.82,
+   "args": {
+    "events": [
+     {
+      "kind": "count",
+      "item_id": "01M5GVY3XN3S6ZD5PF77VKQAZ5",
+      "ingredient_id": null,
+      "quantity": 5,
+      "unit": null,
+      "reason": null,
+      "at": null
+     }
+    ],
+    "source_message_id": null
+   },
+   "seconds": 0.373767500044778,
+   "found_kind": "count",
+   "found_items": [
+    [
+     "Ube",
+     5
+    ]
+   ],
+   "tokens": 3741,
+   "score": "right"
+  },
+  {
+   "i": 13,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "ubos na cl",
+   "expected_action": "report_stock",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "Classic",
+     null
+    ]
+   ],
+   "expected_missing": null,
+   "action": "report_stock",
+   "error": null,
+   "missing": null,
+   "raw_action": "report_stock",
+   "confidence": 0.86,
+   "args": {
+    "events": [
+     {
+      "kind": "sold_out",
+      "item_id": "01M5GVY3XMCMFVE5HBB54KR53P",
+      "ingredient_id": null,
+      "quantity": null,
+      "unit": null,
+      "reason": null,
+      "at": null
+     }
+    ],
+    "source_message_id": null
+   },
+   "seconds": 0.3289318330353126,
+   "found_kind": "sold_out",
+   "found_items": [
+    [
+     "Classic",
+     null
+    ]
+   ],
+   "tokens": 3731,
+   "score": "right"
+  },
+  {
+   "i": 14,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "2 sp tapon sunog",
+   "expected_action": "report_stock",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "Special",
+     2
+    ]
+   ],
+   "expected_missing": null,
+   "action": "clarify",
+   "error": null,
+   "missing": "kind",
+   "raw_action": "report_stock",
+   "confidence": 0.26,
+   "args": {
+    "events": []
+   },
+   "seconds": 0.7343995409319177,
+   "found_kind": "",
+   "found_items": [],
+   "tokens": 3723,
+   "score": "ask"
+  },
+  {
+   "i": 15,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "konti nlng itlog",
+   "expected_action": "report_stock",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "Eggs",
+     null
+    ]
+   ],
+   "expected_missing": null,
+   "action": "report_stock",
+   "error": null,
+   "missing": null,
+   "raw_action": "report_stock",
+   "confidence": 0.69,
+   "args": {
+    "events": [
+     {
+      "kind": "low",
+      "item_id": null,
+      "ingredient_id": "01M5GVY3XVC3DVF8Z0BSXYQ88J",
+      "quantity": null,
+      "unit": "tray",
+      "reason": null,
+      "at": null
+     }
+    ],
+    "source_message_id": null
+   },
+   "seconds": 0.35048262507189065,
+   "found_kind": "low",
+   "found_items": [
+    [
+     "Eggs",
+     null
+    ]
+   ],
+   "tokens": 3733,
+   "score": "right"
+  },
+  {
+   "i": 16,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "ilan gagawin bukas",
+   "expected_action": "bake_plan",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [],
+   "expected_missing": null,
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "raw_action": "bake_plan",
+   "confidence": 0.41,
+   "args": {},
+   "seconds": 0.3219343750970438,
+   "found_kind": "",
+   "found_items": [],
+   "tokens": 3718,
+   "score": "ask"
+  },
+  {
+   "i": 17,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "ano kulang sa stock",
+   "expected_action": "whats_low",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [],
+   "expected_missing": null,
+   "action": "whats_low",
+   "error": null,
+   "missing": null,
+   "raw_action": "whats_low",
+   "confidence": 0.93,
+   "args": {},
+   "seconds": 0.35069462505634874,
+   "found_kind": "",
+   "found_items": [],
+   "tokens": 3716,
+   "score": "right"
+  },
+  {
+   "i": 18,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "may ioorder ba tayo",
+   "expected_action": "whats_low",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [],
+   "expected_missing": null,
+   "action": "clarify",
+   "error": null,
+   "missing": "lines",
+   "raw_action": "place_order",
+   "confidence": 0.71,
+   "args": {
+    "supplier": null,
+    "lines": []
+   },
+   "seconds": 0.37731183297000825,
+   "found_kind": "",
+   "found_items": [],
+   "tokens": 3718,
+   "score": "ask"
+  },
+  {
+   "i": 19,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "bili 10 tray itlog",
+   "expected_action": "place_order",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "Eggs",
+     10
+    ]
+   ],
+   "expected_missing": null,
+   "action": "place_order",
+   "error": null,
+   "missing": null,
+   "raw_action": "place_order",
+   "confidence": 0.98,
+   "args": {
+    "supplier": "Aling Nena",
+    "lines": [
+     {
+      "ingredient_id": "01M5GVY3XVC3DVF8Z0BSXYQ88J",
+      "quantity": 10,
+      "unit": "tray"
+     }
+    ]
+   },
+   "seconds": 0.3337870829273015,
+   "found_kind": "",
+   "found_items": [
+    [
+     "Eggs",
+     10
+    ]
+   ],
+   "tokens": 3744,
+   "score": "right"
+  },
+  {
+   "i": 20,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "order 3 lpg pls",
+   "expected_action": "place_order",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "LPG",
+     3
+    ]
+   ],
+   "expected_missing": null,
+   "action": "place_order",
+   "error": null,
+   "missing": null,
+   "raw_action": "place_order",
+   "confidence": 0.99,
+   "args": {
+    "supplier": "Metro Supply",
+    "lines": [
+     {
+      "ingredient_id": "01M5GVY3XYFMA7MXZZD8S9YKGR",
+      "quantity": 3,
+      "unit": "tank"
+     }
+    ]
+   },
+   "seconds": 0.6123206249903888,
+   "found_kind": "",
+   "found_items": [
+    [
+     "LPG",
+     3
+    ]
+   ],
+   "tokens": 3743,
+   "score": "right"
+  },
+  {
+   "i": 21,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "dumating na 20 niyog",
+   "expected_action": "receive",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [
+    [
+     "Coconut",
+     20
+    ]
+   ],
+   "expected_missing": null,
+   "action": "receive",
+   "error": null,
+   "missing": null,
+   "raw_action": "receive",
+   "confidence": 0.85,
+   "args": {
+    "lines": [
+     {
+      "ingredient_id": "01M5GVY3XVC3DVF8Z0BSXYQ88M",
+      "quantity": 20,
+      "unit": "pcs"
+     }
+    ]
+   },
+   "seconds": 0.3456436670385301,
+   "found_kind": "",
+   "found_items": [
+    [
+     "Coconut",
+     20
+    ]
+   ],
+   "tokens": 3745,
+   "score": "right"
+  },
+  {
+   "i": 22,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "itlog po",
+   "expected_action": "ask",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [],
+   "expected_missing": null,
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "raw_action": "reply_only",
+   "confidence": 0.36,
+   "args": {
+    "kind": "other"
+   },
+   "seconds": 0.37556533294264227,
+   "found_kind": "",
+   "found_items": [],
+   "tokens": 3732,
+   "score": "ask"
+  },
+  {
+   "i": 23,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "ilan pa ube",
+   "expected_action": "ask",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected_kind": "",
+   "expected_items": [],
+   "expected_missing": null,
+   "action": "report_stock",
+   "error": null,
+   "missing": null,
+   "raw_action": "report_stock",
+   "confidence": 0.63,
+   "args": {
+    "kind": "count",
+    "item_id": "01M5GVY3XN3S6ZD5PF77VKQAZ5",
+    "ingredient_id": null,
+    "quantity": null,
+    "unit": null,
+    "reason": null,
+    "at": null,
+    "on_hand": true
+   },
+   "seconds": 0.3244568749796599,
+   "found_kind": "on_hand",
+   "found_items": [
+    [
+     "Ube",
+     null
+    ]
+   ],
+   "tokens": 3732,
+   "score": "wrong"
+  }
+ ]
+}

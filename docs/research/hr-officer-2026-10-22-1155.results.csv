@@ -1,0 +1,25 @@
+message,lang,half,intent,predicted,confidence,score,missing
+my hrs this cutoff,en,short,my_hours,my_hours,0.89,right,
+when payday,en,short,payday,payday,1.0,right,
+13th month how much,en,short,thirteenth,thirteenth,1.0,right,
+sss deduction last pay,en,short,contributions,contributions,1.0,right,
+vl dec 2 to 3,en,short,file_leave,clarify,0.45,ask,
+sick leave tmrw pls,en,short,file_leave,clarify,1.0,ask,leave_start
+leave left,en,short,leave_balance,leave_balance,0.89,right,
+holiday pay nov 30,en,short,holiday_pay,clarify,0.97,ask,day
+resend payslip pls,en,short,my_payslip,my_payslip,1.0,right,
+need coe ana,en,short,certificate,certificate,0.99,right,
+cutoff,en,short,ask,clarify,0.34,ask,
+nov 30,en,short,ask,clarify,0.44,ask,
+ilang oras ko ngayong cutoff,fil,short,my_hours,my_hours,0.98,right,
+kelan sweldo natin,fil,short,payday,payday,0.92,right,
+magkano 13th month ko,fil,short,thirteenth,thirteenth,1.0,right,
+philhealth kaltas ko,fil,short,contributions,contributions,0.78,right,
+pa file vl biyernes,fil,short,file_leave,file_leave,0.82,right,
+day off ako sab pls,fil,short,file_leave,clarify,0.99,ask,leave_start
+ilan pa leave ko,fil,short,leave_balance,clarify,0.85,ask,leave_start
+holiday ba lunes,fil,short,holiday_pay,holiday_pay,0.67,right,
+payslip ko po ulit,fil,short,my_payslip,my_payslip,1.0,right,
+pa coe kay liza,fil,short,certificate,certificate,0.6,right,
+sahod,fil,short,ask,payday,0.71,wrong,
+leave po,fil,short,ask,clarify,0.67,ask,leave_start

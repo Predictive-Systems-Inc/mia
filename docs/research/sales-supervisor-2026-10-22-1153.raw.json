@@ -1,0 +1,871 @@
+{
+ "summary": {
+  "model": "jev-1.13.0",
+  "wall_seconds": 2.5,
+  "all": {
+   "n": 24,
+   "right": 0.75,
+   "wrong": 0.042,
+   "wrong_items": 0.0,
+   "ask": 0.208,
+   "other": 0.0,
+   "errors": 0,
+   "p50": 0.36,
+   "p95": 0.53,
+   "tokens": 3249
+  },
+  "by_language": {
+   "en": {
+    "n": 12,
+    "right": 0.833,
+    "wrong": 0.0,
+    "wrong_items": 0.0,
+    "ask": 0.167,
+    "other": 0.0,
+    "errors": 0,
+    "p50": 0.38,
+    "p95": 0.65,
+    "tokens": 3278
+   },
+   "fil": {
+    "n": 12,
+    "right": 0.667,
+    "wrong": 0.083,
+    "wrong_items": 0.0,
+    "ask": 0.25,
+    "other": 0.0,
+    "errors": 0,
+    "p50": 0.35,
+    "p95": 0.37,
+    "tokens": 3219
+   }
+  },
+  "by_scenario": {
+   "short": {
+    "n": 24,
+    "right": 0.75,
+    "wrong": 0.042,
+    "wrong_items": 0.0,
+    "ask": 0.208,
+    "other": 0.0,
+    "errors": 0,
+    "p50": 0.36,
+    "p95": 0.53,
+    "tokens": 3249
+   }
+  },
+  "by_half": {
+   "short": {
+    "n": 24,
+    "right": 0.75,
+    "wrong": 0.042,
+    "wrong_items": 0.0,
+    "ask": 0.208,
+    "other": 0.0,
+    "errors": 0,
+    "p50": 0.36,
+    "p95": 0.53,
+    "tokens": 3249
+   }
+  },
+  "gated": {
+   "all": {
+    "n": 0,
+    "right": 0.0,
+    "wrong": 0.0,
+    "wrong_items": 0.0,
+    "ask": 0.0,
+    "other": 0.0,
+    "errors": 0,
+    "p50": 0.0,
+    "p95": 0.0,
+    "tokens": 0
+   },
+   "by_language": {},
+   "by_scenario": {}
+  },
+  "confusions": [
+   [
+    "ask -> clarify (ask)",
+    3
+   ],
+   [
+    "report_sales -> report_sales (ask)",
+    1
+   ],
+   [
+    "sales_period -> report_sales (ask)",
+    1
+   ],
+   [
+    "ask -> sales_period (wrong)",
+    1
+   ]
+  ]
+ },
+ "results": [
+  {
+   "i": 0,
+   "lang": "en",
+   "scenario": "short",
+   "text": "sp 5 cl 8 ube 3",
+   "expected_action": "report_sales",
+   "role": "clerk",
+   "expected_items": [
+    [
+     "Special",
+     5
+    ],
+    [
+     "Classic",
+     8
+    ],
+    [
+     "Ube",
+     3
+    ]
+   ],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "report_sales",
+   "error": null,
+   "raw_action": "report_sales",
+   "missing": null,
+   "confidence": 0.99,
+   "args": {
+    "items": [
+     {
+      "item_id": "01M5GVVKNKEQHPJHXRV17SRKN3",
+      "quantity": 5
+     },
+     {
+      "item_id": "01M5GVVKNMVDZ9FPNP3CRGFW3W",
+      "quantity": 8
+     },
+     {
+      "item_id": "01M5GVVKNNXV09ASYPA2XH9KR1",
+      "quantity": 3
+     }
+    ],
+    "total": null,
+    "business_date": null,
+    "source_message_id": null,
+    "tender": "cash"
+   },
+   "seconds": 0.38594387494958937,
+   "items": [
+    [
+     "Special",
+     5
+    ],
+    [
+     "Classic",
+     8
+    ],
+    [
+     "Ube",
+     3
+    ]
+   ],
+   "tokens": 4423,
+   "score": "right"
+  },
+  {
+   "i": 1,
+   "lang": "en",
+   "scenario": "short",
+   "text": "ube 7 se 4",
+   "expected_action": "report_sales",
+   "role": "clerk",
+   "expected_items": [
+    [
+     "Ube",
+     7
+    ],
+    [
+     "Salted egg",
+     4
+    ]
+   ],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "report_sales",
+   "error": null,
+   "raw_action": "report_sales",
+   "missing": null,
+   "confidence": 0.94,
+   "args": {
+    "items": [
+     {
+      "item_id": "01M5GVVKNNXV09ASYPA2XH9KR1",
+      "quantity": 7
+     },
+     {
+      "item_id": "01M5GVVKNNXV09ASYPA2XH9KR4",
+      "quantity": 4
+     }
+    ],
+    "total": null,
+    "business_date": null,
+    "source_message_id": null,
+    "tender": "cash"
+   },
+   "seconds": 0.37874712503980845,
+   "items": [
+    [
+     "Ube",
+     7
+    ],
+    [
+     "Salted egg",
+     4
+    ]
+   ],
+   "tokens": 3749,
+   "score": "right"
+  },
+  {
+   "i": 2,
+   "lang": "en",
+   "scenario": "short",
+   "text": "sorry cl 6 not 8",
+   "expected_action": "correct_sales",
+   "role": "clerk",
+   "expected_items": [
+    [
+     "Classic",
+     6
+    ]
+   ],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "correct_sales",
+   "error": null,
+   "raw_action": "correct_sales",
+   "missing": null,
+   "confidence": 0.94,
+   "args": {
+    "item_id": "01M5GVVKNMVDZ9FPNP3CRGFW3W",
+    "quantity": 6,
+    "source_message_id": null
+   },
+   "seconds": 0.39167162496596575,
+   "items": [
+    [
+     "Classic",
+     6
+    ]
+   ],
+   "tokens": 3084,
+   "score": "right"
+  },
+  {
+   "i": 3,
+   "lang": "en",
+   "scenario": "short",
+   "text": "sales so far",
+   "expected_action": "sales_today",
+   "role": "supervisor",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "sales_today",
+   "error": null,
+   "raw_action": "sales_today",
+   "missing": null,
+   "confidence": 0.9,
+   "args": {
+    "branch_id": null
+   },
+   "seconds": 0.45942516694776714,
+   "items": [],
+   "tokens": 2999,
+   "score": "right"
+  },
+  {
+   "i": 4,
+   "lang": "en",
+   "scenario": "short",
+   "text": "how much today mall",
+   "expected_action": "sales_today",
+   "role": "owner",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "sales_today",
+   "error": null,
+   "raw_action": "sales_today",
+   "missing": null,
+   "confidence": 0.95,
+   "args": {
+    "branch_id": null
+   },
+   "seconds": 0.6453801660099998,
+   "items": [],
+   "tokens": 3011,
+   "score": "right"
+  },
+  {
+   "i": 5,
+   "lang": "en",
+   "scenario": "short",
+   "text": "sales yday",
+   "expected_action": "sales_period",
+   "role": "owner",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "sales_period",
+   "error": null,
+   "raw_action": "sales_period",
+   "missing": null,
+   "confidence": 0.99,
+   "args": {
+    "start": "2026-10-21",
+    "end": "2026-10-21",
+    "branch_id": null,
+    "item_id": null
+   },
+   "seconds": 0.3704361250856891,
+   "items": [],
+   "tokens": 2997,
+   "score": "right"
+  },
+  {
+   "i": 6,
+   "lang": "en",
+   "scenario": "short",
+   "text": "best day this wk",
+   "expected_action": "sales_period",
+   "role": "owner",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "sales_period",
+   "error": null,
+   "raw_action": "sales_period",
+   "missing": null,
+   "confidence": 0.68,
+   "args": {
+    "start": "2026-10-19",
+    "end": "2026-10-25",
+    "branch_id": null,
+    "item_id": null
+   },
+   "seconds": 0.5250159999122843,
+   "items": [],
+   "tokens": 2997,
+   "score": "right"
+  },
+  {
+   "i": 7,
+   "lang": "en",
+   "scenario": "short",
+   "text": "target 4500 tmrw",
+   "expected_action": "set_target",
+   "role": "owner",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "set_target",
+   "error": null,
+   "raw_action": "set_target",
+   "missing": null,
+   "confidence": 0.99,
+   "args": {
+    "period": "day",
+    "starts_on": "2026-10-23",
+    "amount": 450000,
+    "branch_id": null
+   },
+   "seconds": 0.3313758750446141,
+   "items": [],
+   "tokens": 3068,
+   "score": "right"
+  },
+  {
+   "i": 8,
+   "lang": "en",
+   "scenario": "short",
+   "text": "payday crowd",
+   "expected_action": "why_answer",
+   "role": "supervisor",
+   "expected_items": [],
+   "previous": "You beat today's target! Why do you think sales went well?",
+   "half": "short",
+   "kind": "decided",
+   "action": "why_answer",
+   "error": null,
+   "raw_action": "why_answer",
+   "missing": null,
+   "confidence": 0.83,
+   "args": {
+    "text": "payday crowd",
+    "asked_message_id": null,
+    "themes": [
+     "foot_traffic"
+    ]
+   },
+   "seconds": 0.3340882919728756,
+   "items": [],
+   "tokens": 3267,
+   "score": "right"
+  },
+  {
+   "i": 9,
+   "lang": "en",
+   "scenario": "short",
+   "text": "thx mia",
+   "expected_action": "reply_only",
+   "role": "clerk",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "reply_only",
+   "error": null,
+   "raw_action": "reply_only",
+   "missing": null,
+   "confidence": 1.0,
+   "args": {
+    "kind": "thanks"
+   },
+   "seconds": 0.35112916596699506,
+   "items": [],
+   "tokens": 3000,
+   "score": "right"
+  },
+  {
+   "i": 10,
+   "lang": "en",
+   "scenario": "short",
+   "text": "cl 8 or 9",
+   "expected_action": "ask",
+   "role": "clerk",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "clarify",
+   "error": null,
+   "raw_action": "clarify",
+   "missing": null,
+   "confidence": 0.59,
+   "args": {},
+   "seconds": 0.3576043340144679,
+   "items": [],
+   "tokens": 3733,
+   "score": "ask"
+  },
+  {
+   "i": 11,
+   "lang": "en",
+   "scenario": "short",
+   "text": "ube pls",
+   "expected_action": "ask",
+   "role": "clerk",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "clarify",
+   "error": null,
+   "raw_action": "clarify",
+   "missing": null,
+   "confidence": 0.38,
+   "args": {},
+   "seconds": 0.3582158340141177,
+   "items": [],
+   "tokens": 3014,
+   "score": "ask"
+  },
+  {
+   "i": 12,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "cl 10 sp 4 ube 6",
+   "expected_action": "report_sales",
+   "role": "clerk",
+   "expected_items": [
+    [
+     "Classic",
+     10
+    ],
+    [
+     "Special",
+     4
+    ],
+    [
+     "Ube",
+     6
+    ]
+   ],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "report_sales",
+   "error": null,
+   "raw_action": "report_sales",
+   "missing": null,
+   "confidence": 0.72,
+   "args": {
+    "items": [
+     {
+      "item_id": "01M5GVVKNMVDZ9FPNP3CRGFW3W",
+      "quantity": 10
+     },
+     {
+      "item_id": "01M5GVVKNKEQHPJHXRV17SRKN3",
+      "quantity": 4
+     },
+     {
+      "item_id": "01M5GVVKNNXV09ASYPA2XH9KR1",
+      "quantity": 6
+     }
+    ],
+    "total": null,
+    "business_date": null,
+    "source_message_id": null,
+    "tender": "cash"
+   },
+   "seconds": 0.3342487500049174,
+   "items": [
+    [
+     "Classic",
+     10
+    ],
+    [
+     "Special",
+     4
+    ],
+    [
+     "Ube",
+     6
+    ]
+   ],
+   "tokens": 4424,
+   "score": "right"
+  },
+  {
+   "i": 13,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "benta ko 5 se 3 co",
+   "expected_action": "report_sales",
+   "role": "clerk",
+   "expected_items": [
+    [
+     "Salted egg",
+     5
+    ],
+    [
+     "Cheese overload",
+     3
+    ]
+   ],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "clarify",
+   "error": null,
+   "raw_action": "report_sales",
+   "missing": null,
+   "confidence": 0.41,
+   "args": {
+    "items": [
+     {
+      "item_id": "01M5GVVKNNXV09ASYPA2XH9KR4",
+      "quantity": 5
+     },
+     {
+      "item_id": "01M5GVVKNP9M2SQSPZH0ME90VE",
+      "quantity": 3
+     }
+    ],
+    "total": null,
+    "business_date": null,
+    "source_message_id": null,
+    "tender": "cash"
+   },
+   "seconds": 0.3606258330401033,
+   "items": [],
+   "tokens": 3750,
+   "score": "ask"
+  },
+  {
+   "i": 14,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "mali pala ube 4 dapat",
+   "expected_action": "correct_sales",
+   "role": "clerk",
+   "expected_items": [
+    [
+     "Ube",
+     4
+    ]
+   ],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "correct_sales",
+   "error": null,
+   "raw_action": "correct_sales",
+   "missing": null,
+   "confidence": 0.98,
+   "args": {
+    "item_id": "01M5GVVKNNXV09ASYPA2XH9KR1",
+    "quantity": 4,
+    "source_message_id": null
+   },
+   "seconds": 0.3261097080539912,
+   "items": [
+    [
+     "Ube",
+     4
+    ]
+   ],
+   "tokens": 3082,
+   "score": "right"
+  },
+  {
+   "i": 15,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "kumusta benta ngayon",
+   "expected_action": "sales_today",
+   "role": "supervisor",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "sales_today",
+   "error": null,
+   "raw_action": "sales_today",
+   "missing": null,
+   "confidence": 1.0,
+   "args": {
+    "branch_id": null
+   },
+   "seconds": 0.3733937500510365,
+   "items": [],
+   "tokens": 2997,
+   "score": "right"
+  },
+  {
+   "i": 16,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "magkano na tayo today",
+   "expected_action": "sales_today",
+   "role": "owner",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "sales_today",
+   "error": null,
+   "raw_action": "sales_today",
+   "missing": null,
+   "confidence": 1.0,
+   "args": {
+    "branch_id": null
+   },
+   "seconds": 0.3516885000281036,
+   "items": [],
+   "tokens": 2995,
+   "score": "right"
+  },
+  {
+   "i": 17,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "benta kahapon street",
+   "expected_action": "sales_period",
+   "role": "owner",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "sales_period",
+   "error": null,
+   "raw_action": "sales_period",
+   "missing": null,
+   "confidence": 0.77,
+   "args": {
+    "start": "2026-10-21",
+    "end": "2026-10-21",
+    "branch_id": "01M5GVVKND61BEP05E8ZG5PBM2",
+    "item_id": null
+   },
+   "seconds": 0.322698250063695,
+   "items": [],
+   "tokens": 3015,
+   "score": "right"
+  },
+  {
+   "i": 18,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "benta nung isang linggo",
+   "expected_action": "sales_period",
+   "role": "owner",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "clarify",
+   "error": null,
+   "raw_action": "report_sales",
+   "missing": "items",
+   "confidence": 0.53,
+   "args": {
+    "items": [],
+    "total": null,
+    "business_date": null,
+    "source_message_id": null,
+    "tender": "cash"
+   },
+   "seconds": 0.3476343749789521,
+   "items": [],
+   "tokens": 3002,
+   "score": "ask"
+  },
+  {
+   "i": 19,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "target bukas 5000",
+   "expected_action": "set_target",
+   "role": "owner",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "set_target",
+   "error": null,
+   "raw_action": "set_target",
+   "missing": null,
+   "confidence": 0.82,
+   "args": {
+    "period": "day",
+    "starts_on": "2026-10-23",
+    "amount": 500000,
+    "branch_id": null
+   },
+   "seconds": 0.3499519170727581,
+   "items": [],
+   "tokens": 3066,
+   "score": "right"
+  },
+  {
+   "i": 20,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "sweldo kasi dami tao",
+   "expected_action": "why_answer",
+   "role": "supervisor",
+   "expected_items": [],
+   "previous": "Nalampasan ninyo po ang target ngayon! Sa palagay ninyo, bakit maganda ang benta?",
+   "half": "short",
+   "kind": "decided",
+   "action": "why_answer",
+   "error": null,
+   "raw_action": "why_answer",
+   "missing": null,
+   "confidence": 0.89,
+   "args": {
+    "text": "sweldo kasi dami tao",
+    "asked_message_id": null,
+    "themes": [
+     "foot_traffic"
+    ]
+   },
+   "seconds": 0.3579463339410722,
+   "items": [],
+   "tokens": 3282,
+   "score": "right"
+  },
+  {
+   "i": 21,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "sige tnx po",
+   "expected_action": "reply_only",
+   "role": "clerk",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "reply_only",
+   "error": null,
+   "raw_action": "reply_only",
+   "missing": null,
+   "confidence": 0.89,
+   "args": {
+    "kind": "thanks"
+   },
+   "seconds": 0.3550342919770628,
+   "items": [],
+   "tokens": 3001,
+   "score": "right"
+  },
+  {
+   "i": 22,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "ube pa",
+   "expected_action": "ask",
+   "role": "clerk",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "clarify",
+   "error": null,
+   "raw_action": "clarify",
+   "missing": null,
+   "confidence": 0.29,
+   "args": {},
+   "seconds": 0.3115354999899864,
+   "items": [],
+   "tokens": 3015,
+   "score": "ask"
+  },
+  {
+   "i": 23,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "yung kahapon",
+   "expected_action": "ask",
+   "role": "supervisor",
+   "expected_items": [],
+   "previous": "",
+   "half": "short",
+   "kind": "decided",
+   "action": "sales_period",
+   "error": null,
+   "raw_action": "sales_period",
+   "missing": null,
+   "confidence": 0.95,
+   "args": {
+    "start": "2026-10-21",
+    "end": "2026-10-21",
+    "branch_id": null,
+    "item_id": null
+   },
+   "seconds": 0.3358336250530556,
+   "items": [],
+   "tokens": 2999,
+   "score": "wrong"
+  }
+ ]
+}
