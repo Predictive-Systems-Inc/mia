@@ -909,3 +909,9 @@ Format for each entry:
 - Question: When two clerks' drawers are open on one day and a cash expense is paid from the drawer, which session's expected cash is it taken from?
 - Assumed answer: the day's cash expenses are taken once, from the first drawer counted that day; later counts of the day take none. Recording the paying session on the expense is a data standard question for a later version.
 - Blocking: no.
+
+## Q127: Whose drawer pays a refund
+- Where: node/mia/agents/sales_supervisor/tools.py (refund_receipt, apply_refund_approval), node/mia/core/sales.py
+- Question: When the owner approves a refund, which drawer pays it out, and may head staff (who have no drawer) ask for one?
+- Assumed answer: only the requester's own open drawer; with none open at approval time the refund is not recorded and the requester is told. Head staff ask the clerk whose drawer pays it to send the request. A review found the earlier fallback to the branch's earliest open drawer took cash out of another clerk's count without telling her.
+- Blocking: no.
