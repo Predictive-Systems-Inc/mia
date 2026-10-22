@@ -115,6 +115,24 @@ def test_a_late_check_in_tells_head_staff(
     assert urgency[line] is True
 
 
+def test_a_late_notice_holds_the_missed_check_in_alert(
+    session: Session, rs: Ferinos, rs_pin: Pin
+) -> None:
+    """Liza sent a late notice at 12:50: nothing more at 13:15; Ana, silent, still gets it."""
+    ana, liza, marites = (rs[1][n] for n in ("Ana", "Liza", "Marites"))
+    rs_pin(at(RS_TODAY, 12, 50))
+    notice = tools.RecordAbsenceInput(date=RS_TODAY, reason="late", arrive_at=dt.time(1, 30))
+    out = tools.record_absence(deps_for(session, liza), notice, "c")
+    assert isinstance(out, tools.RecordAbsenceOutput) and out.arrive_at == "13:30"
+    session.commit()
+    _tick(session, rs_pin, at(RS_TODAY, 13, 16))
+    key = replies.word_key("alert.missed_check_in_supervisor")
+    liza_missed = t(key, "fil", name=liza.name, location="Mall kiosk", time="13:00")
+    ana_missed = t(key, "fil", name=ana.name, location="Mall kiosk", time="09:00")
+    assert liza_missed not in texts(session, marites) and ana_missed in texts(session, marites)
+    assert texts(session, liza) == []  # no "are you at the kiosk?" either
+
+
 def test_a_missed_check_out_tells_head_staff_in_kiosk_words(
     session: Session, rs: Ferinos, rs_pin: Pin
 ) -> None:

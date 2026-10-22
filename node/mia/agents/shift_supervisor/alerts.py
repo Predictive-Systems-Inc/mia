@@ -27,7 +27,7 @@ from mia.agents.shift_supervisor.tools import VisitInfo, visit_info
 from mia.chat.blocks import Block, TextBlock
 from mia.chat.channels import notify
 from mia.core import approvals, events, scheduling
-from mia.core.models import Actor, Approval, Branch, Event, Person, Timesheet, Visit
+from mia.core.models import Absence, Actor, Approval, Branch, Event, Person, Timesheet, Visit
 from mia.core.orgconfig import load as load_org
 from mia.i18n import t
 from mia.templates.retail import hours as retail_hours
@@ -108,6 +108,15 @@ def _each_branch(session: Session, now: dt.datetime, fn: BranchAlert) -> int:
     return count
 
 
+def _sent_late(session: Session, visit: Visit) -> bool:
+    """True when every clerk on the visit sent a late notice for its day (a late absence).
+    ponytail: by day, not by shift; a clerk with two shifts in a day is rare at a kiosk."""
+    ids = visit.assigned_person_ids
+    stmt = select(Absence.person_id).where(Absence.date == visit.date)
+    late = session.exec(stmt.where(Absence.reason == "late").where(col(Absence.person_id).in_(ids)))
+    return set(ids) <= set(late.all())
+
+
 def _missed_in(session: Session, branch: Branch, now: dt.datetime) -> int:
     grace = dt.timedelta(minutes=load_org().alerts.check_in_grace_minutes)
     local_today = now.astimezone(ZoneInfo(branch.timezone)).date()
@@ -125,6 +134,8 @@ def _missed_in(session: Session, branch: Branch, now: dt.datetime) -> int:
             continue
         if visit.planned_start < now - dt.timedelta(days=1) or _marked(session, MISSED, visit.id):
             continue
+        if is_retail() and _sent_late(session, visit):
+            continue  # head staff heard at the late notice: no second word (spec 4, scenario 3)
         info = visit_info(session, visit, branch.timezone)
         _mark(session, branch.id, MISSED, ("visit", visit.id), {"planned_start": info.start})
         names = []

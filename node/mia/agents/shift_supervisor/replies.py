@@ -43,6 +43,8 @@ def tool_reply(tool: str, out: dict[str, Any], lang: str) -> list[Block]:
             return _text("shift.swap.past", lang)
         if out.get("status") == "invalid" and tool in _RAW_INVALID:
             return _text("retail.not_found", lang)
+        if tool == "record_absence" and out.get("late_visit"):
+            return _late(out, lang)
         if tool == "find_replacements" and out.get("candidates"):
             return _cover_card(out, lang)
     return compose(ToolReturnPart(tool_name=tool, content=out, tool_call_id="jev"), lang)
@@ -63,6 +65,14 @@ def _first(name: str | None) -> str:
 
 def _date(value: str | None, lang: str) -> str:
     return fmt_date(value, lang) if value else ""
+
+
+def _late(out: dict[str, Any], lang: str) -> list[Block]:
+    """A late notice noted for its shift: the shift's start and kiosk, the arrival when given."""
+    visit, arrive = out["late_visit"], out.get("arrive_at")
+    key = "retail.absence.late" if arrive else "retail.absence.late_unknown"
+    params = {"start": visit["start"], "location": visit["location"], "time": arrive or ""}
+    return _text(key, lang, date=_date(str(visit["date"]), lang), **params)
 
 
 def _cover_card(out: dict[str, Any], lang: str) -> list[Block]:

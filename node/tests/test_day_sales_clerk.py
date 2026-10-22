@@ -4,9 +4,6 @@ closing cash count and the night's tick, on RS_TODAY (a Wednesday: Ana 09:00 to 
 only for the words, never for a number. Clerks write Filipino, the owner English.
 
 Steps no agent does today are left out, not faked (each named where it would be):
-- a late notice reaches no one (record_absence tells nobody; the 13:15 missed check-in alert is
-  head staff's only word of it, though the spec alerts on "no message and no check-in", retail
-  shift spec section 4 scenario 3);
 - no agent tells head staff of a slow day while the shop is open (the owner's end-of-day report
   and the branch manager's evening nudge to the clerks are the only target comparisons, sales
   supervisor spec section 3 scenarios 3 and 5);
@@ -20,7 +17,7 @@ from sqlmodel import Session, select
 from mia.agents.bookkeeper.models import CashCount
 from mia.agents.customer_service.models import Customer, CustomerMessage
 from mia.agents.sales_supervisor import tools as sales_tools
-from mia.agents.shift_supervisor.rules import word_key
+from mia.agents.shift_supervisor.rules import fmt_date, word_key
 from mia.core import approvals, db, orgconfig
 from mia.core.models import Actor, CustomerOrder, SalesCount, StockEvent
 from mia.core.money import format_money
@@ -358,14 +355,20 @@ def test_a_late_clerk_is_reported_to_head_staff_once(day: Day, session: Session)
         "Liza", SH, "late ako, 1:30 na ako makakarating", "record_absence", reason="late"
     )
     assert "absences.created" in late.actions() and "visit.checked_in" not in late.actions()
-    assert day.told("Marites", step=late) == []  # the late notice reaches no one (docstring)
+    shift = {
+        "start": "13:00",
+        "location": "Mall kiosk",
+        "date": fmt_date(RS_TODAY.isoformat(), FIL),
+    }
+    notice = t("retail.alert.late", FIL, name=liza.name, time="13:30", **shift)
+    assert day.told("Marites", step=late) == [notice]  # head staff told once, at the notice
     day.at(13, 15)
     alert = day.tick()
     key = word_key("alert.missed_check_in_supervisor")
     missed = t(key, FIL, name=liza.name, location="Mall kiosk", time="13:00")
-    assert day.told("Marites", SH, step=alert) == [missed]
+    assert day.told("Marites", SH, step=alert) == []  # "no message and no check-in" only
     day.at(13, 20)
-    assert day.told("Marites", step=day.tick()) == []  # once per visit, never again
+    assert day.told("Marites", step=day.tick()) == []
     check_in(day, "Liza", 13, 30)
     visit = visit_of(session, liza, RS_TODAY)
     assert visit.actual_start is not None
@@ -374,4 +377,4 @@ def test_a_late_clerk_is_reported_to_head_staff_once(day: Day, session: Session)
         "13:30",
     )
     liza_notices = [m for m in day.told("Marites") if liza.name in m]
-    assert liza_notices.count(missed) == 1
+    assert (liza_notices.count(notice), liza_notices.count(missed)) == (1, 0)

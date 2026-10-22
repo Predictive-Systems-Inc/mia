@@ -180,12 +180,15 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         date = day or q.today.isoformat()
         if _off_day(date, q):
             return {}, "date"
-        return {
+        args = {
             "date": date,
             "reason": reason or "other",
             "partial_day": None if part in (None, "whole_day") else part,
             "person_name": q.people.get(person or ""),
-        }, None
+        }
+        if is_retail() and reason == "late" and q.times:  # the first clock time, read by code
+            args["arrive_at"] = next(iter(q.times.values()))
+        return args, None
     if action == "find_replacements":
         visit = r.pick("visit", q.visits, fallback=True)  # else site and date, resolved by code
         if visit is not None:

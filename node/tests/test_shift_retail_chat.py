@@ -18,6 +18,7 @@ from mia.agents.shift_supervisor import (
     cover,
     decider,
     replies,
+    rules,
     scoring,
     timesheets,
     tools,
@@ -536,9 +537,28 @@ def test_a_late_message_records_a_late_absence(
     _answers(monkeypatch, "record_absence", reason="late")
     reply = _turn(session, ana, "malelate ako 30 minutes")
     (row,) = session.exec(select(Absence).where(Absence.person_id == ana.id)).all()
-    assert (row.date, row.reason) == (SATURDAY, "late")
-    date = SATURDAY.strftime("%a %-d %b")
-    assert reply.blocks[0].text == t("retail.absence.recorded", EN, date=date)  # type: ignore[union-attr]
+    assert (row.date, row.reason, row.partial_day) == (SATURDAY, "late", "morning")
+    line = t("retail.absence.late_unknown", EN, start="09:00", location="Mall kiosk", date=DAY)
+    assert reply.text() == line  # no clock time: the shift named, no arrival guessed
+
+
+def test_a_late_notice_attaches_to_the_afternoon_shift_and_tells_head_staff_once(
+    session: Session, rs: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    """Liza (13:00 to 21:00) at 12:50: "1:30" is 13:30 for her own shift, never "no shift"."""
+    liza, marites = rs[1]["Liza"], rs[1]["Marites"]
+    rs_pin(at(RS_TODAY, 12, 50))
+    _answers(monkeypatch, "record_absence", reason="late")
+    reply = _turn(session, liza, "late ako, 1:30 na ako makakarating")
+    date = rules.fmt_date(RS_TODAY.isoformat(), "fil")
+    place = {"start": "13:00", "location": "Mall kiosk", "date": date}
+    assert reply.text() == t("retail.absence.late", "fil", time="13:30", **place)
+    (row,) = session.exec(select(Absence).where(Absence.person_id == liza.id)).all()
+    visit = visit_of(session, liza, RS_TODAY)
+    assert (row.date, row.reason, row.partial_day) == (visit.date, "late", "afternoon")
+    told = t("retail.alert.late", "fil", name=liza.name, time="13:30", **place)
+    assert texts(session, marites) == [told]
+    assert texts(session, liza) == []  # the clerk is never told of her own notice
 
 
 def test_a_no_show_gets_cover_from_the_other_kiosk(

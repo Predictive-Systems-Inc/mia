@@ -164,6 +164,9 @@ class RecordAbsenceInput(BaseModel):
         None, description="None means the whole day"
     )
     person_name: str | None = Field(None, description="Only when reporting for someone else")
+    arrive_at: dt.time | None = Field(
+        None, description="Retail late notice: the clock time the sender says they arrive"
+    )
 
     @model_validator(mode="after")
     def late_means_morning(self) -> "RecordAbsenceInput":
@@ -180,6 +183,8 @@ class RecordAbsenceOutput(BaseModel):
     partial_day: str | None
     updated: bool
     affected_visits: list[VisitInfo]
+    late_visit: VisitInfo | None = None  # retail: the shift a late notice is for
+    arrive_at: str | None = None  # retail: the expected arrival, "HH:MM" local
 
 
 def _affected(visits: list[Visit], partial_day: str | None, tz: str) -> list[Visit]:
@@ -198,6 +203,54 @@ class PastDay(BaseModel):
     date: dt.date
 
 
+def _late_visit(visits: list[Visit], now: dt.datetime) -> Visit | None:
+    """The shift a late notice is for: the one in progress, else the planned one not yet over
+    with the earliest start (the one whose start is nearest after now), whatever its hour."""
+    running = [v for v in visits if v.status == "in_progress"]
+    ahead = sorted(
+        (v for v in visits if v.status == "planned" and v.planned_end > now),
+        key=lambda v: v.planned_start,
+    )
+    return next(iter(running + ahead), None)
+
+
+def _arrival(at: dt.time, visit: Visit, tz: str) -> str:
+    """The stated arrival as "HH:MM": a 12-hour reading ("1:30" for a 13:00 shift) is the one
+    of at and at + 12 h nearest the shift's start (rule 7: code reads the clock)."""
+    start = visit.planned_start.astimezone(ZoneInfo(tz))
+    options = [at, at.replace(hour=at.hour + 12)] if at.hour < 12 else [at]
+    target = start.hour * 60 + start.minute
+    best = min(options, key=lambda o: abs(o.hour * 60 + o.minute - target))
+    return best.strftime("%H:%M")
+
+
+def _tell_late(
+    deps: AgentDeps, person: Person, info: VisitInfo, branch_id: str, arrive: str | None
+) -> None:
+    """Tell the kiosk's head staff (alerts.supervisors) of a late clerk once per notice, not
+    urgent: the clerk, the shift and the expected arrival when given. The reporter is never
+    told of their own notice."""
+    from mia.agents.shift_supervisor.alerts import supervisors
+    from mia.chat.blocks import TextBlock
+    from mia.chat.channels import notify
+    from mia.i18n import t
+
+    key = "retail.alert.late" if arrive else "retail.alert.late_unknown"
+    for sup in supervisors(deps.session, branch_id):
+        if sup.id == deps.person.id:
+            continue
+        text = t(
+            key,
+            sup.language,
+            name=person.name,
+            start=info.start,
+            location=info.location,
+            date=fmt_date(info.date.isoformat(), sup.language),
+            time=arrive or "",
+        )
+        notify(deps.session, sup, [TextBlock(text=text)], deps.actor, deps.manifest.id)
+
+
 def record_absence(
     deps: AgentDeps, args: RecordAbsenceInput, tool_call_id: str
 ) -> RecordAbsenceOutput | PastDay:
@@ -210,11 +263,18 @@ def record_absence(
     _check(deps, resource, "write", tool_call_id)
     if is_retail() and args.date < deps.today:
         return PastDay(date=args.date)
+    tz = deps.branch.timezone
+    day_visits = visits_for(deps.session, [deps.branch.id], person.id, args.date, args.date)
+    late = _late_visit(day_visits, utcnow()) if is_retail() and args.reason == "late" else None
+    partial_day = args.partial_day
+    if late is not None:  # the half of the day the shift starts in, never "morning" by default
+        morning = late.planned_start.astimezone(ZoneInfo(tz)).time() < MORNING_ENDS
+        partial_day = "morning" if morning else "afternoon"
     existing = deps.session.exec(
         select(Absence).where(Absence.person_id == person.id).where(Absence.date == args.date)
     ).first()
     if existing:
-        changes = {"reason": args.reason, "partial_day": args.partial_day}
+        changes = {"reason": args.reason, "partial_day": partial_day}
         absence = store.update(
             deps.session, existing, changes, deps.actor, tool_call_id=tool_call_id
         )
@@ -226,21 +286,34 @@ def record_absence(
                 person_id=person.id,
                 date=args.date,
                 reason=args.reason,
-                partial_day=args.partial_day,
+                partial_day=partial_day,
                 reported_by=deps.person.id,
             ),
             deps.actor,
             tool_call_id=tool_call_id,
         )
-    day_visits = visits_for(deps.session, [deps.branch.id], person.id, args.date, args.date)
-    affected = _affected(day_visits, args.partial_day, deps.branch.timezone)
+    if late is not None:
+        info = visit_info(deps.session, late, tz)
+        arrive = _arrival(args.arrive_at, late, tz) if args.arrive_at else None
+        _tell_late(deps, person, info, late.branch_id, arrive)
+        return RecordAbsenceOutput(
+            absence_id=absence.id,
+            person=person.name,
+            date=args.date,
+            partial_day=partial_day,
+            updated=existing is not None,
+            affected_visits=[info],
+            late_visit=info,
+            arrive_at=arrive,
+        )
+    affected = _affected(day_visits, args.partial_day, tz)
     return RecordAbsenceOutput(
         absence_id=absence.id,
         person=person.name,
         date=args.date,
         partial_day=args.partial_day,
         updated=existing is not None,
-        affected_visits=[visit_info(deps.session, v, deps.branch.timezone) for v in affected],
+        affected_visits=[visit_info(deps.session, v, tz) for v in affected],
     )
 
 
