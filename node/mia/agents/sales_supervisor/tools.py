@@ -20,7 +20,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.sales_supervisor import MANIFEST, calc
-from mia.core import store
+from mia.core import events, sales, store
 from mia.core.db import utcnow
 from mia.core.models import (
     Branch,
@@ -29,6 +29,10 @@ from mia.core.models import (
     Person,
     SalesCount,
     SalesNote,
+    SalesPayment,
+    SalesReceipt,
+    SalesReceiptLine,
+    SalesSession,
     SalesTarget,
     Tender,
 )
@@ -45,6 +49,10 @@ NOTES = Resource(kind="data", name=SalesNote.__tablename__)
 ITEMS = Resource(kind="data", name=RetailItem.__tablename__)
 WHY_ASKED = "sales.why_asked"  # the due work's marker of a why question (due.WHY)
 HOURS = Resource(kind="data", name=RetailBranchHours.__tablename__)
+RECEIPT_TABLES = [
+    Resource(kind="data", name=t.__tablename__)
+    for t in (SalesReceipt, SalesReceiptLine, SalesPayment)
+]
 
 
 # ---- shared helpers -----------------------------------------------------------------------
@@ -597,6 +605,120 @@ def record_note(deps: AgentDeps, args: RecordNoteInput, tool_call_id: str) -> Re
     return RecordNoteOutput(note_id=row.id, business_date=row.business_date)
 
 
+# ---- record_receipt -----------------------------------------------------------------------
+
+
+class RecordReceiptInput(BaseModel):
+    items: list[CountIn] = Field(min_length=1)
+    tender: Tender
+    typed_total: int | None = Field(None, ge=0, description="The total typed, minor units")
+    source_message_id: str | None = None
+
+
+class ReceiptLineOut(BaseModel):
+    item_id: str
+    item: str
+    quantity: int
+    unit_price: int
+    line_total: int
+
+
+class RecordReceiptOutput(BaseModel):
+    status: Literal["recorded", "total_differs", "no_session"]
+    receipt_no: str | None
+    lines: list[ReceiptLineOut]
+    total: int
+    typed_total: int | None
+    tender: str
+    currency: str
+
+
+def _next_receipt_no(session: Session, branch_id: str) -> str:
+    """One more than the highest all-digit receipt number of the branch, from "1". Call it
+    under events.write_lock so two receipts never take the same number."""
+    # ponytail: a running integer over the branch's own numbers; a till brings its own numbering
+    numbers = session.exec(
+        select(SalesReceipt.receipt_no).where(SalesReceipt.branch_id == branch_id)
+    )
+    return str(1 + max((int(n) for n in numbers if n.isdigit()), default=0))
+
+
+def record_receipt(
+    deps: AgentDeps, args: RecordReceiptInput, tool_call_id: str
+) -> RecordReceiptOutput:
+    """Ring up one sale on the clerk's open session of the business date, paid in full by one
+    tender, at the dated prices (core.sales.record_receipt, source chat). Nothing is written
+    when the typed total differs from the computed one (total_differs) or the clerk has no open
+    session of the business date (no_session; a session is never opened here). Raises
+    LookupError("counts_kiosk") on a kiosk that reports counts, LookupError for an item the
+    branch does not sell, LookupError(<code>) for a refused core write."""
+    for table in RECEIPT_TABLES:
+        _check(deps, _as_reporter(table, deps), "write", tool_call_id)
+    _check(deps, ITEMS, "read", tool_call_id)
+    day = _business_day(deps, deps.branch, tool_call_id)
+    if sales.source_of(deps.branch, day) == "counts":
+        raise LookupError("counts_kiosk")
+    catalog = {i.id: i for i in _catalog(deps.session, deps.branch.id)}
+    lines = []
+    for c in args.items:
+        found = catalog.get(c.item_id)
+        if found is None:
+            raise LookupError(f"no item {c.item_id!r} at this branch")
+        price = retail_items.price_on(deps.session, found, deps.branch.id, day)
+        line = ReceiptLineOut(
+            item_id=found.id,
+            item=found.name,
+            quantity=c.quantity,
+            unit_price=price,
+            line_total=c.quantity * price,
+        )
+        lines.append(line)
+    total = sum(line.line_total for line in lines)
+
+    def out(
+        status: Literal["recorded", "total_differs", "no_session"], no: str | None = None
+    ) -> RecordReceiptOutput:
+        return RecordReceiptOutput(
+            status=status,
+            receipt_no=no,
+            lines=lines,
+            total=total,
+            typed_total=args.typed_total,
+            tender=args.tender,
+            currency=catalog[lines[0].item_id].currency,
+        )
+
+    if args.typed_total is not None and args.typed_total != total:
+        return out("total_differs")
+    events.write_lock(deps.session)  # the session and the next number decide the write
+    mine = deps.session.exec(
+        select(SalesSession).where(
+            SalesSession.branch_id == deps.branch.id,
+            SalesSession.person_id == deps.person.id,
+            SalesSession.state == "open",
+            SalesSession.business_date == day,
+        )
+    ).first()
+    if mine is None:
+        return out("no_session")
+    no = _next_receipt_no(deps.session, deps.branch.id)
+    try:
+        sales.record_receipt(
+            deps.session,
+            deps.actor,
+            mine,
+            no,
+            utcnow(),
+            [sales.LineIn(item_id=c.item_id, quantity=c.quantity) for c in args.items],
+            [sales.PaymentIn(tender=args.tender, amount=total)],
+            source="chat",
+            source_message_id=args.source_message_id,
+        )
+    except sales.SalesError as exc:
+        raise LookupError(str(exc)) from exc
+    return out("recorded", no)
+
+
 BINDINGS = [
     ToolBinding(
         f"{MANIFEST.id}.record_counts",
@@ -634,5 +756,11 @@ BINDINGS = [
         record_note,
         RecordNoteInput,
         "Store what the user says about why today's sales were up or down.",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.record_receipt",
+        record_receipt,
+        RecordReceiptInput,
+        "Ring up one customer's sale on the clerk's open drawer.",
     ),
 ]

@@ -177,6 +177,55 @@ def pre_parse(text: str, menu_tokens: Collection[str]) -> tuple[list[Group], int
     return [Group(n, " ".join(w), f"{n} {' '.join(w)}".strip()) for n, w in groups], total
 
 
+VOID_WORDS = {"void", "cancel", "kansel", "ikansela", "icancel"}
+REFUND_WORDS = {"refund", "irefund", "ibalik", "isauli"}
+RECEIPT_WORDS = {"resibo", "receipt", "rcpt", "r"}
+
+
+@dataclass(frozen=True)
+class Stripped:
+    """A receipt message with its typed total and receipt number taken out (strip_receipt)."""
+
+    text: str
+    total: int | None
+    receipt_no: str | None
+
+
+def _receipt_no(tokens: list[str]) -> tuple[str | None, set[int]]:
+    """The receipt number a void or refund names and the token indexes it takes: the number
+    after a receipt word (the word goes too), else the number right after the void or refund
+    word, else a #<digits> token."""
+    after = [i + 1 for i, tok in enumerate(tokens) if tok in RECEIPT_WORDS]
+    after += [i + 1 for i, tok in enumerate(tokens) if tok in VOID_WORDS | REFUND_WORDS]
+    for j in after:
+        if j < len(tokens) and tokens[j].isdigit():
+            return tokens[j], {j - 1, j} if tokens[j - 1] in RECEIPT_WORDS else {j}
+    for i, tok in enumerate(tokens):
+        if tok.startswith("#") and tok[1:].isdigit():
+            return tok[1:], {i}
+    return None, set()
+
+
+def strip_receipt(text: str) -> Stripped:
+    """The message's tokens without the typed total and the receipt number. The total is the
+    last token when it is a number after a tender word and an earlier number exists (whole
+    pesos). A receipt number is read only when a void or refund word is present. Pure."""
+    tokens = _tokens(text)
+    total: int | None = None
+    if (
+        len(tokens) > 2
+        and tokens[-1].isdigit()
+        and _tender(tokens[-2]) is not None
+        and any(tok.isdigit() for tok in tokens[:-2])
+    ):
+        total = int(tokens.pop())
+    no, taken = None, set[int]()
+    if any(tok in VOID_WORDS | REFUND_WORDS for tok in tokens):
+        no, taken = _receipt_no(tokens)
+    kept = " ".join(tok for i, tok in enumerate(tokens) if i not in taken)
+    return Stripped(kept, total, no)
+
+
 WORD = re.compile(r"\d+(?:\.\d+)?|[^\W\d_]+")  # a word or a number
 
 

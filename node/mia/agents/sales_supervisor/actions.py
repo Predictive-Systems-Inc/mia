@@ -9,7 +9,7 @@ group; with groups, a period question reads its item from `item_0` (ruling 7).
 import calendar
 import datetime as dt
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from sqlmodel import col, or_, select
 
@@ -23,10 +23,12 @@ from mia.agents.parsing import (
     find_tender,
     menu_tokens,
     pre_parse,
+    strip_receipt,
     tenders_in,
     was_corrected,
 )
 from mia.agents.sales_supervisor import MANIFEST
+from mia.core import sales
 from mia.core.models import Organisation
 from mia.i18n import t
 from mia.settings import get_settings
@@ -72,6 +74,14 @@ ACTIONS: dict[str, Action] = {
         "record_counts",
         ("period",),
         f"intent.{MANIFEST.id}.report_sales",
+    ),
+    "record_receipt": Action(
+        "The sender rings up one customer's sale: resibo, r or receipt with item counts, often"
+        " a tender word (cash, gcash, maya) and the amount paid at the end. One sale, not the"
+        " day's counts.",
+        "record_receipt",
+        (),
+        f"intent.{MANIFEST.id}.record_receipt",
     ),
     "correct_sales": Action(
         "The sender fixes a count already sent: a number with a correction cue (not, hindi,"
@@ -131,6 +141,7 @@ ACTIONS: dict[str, Action] = {
 # The yes-or-no per action under MIA_SALES_QUESTION=nouls (D42); clarify is code's outcome.
 NOULS = {
     "report_sales": "Does {who} report how many were sold?",
+    "record_receipt": "Does {who} ring up one customer's sale (a receipt)?",
     "correct_sales": "Does {who} correct a count already reported?",
     "sales_today": "Does {who} ask how today's sales are going?",
     "sales_period": "Does {who} ask about sales on a past day or over a period?",
@@ -161,6 +172,8 @@ class Query:
     tender: str | None = None  # the one tender the message names (parsing.find_tender)
     tenders: list[str] = field(default_factory=list)  # every tender named (parsing.tenders_in)
     org: str = "the shops"  # the organisation's name, for the sender phrase (who)
+    source: Literal["counts", "receipts"] = "counts"  # the kiosk's sales source today
+    receipt_no: str | None = None  # the receipt a void or refund names (parsing.strip_receipt)
 
 
 def _periods(lang: str) -> dict[str, str]:
@@ -260,7 +273,8 @@ def build_query(
     rows = session.exec(stmt).all()
     items = {i.id: f"{i.name} ({', '.join(i.short_codes)})" for i in rows}
     branches = {b.id: b.name for b in retail_hours.shops(session, deps.organisation_id)}
-    groups, total = pre_parse(message, menu_tokens((i.name, i.short_codes) for i in rows))
+    stripped = strip_receipt(message)
+    groups, total = pre_parse(stripped.text, menu_tokens((i.name, i.short_codes) for i in rows))
     why_asked = previous_mia_message in why_texts(deps.lang)
     return Query(
         message=message,
@@ -268,7 +282,7 @@ def build_query(
         role=", ".join(deps.person.roles),
         today=deps.today,
         groups=groups,
-        total=total,
+        total=stripped.total if total is None else total,
         items=items,
         branches=branches,
         periods=_periods(deps.lang),
@@ -280,6 +294,8 @@ def build_query(
         tender=find_tender(message),
         tenders=tenders_in(message),
         org=org.name if (org := session.get(Organisation, deps.organisation_id)) else "the shops",
+        source=sales.source_of(branch, deps.today),
+        receipt_no=stripped.receipt_no,
     )
 
 

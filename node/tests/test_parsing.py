@@ -4,6 +4,7 @@ import pytest
 
 from mia.agents.parsing import (
     DAY_NAMES,
+    Stripped,
     find_dates,
     find_prices,
     find_tender,
@@ -15,6 +16,7 @@ from mia.agents.parsing import (
     pre_parse,
     strip_dates,
     strip_menu_names,
+    strip_receipt,
     strip_times,
     tenders_in,
     was_corrected,
@@ -372,3 +374,26 @@ def test_named_reads_short_codes_as_whole_words() -> None:
     assert named("salted egg 3", rows) == {"se"}  # the longer name takes "egg" out
     assert named("sept special", rows) == {"sp"}
     assert named("se at sp", rows) == {"se", "sp"}
+
+
+def test_a_tender_and_a_last_number_is_the_typed_total() -> None:
+    assert strip_receipt("resibo 2 cl 1 ube cash 125") == Stripped(
+        "resibo 2 cl 1 ube cash", 125, None
+    )
+    totals = (
+        strip_receipt("gcash 3 classic").total,
+        strip_receipt("cash 12450").total,
+        strip_receipt("paymaya 2").total,
+    )
+    assert totals == (None, None, None)
+
+
+def test_a_receipt_number_needs_a_void_or_refund_word() -> None:
+    numbers = (
+        strip_receipt("void 3 mali").receipt_no,
+        strip_receipt("cancel resibo 1234").receipt_no,
+        strip_receipt("void #7").receipt_no,
+    )
+    assert numbers == ("3", "1234", "7")
+    assert strip_receipt("refund 1 ube resibo 2") == Stripped("refund 1 ube", None, "2")
+    assert strip_receipt("resibo 2 cl 1 ube cash").receipt_no is None

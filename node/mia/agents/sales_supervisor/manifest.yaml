@@ -11,10 +11,13 @@ roles:
     - data:sales_sessions:read_all
     - data:sales_receipts:read
     - data:sales_receipts:read_all
+    - data:sales_receipts:write
     - data:sales_receipt_lines:read
     - data:sales_receipt_lines:read_all
+    - data:sales_receipt_lines:write
     - data:sales_payments:read
     - data:sales_payments:read_all
+    - data:sales_payments:write
     - data:sales_counts:read
     - data:sales_counts:write
     - data:sales_counts:read_all
@@ -32,6 +35,7 @@ roles:
     - tool:sales_supervisor.period_report:execute
     - tool:sales_supervisor.set_target:execute
     - tool:sales_supervisor.record_note:execute
+    - tool:sales_supervisor.record_receipt:execute
   denies: [tool:*:approve]
 tools:
   - {id: sales_supervisor.record_counts, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_counts, sales_targets], writes: [sales_counts]}
@@ -40,4 +44,5 @@ tools:
   - {id: sales_supervisor.period_report, kind: agent, risk: read, approval: never, reads: [retail_items, sales_counts, branch]}
   - {id: sales_supervisor.set_target, kind: agent, risk: write_internal, approval: never, reads: [branch], writes: [sales_targets]}
   - {id: sales_supervisor.record_note, kind: agent, risk: write_internal, approval: never, writes: [sales_notes]}
+  - {id: sales_supervisor.record_receipt, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_sessions, sales_receipts], writes: [sales_receipts, sales_receipt_lines, sales_payments]}
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

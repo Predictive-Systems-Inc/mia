@@ -671,4 +671,11 @@ STRINGS: dict[str, str | list[str]] = {
     "intent.production_planner.dispatch": "Ang dispatch list",
     "intent.production_planner.delivered": "Kumpirmahin ang delivery",
     "intent.production_planner.capacity": "Kapasidad ng oven",
+    "sales.receipt.recorded": "Resibo #{no}: {lines}. Kabuuan {total}, {tender}.",
+    "sales.receipt.ask_tender": "Paano po ito binayaran?",
+    "sales.receipt.total_differs": "Ayon sa presyo, {computed} ito, pero {typed} ang tinype mo. Itala ba sa {computed}?",
+    "sales.receipt.use_computed": "Itala sa {total}",
+    "sales.receipt.no_session": "Hindi pa bukas ang drawer mo, kaya hindi ko ito naitala. Mag-check in muna, o magtanong sa head staff.",
+    "sales.receipt.as_count": "Bilang ang inuulat ng kiosk na ito, hindi resibo, kaya itinala ko ito bilang bilang.",
+    "intent.sales_supervisor.record_receipt": "Mag-ring up ng benta",
 }

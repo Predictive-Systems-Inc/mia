@@ -89,6 +89,20 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         }
         two = "tender" if len(q.tenders) > 1 else None  # two tenders ask, never default to cash
         return args, unknown or two or (None if items or q.total is not None else "items")
+    if action == "record_receipt":
+        sold: list[dict[str, Any]] = []
+        for i, g in enumerate(q.groups):
+            if g.quantity is None:
+                return {}, f"item_{i}"
+            sold.append(_count(r, i, g.quantity))
+        args = {
+            "items": sold,
+            "tender": q.tender,
+            "typed_total": _minor(q.total) if q.total else None,
+            "source_message_id": q.message_id,
+        }
+        unknown = next((f"item_{i}" for i, c in enumerate(sold) if c["item_id"] is None), None)
+        return args, unknown or ("items" if not sold else "tender" if q.tender is None else None)
     if action == "correct_sales":
         quantity = q.groups[0].quantity if q.groups else None
         if quantity is None:
@@ -184,7 +198,30 @@ def _parse(answers: dict[str, Any], q: Query) -> Decision:
         }
         decision = shared.parse(forced, q, actions=ACTIONS, args=_args)
         return decision.model_copy(update={"raw_action": str(top.get("choice", ""))})
-    return shared.parse(answers, q, actions=ACTIONS, args=_args)
+    return _for_kiosk(answers, q, shared.parse(answers, q, actions=ACTIONS, args=_args))
+
+
+# The action of each kiosk source that the other one is turned into (code, never Jev).
+KIOSK = {
+    "receipts": ("report_sales", "record_receipt"),
+    "counts": ("record_receipt", "report_sales"),
+}
+
+
+def _for_kiosk(answers: dict[str, Any], q: Query, decision: Decision) -> Decision:
+    """The decision as the kiosk's source records sales: on a receipts kiosk a report_sales
+    pick is parsed again as record_receipt, on a counts kiosk a record_receipt pick as
+    report_sales with `as_count` (the turn says so once a day). `raw_action` is the forced
+    action, so the which-item question runs it; the other action is never an alternative."""
+    wrong, right = KIOSK[q.source]
+    alternatives = [a for a in decision.alternatives if a.action != wrong]
+    if decision.raw_action != wrong:
+        return decision.model_copy(update={"alternatives": alternatives})
+    top = answers["action"]
+    forced = {**answers, "action": {**top, "choice": right, "probabilities": {right: 1.0}}}
+    decision = shared.parse(forced, q, actions=ACTIONS, args=_args)
+    args = {**decision.args, "as_count": True} if right == "report_sales" else decision.args
+    return decision.model_copy(update={"raw_action": right, "args": args})
 
 
 async def decide(q: Query) -> Decision:

@@ -12,10 +12,12 @@ from mia.agents.sales_supervisor.tools import (
     CorrectCountOutput,
     PeriodReportOutput,
     RecordCountsOutput,
+    RecordReceiptOutput,
     SetTargetOutput,
     TodayOutput,
 )
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
+from mia.core.models import TENDERS
 from mia.core.money import format_int, format_money
 from mia.i18n import t
 
@@ -76,6 +78,8 @@ def _text(key: str, lang: str, **values: Any) -> list[Block]:
 def tool_reply(tool: str, out: dict[str, Any], args: dict[str, Any], lang: str) -> list[Block]:
     """The reply to one successful tool result (tool is the name without the agent prefix;
     args is the tool input, for the period's dates)."""
+    if tool == "record_receipt":
+        return receipt_recorded(RecordReceiptOutput.model_validate(out), lang)
     if tool == "record_counts":
         rec = RecordCountsOutput.model_validate(out)
         lines = _lines([(c.quantity, c.item) for c in rec.recorded], lang)
@@ -146,6 +150,51 @@ def ask_item(
         options[names[item_id]] = _asked(decision, args)
     blocks: list[Block] = [
         TextBlock(text=t("sales.which_item", lang, words=count.get("words", ""))),
+        QuickRepliesBlock(options=list(options)),
+    ]
+    return blocks, options
+
+
+def receipt_recorded(out: RecordReceiptOutput, lang: str) -> list[Block]:
+    """The recorded receipt: its number, lines, total and tender."""
+    return _text(
+        "sales.receipt.recorded",
+        lang,
+        no=out.receipt_no or "",
+        lines=_lines([(x.quantity, x.item) for x in out.lines], lang),
+        total=format_money(out.total, out.currency, lang),
+        tender=t(f"bk.tender.{out.tender}", lang),
+    )
+
+
+def ask_tender(decision: Decision, lang: str) -> tuple[list[Block], Options]:
+    """How a receipt was paid: one button per tender (TENDERS order), each the decision with
+    that tender."""
+    options = {
+        t(f"bk.tender.{x}", lang): _asked(decision, {**decision.args, "tender": x}) for x in TENDERS
+    }
+    blocks: list[Block] = [
+        TextBlock(text=t("sales.receipt.ask_tender", lang)),
+        QuickRepliesBlock(options=list(options)),
+    ]
+    return blocks, options
+
+
+def ask_total(
+    decision: Decision, out: RecordReceiptOutput, lang: str
+) -> tuple[list[Block], Options]:
+    """The typed total differs from the prices: one button records at the computed total (the
+    decision without the typed total), plus Something else."""
+    computed = format_money(out.total, out.currency, lang)
+    typed = format_money(out.typed_total or 0, out.currency, lang)
+    use = t("sales.receipt.use_computed", lang, total=computed)
+    other = t("clarify.something_else", lang)
+    options: Options = {
+        use: _asked(decision, {**decision.args, "typed_total": None}),
+        other: Decision(action="clarify", confidence=1.0).model_dump(mode="json"),
+    }
+    blocks: list[Block] = [
+        TextBlock(text=t("sales.receipt.total_differs", lang, computed=computed, typed=typed)),
         QuickRepliesBlock(options=list(options)),
     ]
     return blocks, options

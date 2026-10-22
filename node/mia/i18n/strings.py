@@ -977,6 +977,13 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "intent.production_planner.dispatch": "The dispatch list",
         "intent.production_planner.delivered": "Confirm a delivery",
         "intent.production_planner.capacity": "Oven capacity",
+        "sales.receipt.recorded": "Receipt #{no}: {lines}. Total {total}, {tender}.",
+        "sales.receipt.ask_tender": "How was it paid?",
+        "sales.receipt.total_differs": "The prices make it {computed}, but you typed {typed}. Record it at {computed}?",
+        "sales.receipt.use_computed": "Record at {total}",
+        "sales.receipt.no_session": "Your drawer is not open, so I did not record it. Check in first, or ask head staff.",
+        "sales.receipt.as_count": "This kiosk reports counts, not receipts, so I recorded it as a count.",
+        "intent.sales_supervisor.record_receipt": "Ring up a sale",
     },
     "fi": {
         "absence.recorded": [
@@ -1943,5 +1950,12 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "intent.production_planner.dispatch": "Lähetyslista",
         "intent.production_planner.delivered": "Vahvista toimitus",
         "intent.production_planner.capacity": "Uunien kapasiteetti",
+        "sales.receipt.recorded": "Kuitti #{no}: {lines}. Yhteensä {total}, {tender}.",
+        "sales.receipt.ask_tender": "Miten se maksettiin?",
+        "sales.receipt.total_differs": "Hinnoilla summa on {computed}, mutta kirjoitit {typed}. Kirjataanko se summalla {computed}?",
+        "sales.receipt.use_computed": "Kirjaa {total}",
+        "sales.receipt.no_session": "Kassalaatikkosi ei ole auki, joten en kirjannut sitä. Kirjaudu ensin sisään vuoroon tai kysy vuorovastaavalta.",
+        "sales.receipt.as_count": "Tämä kioski ilmoittaa myyntimäärät, ei kuitteja, joten kirjasin sen määränä.",
+        "intent.sales_supervisor.record_receipt": "Kirjaa myynti",
     },
 }

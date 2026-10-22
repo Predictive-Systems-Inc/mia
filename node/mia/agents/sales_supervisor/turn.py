@@ -15,7 +15,7 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
 from mia.agents.decider import THRESHOLD, Decision
 from mia.agents.sales_supervisor import MANIFEST, actions, decider, due, replies
-from mia.agents.sales_supervisor.tools import BINDINGS
+from mia.agents.sales_supervisor.tools import BINDINGS, RecordReceiptOutput
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import reply_text, store_reply
@@ -175,7 +175,9 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     if action == "clarify" and item_missing and decision.confidence >= THRESHOLD:
         action = decision.raw_action  # the action is clear, one count's item is not
     if action == "clarify" and decision.missing == "tender":
-        return reply_text(session, deps, thread, t("sales.ask.tender", deps.lang))
+        if "typed_total" not in decision.args:  # a count: two tenders are sent apart
+            return reply_text(session, deps, thread, t("sales.ask.tender", deps.lang))
+        action = decision.raw_action  # a receipt: the tender buttons below
     if action == "clarify":
         return _did_you_mean(session, deps, thread, decision)
     spec = actions.ACTIONS.get(action)
@@ -188,6 +190,9 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     index = replies.unknown_item(decision.args)
     if index is not None:
         return _ask_item(session, deps, thread, decision, index)
+    if tool == "record_receipt" and decision.args.get("tender") is None:
+        blocks, options = replies.ask_tender(decision, deps.lang)
+        return _ask(session, deps, thread, blocks, options)
     binding = _BINDINGS[f"{MANIFEST.id}.{tool}"]
     try:
         args = binding.input_type.model_validate(decision.args)
@@ -196,8 +201,30 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     out = call_tool(deps, binding, args, new_id())
     if "status" in out and "message" in out:  # a ToolRefusal
         return _refusal(session, deps, thread, decision, tool, out)
+    if tool == "record_receipt" and out["status"] == "no_session":
+        return reply_text(session, deps, thread, t("sales.receipt.no_session", deps.lang))
+    if tool == "record_receipt" and out["status"] == "total_differs":
+        receipt = RecordReceiptOutput.model_validate(out)
+        blocks, options = replies.ask_total(decision, receipt, deps.lang)
+        return _ask(session, deps, thread, blocks, options)
     blocks = replies.tool_reply(tool, out, decision.args, deps.lang)
+    if tool == "record_counts" and decision.args.get("as_count"):
+        blocks = _as_count(session, deps, str(out["business_date"])) + blocks
     return store_reply(session, deps, thread, blocks)
+
+
+AS_COUNT = "sales.as_count_noted"  # marker: the counts-kiosk notice was said (person, date)
+
+
+def _as_count(session: Session, deps: AgentDeps, day: str) -> list[Block]:
+    """The counts-kiosk notice, once per person and business date (an AS_COUNT marker)."""
+    said = session.exec(
+        select(Event).where(Event.action == AS_COUNT).where(Event.entity_id == deps.person.id)
+    )
+    if any((e.after or {}).get("date") == day for e in said):
+        return []
+    events.emit(session, AS_COUNT, deps.person, None, {"date": day}, deps.actor)
+    return [TextBlock(text=t("sales.receipt.as_count", deps.lang))]
 
 
 def _failed(session: Session, deps: AgentDeps, thread: Thread, error: str) -> ChatReply:
