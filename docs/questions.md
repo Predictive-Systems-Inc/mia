@@ -915,3 +915,9 @@ Format for each entry:
 - Question: When the owner approves a refund, which drawer pays it out, and may head staff (who have no drawer) ask for one?
 - Assumed answer: only the requester's own open drawer; with none open at approval time the refund is not recorded and the requester is told. Head staff ask the clerk whose drawer pays it to send the request. A review found the earlier fallback to the branch's earliest open drawer took cash out of another clerk's count without telling her.
 - Blocking: no.
+
+## Q128: A sales message right after a check-in attempt
+- Where: node/mia/chat (the active agent and the hand-over rule), node/mia/agents/shift_supervisor, node/mia/agents/sales_supervisor; seen in the live simulator smoke on 22 Oct 2026
+- Question: After a clerk's check-in attempt (the shift supervisor active), "3 ube 2 classic cash" stayed with the shift supervisor and got its capabilities reply instead of reaching the sales supervisor. Should a confident route to another agent switch the active agent mid-conversation, or does the "one undo rule, first switch away within the hour" ruling hold?
+- Assumed answer: hold the ruling for now; the clerk's next message after a capabilities reply is routed again, and a staff test will show how often this happens. Revisit with the first real staff transcripts (Q116).
+- Blocking: no.
