@@ -1,5 +1,5 @@
 """The `mia` command: migrate, seed, serve, chat, decide, inbox, tick, geocode, person,
-invite, channels, backup, verify-db, keys, auth, skills, agent."""
+invite, channels, backup, verify-db, keys, auth, skills, agent, phrases, requests."""
 
 import argparse
 import asyncio
@@ -252,6 +252,16 @@ def _only_branch_id(session: Session, branch_id: str | None) -> str:
     return branches[0].id
 
 
+def _first_branch_id(session: Session) -> str:
+    """The first branch's id (the system actor's branch for node-wide commands)."""
+    from mia.core.models import Branch
+
+    found = session.exec(select(Branch.id).order_by(col(Branch.id))).first()
+    if found is None:
+        raise SystemExit("no branch: run mia seed or mia import first")
+    return found
+
+
 def person_add(args: argparse.Namespace) -> int:
     from mia.core import people
     from mia.core.db import session_scope
@@ -323,6 +333,58 @@ def forget(args: argparse.Namespace) -> int:
         branch_id = _only_branch_id(session, args.branch)
         key = route_memory.forget(session, branch_id, args.key, Actor.system(branch_id), utcnow())
     print(t("cli.forgotten", "en", route=key) if key else t("cli.learned.none", "en"))
+    return 0
+
+
+def phrases_export(args: argparse.Namespace) -> int:
+    from mia.chat import phrases
+    from mia.core.db import session_scope
+    from mia.i18n import t
+
+    folder = Path(args.cases) if args.cases else NODE_DIR / "tests" / "evals" / "cases"
+    with session_scope() as session:
+        added = phrases.export_rows(session, folder)
+    print(t("cli.phrases.exported", "en", count=added))
+    return 0
+
+
+def phrases_import(args: argparse.Namespace) -> int:
+    from mia.chat import phrases
+    from mia.core.db import session_scope
+    from mia.i18n import t
+
+    with session_scope() as session:
+        taught = phrases.import_rows(session, Path(args.dir), _first_branch_id(session))
+    print(t("cli.phrases.imported", "en", count=taught))
+    return 0
+
+
+def requests_export(args: argparse.Namespace) -> int:
+    from mia.chat import features
+    from mia.core.db import session_scope
+
+    with session_scope() as session:
+        text = features.export_csv(session)
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+    else:
+        print(text, end="")
+    return 0
+
+
+def requests_status(args: argparse.Namespace) -> int:
+    from mia.chat import features
+    from mia.core.db import session_scope
+    from mia.core.models import Actor
+    from mia.i18n import t
+
+    with session_scope() as session:
+        actor = Actor.system(_first_branch_id(session))
+        try:
+            g = features.set_status(session, args.id, args.status, actor)
+        except (LookupError, ValueError) as exc:
+            raise SystemExit(str(exc)) from exc
+    print(t("cli.requests.row", "en", id=g.id, status=g.status, count=g.count, text=g.text))
     return 0
 
 
@@ -787,6 +849,25 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("key")
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=forget)
+    ph = sub.add_parser("phrases", help="taught phrases (teach Mia)").add_subparsers(
+        dest="phrases_command", required=True
+    )
+    p = ph.add_parser("export", help="append taught phrases as short rows of the eval CSVs")
+    p.add_argument("--cases", help="the cases folder (default: node/tests/evals/cases)")
+    p.set_defaults(func=phrases_export)
+    p = ph.add_parser("import", help="replay the CSV rows marked taught as phrase.taught")
+    p.add_argument("dir")
+    p.set_defaults(func=phrases_import)
+    rq = sub.add_parser("requests", help="feature requests").add_subparsers(
+        dest="requests_command", required=True
+    )
+    p = rq.add_parser("export", help="the requests grouped with counts and status, as CSV")
+    p.add_argument("--out", help="file path (default: stdout)")
+    p.set_defaults(func=requests_export)
+    p = rq.add_parser("status", help="mark a request planned, built or declined; tells askers")
+    p.add_argument("id")
+    p.add_argument("status", choices=("planned", "built", "declined"))
+    p.set_defaults(func=requests_status)
     bill = sub.add_parser("billing", help="billing exports").add_subparsers(
         dest="billing_command", required=True
     )

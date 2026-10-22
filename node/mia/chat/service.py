@@ -21,7 +21,7 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps, AgentSpec, Turn
 from mia.agents.registry import AGENTS, DEFAULT
 from mia.agents.shift_supervisor.classifier import classify
-from mia.chat import agent_router, deferred, language, route_memory
+from mia.chat import agent_router, deferred, features, help_menu, language, phrases, route_memory
 from mia.chat.access import agents_for
 from mia.chat.blocks import ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.channels import NOTIFICATION
@@ -165,6 +165,11 @@ def _before_agent(session: Session, deps: AgentDeps, thread: Thread, text: str) 
     commits), or the text the agent should answer (committed, so no write lock is held)."""
     if (reply := safety_reply(session, deps, thread, text)) is not None:
         return reply
+    if (reply := _feature_request(session, deps, thread, text)) is not None:
+        return reply
+    if _asks_help(session, thread, text) and (agents := agents_for(session, deps.person)):
+        dev = get_settings().MIA_AUTH_MODE == "dev"
+        return reply_text(session, deps, thread, help_menu.help_text(agents, deps.lang, dev))
     if (tap := language.tapped(session, thread, text)) is not None:
         code, original_id = tap
         people.set_language(session, Actor.person(deps.person), deps.person, code)
@@ -182,6 +187,53 @@ def _before_agent(session: Session, deps: AgentDeps, thread: Thread, text: str) 
         user = latest_message(session, thread, "user")
         return language.ask(session, deps, thread, user.id if user else None)
     return text
+
+
+def _variants(key: str, lang: str) -> set[str]:
+    """Every wording of the key in lang and in English (a key may hold several)."""
+    texts: set[str] = set()
+    for code in (lang, "en"):
+        found = STRINGS.get(code, {}).get(key)
+        texts.update([found] if isinstance(found, str) else found or [])
+    return texts
+
+
+def _asks_help(session: Session, thread: Thread, text: str) -> bool:
+    """A help request (help_menu) that is not a tap on a button of Mia's last message (the
+    Finnish "Apua" is also a "Did you mean" label)."""
+    if not help_menu.is_help(text):
+        return False
+    last = _last_mia(session, thread, questions=True)
+    blocks = last.blocks if last is not None else []
+    buttons = [o for b in blocks if b.get("type") == "quick_replies" for o in b["options"]]
+    return text.strip() not in buttons
+
+
+def _feature_request(
+    session: Session, deps: AgentDeps, thread: Thread, text: str
+) -> ChatReply | None:
+    """A feature request (spec teach-mia 4b), stored with its reply (the caller commits): a
+    "request: <what>" message, or a tap on "Ask for this feature" under the ask to rephrase
+    (the request is the message Mia did not understand). None for any other message."""
+    wanted, failed = features.prefixed(text), None
+    if wanted is None:
+        if text.strip() not in _variants("feature.ask", deps.lang):
+            return None
+        last = _last_mia(session, thread)
+        if last is None or last.text not in _variants("clarify.rephrase", deps.lang):
+            return None
+        failed = session.exec(
+            select(Message)
+            .where(Message.thread_id == thread.id)
+            .where(Message.role == "user")
+            .where(col(Message.id) < last.id)
+            .order_by(col(Message.id).desc())
+        ).first()
+        if failed is None:
+            return None
+        wanted = failed.text
+    features.request(session, deps.person, wanted, Actor.person(deps.person), failed=failed)
+    return reply_text(session, deps, thread, t("feature.recorded", deps.lang))
 
 
 ROUTE_ASKED = "chat.route_asked"
@@ -381,6 +433,7 @@ def _choose(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Cha
         return ids[tap[0]], agents, active, original or text, True
     pending = _pending(session, thread, text, deps.lang)
     if pending is not None and pending.agent_id in ids:
+        phrases.confirm_tap(session, Actor.person(deps.person), thread, pending, text)
         return ids[pending.agent_id], agents, active, text, False
     if len(agents) == 1:
         return agents[0], agents, active, text, False
@@ -429,6 +482,20 @@ def _settle(
     return chosen
 
 
+def _taught(
+    session: Session, deps: AgentDeps, text: str, agents: list[AgentSpec], active: str | None
+) -> agent_router.Route | None:
+    """The phrasebook's agent for the message's key (chat.phrases), also when another agent
+    is active (a switch: a person said what the words mean), or None when the key has no
+    phrase or its agent is no longer one of the person's (rule 4)."""
+    _, book = phrases.phrasebook(session, deps.branch.id)
+    hit = book.get(route_memory.key_of(text))
+    if hit is None or hit[0] not in {a.id for a in agents}:
+        return None
+    switch = active is not None and active != hit[0]
+    return agent_router.Route("switch" if switch else "chosen", hit[0])
+
+
 def _recalled(
     session: Session, deps: AgentDeps, text: str, agents: list[AgentSpec], active: str | None
 ) -> agent_router.Route | None:
@@ -475,9 +542,10 @@ async def route_turn(
             agent_deps.notice = [TextBlock(text=t("chat.switched", deps.lang, agent=label))]
     else:
         error: str | None = None
-        recalled = await asyncio.to_thread(_recalled, session, deps, text, agents, active)
+        taught = await asyncio.to_thread(_taught, session, deps, text, agents, active)
+        recalled = taught or await asyncio.to_thread(_recalled, session, deps, text, agents, active)
         if recalled is not None:
-            picked = recalled  # an exact repeat of a learned tap: no Jev request
+            picked = recalled  # a phrase, or an exact repeat of a learned tap: no Jev request
         # configuration, not an outage: no request, no failure event. The router is gated like
         # the shift supervisor's decider (D18): MIA_DECIDER=jev turns both on.
         elif ctx.level == "none" or get_settings().MIA_DECIDER != "jev":

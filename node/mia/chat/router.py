@@ -18,13 +18,15 @@ from ulid import ULID
 
 from mia.agents.shift_supervisor.agent import get_agent
 from mia.api.deps import AuthContext, DbSession, PersonAuth
-from mia.chat import runs
+from mia.chat import features, runs
 from mia.chat.blocks import ChatReply
 from mia.chat.service import ChatError, run_turn
 from mia.core.ids import new_id
-from mia.core.models import Person, Thread
+from mia.core.models import Message, Person, Thread
+from mia.core.rbac import PermissionDenied, Resource, get_rbac
 
 router = APIRouter()
+FEATURE_REQUESTS = Resource(kind="data", name="feature_requests")
 MAX_TEXT = 4000
 
 
@@ -154,3 +156,27 @@ async def ag_ui_stop(session: DbSession, body: ThreadRef, auth: PersonAuth) -> d
     if not runs.stop(body.thread_id, person.id):
         raise HTTPException(404, "no live run")
     return {"stopped": True}
+
+
+class FeatureRequestIn(BaseModel):
+    text: str = Field(min_length=1, max_length=features.MAX_TEXT)
+    failed_message_id: str | None = None
+
+
+@router.post("/feature-requests")
+def feature_request(session: DbSession, body: FeatureRequestIn, auth: PersonAuth) -> dict[str, str]:
+    """A feature request from the signed-in person (spec teach-mia 4b): rbac write on
+    data:feature_requests (every staff role), then feature.requested. A failed message is
+    kept only when it is the person's own."""
+    person = _person(auth)
+    try:
+        get_rbac().require(auth.actor, FEATURE_REQUESTS, "write", session=session)
+    except PermissionDenied as exc:
+        session.commit()  # keep the rbac.deny event
+        raise HTTPException(403, "not allowed") from exc
+    failed = session.get(Message, body.failed_message_id) if body.failed_message_id else None
+    if failed is not None and failed.sender_id != person.id:
+        failed = None
+    ev = features.request(session, person, body.text, auth.actor, failed=failed)
+    session.commit()
+    return {"id": ev.id}

@@ -40,6 +40,21 @@ change. The phrasebook is the fold of those events; its version is the count of 
    (node/tests/evals/cases/<agent>.csv, intent = the action) for a pull request; CI then holds
    the phrase to the short-half rules (no wrong write).
 
+### Learning from Did you mean taps
+
+The owner, 22 Oct: "when I click total benta, it prompted Did you mean, sales today. When I
+choose that, system must add confidence level to recognize in the future". A tap on an action
+of an agent's "Did you mean" writes `phrase.confirmed` (the asked message's key, the agent, the
+action, the person, the branch); Something else writes nothing. Per key, the confidence is the
+taps for the leading (agent, action) minus the taps for any other; a key at 1 or more whose
+latest tap agrees is a learned phrase, used like a taught one (routing before Jev, the hint to
+the decider, the version, the Phrases drawer with its confidence and taps). A taught phrase
+counts as confirmed at once and outranks taps. Only teachable actions are learned: a tap on a
+money, external or delete action runs that turn and is never learned. Built (phase 1): the
+examples are added to the action's option text in the shared decide path, and when Jev still
+asks only from its own doubt (its pick is clarify or below the threshold, never an agent's
+guard or a missing input), the phrase's action is taken if it is one of Jev's alternatives.
+
 ## 4. Dev mode on the phones page: teach as you go
 
 On /sim (dev and loopback only), when Mia answers with a rephrase, a "Did you mean" or a reply the

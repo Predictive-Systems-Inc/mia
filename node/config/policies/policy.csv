@@ -67,6 +67,10 @@ p, admin, *, data:core.*, write, allow
 # viewer: read reports
 p, viewer, *, data:reports, read, allow
 
+# everyone: ask for a feature Mia does not have (spec teach-mia 4b)
+p, staff, *, data:feature_requests, write, allow
+p, viewer, *, data:feature_requests, write, allow
+
 # clerk: report the day's counts, read them back, say why
 p, clerk, *, tool:sales_supervisor.record_counts, execute, allow
 p, clerk, *, tool:sales_supervisor.correct_count, execute, allow

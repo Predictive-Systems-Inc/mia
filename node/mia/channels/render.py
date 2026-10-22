@@ -17,6 +17,7 @@ from mia.chat.blocks import (
     TextBlock,
 )
 from mia.i18n import t
+from mia.i18n.strings import STRINGS
 from mia.settings import get_settings
 
 
@@ -84,6 +85,16 @@ def _block_text(block: Block, lang: str) -> str:
     return ""
 
 
+def _with_feature_ask(blocks: list[Block], lang: str) -> list[Block]:
+    """A lone ask to rephrase gains the "Ask for this feature" button (spec teach-mia 4b); the
+    chat service records the tap as a feature request. Other blocks are returned as they are."""
+    rephrase = STRINGS.get(lang, {}).get("clarify.rephrase") or STRINGS["en"]["clarify.rephrase"]
+    texts = [rephrase] if isinstance(rephrase, str) else rephrase
+    if len(blocks) == 1 and isinstance(blocks[0], TextBlock) and blocks[0].text in texts:
+        return [*blocks, QuickRepliesBlock(options=[t("feature.ask", lang)])]
+    return blocks
+
+
 def to_parts(
     blocks: list[Block], caps: BaseModel, lang: str, *, sensitive: bool = False
 ) -> list[RenderedPart]:
@@ -91,6 +102,7 @@ def to_parts(
     c = _Caps.model_validate(caps, from_attributes=True)
     if sensitive:
         return [TextPart(text=t("channel.sensitive", lang, url=app_url("/")))]
+    blocks = _with_feature_ask(blocks, lang)
     has_approval = any(isinstance(b, ApprovalCardBlock) for b in blocks)
     parts: list[RenderedPart] = []
     pending: list[str] = []

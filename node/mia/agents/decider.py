@@ -7,12 +7,14 @@ usage; the caller sets the egress context and holds no write lock (rule 11). par
 """
 
 import asyncio
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
 
+from mia.chat.route_memory import key_of
 from mia.core import jev
 from mia.core.egress import EgressBlocked, Pseudonymiser, current_context
 from mia.core.events import mask_phones
@@ -52,6 +54,7 @@ class Decision(BaseModel):
     raw_action: str = ""  # Jev's own pick, before the threshold
     alternatives: list[Alternative] = Field(default_factory=list)
     missing: str | None = None  # a required input that was not found
+    phrasebook_version: int | None = None  # the phrasebook a Jev decision read (chat.phrases)
 
 
 class Reader:
@@ -180,5 +183,69 @@ async def decide(
     except EgressBlocked as exc:
         raise JevError(str(exc)) from exc
     pseudo = await asyncio.to_thread(Pseudonymiser.for_branch, ctx.session, ctx.actor.branch_id)
-    body = pseudonymised(build_request(q, get_settings().MIA_JEV_MODEL), pseudo)
-    return parse(await jev.ask(body))
+    book = await asyncio.to_thread(_phrasebook, ctx.session, ctx.actor.branch_id, ctx.agent_id)
+    version, taught, examples = book
+    body = with_examples(build_request(q, get_settings().MIA_JEV_MODEL), examples)
+    decision = parse(await jev.ask(pseudonymised(body, pseudo)))
+    hinted = honour(decision, taught.get(key_of(str(getattr(q, "message", "")))))
+    return hinted.model_copy(update={"phrasebook_version": version})
+
+
+def _phrasebook(
+    session: Any, branch_id: str, agent_id: str
+) -> tuple[int, dict[str, str], dict[str, list[str]]]:
+    """(version, message key to this agent's taught action, examples per action)."""
+    from mia.chat import phrases  # chat imports the agents; the agents read chat lazily
+
+    version, book = phrases.phrasebook(session, branch_id)
+    taught = {key: action for key, (agent, action) in book.items() if agent == agent_id}
+    examples = phrases.examples(session, branch_id, agent_id)
+    return version, taught, examples
+
+
+def with_examples(body: dict[str, Any], examples: Mapping[str, list[str]]) -> dict[str, Any]:
+    """The request with each action's taught examples (quoted message text, data: rule 8)
+    appended to that action's option text: the `action` choice, or an `is_<action>` yes-or-no
+    question's yes. Nothing else changes; an action with no example keeps its text."""
+    if not examples:
+        return body
+
+    def said(action: str, text: str) -> str:
+        found = examples.get(action)
+        if not found:
+            return text
+        quoted = "; ".join(json.dumps(x, ensure_ascii=False) for x in found)
+        return f"{text} Messages taught to mean this: {quoted}."
+
+    questions = dict(body["questions"])
+    if isinstance(action_q := questions.get("action"), dict):
+        criteria = {k: said(k, v) for k, v in action_q["criteria"].items()}
+        questions["action"] = {**action_q, "criteria": criteria}
+    for qid, q in questions.items():
+        if qid.startswith("is_") and "true" in q.get("criteria", {}):
+            questions[qid] = {
+                **q,
+                "criteria": {**q["criteria"], "true": said(qid[3:], q["criteria"]["true"])},
+            }
+    return {**body, "questions": questions}
+
+
+def honour(decision: Decision, taught: str | None) -> Decision:
+    """The decision with the taught action for the message's key taken when Jev was unsure:
+    a clarify from Jev's own pick or a low confidence (never one an agent's guard made, nor
+    one with a missing input) whose alternatives include the taught action with no missing or
+    uncertain input. Otherwise the decision unchanged."""
+    if taught is None or decision.action != "clarify" or decision.missing is not None:
+        return decision
+    if decision.raw_action != "clarify" and decision.confidence >= THRESHOLD:
+        return decision  # an agent's guard asked: the phrase never bypasses it
+    for alt in decision.alternatives:
+        if alt.action == taught and alt.missing is None:
+            return Decision(
+                action=taught,
+                args=alt.args,
+                confidence=alt.probability,
+                raw_action=decision.raw_action,
+                alternatives=[a for a in decision.alternatives if a.action != taught],
+            )
+    return decision
