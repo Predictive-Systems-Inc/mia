@@ -345,14 +345,24 @@ THURSDAY = dt.date(2026, 10, 22)  # the short run's day
         ("sun", "en", dt.date(2026, 10, 25)),
         ("holiday pay nov 30", "en", dt.date(2026, 11, 30)),
         ("holiday pay nov 30", "fil", dt.date(2026, 11, 30)),
+        ("mar 5", "fil", dt.date(2027, 3, 5)),
+        ("off si ana sab", "fil", dt.date(2026, 10, 24)),
     ],
 )
 def test_find_dates_reads_the_short_chat_forms(text: str, lang: str, day: dt.date) -> None:
     assert find_dates(text, THURSDAY, lang) == [("d0", day)]
 
 
-@pytest.mark.parametrize("text", ["sabi ko", "money", "month", "sunod", "lunch", "may 5 ube"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "sabi ko", "money", "month", "sunod", "lunch", "may 5 ube",
+        "absent si Mon", "sabi ni Mar", "kay Lin po", "kina Sab", "sun load 100",
+    ],
+)  # fmt: skip
 def test_the_short_weekdays_are_whole_words_and_fil_may_stays_out(text: str) -> None:
+    """Whole words only; after si, ni, kay or kina a nickname and before "load" the telco
+    (review of ca1496d, S4); "mar 5" stays March (test_find_dates_reads_the_short_chat_forms)."""
     assert find_dates(text, THURSDAY, "fil") == []
 
 

@@ -195,6 +195,7 @@ def ask_kind(decision: Decision, names: dict[str, str], lang: str) -> tuple[list
         args = copy.deepcopy(decision.args)
         for event in args.get("events") or []:
             event["kind"] = kind
+            event["reason"] = event.get("reason") if kind == "waste" else None  # a count has none
         if kind == "waste":
             chosen = Decision(
                 action="clarify", args=args, confidence=1.0, raw_action="report_stock",

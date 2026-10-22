@@ -344,6 +344,9 @@ SHORT_WEEKDAYS = {
     "mon": 0, "tue": 1, "tues": 1, "wed": 2, "thu": 3, "thur": 3, "thurs": 3, "fri": 4,
     "sat": 5, "sun": 6,
 }  # fmt: skip
+# A short weekday right after a name marker is a nickname, before "load" the telco.
+_NAMED = re.compile(r"\b(?:si|ni|kay|kina)\s+$", re.IGNORECASE)
+_LOAD = re.compile(r"\s*load\b", re.IGNORECASE)
 _WEEKDAY_INDEX = {n: i for names in DAY_NAMES.values() for i, n in enumerate(names)}
 _WD = _alt(_WEEKDAY_INDEX)
 _MON = _alt(MONTHS)
@@ -419,6 +422,8 @@ def find_dates(text: str, today: dt.date, lang: str) -> list[tuple[str, dt.date]
         else:
             anchor = max([today, *found[-1:]])
             wd = m["wd"]
+            if not wd and (_NAMED.search(text[: m.start()]) or _LOAD.match(text[m.end() :])):
+                continue  # "si Mon", "ni Mar": a nickname; "sun load": the telco
             index = _WEEKDAY_INDEX[wd.lower()] if wd else SHORT_WEEKDAYS[m["ws"].lower()]
             day = _after(index, anchor)
         if day is not None:

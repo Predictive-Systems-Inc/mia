@@ -358,6 +358,20 @@ def test_a_short_code_names_the_item_when_jev_picks_none(
     assert text.splitlines()[0] == asked
 
 
+def test_a_named_word_never_fills_the_item_of_a_plan_change(
+    session: Session, pp_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of ca1496d (M2): "special order" named Special and set it to 3 batches. The
+    named fallback is for the reads only; a change with no item picked asks."""
+    draft(session)
+    special = item(session, "Special").id
+    before = plan_batches(session, special)
+    _answers(monkeypatch, "change_plan", direction="add", number="n0", unit="batches")
+    reply = _turn(session, pp_en[1]["Nonoy"], "dagdag 2 batch, special order ni Mila")
+    assert reply.text() == t("pp.ask.item", EN)
+    assert plan_batches(session, special) == before
+
+
 def test_order_notes_never_reach_the_plan(
     session: Session, pp_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

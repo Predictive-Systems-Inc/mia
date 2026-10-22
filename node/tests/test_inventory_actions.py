@@ -9,7 +9,7 @@ from sqlmodel import Session
 
 from mia.agents.decider import Reader, pseudonymised
 from mia.agents.inventory_manager.actions import Query, build_query, build_request, offer_texts
-from mia.agents.inventory_manager.decider import _args
+from mia.agents.inventory_manager.decider import ON_HAND, _args
 from mia.core.egress import Pseudonymiser
 from mia.core.models import Branch, Person
 from mia.i18n import t
@@ -213,8 +213,6 @@ def test_a_bare_item_and_number_is_missing_the_kind(session: Session, ferinos: A
 
 
 def test_a_how_many_question_is_on_hand_whatever_the_kind(session: Session, ferinos: Any) -> None:
-    from mia.agents.inventory_manager.decider import ON_HAND
-
     q = build(session, ferinos, "may ube pa ba")
     out, missing = args(q, "report_stock", kind="low", item=named(q, "Ube"))
     assert missing is None and out[ON_HAND] is True

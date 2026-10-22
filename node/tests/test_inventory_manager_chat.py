@@ -264,6 +264,8 @@ def test_a_thrown_away_kind_button_asks_the_reason(
     ("text", "kind", "said"),
     [
         ("5 ube na lang", "count", "stock.counted"),
+        ("5 ube nlng", "count", "stock.counted"),
+        ("ube 5 lng", "count", "stock.counted"),
         ("received 40 classic", "count", "stock.counted"),
     ],
 )
@@ -296,27 +298,78 @@ def test_a_count_asked_by_mia_takes_a_bare_number(
     kiosk = session.get(Branch, ana.branch_id)
     assert kiosk is not None
     assert asked.text() == t("stock.not_counted", FIL, item="Ube", branch=kiosk.name)
-    _answers(monkeypatch, "report_stock", kind="count", item_0=ube)
+    _answers(monkeypatch, "report_stock", kind="leftover", item_0=ube)  # the context says count
     reply = _turn(session, ana, "ube 7", asked.thread_id)
     assert reply.text() == t("stock.counted", FIL, quantity="7", item="Ube")
 
 
-@pytest.mark.parametrize("kind", ["count", "low", "sold_out", "not_stated"])
+@pytest.mark.parametrize(
+    ("text", "kind"),
+    [
+        ("ilan pa ube", "count"),
+        ("ilan pa ube", "low"),
+        ("ilan pa ube", "sold_out"),
+        ("ilan pa ube", "not_stated"),
+        ("may ube pa bang natira", "low"),
+    ],
+)
 def test_a_how_many_question_reads_on_hand_and_writes_nothing(
     session: Session,
     ferinos: Ferinos,
     jev_on: Any,
     monkeypatch: pytest.MonkeyPatch,
+    text: str,
     kind: str,
 ) -> None:
     """The short run: "ilan pa ube" (how many ube left) went to report_stock at 0.63 and wrote
-    an event. A question word with no number is the on_hand read, whatever the kind pick."""
+    an event. A question word with no number is the on_hand read, whatever the kind pick;
+    "pa bang" is the linked "pa ba" (review of ca1496d, M3)."""
     rosa = ferinos[1]["Rosa"]
     _answers(monkeypatch, "report_stock", confidence=0.63, kind=kind, item=_id(session, "Ube"))
-    reply = _turn(session, rosa, "ilan pa ube")
+    reply = _turn(session, rosa, text)
     kiosk = session.get(Branch, rosa.branch_id)
     assert kiosk is not None
     assert reply.text() == t("stock.not_counted", FIL, item="Ube", branch=kiosk.name)
+    assert _chat_rows(session) == []
+
+
+@pytest.mark.parametrize("text", ["may 5 ube pa ba", "do we have 10 ube?"])
+def test_a_question_with_a_number_asks_the_kind_and_writes_nothing(
+    session: Session,
+    ferinos: Ferinos,
+    jev_on: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    text: str,
+) -> None:
+    """Review of ca1496d (S1): a question that carries a number is never a count."""
+    _answers(monkeypatch, "report_stock", kind="count", item_0=_id(session, "Ube"))
+    reply = _turn(session, ferinos[1]["Ana"], text)
+    assert _buttons(reply) == [t(f"stock.kind.{k}", FIL) for k in ("count", "leftover", "waste")]
+    assert _chat_rows(session) == []
+
+
+def test_a_count_tap_carries_no_waste_reason(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of ca1496d (S2): Jev's waste and burnt on "classic 4" (no waste word) asks the
+    kind; the count tapped is written with no reason."""
+    classic = _id(session, "Classic")
+    _answers(monkeypatch, "report_stock", kind="waste", reason="burnt", item_0=classic)
+    asked = _turn(session, ferinos[1]["Ana"], "classic 4")
+    _turn(session, ferinos[1]["Ana"], t("stock.kind.count", FIL), asked.thread_id)
+    assert [(r.kind, r.quantity, r.reason) for r in _chat_rows(session)] == [("count", 4, None)]
+
+
+def test_a_count_asked_for_one_item_does_not_take_another_items_number(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of ca1496d (S3): after "no count of Ube yet", "classic 4" still asks the kind."""
+    ana = ferinos[1]["Ana"]
+    _answers(monkeypatch, "report_stock", kind="count", item=_id(session, "Ube"))
+    asked = _turn(session, ana, "ilang ube ang natitira?")
+    _answers(monkeypatch, "report_stock", kind="leftover", item_0=_id(session, "Classic"))
+    reply = _turn(session, ana, "classic 4", asked.thread_id)
+    assert t("stock.kind.count", FIL) in _buttons(reply)
     assert _chat_rows(session) == []
 
 

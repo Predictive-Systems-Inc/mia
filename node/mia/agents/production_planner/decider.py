@@ -35,14 +35,15 @@ def _number(r: Reader) -> int | None:
     return q.numbers[picked] if picked else None
 
 
-def _item(r: Reader) -> tuple[str | None, bool]:
-    """Jev's item pick (the one item the message names when Jev picks none) and whether it
-    holds: False when the message names two items, or names
+def _item(r: Reader, fallback: bool = False) -> tuple[str | None, bool]:
+    """Jev's item pick (with fallback, for a read only, the one item the message names when Jev
+    picks none: a write never takes a word with a second meaning, "special order") and whether
+    it holds: False when the message names two items, or names
     one and Jev picked another (code finds the names, parsing.named; checklist: a message that
     names two values asks)."""
     q: Query = r.q
     item = r.pick("item", set(q.items))
-    if item is None and len(q.named) == 1:  # a short code Jev did not map ("200 cl")
+    if fallback and item is None and len(q.named) == 1:  # reads only: "capacity 200 cl"
         item = next(iter(q.named))
     return item, len(q.named) < 2 and (not q.named or item in q.named)
 
@@ -134,7 +135,7 @@ def _capacity(r: Reader) -> Args:
     number is pieces when the message names the item ("72 salted egg"), else unit is missing
     (a bare "kaya pa ba ang 3?" asks). Missing item when the message names another or two."""
     q: Query = r.q
-    (item, holds), n = _item(r), _number(r)
+    (item, holds), n = _item(r, fallback=True), _number(r)
     unit = _unit(r) or ("pieces" if q.named else None)
     if n is not None and unit == "batches":
         n = n * q.batch_yields[item] if item in q.batch_yields else None
@@ -163,7 +164,7 @@ def _args(action: str, r: Reader) -> Args:
         day = _date(r) or q.draft_date
         return {"production_date": day}, None if day or q.negated else "date"
     if action == "batch_sheet":
-        item, holds = _item(r)
+        item, holds = _item(r, fallback=True)
         item = item if holds else None
         return {"item_id": item, "production_date": _date(r)}, None if item else "item"
     if action in ("dispatch", "delivered"):

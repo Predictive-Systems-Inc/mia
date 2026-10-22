@@ -89,13 +89,14 @@ KIND_WORDS = frozenset({
     "left", "leftover", "leftovers", "remaining", "remain", "remains", "only", "still", "count",
     "counted", "sold", "out", "finished", "gone", "low", "unsold", "received", "arrived",
     "delivered", "delivery", "stock", "have", "got",
-    "lang", "la", "sana", "pa", "natitira", "natira", "tira", "naiwan", "sobra", "salin",
+    "lang", "la", "sana", "pa", "nlng", "nalang", "nlang", "lng", "natitira", "natira", "tira", "naiwan", "sobra", "salin",
     "ubos", "naubos", "wala", "paubos", "konti", "kaunti", "bilang", "nabilang", "dumating",
     "natanggap", "meron", "mayroon", "may", "nabilin", "bilin", "nahabilin", "yara", "aada",
     "yaon", "natada", "naa", "igwa", "hurot", "nahurot", "mayo", "gamay", "diutay", "dikit",
     "kulang", "nabati", "natamban", "metda",
 })  # fmt: skip
-# A how-many question: one of these words, or "pa" with "ba" ("may ube pa ba", "meron pa ba").
+# A how-many question: one of these words, or "pa" with "ba" or "bang" ("may ube pa ba",
+# "may ube pa bang natira").
 # With no number it is the on_hand read whatever kind is picked, never a stock event (rule 7).
 QUESTION_WORDS = frozenset({"ilan", "ilang", "gaano"})
 QUESTION_PHRASES = ("how many", "how much", "magkano pa", "meron pa", "mayroon pa")
@@ -119,7 +120,7 @@ def _asks_how_many(text: str) -> bool:
     return (
         any(w in QUESTION_WORDS for w in words)
         or any(f" {p} " in joined for p in QUESTION_PHRASES)
-        or {"pa", "ba"} <= set(words)
+        or ("pa" in words and bool({"ba", "bang"} & set(words)))
     )
 
 
@@ -132,7 +133,8 @@ def _report(r: Reader) -> tuple[dict[str, Any], str | None]:
     WASTE_WORDS word is said; with one, any kind but waste asks the kind (rule 7). A how-many
     question (QUESTION_WORDS) with no number is the on_hand read, whatever the kind pick. A
     number with no kind word (KIND_WORDS, WASTE_WORDS) asks the kind with its events, unless
-    Mia's last message said the item is not counted yet (count_asked)."""
+    Mia's last message said each item is not counted yet (count_asked: then it is a count); a
+    question with a number (QUESTION_WORDS or a "?") always asks the kind."""
     q: Query = r.q
     if not q.groups and _asks_how_many(q.message):  # decisive before the kind pick
         ref = r.pick("item", set(q.items), fallback=True)
@@ -151,8 +153,15 @@ def _report(r: Reader) -> tuple[dict[str, Any], str | None]:
             if ref is None or g.quantity is None:
                 return {"events": []}, f"item_{i}"
             events.append(_event(r, kind or "count", ref, g.quantity, reason))
-        if not _says_kind(q.message) and not q.count_asked:  # a bare item and number
-            return {"events": events, "source_message_id": q.message_id}, "kind"
+        asked = {"events": events, "source_message_id": q.message_id}
+        if _asks_how_many(q.message) or "?" in q.message:  # a question is never a count
+            return asked, "kind"
+        refs = {e["item_id"] or e["ingredient_id"] for e in events}
+        if refs <= q.count_asked:  # Mia said these are not counted yet: the number is a count
+            for e in events:
+                e.update(kind="count", reason=None)
+        elif not _says_kind(q.message):  # a bare item and number
+            return asked, "kind"
     else:
         ref = r.pick("item", set(q.items), fallback=True)
         if ref is None:

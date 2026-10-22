@@ -103,7 +103,8 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         item = _item(r)
         return {"item_id": item}, None if item else "item"
     if action == "set_short_code":
-        item, code = _item(r), _pick(r, "code", q.codes)
+        # a write with no approval: Jev's item only, never a named word ("box", "special")
+        item, code = _pick(r, "item", q.items), _pick(r, "code", q.codes)
         if code and q.codes[code].casefold() in ROLE_WORDS:
             code = None  # a role or common word: ask for the code
         args = {"item_id": item, "code": q.codes[code] if code else None}

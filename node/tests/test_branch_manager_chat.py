@@ -490,6 +490,19 @@ def test_a_short_code_is_set_without_approval(
     assert session.exec(select(Approval)).all() == []
 
 
+def test_a_short_code_write_never_takes_a_named_word_for_the_item(
+    session: Session, bm_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of ca1496d (M2): set_short_code writes with no approval, so "box" in the message
+    never fills an item Jev left unstated; it asks."""
+    box = item(session, "Box of 4")
+    before = list(box.short_codes)
+    _answers(monkeypatch, "set_short_code", code="c0")  # item not stated
+    _turn(session, bm_en[1]["Marites"], "zqx per box")
+    session.refresh(box)
+    assert box.short_codes == before
+
+
 def test_a_role_word_picked_as_the_short_code_asks_in_hiligaynon(
     session: Session, bm: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
