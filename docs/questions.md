@@ -921,3 +921,9 @@ Format for each entry:
 - Question: After a clerk's check-in attempt (the shift supervisor active), "3 ube 2 classic cash" stayed with the shift supervisor and got its capabilities reply instead of reaching the sales supervisor. Should a confident route to another agent switch the active agent mid-conversation, or does the "one undo rule, first switch away within the hour" ruling hold?
 - Assumed answer: hold the ruling for now; the clerk's next message after a capabilities reply is routed again, and a staff test will show how often this happens. Revisit with the first real staff transcripts (Q116).
 - Blocking: no.
+
+## Q129: Who approves a taught phrase in production, and which model proposes them
+- Where: docs/superpowers/specs/2026-10-22-teach-mia-design.md section 5 (phase 2)
+- Question: In production, who approves a phrase Mia proposes from an unrecognised message (the owner only, or admins too), and which model reviews the unrecognised messages each night (a new external service: pseudonymised staff messages leave the node)?
+- Assumed answer: none yet; phase 1 is the dev teach path on the phones page, where the tester picks the action and no model is called. Phase 2 waits for the owner's answer.
+- Blocking: phase 2 only.
