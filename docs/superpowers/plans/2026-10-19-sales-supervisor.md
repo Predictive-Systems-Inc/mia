@@ -245,7 +245,23 @@ Then the sales modules as in Interfaces. `pre_parse`:
 ```python
 _NUMBER = re.compile(r"\d[\d,]*")
 _TOTAL_WORDS = ("total", "kabuuan", "tanan", "yhteensä", "sum")
-_FILLER = {"po", "na", "pcs", "pc", "pieces", "piece", "kpl", "ng", "nga", "sa", "ang", "yung", "ka", "pa", "lang"}
+_FILLER = {
+    "po",
+    "na",
+    "pcs",
+    "pc",
+    "pieces",
+    "piece",
+    "kpl",
+    "ng",
+    "nga",
+    "sa",
+    "ang",
+    "yung",
+    "ka",
+    "pa",
+    "lang",
+}
 
 
 def pre_parse(text: str) -> tuple[list[Group], int | None]:

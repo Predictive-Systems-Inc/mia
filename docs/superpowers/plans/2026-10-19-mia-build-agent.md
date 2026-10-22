@@ -71,7 +71,13 @@ REPO = Path(__file__).resolve().parents[2]
 @pytest.fixture
 def tree(tmp_path: Path) -> Path:
     """A copy of the parts of the repo the scaffold touches."""
-    for rel in ("node/mia", "node/config", "node/tests/test_access.py", "docs/layout.md", "pyproject.toml"):
+    for rel in (
+        "node/mia",
+        "node/config",
+        "node/tests/test_access.py",
+        "docs/layout.md",
+        "pyproject.toml",
+    ):
         src = REPO / rel
         dst = tmp_path / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -80,7 +86,15 @@ def tree(tmp_path: Path) -> Path:
 
 
 def _run(tree: Path, agent_id: str = "quality_officer", **kw: object) -> list[Path]:
-    return scaffold.run(tree, agent_id, label_en="Quality Officer", label_fi="Laatuvastaava", roles=["supervisor", "owner"], description="Food safety: temperature logs, expiry, hygiene checklists.", **kw)
+    return scaffold.run(
+        tree,
+        agent_id,
+        label_en="Quality Officer",
+        label_fi="Laatuvastaava",
+        roles=["supervisor", "owner"],
+        description="Food safety: temperature logs, expiry, hygiene checklists.",
+        **kw,
+    )
 
 
 def test_scaffold_writes_the_package_and_edits_the_shared_files(tree: Path) -> None:
@@ -117,9 +131,13 @@ def test_rendered_modules_spell_no_id_and_import_only_shared_code(tree: Path) ->
 
 def test_unknown_role_and_bad_id_are_refused(tree: Path) -> None:
     with pytest.raises(ValueError):
-        scaffold.run(tree, "Quality-Officer", label_en="x", label_fi="x", roles=["owner"], description="d")
+        scaffold.run(
+            tree, "Quality-Officer", label_en="x", label_fi="x", roles=["owner"], description="d"
+        )
     with pytest.raises(ValueError):
-        scaffold.run(tree, "quality_officer", label_en="x", label_fi="x", roles=["janitor"], description="d")
+        scaffold.run(
+            tree, "quality_officer", label_en="x", label_fi="x", roles=["janitor"], description="d"
+        )
 
 
 @pytest.mark.slow
@@ -181,7 +199,16 @@ def test_skill_files_exist_and_name_the_gates() -> None:
 
 def test_checklist_covers_the_rules_parts_one_and_two_kept_finding() -> None:
     text = (SKILL / "checklist.md").read_text()
-    for phrase in ("MANIFEST.id", "pseudonymised", "minor units", "read_all", "midnight", "negation", "fresh gate half", "Tagalog"):
+    for phrase in (
+        "MANIFEST.id",
+        "pseudonymised",
+        "minor units",
+        "read_all",
+        "midnight",
+        "negation",
+        "fresh gate half",
+        "Tagalog",
+    ):
         assert phrase in text, phrase
     assert "—" not in text
 ```

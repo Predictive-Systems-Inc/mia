@@ -666,7 +666,9 @@ def _visits(deps: AgentDeps) -> dict[str, str]:
     for v in islice(rows, MAX_OPTIONS):
         i = tools.visit_info(session, v, deps.branch.timezone)
         who = ", ".join(i.assigned) or "nobody"
-        out[v.id] = f"{i.location}, {EN_WEEKDAYS[i.date.weekday()]} {i.date} {i.start}-{i.end}, {i.job}, cleaners: {who}"
+        out[v.id] = (
+            f"{i.location}, {EN_WEEKDAYS[i.date.weekday()]} {i.date} {i.start}-{i.end}, {i.job}, cleaners: {who}"
+        )
     return out
 
 
@@ -869,7 +871,9 @@ from typing import Any
 import httpx
 
 
-def choice(value: str, confidence: float = 0.95, probabilities: dict[str, float] | None = None) -> dict[str, Any]:
+def choice(
+    value: str, confidence: float = 0.95, probabilities: dict[str, float] | None = None
+) -> dict[str, Any]:
     return {
         "type": "choice",
         "choice": value,
@@ -983,7 +987,12 @@ def test_confident_absence_becomes_record_absence() -> None:
     a = answers_for(_body(q), "record_absence", date="2026-10-18", reason="sick")
     d = decider.parse(a, q)
     assert d.action == "record_absence" and d.raw_action == "record_absence"
-    assert d.args == {"date": "2026-10-18", "reason": "sick", "partial_day": None, "person_name": None}
+    assert d.args == {
+        "date": "2026-10-18",
+        "reason": "sick",
+        "partial_day": None,
+        "person_name": None,
+    }
 
 
 def test_absence_without_a_date_is_today() -> None:
@@ -997,7 +1006,11 @@ def test_low_confidence_clarifies_with_the_top_actions() -> None:
     probs = {"record_absence": 0.45, "respond_to_cover": 0.40, "reply_only": 0.15}
     d = decider.parse(answers_for(_body(q), "record_absence", 0.45, probs), q)
     assert d.action == "clarify" and d.raw_action == "record_absence"
-    assert [a.action for a in d.alternatives] == ["record_absence", "respond_to_cover", "reply_only"]
+    assert [a.action for a in d.alternatives] == [
+        "record_absence",
+        "respond_to_cover",
+        "reply_only",
+    ]
 
 
 def test_assign_without_a_cover_search_clarifies() -> None:
@@ -1049,7 +1062,9 @@ def test_unknown_choice_is_a_decide_error() -> None:
         decider.parse({"action": choice("no_such_action")}, q)
 
 
-def _ctx(session: Session, people: dict[str, Person], branch: Branch, level: str = "pseudonymised") -> EgressContext:
+def _ctx(
+    session: Session, people: dict[str, Person], branch: Branch, level: str = "pseudonymised"
+) -> EgressContext:
     return EgressContext(
         session=session,
         actor=Actor.person(people["Juha"]).as_agent(MANIFEST.roles.agent_role),
@@ -1066,7 +1081,10 @@ def _run(q: actions.Query) -> decider.Decision:
 
 
 def test_decide_goes_through_egress(
-    session: Session, people: dict[str, Person], branch: Branch, monkeypatch: pytest.MonkeyPatch,
+    session: Session,
+    people: dict[str, Person],
+    branch: Branch,
+    monkeypatch: pytest.MonkeyPatch,
     key: None,
 ) -> None:
     seen: list[dict[str, Any]] = []
@@ -1084,7 +1102,10 @@ def test_decide_goes_through_egress(
 
 
 def test_egress_none_blocks_before_the_network(
-    session: Session, people: dict[str, Person], branch: Branch, monkeypatch: pytest.MonkeyPatch,
+    session: Session,
+    people: dict[str, Person],
+    branch: Branch,
+    monkeypatch: pytest.MonkeyPatch,
     key: None,
 ) -> None:
     seen: list[dict[str, Any]] = []
@@ -1102,8 +1123,12 @@ def test_no_key_is_a_decide_error() -> None:
 
 @pytest.mark.parametrize("status", [400, 401, 422, 529])
 def test_error_status_is_a_decide_error(
-    status: int, session: Session, people: dict[str, Person], branch: Branch,
-    monkeypatch: pytest.MonkeyPatch, key: None,
+    status: int,
+    session: Session,
+    people: dict[str, Person],
+    branch: Branch,
+    monkeypatch: pytest.MonkeyPatch,
+    key: None,
 ) -> None:
     monkeypatch.setattr(decider, "BACKOFF", 0.0)
     seen: list[dict[str, Any]] = []
@@ -1245,7 +1270,9 @@ def _args(action: str, r: _Reader) -> tuple[dict[str, Any], str | None]:
     """The tool input for one action and the required slot that is missing, if any."""
     q = r.q
     if action == "get_my_visits":
-        start, end = _period(r.pick("period", {"today", "tomorrow", "this_week", "next_week"}), q.today)
+        start, end = _period(
+            r.pick("period", {"today", "tomorrow", "this_week", "next_week"}), q.today
+        )
         person = r.pick("person", q.people)
         return {"start": start, "end": end, "person_name": q.people.get(person or "")}, None
     if action == "record_absence":
@@ -1282,7 +1309,11 @@ def _args(action: str, r: _Reader) -> tuple[dict[str, Any], str | None]:
     if action == "report_site_problem":
         kind = r.pick("problem_kind", {"cannot_access", "site_problem"})
         site = r.pick("site", q.sites)
-        return {"kind": kind, "text": q.message[:500], "location_name": q.sites.get(site or "")}, None
+        return {
+            "kind": kind,
+            "text": q.message[:500],
+            "location_name": q.sites.get(site or ""),
+        }, None
     if action == "checklist":
         item = r.pick("checklist_item", q.checklist_items)
         site = r.pick("site", q.sites)
@@ -1316,7 +1347,9 @@ def parse(answers: dict[str, Any], q: Query) -> Decision:
             if action == "clarify" or action not in ACTIONS or p < 0.05:
                 continue
             alt_args, alt_missing = _args(action, _Reader(answers, q))
-            alternatives.append(Alternative(action=action, args=alt_args, probability=p, missing=alt_missing))
+            alternatives.append(
+                Alternative(action=action, args=alt_args, probability=p, missing=alt_missing)
+            )
     except (KeyError, TypeError, ValueError) as exc:
         raise DecideError(f"unexpected answer: {exc!r}") from exc
     if raw == "clarify" or missing is not None or confidence < THRESHOLD:
@@ -1328,7 +1361,9 @@ def parse(answers: dict[str, Any], q: Query) -> Decision:
             missing=missing,
         )
     others = [a for a in alternatives if a.action != raw][:3]
-    return Decision(action=raw, args=args, confidence=confidence, raw_action=raw, alternatives=others)
+    return Decision(
+        action=raw, args=args, confidence=confidence, raw_action=raw, alternatives=others
+    )
 
 
 async def decide(q: Query) -> Decision:
@@ -1404,9 +1439,21 @@ def test_tool_reply_uses_the_rules_wording() -> None:
 
 
 def test_absence_reply_asks_the_scope_with_quick_replies() -> None:
-    visit = {"date": "2026-10-18", "start": "06:30", "end": "09:00", "location": "Kalasatama", "job": "Office"}
-    out = {"absence_id": "a", "person": "Juha", "date": "2026-10-18", "partial_day": None,
-           "updated": False, "affected_visits": [visit]}
+    visit = {
+        "date": "2026-10-18",
+        "start": "06:30",
+        "end": "09:00",
+        "location": "Kalasatama",
+        "job": "Office",
+    }
+    out = {
+        "absence_id": "a",
+        "person": "Juha",
+        "date": "2026-10-18",
+        "partial_day": None,
+        "updated": False,
+        "affected_visits": [visit],
+    }
     types = [b.type for b in replies.tool_reply("record_absence", out, "fi")]
     assert "quick_replies" in types and "card" in types
 
@@ -1532,7 +1579,9 @@ def _tools(session: Session) -> list[str]:
 
 
 def test_jev_records_an_absence_and_asks_the_scope(
-    session: Session, people: dict[str, Person], jev: list[dict[str, Any]],
+    session: Session,
+    people: dict[str, Person],
+    jev: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _answer(monkeypatch, jev, action="record_absence", reason="sick")
@@ -1554,7 +1603,9 @@ def test_agent_mode_never_calls_jev(
 
 
 def test_injection_never_reaches_jev(
-    session: Session, people: dict[str, Person], jev: list[dict[str, Any]],
+    session: Session,
+    people: dict[str, Person],
+    jev: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _answer(monkeypatch, jev, action="find_replacements")
@@ -1563,7 +1614,9 @@ def test_injection_never_reaches_jev(
 
 
 def test_egress_none_gives_the_unavailable_reply(
-    session: Session, people: dict[str, Person], jev: list[dict[str, Any]],
+    session: Session,
+    people: dict[str, Person],
+    jev: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("MIA_EGRESS_LEVEL", "none")
@@ -1576,7 +1629,9 @@ def test_egress_none_gives_the_unavailable_reply(
 
 
 def test_a_cleaner_cannot_run_a_supervisor_tool(
-    session: Session, people: dict[str, Person], jev: list[dict[str, Any]],
+    session: Session,
+    people: dict[str, Person],
+    jev: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -1595,7 +1650,9 @@ def test_a_cleaner_cannot_run_a_supervisor_tool(
 
 
 def test_low_confidence_asks_and_a_tap_runs_the_choice(
-    session: Session, people: dict[str, Person], jev: list[dict[str, Any]],
+    session: Session,
+    people: dict[str, Person],
+    jev: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     probs = {"record_absence": 0.45, "get_my_visits": 0.40}
@@ -1609,7 +1666,9 @@ def test_low_confidence_asks_and_a_tap_runs_the_choice(
 
 
 def test_stale_clarify_label_goes_to_jev(
-    session: Session, people: dict[str, Person], jev: list[dict[str, Any]],
+    session: Session,
+    people: dict[str, Person],
+    jev: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     probs = {"record_absence": 0.45, "get_my_visits": 0.40}
@@ -1623,7 +1682,9 @@ def test_stale_clarify_label_goes_to_jev(
 
 
 def test_jev_assign_resolves_a_pseudonymised_name(
-    session: Session, people: dict[str, Person], jev: list[dict[str, Any]],
+    session: Session,
+    people: dict[str, Person],
+    jev: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Names leave as Person_N tokens; the message and the people options share the token."""
@@ -1692,7 +1753,9 @@ def _jev_query(
     if tapped is not None:
         return tapped, None
     if classify(html.unescape(text), deps.today, deps.lang).injection:
-        return decider.Decision(action="reply_only", args={"kind": "injection"}, confidence=1.0), None
+        return decider.Decision(
+            action="reply_only", args={"kind": "injection"}, confidence=1.0
+        ), None
     last = _latest_message(session, thread, "assistant")
     return None, actions.build_query(deps, text, last.text if last else "")
 
@@ -1740,8 +1803,12 @@ def _jev_act(
 ) -> ChatReply:
     """Log the decision, then run its tool through the guard and word the reply."""
     events.emit(
-        session, "decision.made", ("thread", thread.id), None,
-        decision.model_dump(mode="json"), deps.actor,
+        session,
+        "decision.made",
+        ("thread", thread.id),
+        None,
+        decision.model_dump(mode="json"),
+        deps.actor,
     )
     if decision.action == "clarify":
         return _jev_clarify(session, deps, thread, decision)
@@ -1759,7 +1826,9 @@ def _jev_act(
 
 
 def _jev_failed(session: Session, deps: AgentDeps, thread: Thread, error: str) -> ChatReply:
-    events.emit(session, "decision.failed", ("thread", thread.id), None, {"error": error}, deps.actor)
+    events.emit(
+        session, "decision.failed", ("thread", thread.id), None, {"error": error}, deps.actor
+    )
     return _reply_text(session, deps, thread, t("reply.unavailable", deps.lang))
 
 
@@ -1944,8 +2013,15 @@ def test_jev_actions(session: Session, branch: Any) -> None:
             raw, acted, conf, secs = f"error: {exc}", "error", 0.0, 0.0
         session.commit()
         results.append(
-            {"id": r.id, "intent": r.intent, "expected": expected, "raw": raw,
-             "acted": acted, "confidence": conf, "seconds": secs}
+            {
+                "id": r.id,
+                "intent": r.intent,
+                "expected": expected,
+                "raw": raw,
+                "acted": acted,
+                "confidence": conf,
+                "seconds": secs,
+            }
         )
     n = len(results)
     raw_ok = sum(x["raw"] == x["expected"] for x in results)
@@ -1959,9 +2035,13 @@ def test_jev_actions(session: Session, branch: Any) -> None:
     disp = [x for x in results if x["intent"].startswith("dispatcher.")]
     secs = sorted(x["seconds"] for x in results if x["seconds"])
     summary = {
-        "split": SPLIT, "lang": LANG, "messages": n,
-        "raw_accuracy": raw_ok / n, "acted_accuracy": acted_ok / n,
-        "clarify_rate": clarified / n, "wrong_action_rate": wrong_write / n,
+        "split": SPLIT,
+        "lang": LANG,
+        "messages": n,
+        "raw_accuracy": raw_ok / n,
+        "acted_accuracy": acted_ok / n,
+        "clarify_rate": clarified / n,
+        "wrong_action_rate": wrong_write / n,
         "dispatcher_raw_accuracy": sum(x["raw"] == x["expected"] for x in disp) / max(len(disp), 1),
         "errors": sum(x["acted"] == "error" for x in results),
         "latency_p50": secs[len(secs) // 2] if secs else 0.0,

@@ -317,7 +317,10 @@ IDENT = (re.compile(r"dispatcher"), "shift_supervisor")
 
 files = subprocess.run(
     ["git", "ls-files", "node/mia", "node/tests", "node/config", "node/pyproject.toml"],
-    cwd=ROOT, capture_output=True, text=True, check=True,
+    cwd=ROOT,
+    capture_output=True,
+    text=True,
+    check=True,
 ).stdout.split()
 changed = 0
 for name in files:

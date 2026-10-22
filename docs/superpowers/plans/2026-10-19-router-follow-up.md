@@ -53,9 +53,9 @@ Behaviour the spec implies but no task's tests cover by default, each pinned to 
 Add to the parametrised decision table in `node/tests/test_agent_router.py` (the `("answer", "p", "active", "expected")` list) these rows:
 
 ```python
-        ("unclear", 0.9, None, ("small_talk", "shift_supervisor")),
-        ("unclear", 0.4, None, ("ask", None)),
-        ("unclear", 0.9, "sales_supervisor", ("keep", "sales_supervisor")),
+(("unclear", 0.9, None, ("small_talk", "shift_supervisor")),)
+(("unclear", 0.4, None, ("ask", None)),)
+(("unclear", 0.9, "sales_supervisor", ("keep", "sales_supervisor")),)
 ```
 
 and two chat tests next to `test_the_router_is_gated_like_the_decider` (reuse `two_agents`, `_router_answers`, `_turn`; `people["sanna"]` is the person the fixture gives two agents):
@@ -187,11 +187,13 @@ DESCRIPTIONS = {
 `turn.py` `router_description`:
 
 ```python
-    router_description=(
+router_description = (
+    (
         "Shifts and attendance: rosters and who works when, being sick, late or absent,"
         " finding and answering cover, checking in and out, the day's plan, problems at a"
         " site or the shop, cleaning checklists; not what was sold and not pay."
     ),
+)
 ```
 
 - [ ] **Step 4: Run the tests, expect pass**
@@ -410,7 +412,9 @@ def _ask_then_tap(session, people, monkeypatch, two_agents, text: str, agent: st
     _router_answers(monkeypatch, two_agents, "unclear", 0.4)  # unsure: buttons
     asked = _turn(session, people["sanna"], text)
     label = next(b for b in asked.blocks if isinstance(b, QuickRepliesBlock)).options
-    chosen_label = next(o for o in label if AGENTS[agent].label_key.split(".")[1] in o.casefold() or True)
+    chosen_label = next(
+        o for o in label if AGENTS[agent].label_key.split(".")[1] in o.casefold() or True
+    )
     # simpler: the options are in agents_for order, TWO order; pick by index
     index = TWO.index(agent)
     return _turn(session, people["sanna"], label[index], asked.thread_id)
@@ -436,7 +440,9 @@ def test_the_third_repeat_is_routed_without_jev(session, people, monkeypatch, tw
     assert len(two_agents) == requests_before  # no Jev request
 
 
-def test_a_learned_route_with_another_agent_active_is_a_switch(session, people, monkeypatch, two_agents) -> None:
+def test_a_learned_route_with_another_agent_active_is_a_switch(
+    session, people, monkeypatch, two_agents
+) -> None:
     _ask_then_tap(session, people, monkeypatch, two_agents, "3 sp 2 cl", TWO[1])
     _ask_then_tap(session, people, monkeypatch, two_agents, "5 sp 1 cl", TWO[1])
     _router_answers(monkeypatch, two_agents, TWO[0], 0.95)
@@ -447,7 +453,9 @@ def test_a_learned_route_with_another_agent_active_is_a_switch(session, people, 
     assert switched[-1].after == {"from": TWO[0], "to": TWO[1]}
 
 
-def test_a_learned_agent_the_person_lost_is_ignored(session, people, monkeypatch, two_agents) -> None:
+def test_a_learned_agent_the_person_lost_is_ignored(
+    session, people, monkeypatch, two_agents
+) -> None:
     _ask_then_tap(session, people, monkeypatch, two_agents, "3 sp 2 cl", TWO[1])
     _ask_then_tap(session, people, monkeypatch, two_agents, "5 sp 1 cl", TWO[1])
     monkeypatch.setattr(orgconfig, "load", lambda org=None: orgconfig.OrgSettings(agents=[TWO[0]]))
@@ -534,7 +542,9 @@ def _switches(session: Session, branch_id: str) -> list[Switch]:
             .order_by(col(Message.id).desc())
         ).first()
         if message is not None and (ev.after or {}).get("from"):
-            out.append(Switch(key_of(message.text), str(ev.after["from"]), ev.timestamp, ev.entity_id))
+            out.append(
+                Switch(key_of(message.text), str(ev.after["from"]), ev.timestamp, ev.entity_id)
+            )
     return out
 
 
@@ -654,7 +664,9 @@ Fill the fixture plumbing from the existing CLI tests (they create a database an
 def forget(session: Session, branch_id: str, key: str, actor: Actor, now: dt.datetime) -> None:
     """Emits chat.route_forgotten so the key is not learned until MIN_TAPS new taps. Commits."""
     agent_id = recall(session, branch_id, now).get(key)
-    events.emit(session, FORGOTTEN, ("branch", branch_id), None, {"key": key, "agent_id": agent_id}, actor)
+    events.emit(
+        session, FORGOTTEN, ("branch", branch_id), None, {"key": key, "agent_id": agent_id}, actor
+    )
     session.commit()
 ```
 
@@ -746,6 +758,7 @@ from collections import Counter
 from mia.agents.registry import AGENTS
 from tests.evals.router_cases import CASES, GATED_LANGS
 
+
 def test_every_gated_language_covers_every_agent_and_group() -> None:
     for lang in GATED_LANGS:
         single = [c for c in CASES if c.lang == lang and c.group == "single"]
@@ -754,13 +767,16 @@ def test_every_gated_language_covers_every_agent_and_group() -> None:
         assert sum(1 for c in CASES if c.lang == lang and c.group == "follow_up") >= 10
         assert sum(1 for c in CASES if c.lang == lang and c.group == "switch") >= 10
 
+
 def test_expected_values_are_agents_any_or_small_talk() -> None:
     assert {c.expected for c in CASES} <= {*AGENTS, "any", "small_talk"}
+
 
 def test_halves_are_balanced_per_language_and_group() -> None:
     for (lang, group), cases in _grouped(CASES).items():
         halves = Counter(c.half for c in cases)
         assert abs(halves["tune"] - halves["gate"]) <= 1, (lang, group, halves)
+
 
 def test_no_case_names_tagalog() -> None:
     assert not any("tagalog" in c.text.casefold() for c in CASES)
