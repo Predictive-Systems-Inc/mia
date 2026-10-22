@@ -862,3 +862,18 @@ def test_a_notification_never_makes_its_agent_the_active_one(
     assert reply.agent_id == "sales_supervisor"
     assert [r["state"]["active_agent"] for r in routed] == [None]
     assert not session.exec(select(Event).where(Event.action == "chat.agent_switched")).all()
+
+
+def test_here_na_reaches_the_shift_supervisor(
+    session: Session, ana_at_the_kiosk: tuple[Person, dict[str, Any]]
+) -> None:
+    """Ana's first message of the day, "here na", with no agent active: the router's shift
+    supervisor option names the short check-in and check-out texts, and its pick checks in
+    with the shift supervisor (not the sales supervisor's "Did you mean")."""
+    ana, _ = ana_at_the_kiosk
+    criteria = agent_router.build_request("here na", _agents(*TWO), None, "", "jev")["questions"]
+    shift = criteria["agent"]["criteria"]["shift_supervisor"]
+    assert all(w in shift for w in ("here na", "nandito na", "going home", "uwi na"))
+    reply = _turn(session, ana, "here na")
+    assert reply.agent_id == "shift_supervisor"
+    assert not session.exec(select(Event).where(Event.action == "chat.agent_switched")).all()

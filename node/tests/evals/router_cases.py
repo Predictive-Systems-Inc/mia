@@ -7,7 +7,9 @@ follow-up or switch); this module loads them. test_router_eval.py runs it.
 Synthetic, written by Claude, not native speakers (D18). The Filipino and Finnish rows are
 drafts for a kiosk clerk texting on a phone (Q28). The Finnish singles came from the intent
 test split (intents.jsonl: the shift supervisor and conversation rows, no in-flow reply); each
-of those is its own seed, even rows tune, odd rows spent. The regional language rows (ceb, hil,
+of those is its own seed, even rows tune, odd rows spent. The short half (23 Oct 2026) is six
+abbreviated en and six fil texts per agent as staff type them (D42), with the check-in and
+check-out forms that went to the wrong agent in a live day ("here na", "going home"). The regional language rows (ceb, hil,
 war, bcl, ilo, pam, pag) were dropped on 21 Oct 2026 to keep the run short; they are in git
 history."""
 
@@ -25,7 +27,7 @@ class Case:
     active: str | None = None
     previous: str = ""
     group: str = "single"  # single | follow_up | switch
-    half: Literal["tune", "spent", "gate"] = "tune"
+    half: Literal["tune", "spent", "gate", "short"] = "tune"
 
 
 GATED_LANGS = ("en", "fil")

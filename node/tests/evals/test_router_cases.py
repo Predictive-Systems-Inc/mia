@@ -183,8 +183,6 @@ def test_the_gate_is_the_d40_bar() -> None:
 def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:
     import datetime as dt
 
-    import pytest
-
     from tests.evals.test_router_eval import _report_path
 
     now = dt.datetime(2026, 10, 19, 23, 5, tzinfo=dt.timezone(dt.timedelta(hours=8)))
@@ -232,11 +230,10 @@ def test_the_csv_has_the_shared_header_and_routed_names_its_agents() -> None:
     assert {c.expected for c in CASES} - {"any", "small_talk"} == set(ROUTED)
 
 
-def test_an_empty_half_skips_the_router_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """router.csv has no short rows: MIA_EVAL_HALVES=short skips with a message, never divides
-    by zero."""
-    from tests.evals.test_router_eval import test_router
-
-    monkeypatch.setenv("MIA_EVAL_HALVES", "short")
-    with pytest.raises(pytest.skip.Exception, match="no router cases"):
-        test_router(None, None)  # type: ignore[arg-type]
+def test_the_short_half_has_en_and_fil_rows_for_every_agent() -> None:
+    """MIA_EVAL_HALVES=short measures the router: about six short rows per language per agent."""
+    short = [c for c in CASES if c.half == "short"]
+    for agent in ROUTED:
+        for lang in GATED_LANGS:
+            assert len([c for c in short if (c.expected, c.lang) == (agent, lang)]) >= 6
+    assert ("shift_supervisor", "here na") in {(c.expected, c.text) for c in short}
