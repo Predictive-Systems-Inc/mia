@@ -30,6 +30,7 @@ from mia.core import approvals, scheduling, store
 from mia.core.models import Actor, Approval, Branch, Event, Message, Person, SalesNote, Thread
 from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied, get_rbac
+from mia.core.sales import live_counts
 from mia.i18n import t
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail import items
@@ -452,7 +453,7 @@ def test_the_weekly_summary_reads_sales_and_stock(session: Session, bm: Ferinos)
     by_branch = {b.branch_id: b for b in out.branches}
     assert set(by_branch) == {kiosk.id, stall(session).id}  # the owner sees every branch
     week = by_branch[kiosk.id]
-    counts = sales_tools._live_counts(session, [kiosk.id], out.start, out.end)
+    counts = live_counts(session, [kiosk.id], out.start, out.end)
     assert week.amount == sum(c.amount for c in counts) and week.target is not None
     assert week.waste == {item(session, "Ube").id: 8}
     assert week.experiment is not None and week.experiment.experiment_id == running(session).id
@@ -481,7 +482,7 @@ def test_the_monthly_letter_is_numbers(session: Session, bm: Ferinos) -> None:
     kiosk, people = bm
     deps = deps_for(session, people["Rosa"])
     october = tools.monthly_letter(deps, MonthlyInput(month=TODAY), "m1")
-    counts = sales_tools._live_counts(session, [kiosk.id], october.start, october.end)
+    counts = live_counts(session, [kiosk.id], october.start, october.end)
     assert october.amount == sum(c.amount for c in counts)
     assert october.clerks == {people["Ana"].id: october.amount}
     assert len(october.best_days) == 3 and october.best_days[0][1] >= october.best_days[1][1]
@@ -508,7 +509,7 @@ def test_a_clerk_sees_only_their_own_coaching_rows(session: Session, bm: Ferinos
         )
     egg = item(session, "Salted egg").id
     lead = tools.coaching(deps_for(session, people["Marites"]), CoachingInput(item_id=egg), "c3")
-    counts = sales_tools._live_counts(session, [bm[0].id], lead.start, lead.end, egg)
+    counts = live_counts(session, [bm[0].id], lead.start, lead.end, egg)
     assert [(r.person_id, r.units) for r in lead.rows] == [
         (people["Ana"].id, sum(c.quantity for c in counts))
     ]

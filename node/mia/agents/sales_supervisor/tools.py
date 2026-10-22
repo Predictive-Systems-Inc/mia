@@ -154,9 +154,6 @@ def _share(
     return max(ranked)[-1] if ranked else None
 
 
-_live_counts = live_counts  # the live count query lives in core since 1.9 (ADR 022)
-
-
 def _plain(rows: Sequence[SalesCount]) -> list[calc.Count]:
     return [calc.Count(r.item_id, r.quantity, r.amount, r.superseded_by) for r in rows]
 
@@ -299,7 +296,7 @@ def record_counts(
         )
         for c in args.items
     ]
-    live = _live_counts(deps.session, [deps.branch.id], day, day)
+    live = live_counts(deps.session, [deps.branch.id], day, day)
     return RecordCountsOutput(
         recorded=[_count_out(r, catalog[r.item_id]) for r in rows],
         business_date=day,
@@ -404,7 +401,7 @@ class TodayOutput(BaseModel):
 
 def _branch_today(deps: AgentDeps, branch: Branch, tool_call_id: str) -> BranchToday:
     day = _business_day(deps, branch, tool_call_id)
-    sums = calc.totals(_plain(_live_counts(deps.session, [branch.id], day, day)))
+    sums = calc.totals(_plain(live_counts(deps.session, [branch.id], day, day)))
     names = _names(deps.session)
     items = [
         ItemTotal(item_id=i, item=names[i].name, quantity=q, amount=a)
@@ -471,7 +468,7 @@ def period_report(
     if args.end < args.start:
         raise LookupError("end is before start")
     names = _names(deps.session)
-    rows = _live_counts(deps.session, [b.id for b in branches], args.start, args.end, args.item_id)
+    rows = live_counts(deps.session, [b.id for b in branches], args.start, args.end, args.item_id)
     out: list[PeriodRow] = []
     for branch in branches:
         sums = calc.totals(_plain([r for r in rows if r.branch_id == branch.id]))

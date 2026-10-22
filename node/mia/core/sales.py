@@ -140,7 +140,7 @@ def open_session(
         last = session.exec(
             select(SalesSession)
             .where(SalesSession.branch_id == branch_id, SalesSession.state == "closed")
-            .order_by(col(SalesSession.closed_at).desc())
+            .order_by(col(SalesSession.closed_at).desc(), col(SalesSession.id).desc())
         ).first()
         opening_float = (last.counted or 0) if last else 0
     row = SalesSession(
@@ -179,6 +179,8 @@ def close_session(
     """Close an open session with head staff's count (closed_by holds supervisor or above;
     event sales.session_closed), freezing
     expected (expected_cash) and difference (counted less expected)."""
+    events.write_lock(session)  # expected is read, then frozen: no receipt lands between
+    session.refresh(sales_session)
     if sales_session.state != "open":
         raise SalesError("session_closed")
     head = session.get(Person, closed_by)
@@ -286,6 +288,7 @@ def record_receipt(
     the total with the receipt's sign. The caller commits."""
     s = sales_session
     events.write_lock(session)  # the checks read what the writes depend on (rule 11)
+    session.refresh(s)  # re-read under the lock: a close committed meanwhile counts
     if s.state != "open":
         raise SalesError("session_closed")
     if not lines:
@@ -303,7 +306,7 @@ def record_receipt(
         rows = [_sale_line(session, line, s, day) for line in lines]
     else:
         sign = -1
-        sale = session.get(SalesReceipt, refund_of)
+        sale = session.get(SalesReceipt, refund_of, populate_existing=True)
         if (
             sale is None
             or sale.branch_id != s.branch_id
@@ -380,7 +383,8 @@ def void_receipt(
     used once. A refund, or a sale with a paid refund against it, is never voided; after the
     close only a refund is possible. SalesError and nothing written otherwise."""
     events.write_lock(session)
-    s = session.get(SalesSession, receipt.session_id)
+    session.refresh(receipt)  # re-read under the lock: a void committed meanwhile counts
+    s = session.get(SalesSession, receipt.session_id, populate_existing=True)
     if s is None or s.state != "open":
         raise SalesError("session_closed")
     if receipt.status != "paid":
@@ -420,7 +424,7 @@ def receipts(
         own = Resource(kind="data", name=RECEIPTS.name, owner_id=actor.person_id)
         rbac.require(actor, own, "read", session=session)
         stmt = stmt.where(SalesReceipt.clerk_id == actor.person_id)
-    return list(session.exec(stmt.order_by(col(SalesReceipt.sold_at))))
+    return list(session.exec(stmt.order_by(col(SalesReceipt.sold_at), col(SalesReceipt.id))))
 
 
 def live_counts(

@@ -19,13 +19,13 @@ from sqlmodel import Session, col, select
 
 from mia.agents.customer_service import public
 from mia.agents.registry import AGENTS
-from mia.agents.sales_supervisor import tools as sales_tools
 from mia.channels.base import InboundMessage
 from mia.chat.blocks import ChatReply
 from mia.chat.service import run_turn
 from mia.core import db, jev, orgconfig
 from mia.core.ids import new_id
 from mia.core.models import Event, Message, Person, SalesCount, Thread
+from mia.core.sales import live_counts
 from mia.settings import get_settings
 from tests.conftest import Shop
 from tests.jev_fake import answers_for, fake_jev
@@ -134,7 +134,7 @@ class Day:
 
     def counts(self, day: dt.date, who: str | None = None) -> list[SalesCount]:
         """The live counts of `day` at the Mall kiosk (by `who` when given)."""
-        rows = sales_tools._live_counts(self.session, [self.shop.kiosk.id], day, day)
+        rows = live_counts(self.session, [self.shop.kiosk.id], day, day)
         person: Person | None = self.people[who] if who else None
         return [r for r in rows if person is None or r.reported_by == person.id]
 

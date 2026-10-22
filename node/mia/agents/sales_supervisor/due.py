@@ -28,6 +28,7 @@ from mia.chat.channels import notify
 from mia.core import orgconfig
 from mia.core.models import Actor, Branch, Message, Person, Visit
 from mia.core.money import format_int, format_money
+from mia.core.sales import live_counts
 from mia.i18n import t
 from mia.templates.retail import hours as retail_hours
 
@@ -92,7 +93,7 @@ def good_day(total: int, share: int | None, average: int | None) -> bool:
 
 def _reporters(session: Session, branch_id: str, day: dt.date) -> set[str]:
     """The ids of the people with a live count for the branch and business date."""
-    return {r.reported_by for r in tools._live_counts(session, [branch_id], day, day)}
+    return {r.reported_by for r in live_counts(session, [branch_id], day, day)}
 
 
 def _clerks(session: Session, branch_id: str, day: dt.date) -> list[Person]:
@@ -108,14 +109,14 @@ def _clerks(session: Session, branch_id: str, day: dt.date) -> list[Person]:
 
 
 def _total(session: Session, branch_id: str, day: dt.date) -> int:
-    rows = tools._live_counts(session, [branch_id], day, day)
+    rows = live_counts(session, [branch_id], day, day)
     return sum(a for _, a in calc.totals(tools._plain(rows)).values())
 
 
 def _history(session: Session, branch_id: str, day: dt.date) -> tuple[int | None, int | None]:
     """(the same weekday last week's total, the mean of the last four same-weekday totals);
     weeks without counts are left out, None when there are none."""
-    rows = tools._live_counts(session, [branch_id], day - dt.timedelta(days=28), day)
+    rows = live_counts(session, [branch_id], day - dt.timedelta(days=28), day)
     by_day: dict[dt.date, int] = {}
     for row in rows:
         by_day[row.business_date] = by_day.get(row.business_date, 0) + row.amount
@@ -205,7 +206,7 @@ def _report_blocks(d: _Day, lang: str) -> list[Block]:
 
 
 def _report(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Message]:
-    sums = calc.totals(tools._plain(tools._live_counts(session, [branch.id], day, day)))
+    sums = calc.totals(tools._plain(live_counts(session, [branch.id], day, day)))
     names = tools._names(session)
     ordered = sorted(sums.items(), key=lambda kv: names[kv[0]].sort_order)
     last_week, average = _history(session, branch.id, day)

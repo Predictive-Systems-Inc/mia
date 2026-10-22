@@ -36,7 +36,6 @@ from mia.agents.sales_supervisor.tools import (
     _check,
     _currency,
     _is_lead,
-    _live_counts,
 )
 from mia.agents.shift_supervisor import alerts
 from mia.chat.channels import notify
@@ -55,6 +54,7 @@ from mia.core.models import (
 from mia.core.orgconfig import ProductionPlannerSettings
 from mia.core.orgconfig import load as load_settings
 from mia.core.rbac import PermissionDenied, Resource, get_rbac
+from mia.core.sales import live_counts
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailIngredient, RetailItem
 
@@ -155,7 +155,7 @@ def kiosk_data(session: Session, commissary: Branch, kiosk: Branch, day: dt.date
     for resource in (ITEMS, RECIPES, inventory_tools.HOURS):
         rbac.require(actor, resource, "read", session=session)
     components = _components(session)
-    counts = _live_counts(
+    counts = live_counts(
         session, [kiosk.id], day - dt.timedelta(days=forecast.FORECAST_DAYS), day - ONE_DAY
     )
     daily = forecast.units(((c.business_date, c.item_id, c.quantity) for c in counts), components)

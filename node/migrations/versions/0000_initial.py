@@ -2114,9 +2114,7 @@ def downgrade() -> None:
 
     op.drop_table("sales_payments")
     with op.batch_alter_table("sales_receipts", schema=None) as batch_op:
-        batch_op.drop_index(
-            "ux_sales_receipts_approval", sqlite_where=sa.text("approval_id IS NOT NULL")
-        )
+        batch_op.drop_index("ux_sales_receipts_approval")
         batch_op.drop_index(batch_op.f("ix_sales_receipts_status"))
         batch_op.drop_index(batch_op.f("ix_sales_receipts_session_id"))
         batch_op.drop_index(batch_op.f("ix_sales_receipts_business_date"))
@@ -2124,7 +2122,7 @@ def downgrade() -> None:
 
     op.drop_table("sales_receipts")
     with op.batch_alter_table("sales_sessions", schema=None) as batch_op:
-        batch_op.drop_index("ux_sales_sessions_open", sqlite_where=sa.text("state = 'open'"))
+        batch_op.drop_index("ux_sales_sessions_open")
         batch_op.drop_index(batch_op.f("ix_sales_sessions_state"))
         batch_op.drop_index(batch_op.f("ix_sales_sessions_person_id"))
         batch_op.drop_index(batch_op.f("ix_sales_sessions_business_date"))

@@ -46,7 +46,6 @@ from mia.agents.sales_supervisor.tools import (
     _count_day,
     _currency,
     _hours,
-    _live_counts,
     _reported_at,
 )
 from mia.agents.shift_supervisor import alerts
@@ -65,6 +64,7 @@ from mia.core.models import (
 )
 from mia.core.money import format_money
 from mia.core.rbac import Resource, get_rbac
+from mia.core.sales import live_counts
 from mia.i18n import t
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailItem
@@ -77,7 +77,7 @@ def tender_sales(
 ) -> int:
     """The branch's live sales amount from start to end (inclusive) paid by tender (None: every
     tender), in minor units."""
-    rows = _live_counts(session, [branch_id], start, end)
+    rows = live_counts(session, [branch_id], start, end)
     return sum(r.amount for r in rows if tender is None or r.tender == tender)
 
 
@@ -853,7 +853,7 @@ def sales_journal(deps: AgentDeps, args: JournalInput, tool_call_id: str) -> Jou
     """The BIR sales journal of the month: gross by business date and tender (tax.journal)."""
     branch = _scoped(deps, args.branch_id, [COUNTS], tool_call_id)
     start, end = _month(args.month)
-    rows = _live_counts(deps.session, [branch.id], start, end)
+    rows = live_counts(deps.session, [branch.id], start, end)
     return JournalOut(
         branch_id=branch.id,
         month=start,
@@ -998,7 +998,7 @@ def _at_cost(
     waste at cost (an item without a cost adds nothing)."""
     mine = or_(col(RetailItem.branch_id) == branch_id, col(RetailItem.branch_id).is_(None))
     costs = {i.id: i.cost for i in session.exec(select(RetailItem).where(mine))}
-    sold = [(r.item_id, r.quantity) for r in _live_counts(session, [branch_id], start, end)]
+    sold = [(r.item_id, r.quantity) for r in live_counts(session, [branch_id], start, end)]
     known = all(costs.get(i) is not None for i, q in sold if q)
     goods = sum(q * (costs.get(i) or 0) for i, q in sold) if known else None
     stmt = (

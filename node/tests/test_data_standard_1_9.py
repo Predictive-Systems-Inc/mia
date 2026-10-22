@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from alembic import command
-from sqlalchemy import inspect
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import Engine, inspect
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlmodel import Session, select
 
 from mia.agents.bookkeeper.tools import tender_sales
@@ -246,8 +246,7 @@ def test_day_sales_on_a_counts_kiosk_equals_the_count_totals(
     kiosk, day = ferinos[0], yesterday()
     got = sales.day_sales(session, kiosk.id, day)
     assert got.source == "counts"
-    live = sales_tools._live_counts(session, [kiosk.id], day, day)
-    assert sales_tools._live_counts is sales.live_counts  # one query, in core
+    live = sales.live_counts(session, [kiosk.id], day, day)  # the one query the agents read
     assert got.by_item == calc.totals(sales_tools._plain(live))
     want = {t: tender_sales(session, kiosk.id, t, day, day) for t in got.by_tender}
     assert got.by_tender == want and sum(want.values()) > 0
@@ -455,3 +454,76 @@ def test_only_head_staff_close_a_session(session: Session, ferinos: Ferinos) -> 
     with pytest.raises(SalesError, match="closed_by"):
         sales.close_session(session, Actor.person(liza), s, 0, liza.id, noon(yesterday(), 18))
     assert (written(session), s.state) == (before, "open")
+
+
+def other_writer(engine: Engine) -> Session:
+    """A second connection that never waits for the write lock (busy_timeout 0)."""
+    other = Session(engine, expire_on_commit=False)
+    other.connection().exec_driver_sql("PRAGMA busy_timeout = 0")
+    return other
+
+
+def test_close_holds_the_write_lock_from_the_read(
+    session: Session, ferinos: Ferinos, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s = opened(session, ferinos)
+    sell(session, ferinos, s, "M-1")
+    session.commit()
+    read = sales.expected_cash
+    tried: list[str] = []
+
+    def then_a_receipt(db_session: Session, sales_session: SalesSession) -> int:
+        expected = read(db_session, sales_session)
+        with other_writer(engine) as other:  # a till's receipt between the read and the write
+            mine = other.get(SalesSession, sales_session.id)
+            assert mine is not None
+            with pytest.raises(OperationalError, match="locked"):
+                sell(other, ferinos, mine, "M-2")
+            tried.append("M-2")
+        return expected
+
+    monkeypatch.setattr(sales, "expected_cash", then_a_receipt)
+    marites = ferinos[1]["Marites"]
+    sales.close_session(session, Actor.person(marites), s, 8000, marites.id, noon(yesterday(), 18))
+    session.commit()
+    assert (tried, s.expected, s.difference) == (["M-2"], 8000, 0)
+    nos = [r.receipt_no for r in session.exec(select(SalesReceipt))]
+    assert nos == ["M-1"]
+
+
+def test_a_void_after_another_sessions_void_is_refused(
+    session: Session, ferinos: Ferinos, engine: Engine
+) -> None:
+    receipt = sell(session, ferinos, opened(session, ferinos), "M-1")
+    first = approve(session, ferinos, sales.VOID, receipt.id, "supervisor", "Marites")
+    second = approve(session, ferinos, sales.VOID, receipt.id, "supervisor", "Marites")
+    session.commit()
+    with Session(engine, expire_on_commit=False) as other:
+        theirs = other.get(SalesReceipt, receipt.id)
+        assert theirs is not None
+        sales.void_receipt(other, Actor.system(receipt.branch_id), theirs, first, "x")
+        other.commit()
+    before = written(session)
+    assert receipt.status == "paid"  # this session's copy is stale
+    with pytest.raises(SalesError, match="status"):
+        sales.void_receipt(session, Actor.system(receipt.branch_id), receipt, second, "y")
+    assert (written(session), receipt.approval_id) == (before, first)
+
+
+def test_a_receipt_after_another_sessions_close_is_refused(
+    session: Session, ferinos: Ferinos, engine: Engine
+) -> None:
+    s = opened(session, ferinos)
+    session.commit()
+    marites = ferinos[1]["Marites"]
+    with Session(engine, expire_on_commit=False) as other:
+        theirs = other.get(SalesSession, s.id)
+        assert theirs is not None
+        at = noon(yesterday(), 18)
+        sales.close_session(other, Actor.person(marites), theirs, 0, marites.id, at)
+        other.commit()
+    before = written(session)
+    assert s.state == "open"  # this session's copy is stale
+    with pytest.raises(SalesError, match="session_closed"):
+        sell(session, ferinos, s, "M-1")
+    assert written(session) == before

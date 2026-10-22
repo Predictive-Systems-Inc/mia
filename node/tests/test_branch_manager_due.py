@@ -31,6 +31,7 @@ from mia.core.models import (
 )
 from mia.core.money import format_money
 from mia.core.orgconfig import ChannelConfig, OrgSettings
+from mia.core.sales import live_counts
 from mia.i18n import t
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail import items
@@ -427,7 +428,7 @@ def test_a_personal_best_is_cheered_when_the_branch_misses(
     sales_tools.set_target(deps, args, "t0")
     count(session, pin, ana, "Box of 4", 60, TODAY)  # above her best seeded day
     _tick(session, pin, at(TODAY, 22, 10))
-    best = sum(c.amount for c in sales_tools._live_counts(session, [kiosk.id], TODAY, TODAY))
+    best = sum(c.amount for c in live_counts(session, [kiosk.id], TODAY, TODAY))
     assert day_total(session, kiosk, TODAY) < (share(session, kiosk, TODAY) or 0)
     assert t("bm.cheer.best", EN, amount=money(best)) in texts(session, ana)
     assert t("bm.cheer.target", EN) not in texts(session, ana)

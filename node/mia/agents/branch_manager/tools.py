@@ -49,7 +49,6 @@ from mia.agents.sales_supervisor.tools import (
     _currency,
     _hours,
     _is_lead,
-    _live_counts,
     _share,
 )
 from mia.channels import linking
@@ -69,6 +68,7 @@ from mia.core.models import (
 )
 from mia.core.money import format_money
 from mia.core.rbac import Resource
+from mia.core.sales import live_counts
 from mia.i18n import t
 from mia.i18n.strings import STRINGS
 from mia.settings import get_settings
@@ -131,7 +131,7 @@ def daily(
     (inclusive), as (units, amount); a date without counts is absent. Reads only, unchecked:
     callers check (or are the system tick)."""
     out: dict[dt.date, Day] = {}
-    for row in _live_counts(session, [branch_id], start, end, item_id):
+    for row in live_counts(session, [branch_id], start, end, item_id):
         units, amount = out.get(row.business_date, (0, 0))
         out[row.business_date] = (units + row.quantity, amount + row.amount)
     return out
@@ -234,7 +234,7 @@ def branch_numbers(session: Session, branch: Branch, today: dt.date) -> experime
     unchecked: callers check."""
     start, end = today - dt.timedelta(days=NUMBERS_DAYS), today - dt.timedelta(days=1)
     catalog = _catalog(session, branch.id)
-    counts = _live_counts(session, [branch.id], start, end)
+    counts = live_counts(session, [branch.id], start, end)
     units: Counter[str] = Counter()
     baskets: dict[tuple[str, dt.date], set[str]] = {}
     for c in counts:
@@ -259,7 +259,7 @@ def branch_numbers(session: Session, branch: Branch, today: dt.date) -> experime
             day[s.business_date] = day.get(s.business_date, 0) + (s.quantity or 0)
     year = today.year - 1
     last_year: dict[int, Counter[str]] = {}
-    for c in _live_counts(session, [branch.id], dt.date(year, 1, 1), dt.date(year, 12, 31)):
+    for c in live_counts(session, [branch.id], dt.date(year, 1, 1), dt.date(year, 12, 31)):
         last_year.setdefault(c.business_date.month, Counter())[c.item_id] += c.quantity
     ended: dict[str, dt.date] = {}
     for e in _past_experiments(session, branch.id):
@@ -353,7 +353,7 @@ def coaching(deps: AgentDeps, args: CoachingInput, tool_call_id: str) -> Coachin
     day = _business_day(deps, deps.branch, tool_call_id)
     end, start = day - dt.timedelta(days=1), day - dt.timedelta(days=COACHING_DAYS)
     before = start - dt.timedelta(days=COACHING_DAYS)
-    rows = _live_counts(deps.session, [deps.branch.id], before, end)
+    rows = live_counts(deps.session, [deps.branch.id], before, end)
     if who is not None:
         rows = [r for r in rows if r.reported_by == who.id]
     now: dict[str, list[int]] = {}
@@ -1260,7 +1260,7 @@ def _branch_week(
     deps: AgentDeps, branch: Branch, start: dt.date, end: dt.date, tool_call_id: str
 ) -> BranchWeek:
     session = deps.session
-    counts = _live_counts(session, [branch.id], start, end)
+    counts = live_counts(session, [branch.id], start, end)
     amounts: Counter[str] = Counter()
     for c in counts:
         amounts[c.item_id] += c.amount
@@ -1348,7 +1348,7 @@ def monthly_letter(deps: AgentDeps, args: MonthlyInput, tool_call_id: str) -> Mo
     month = args.month or (day.replace(day=1) - dt.timedelta(days=1))
     start = month.replace(day=1)
     end = (start + dt.timedelta(days=32)).replace(day=1) - dt.timedelta(days=1)
-    counts: list[SalesCount] = _live_counts(deps.session, [deps.branch.id], start, end)
+    counts: list[SalesCount] = live_counts(deps.session, [deps.branch.id], start, end)
     by_day: Counter[dt.date] = Counter()
     clerks: Counter[str] = Counter()
     for c in counts:
