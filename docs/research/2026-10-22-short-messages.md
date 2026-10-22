@@ -264,3 +264,43 @@ are the same texts in the same order as the first run's (sales-supervisor-2026-1
 choice): 10 en and 8 fil right, 18 of 24 as before, and no row's score changed. The four new
 rows per language are the receipt rows: receipts today, resibo 3 ube cash 135 and huling
 resibo right, the other five ask; none wrote.
+
+## Sales supervisor receipt phrasings (23 Oct 2026)
+
+Two runs of the sales supervisor's short half (36 rows, choice question, jev-1.13.0):
+before `sales-supervisor-2026-10-23-0425`, after `sales-supervisor-2026-10-23-0429` (each raw
+json with its results CSV beside it). Right/wrong/ask:
+
+| | before | after |
+|---|---|---|
+| en (18) | 13/0/5 | 16/0/2 |
+| fil (18) | 12/1/5 | 14/1/3 |
+| receipt rows (8) | 3/0/5 | 8/0/0 |
+
+Causes, read offline from the before raw json (Jev's action pick, `raw_action`, was right on
+all five receipt asks):
+
+- The harness, not Jev and not the decider. `_one` built the query on the seeded kiosk's own
+  source (counts) and only then set `source=receipts` on it. build_query reads a receipt number
+  and a typed total only on a receipts kiosk, so a receipts row reached the decider with no
+  receipt number and the total as a count. A real receipts kiosk parses these rows right.
+  - "2 cl 1 ube cash 125": 125 stayed a third group with no item, missing item_2.
+  - "cancel receipt 4 wrong" (0.93) and "void 3 mali": receipt_no None, missing receipt_no.
+  - "refund 1 ube receipt 2" and "ibalik 1 cl resibo 2": receipt_no None, and the 2 became a
+    second count.
+  Fix: `_query` in test_sales_supervisor_evals.py runs build_query with sales.source_of
+  patched to the row's kiosk (on the event loop, so no other case interleaves). Test:
+  test_sales_cases.py, every short receipts row gets the receipt number, total and counts its
+  CSV extra states (it failed with the old harness on the 125).
+- Jev's own doubt, worked on in the question only (D42): "benta ko 5 se 3 co" (correct_sales at
+  0.43) and "benta nung isang linggo" (sales_period at 0.43, period not stated). The action
+  descriptions now name benta ko (report_sales), nung isang linggo (sales_period and the
+  last_week period option), void 7 / cancel receipt 9 (void_receipt), refund 2 sp receipt 6 /
+  isauli 1 se resibo 8 (refund_receipt), and correct_sales says void or cancel with a receipt
+  number is void_receipt. The examples use other numbers and items than the rows.
+
+After: every receipt row right with the expected items and receipt numbers. "benta nung isang
+linggo" is right. "benta ko 5 se 3 co" is now report_sales but still asks (0.44).
+"benta kahapon bawat item" went from right at 0.62 to an ask at 0.49 (it sat on the threshold;
+an ask, not a write). The one wrong is "yung kahapon" (expected ask) to sales_period, a read
+as before. **Wrong writes: zero** (the harness assert passed).

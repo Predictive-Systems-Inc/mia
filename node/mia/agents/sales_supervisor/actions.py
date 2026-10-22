@@ -97,7 +97,7 @@ ACTIONS: dict[str, Action] = {
     "report_sales": Action(
         "The sender reports what was sold: numbers with item codes or names in any order, a"
         " lone count, maybe the day's money (total, cash, gcash), with or without sold, benta,"
-        " nabenta or naubos. Not a question (ilan, magkano, how many) and not a count with a"
+        " benta ko, nabenta or naubos. Not a question (ilan, magkano, how many) and not a count with a"
         " correction cue (see correct_sales).",
         "record_counts",
         ("period",),
@@ -113,14 +113,16 @@ ACTIONS: dict[str, Action] = {
     ),
     "void_receipt": Action(
         "The sender asks to void or cancel a receipt just rung up, usually with its number:"
-        " void, cancel, kansel, mali, wrong.",
+        " void, cancel, kansel, mali, wrong (void 7, cancel receipt 9, the number is the"
+        " receipt's).",
         "void_receipt",
         (),
         f"intent.{MANIFEST.id}.void_receipt",
     ),
     "refund_receipt": Action(
         "The sender asks to refund or return a paid sale, with its receipt number and maybe"
-        " the items: refund, ibalik, isauli, return.",
+        " the items: refund, ibalik, isauli, return (refund 2 sp receipt 6, isauli 1 se"
+        " resibo 8: counts of items, then the receipt number).",
         "refund_receipt",
         (),
         f"intent.{MANIFEST.id}.refund_receipt",
@@ -136,7 +138,7 @@ ACTIONS: dict[str, Action] = {
         "The sender fixes a count already sent: a number with a correction cue (not, hindi,"
         " wrong, mali, sorry, should be, dapat, make it, gawin, change, palitan, fix, ayusin)."
         " A correction cue makes it a correction even with one number; a count with no cue is"
-        " report_sales.",
+        " report_sales, and void or cancel with a receipt number is void_receipt.",
         "correct_count",
         (),
         f"intent.{MANIFEST.id}.correct_sales",
@@ -151,7 +153,7 @@ ACTIONS: dict[str, Action] = {
     ),
     "sales_period": Action(
         "The sender asks about sales on a past day or over a period (yesterday, kahapon, a"
-        " weekday name, last week, this month, ngayong buwan, best day, was the target hit,"
+        " weekday name, last week, nung isang linggo, this month, ngayong buwan, best day, was the target hit,"
         " which branch sells most, compare branches), also kumusta with a day. An item with a"
         " past day and no count is this question, never a report.",
         "period_report",
@@ -246,7 +248,7 @@ def _periods(lang: str) -> dict[str, str]:
         "today": "Today",
         "yesterday": "Yesterday",
         "this_week": "This week, Monday to Sunday",
-        "last_week": "Last week",
+        "last_week": "Last week (nung isang linggo, last wk)",
         "this_month": "This month",
         "last_month": "Last month",
     }

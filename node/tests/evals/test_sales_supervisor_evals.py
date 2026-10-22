@@ -15,7 +15,6 @@ The short half (D42), printed per language, its one assertion no wrong write (ga
 MIA_EVAL_HALVES=short MIA_DECIDER=jev uv run pytest node/tests/evals/test_sales_supervisor_evals.py -m evals -s"""
 
 import asyncio
-import dataclasses
 import datetime as dt
 import json
 import os
@@ -23,6 +22,7 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
+from unittest import mock
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -32,8 +32,8 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps
 from mia.agents.decider import THRESHOLD
 from mia.agents.sales_supervisor import MANIFEST, decider
-from mia.agents.sales_supervisor.actions import build_query
-from mia.core import jev
+from mia.agents.sales_supervisor.actions import Query, build_query
+from mia.core import jev, sales
 from mia.core.egress import EgressContext, egress_context
 from mia.core.models import Actor, Branch, Person, UsageCloudRequest
 from mia.settings import get_settings
@@ -96,6 +96,14 @@ def _items(action: str, args: dict[str, Any], names: dict[str, str]) -> list[tup
     return [(names.get(str(c.get("item_id")), "?"), int(c.get("quantity") or 0)) for c in counts]
 
 
+def _query(deps: AgentDeps, case: Case) -> Query:
+    """build_query on the case's kiosk (sales.source_of patched for this one call), so a
+    receipts row reads its receipt number and typed total as a receipts kiosk does."""
+    # ponytail: a global patch, safe only because the harness calls this on the event loop
+    with mock.patch.object(sales, "source_of", return_value=case.source):
+        return build_query(deps, case.text, case.previous)
+
+
 async def _one(
     i: int, case: Case, engine: Engine, person_id: str, sem: asyncio.Semaphore
 ) -> dict[str, Any]:
@@ -105,8 +113,7 @@ async def _one(
     async with sem:
         with Session(engine, expire_on_commit=False) as session:
             deps = _deps(session, case, person_id)
-            query = await asyncio.to_thread(build_query, deps, case.text, case.previous)
-            query = dataclasses.replace(query, source=case.source)  # a receipts row's kiosk
+            query = _query(deps, case)  # on the loop: no other case's kiosk patch interleaves
             ctx = EgressContext(
                 session=session,
                 actor=deps.actor,

@@ -5,8 +5,11 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from sqlmodel import Session
+
 from mia.agents.parsing import menu_tokens, pre_parse, strip_receipt
 from mia.agents.sales_supervisor.actions import ACTIONS, breakdown_of
+from mia.core.models import Branch, Person
 from mia.templates.retail.seed import ITEMS as MENU
 from tests.evals import gate
 from tests.evals.cases import HEADER, header, read
@@ -144,3 +147,24 @@ def test_a_breakdown_in_extra_is_what_code_reads() -> None:
     period = [r for r in rows if r.intent == "sales_period"]
     assert sum("breakdown" in r.extra for r in period) == 2
     assert all(breakdown_of(r.message) == r.extra.get("breakdown") for r in period)
+
+
+def test_the_harness_parses_a_receipts_row_as_its_receipts_kiosk(
+    session: Session, ferinos: tuple[Branch, dict[str, Person]]
+) -> None:
+    """The harness builds a receipts row's query on a receipts kiosk (build_query reads the
+    receipt number and the typed total only there), so a void or refund row has the number it
+    types and a sale row its total, never a count of 125 (the 23 Oct short run)."""
+    from tests.evals.test_sales_supervisor_evals import SENDERS, _deps, _query
+
+    _, staff = ferinos
+    rows = {r.message: r for r in read("sales_supervisor")}
+    receipts = [c for c in CASES if c.half == "short" and c.source == "receipts"]
+    assert len(receipts) == 8
+    for c in receipts:
+        q = _query(_deps(session, c, staff[SENDERS[c.role]].id), c)
+        extra = rows[c.text].extra
+        assert q.source == "receipts", c
+        assert q.receipt_no == extra.get("receipt_no"), c
+        assert q.total == extra.get("total"), c
+        assert [g.quantity for g in q.groups] == [n for _, n in c.expected_items], c
