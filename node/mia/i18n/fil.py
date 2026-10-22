@@ -37,6 +37,7 @@ STRINGS: dict[str, str | list[str]] = {
     "sales.today.empty": "Wala pang nabilang na benta ngayon sa {branch}.",
     "sales.period": "{start} hanggang {end}: {total}; pinakamagandang araw: {best_day}.",
     "sales.period.empty": "{start} hanggang {end}: walang nabilang na benta.",
+    "sales.refused.range": "Masyadong mahaba ang panahong iyan para basahin nang minsanan (mga isang taon lang). Paki-hingi ng mas maikli.",
     "sales.period.by_branch": "{item}: {lines}",
     "sales.target_set": "Naitakda na po ang target: {amount} para sa {when}.",
     "sales.note_thanks": "Salamat po, naitala ko na.",

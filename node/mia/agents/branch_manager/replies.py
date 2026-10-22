@@ -58,6 +58,8 @@ def _text(key: str, lang: str, **values: Any) -> list[Block]:
 
 def refusal_key(message: str) -> str:
     """The bm.refused.<reason> key of a tool refusal's reason, else bm.no_record."""
+    if message == "range":  # sales.SalesRangeError: a period too long to read
+        return "sales.refused.range"
     key = f"bm.refused.{message}"
     return key if key in STRINGS["en"] else "bm.no_record"
 

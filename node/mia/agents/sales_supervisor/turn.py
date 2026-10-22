@@ -166,6 +166,8 @@ def _refusal(
     if status == "invalid" and tool in RECEIPT_TOOLS and message in RECEIPT_REFUSALS:
         no = str(decision.args.get("receipt_no", ""))
         return reply_text(session, deps, thread, t(RECEIPT_REFUSALS[message], deps.lang, no=no))
+    if status == "invalid" and message == "range":  # sales.SalesRangeError
+        return reply_text(session, deps, thread, t("sales.refused.range", deps.lang))
     if status == "invalid" and message == "count":
         item = session.get(RetailItem, str(decision.args.get("item_id")))
         name = item.name if item is not None else ""

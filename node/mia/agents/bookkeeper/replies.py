@@ -46,6 +46,8 @@ def conversation_reply(kind: str, lang: str) -> list[Block]:
 
 def refusal_key(message: str) -> str:
     """The bk.refused.<reason> key of a tool refusal's reason, else bk.no_record."""
+    if message == "range":  # sales.SalesRangeError: a period too long to read
+        return "sales.refused.range"
     key = f"bk.refused.{message}"
     return key if key in STRINGS["en"] else "bk.no_record"
 

@@ -358,9 +358,12 @@ receipt word. The end to end day is `test_a_receipts_day_at_the_mall_kiosk` in
 tests/test_day_sales_clerk.py.
 
 **The reads moved onto `day_sales` (22 Oct 2026).** `sales.sale_rows` gives `live_counts`'
-shape (branch, business date, clerk, item, quantity, amount) from each date's one source, one
-`day_sales` per branch and day (a ponytail: a year is 365 of them; a range query per source when
-it shows), and `DaySales.by_clerk` carries the clerk (a count's reporter, a receipt's clerk).
+shape (branch, business date, clerk, item, quantity, amount) from each date's one source
+through `sales.days_sales` (the counts days of a range in one `live_counts` query, each receipts
+day by its own query pair, at most `MAX_SALES_DAYS` = 400 days per call: a longer range raises
+`SalesRangeError("range")` before any read, a tool refusal worded by `sales.refused.range`), and
+`DaySales.by_clerk` carries the clerk (a count's reporter, a receipt's clerk). The bookkeeper's
+`tender_sales`, sales journal and cost of goods read `days_sales` too.
 On it now: the branch manager's `daily` (experiment baselines and scores, `_themes`),
 `branch_numbers` (both reads), `coaching`, `_branch_week`, `monthly_letter` and due.py
 `_amounts`; the production planner's `kiosk_data` forecast; `period_report`; and the sales
@@ -392,7 +395,8 @@ Still carried over:
 - The owner's report total from `by_tender` once receipt discounts exist (it sums `by_item`,
   before the discount, today).
 - A clerk's `today` totals are branch-wide while her receipts list is her own.
-- `tender_sales` over a month or quarter is one `day_sales` query pair per day.
+- A receipts day in a range is still one query pair per day (`days_sales`); one range query
+  per source when receipts kiosks run for months.
 - A basket on a receipts day is a clerk's day, as on counts, not one receipt (`branch_numbers`
   and `coaching` pairing read `by_clerk`); a receipt-level basket needs the receipt in
   `sale_rows`.

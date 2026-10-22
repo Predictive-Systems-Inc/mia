@@ -9,7 +9,7 @@ receipts() checks data rights itself (the read the tables' rights are probed by)
 
 import datetime as dt
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Literal, NamedTuple
 
 from pydantic import BaseModel, Field
@@ -544,46 +544,98 @@ def live_counts(
     return list(session.exec(stmt))
 
 
+MAX_SALES_DAYS = 400  # the longest range one read takes (last year's 366 days fit)
+
+
+class SalesRangeError(SalesError, LookupError):
+    """A range longer than MAX_SALES_DAYS, refused before any read. A LookupError, so a tool
+    refuses it with status invalid and message "range"."""
+
+
+def _day(
+    source: Literal["counts", "receipts"],
+    rows: Sequence[tuple[str, str, int, int, str | None]],
+    pays: Sequence[tuple[str, int]],
+) -> DaySales:
+    """A DaySales from (clerk, item, quantity, amount, tender) rows and (tender, amount)
+    payments; a row's tender (a count's) is summed with the payments."""
+    items: dict[str, tuple[int, int]] = {}
+    clerks: dict[str, dict[str, tuple[int, int]]] = defaultdict(dict)
+    tenders: dict[str, int] = defaultdict(int)
+    for clerk_id, item_id, quantity, amount, tender in rows:
+        for sums in (items, clerks[clerk_id]):
+            q, a = sums.get(item_id, (0, 0))
+            sums[item_id] = (q + quantity, a + amount)
+        if tender is not None:
+            tenders[tender] += amount
+    for tender, amount in pays:
+        tenders[tender] += amount
+    return DaySales(source=source, by_item=items, by_tender=dict(tenders), by_clerk=dict(clerks))
+
+
+def _counted(counts: Iterable[SalesCount]) -> DaySales:
+    return _day(
+        "counts", [(c.reported_by, c.item_id, c.quantity, c.amount, c.tender) for c in counts], []
+    )
+
+
+def _branch_of(session: Session, branch_id: str) -> Branch:
+    branch = session.get(Branch, branch_id)
+    if branch is None:
+        raise SalesError("branch")
+    return branch
+
+
 def day_sales(session: Session, branch_id: str, business_date: dt.date) -> DaySales:
     """The branch's sales of one business date from its one source (SalesSettings.source): on a
     counts day live_counts; on a receipts day the paid receipts' lines by item and payments by
     tender, refunds as negatives. Never both. On a receipts day by_item is before the receipt
     discount (line totals) and by_tender after it (what was paid): the bookkeeper reads
     by_tender. Unchecked: callers check their own read rights."""
-    branch = session.get(Branch, branch_id)
-    if branch is None:
-        raise SalesError("branch")
-    source = source_of(branch, business_date)
-    items: dict[str, tuple[int, int]] = {}
-    clerks: dict[str, dict[str, tuple[int, int]]] = defaultdict(dict)
-    tenders: dict[str, int] = defaultdict(int)
+    branch = _branch_of(session, branch_id)
+    if source_of(branch, business_date) == "counts":
+        return _counted(live_counts(session, [branch_id], business_date, business_date))
+    paid = (SalesReceipt.branch_id == branch_id, SalesReceipt.business_date == business_date)
+    lines = session.exec(
+        select(SalesReceiptLine, SalesReceipt.clerk_id)
+        .join(SalesReceipt, col(SalesReceipt.id) == col(SalesReceiptLine.receipt_id))
+        .where(*paid, SalesReceipt.status == "paid")
+    )
+    pays = session.exec(
+        select(SalesPayment)
+        .join(SalesReceipt, col(SalesReceipt.id) == col(SalesPayment.receipt_id))
+        .where(*paid, SalesReceipt.status == "paid")
+    )
+    rows = [(clerk, x.item_id, x.quantity, x.line_total, None) for x, clerk in lines]
+    return _day("receipts", rows, [(p.tender, p.amount) for p in pays])
 
-    def add(clerk_id: str, item_id: str, quantity: int, amount: int) -> None:
-        for sums in (items, clerks[clerk_id]):
-            q, a = sums.get(item_id, (0, 0))
-            sums[item_id] = (q + quantity, a + amount)
 
-    if source == "counts":
-        for c in live_counts(session, [branch_id], business_date, business_date):
-            add(c.reported_by, c.item_id, c.quantity, c.amount)
-            tenders[c.tender] += c.amount
-    else:
-        paid = (SalesReceipt.branch_id == branch_id, SalesReceipt.business_date == business_date)
-        lines = session.exec(
-            select(SalesReceiptLine, SalesReceipt.clerk_id)
-            .join(SalesReceipt, col(SalesReceipt.id) == col(SalesReceiptLine.receipt_id))
-            .where(*paid, SalesReceipt.status == "paid")
-        )
-        for line, clerk_id in lines:
-            add(clerk_id, line.item_id, line.quantity, line.line_total)
-        pays = session.exec(
-            select(SalesPayment)
-            .join(SalesReceipt, col(SalesReceipt.id) == col(SalesPayment.receipt_id))
-            .where(*paid, SalesReceipt.status == "paid")
-        )
-        for p in pays:
-            tenders[p.tender] += p.amount
-    return DaySales(source=source, by_item=items, by_tender=dict(tenders), by_clerk=dict(clerks))
+def days_sales(
+    session: Session, branch_id: str, start: dt.date, end: dt.date
+) -> dict[dt.date, DaySales]:
+    """day_sales of each business date from start to end inclusive with a sale (a date without
+    one is absent), in date order: the counts days from one live_counts range query, each
+    receipts day by its own query pair. Raises SalesRangeError("range") before any read for more
+    than MAX_SALES_DAYS days. Unchecked: callers check their own read rights."""
+    n = (end - start).days + 1
+    if n > MAX_SALES_DAYS:
+        raise SalesRangeError("range")
+    if n <= 0:
+        return {}
+    branch = _branch_of(session, branch_id)
+    days = [start + dt.timedelta(days=k) for k in range(n)]
+    counted = [d for d in days if source_of(branch, d) == "counts"]  # the setting only, no query
+    rows: dict[dt.date, list[SalesCount]] = {d: [] for d in counted}
+    if counted:
+        for c in live_counts(session, [branch_id], counted[0], counted[-1]):
+            if c.business_date in rows:  # never a receipts day's counts
+                rows[c.business_date].append(c)
+    out: dict[dt.date, DaySales] = {}
+    for d in days:
+        found = _counted(rows[d]) if d in rows else day_sales(session, branch_id, d)
+        if found.by_item or found.by_tender:
+            out[d] = found
+    return out
 
 
 class SaleRow(NamedTuple):
@@ -605,17 +657,15 @@ def sale_rows(
     end: dt.date,
     item_id: str | None = None,
 ) -> list[SaleRow]:
-    """live_counts from each date's one source (day_sales): per branch, business date from
+    """live_counts from each date's one source (days_sales): per branch, business date from
     start to end inclusive (in order), clerk and item, optionally of one item. A counts day
-    sums a clerk's live rows of an item into one row. Unchecked: callers check the read on
+    sums a clerk's live rows of an item into one row. Raises SalesRangeError("range") before
+    any read for more than MAX_SALES_DAYS days. Unchecked: callers check the read on
     sales_counts and the receipt tables."""
-    # ponytail: one day_sales per branch and day (a counts query, or a receipts query pair); a
-    # year (the branch manager's last_year) is 365 of them. A range query per source when it shows.
     out: list[SaleRow] = []
     for branch_id in branch_ids:
-        for k in range((end - start).days + 1):
-            day = start + dt.timedelta(days=k)
-            for clerk, by_item in day_sales(session, branch_id, day).by_clerk.items():
+        for day, found in days_sales(session, branch_id, start, end).items():
+            for clerk, by_item in found.by_clerk.items():
                 out += [
                     SaleRow(branch_id, day, clerk, i, q, a)
                     for i, (q, a) in by_item.items()

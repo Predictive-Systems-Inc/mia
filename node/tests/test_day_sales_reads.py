@@ -2,13 +2,20 @@
 receipts day at the Mall kiosk they see the receipts (a counts day is pinned by their own tests,
 unedited). Helpers from test_sales_receipts.py."""
 
+import contextlib
 import dataclasses
 import datetime as dt
+from collections.abc import Iterator
+from typing import Any
 
 import pytest
+from sqlalchemy import event
 from sqlmodel import Session
 
+from mia.agents.bookkeeper import replies as bk_replies
+from mia.agents.bookkeeper import tools as bk_tools
 from mia.agents.branch_manager import due as bm_due
+from mia.agents.branch_manager import replies as bm_replies
 from mia.agents.branch_manager import tools as bm_tools
 from mia.agents.branch_manager.tools import WeeklyInput
 from mia.agents.production_planner import tools as pp_tools
@@ -18,6 +25,7 @@ from mia.agents.sales_supervisor import tools as ss_tools
 from mia.agents.sales_supervisor.tools import PeriodReportInput
 from mia.core import sales
 from mia.core.rbac import PermissionDenied
+from mia.i18n import t
 from mia.templates.retail.items import price_on
 from tests.conftest import RS_TODAY
 from tests.test_branch_manager_tools import deps_for as bm_deps
@@ -79,3 +87,74 @@ def test_the_period_report_reads_a_receipts_day(
     deny(monkeypatch, SS.roles.agent_role, ss_tools.RECEIPT_TABLES[1], "read")
     with pytest.raises(PermissionDenied):
         ss_tools.period_report(deps, PeriodReportInput(start=RS_TODAY, end=RS_TODAY), "c")
+
+
+# ---- the range read: one counts query, a cap ------------------------------------------------
+
+
+@contextlib.contextmanager
+def _statements(session: Session) -> Iterator[list[str]]:
+    """The SQL statements run on the session's engine inside the block."""
+    seen: list[str] = []
+
+    def hook(conn: Any, cursor: Any, statement: str, *rest: Any) -> None:
+        seen.append(statement)
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", hook)
+    try:
+        yield seen
+    finally:
+        event.remove(engine, "before_cursor_execute", hook)
+
+
+def test_a_three_year_range_is_refused_before_any_read(session: Session, rs: Ferinos) -> None:
+    kiosk, start = rs[0], RS_TODAY - dt.timedelta(days=3 * 365)
+    deps = ss_deps(session, rs[1]["Ana"])
+    with _statements(session) as seen:
+        with pytest.raises(sales.SalesRangeError, match="range"):
+            sales.sale_rows(session, [kiosk.id], start, RS_TODAY)
+        with pytest.raises(LookupError, match="range"):  # a tool refusal, status invalid
+            bk_tools.tender_sales(session, kiosk.id, None, start, RS_TODAY)
+        assert seen == []
+    with _statements(session) as ran:  # the hook sees a read
+        sales.day_sales(session, kiosk.id, RS_TODAY)
+    assert ran
+    with pytest.raises(LookupError, match="range"):
+        ss_tools.period_report(deps, PeriodReportInput(start=start, end=RS_TODAY), "c")
+    assert bk_replies.refusal_key("range") == bm_replies.refusal_key("range")
+    assert t(bm_replies.refusal_key("range"), "en").startswith("That period is too long")
+
+
+def test_a_400_day_counts_range_is_one_counts_query(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kiosk, start = rs[0], RS_TODAY - dt.timedelta(days=sales.MAX_SALES_DAYS - 1)
+    days = [start + dt.timedelta(days=k) for k in range(sales.MAX_SALES_DAYS)]
+    before = {d: sales.day_sales(session, kiosk.id, d) for d in days}
+    calls: list[tuple[dt.date, dt.date]] = []
+    real = sales.live_counts
+
+    def spy(session: Session, ids: Any, a: dt.date, b: dt.date, item_id: Any = None) -> Any:
+        calls.append((a, b))
+        return real(session, ids, a, b, item_id)
+
+    monkeypatch.setattr(sales, "live_counts", spy)
+    got = sales.days_sales(session, kiosk.id, start, RS_TODAY)
+    assert calls == [(start, RS_TODAY)]
+    assert got == {d: v for d, v in before.items() if v.by_item} and got
+    with pytest.raises(sales.SalesRangeError):
+        sales.days_sales(session, kiosk.id, start - dt.timedelta(days=1), RS_TODAY)
+
+
+def test_a_mixed_range_sums_as_before(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, total = _day(session, rs, monkeypatch)
+    kiosk, start = rs[0], RS_TODAY - dt.timedelta(days=6)
+    days = [start + dt.timedelta(days=k) for k in range(7)]
+    per_day = {d: sales.day_sales(session, kiosk.id, d) for d in days}
+    got = sales.days_sales(session, kiosk.id, start, RS_TODAY)
+    assert got == {d: v for d, v in per_day.items() if v.by_item}
+    assert got[RS_TODAY].source == "receipts" and got[start].source == "counts"
+    assert sum(a for _, a in got[RS_TODAY].by_item.values()) == total

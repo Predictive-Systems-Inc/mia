@@ -37,6 +37,7 @@ STRINGS: dict[str, str | list[str]] = {
     "sales.today.empty": "Alang pang binilang a benta ngeni king {branch}.",
     "sales.period": "{start} angga {end}: {total}; pekamayap a aldo: {best_day}.",
     "sales.period.empty": "{start} angga {end}: alang binilang a benta.",
+    "sales.refused.range": "Malaba ya ing panaun a ita para basan king misan (sabla mung metung a banwa). Pakisabi mu ing mas malati.",
     "sales.period.by_branch": "{item}: {lines}",
     "sales.target_set": "Natakda na ing target: {amount} para king {when}.",
     "sales.note_thanks": "Salamat, naitala ku na.",

@@ -73,21 +73,16 @@ from mia.templates.retail.models import RetailItem
 PETTY = "petty"  # the bank of a petty refill and the source of a petty spend
 
 
-def _dates(start: dt.date, end: dt.date) -> list[dt.date]:
-    """Every date from start to end, inclusive."""
-    return [start + dt.timedelta(days=n) for n in range((end - start).days + 1)]
-
-
 def tender_sales(
     session: Session, branch_id: str, tender: str | None, start: dt.date, end: dt.date
 ) -> int:
     """The branch's sales amount from start to end (inclusive) paid by tender (None: every
-    tender), in minor units: per business date sales.day_sales(...).by_tender, live counts on a
-    counts day and the paid receipts' payments on a receipts day."""
-    # ponytail: one day_sales query pair per day of the range; a range query when it shows
+    tender), in minor units: per business date sales.days_sales(...).by_tender, live counts on a
+    counts day and the paid receipts' payments on a receipts day. Raises SalesRangeError
+    ("range", a LookupError) for more than sales.MAX_SALES_DAYS days, before any read."""
     total = 0
-    for day in _dates(start, end):
-        by = sales.day_sales(session, branch_id, day).by_tender
+    for found in sales.days_sales(session, branch_id, start, end).values():
+        by = found.by_tender
         total += sum(by.values()) if tender is None else by.get(tender, 0)
     return total
 
@@ -980,8 +975,8 @@ def sales_journal(deps: AgentDeps, args: JournalInput, tool_call_id: str) -> Jou
     start, end = _month(args.month)
     rows = [
         (day, tender, amount)
-        for day in _dates(start, end)
-        for tender, amount in sales.day_sales(deps.session, branch.id, day).by_tender.items()
+        for day, found in sales.days_sales(deps.session, branch.id, start, end).items()
+        for tender, amount in found.by_tender.items()
     ]
     return JournalOut(
         branch_id=branch.id,
@@ -1130,8 +1125,8 @@ def _at_cost(
     costs = {i.id: i.cost for i in session.exec(select(RetailItem).where(mine))}
     sold = [
         (item_id, quantity)
-        for day in _dates(start, end)
-        for item_id, (quantity, _) in sales.day_sales(session, branch_id, day).by_item.items()
+        for found in sales.days_sales(session, branch_id, start, end).values()
+        for item_id, (quantity, _) in found.by_item.items()
     ]
     known = all(costs.get(i) is not None for i, q in sold if q)
     goods = sum(q * (costs.get(i) or 0) for i, q in sold) if known else None
