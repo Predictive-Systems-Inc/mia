@@ -71,7 +71,7 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | `uv run mia tick` | Run each agent's due work, retry deferred turns and send the channel outbox once (`mia serve` does this every 30 s; a turn is claimed under the write lock, so running both is safe) |
 | `uv run mia learned [--branch ID]` | List the routes Mia learned from "Is this about" taps (agent, key, taps counted) |
 | `uv run mia forget KEY [--branch ID]` | Forget one learned route (two new taps learn it again) |
-| `uv run mia phrases export [--cases DIR]` / `import DIR` | Append taught phrases as short rows of the eval CSVs (`extra` `"taught": true`); replay those rows as `phrase.taught` on a fresh database |
+| `uv run mia phrases export [--cases DIR]` / `import DIR [--branch ID] [--every-branch]` | Append taught phrases as short rows of the eval CSVs (`extra` `"taught": true`, left out of each set's counts); replay those rows as `phrase.taught` at one branch (default: the only one) or every branch |
 | `uv run mia requests export [--out FILE]` / `status ID planned\|built\|declined` | Feature requests grouped with counts and status, as CSV; mark a request's status (its askers are told) |
 | `uv run mia person add NAME --role staff [--lang fi] [--ask-language]` | Add a person (`--ask-language`: Mia asks their language in the first chat) |
 | `uv run mia agent scaffold ID --label-en "..." --label-fi "..." --role ROLE [--description "..."] [--force]` | Render a new agent package (a Jev turn that greets) and wire it into the registry, labels, policy, schema and docs/layout.md; refuses to overwrite without `--force`; a stub keeps its router description |

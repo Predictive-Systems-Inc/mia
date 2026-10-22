@@ -349,7 +349,7 @@ def teach_options(session: DbSession, person_id: str) -> list[TeachAgent]:
 
 class TeachIn(BaseModel):
     person_id: str
-    text: str
+    text: str = Field(min_length=1, max_length=features.MAX_TEXT)
     agent_id: str
     action: str
 
@@ -361,15 +361,14 @@ def teach(session: DbSession, body: TeachIn) -> dict[str, Any]:
     person = _active(session, body.person_id)
     if body.agent_id not in {a.id for a in agents_for(session, person)}:
         raise HTTPException(422, "not one of this person's agents")
-    role = person.roles[0] if person.roles else ""
     try:
         ev = phrases.teach(
             session, _tester(person), person.branch_id, body.text, body.agent_id, body.action,
-            lang=person.language, role=role,
+            lang=person.language, roles=person.roles,
         )  # fmt: skip
     except phrases.TeachError as exc:
         raise HTTPException(422, str(exc)) from exc
-    return {"key": (ev.after or {})["key"], "version": phrases.version(session)}
+    return {"key": (ev.after or {})["key"], "version": phrases.version(session, person.branch_id)}
 
 
 class PhraseOut(BaseModel):
@@ -386,7 +385,8 @@ class PhraseOut(BaseModel):
 
 @router.get("/phrases")
 def phrase_list(session: DbSession) -> dict[str, Any]:
-    """Every branch's live phrases (taught ones for every branch once) and the version."""
+    """Every branch's live phrases (taught ones for every branch once) and each branch's
+    phrasebook version."""
     names = {b.id: b.name for b in session.exec(select(Branch).order_by(col(Branch.id)))}
     seen: set[tuple[str | None, str]] = set()
     rows: list[PhraseOut] = []
@@ -397,7 +397,8 @@ def phrase_list(session: DbSession) -> dict[str, Any]:
             seen.add((p.branch_id, p.key))
             name = names.get(p.branch_id, "") if p.branch_id else "every branch"
             rows.append(PhraseOut(branch=name, **{k: getattr(p, k) for k in PHRASE_FIELDS}))
-    return {"version": phrases.version(session), "phrases": rows}
+    versions = {name: phrases.version(session, branch_id) for branch_id, name in names.items()}
+    return {"versions": versions, "phrases": rows}
 
 
 PHRASE_FIELDS = ("branch_id", "key", "text", "agent_id", "action", "taught", "confidence", "taps")
@@ -413,7 +414,7 @@ def retire(session: DbSession, body: RetireIn) -> dict[str, int]:
     """Retire a phrase at its branch (None: every branch) by the sim's actor."""
     branch_id = body.branch_id or session.exec(select(Branch.id).order_by(col(Branch.id))).first()
     phrases.retire(session, _actor(branch_id or ""), body.branch_id, body.key)
-    return {"version": phrases.version(session)}
+    return {"version": phrases.version(session, branch_id or "")}
 
 
 class RequestIn(BaseModel):

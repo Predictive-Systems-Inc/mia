@@ -128,7 +128,8 @@ def _count_or_expense(answers: dict[str, Any], q: Query, d: Decision) -> Decisio
         args, missing = _args(action, Reader(answers, q))
         p = float(probabilities.get(action, 0.0))
         alternatives.append(Alternative(action=action, args=args, probability=p, missing=missing))
-    return d.model_copy(update={"action": "clarify", "missing": None, "alternatives": alternatives})
+    update = {"action": "clarify", "missing": None, "alternatives": alternatives, "guarded": True}
+    return d.model_copy(update=update)
 
 
 def parse(answers: dict[str, Any], q: Query) -> Decision:
@@ -146,7 +147,7 @@ def parse(answers: dict[str, Any], q: Query) -> Decision:
     d = shared.parse(
         {**answers, "action": {**top, "choice": "clarify"}}, q, actions=ACTIONS, args=_args
     )
-    return d.model_copy(update={"raw_action": raw})
+    return d.model_copy(update={"raw_action": raw, "guarded": True})
 
 
 async def decide(q: Query) -> Decision:

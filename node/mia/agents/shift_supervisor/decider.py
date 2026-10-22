@@ -350,6 +350,7 @@ def _as_closure(d: Decision, answers: dict[str, Any], q: Query) -> Decision:
         raw_action=d.raw_action,
         alternatives=alternatives[:3],
         missing=CLOSURE,
+        guarded=True,
     )
 
 

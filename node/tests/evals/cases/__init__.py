@@ -77,14 +77,17 @@ def _parse(line: int, raw: dict[str, str]) -> Row:
     return Row(*common, args=args, extra=extra)
 
 
-def read(name: str) -> list[Row]:
-    """Every row of cases/<name>.csv in file order; raises ValueError (TypeError for an extra
-    that is no object) naming the line when the header is not HEADER or a row does not parse
-    (more or fewer fields than HEADER among them)."""
+def read(name: str, taught: bool = False) -> list[Row]:
+    """Every row of cases/<name>.csv in file order, without the rows `mia phrases export`
+    added (extra "taught": true) unless taught=True, so a set's counts and shapes hold;
+    raises ValueError (TypeError for an extra that is no object) naming the line when the
+    header is not HEADER or a row does not parse (more or fewer fields than HEADER among
+    them)."""
     if header(name) != HEADER:
         raise ValueError(f"{path(name)}: header is not {HEADER}")
     with path(name).open(encoding="utf-8", newline="") as f:
-        return [_parse(n, raw) for n, raw in enumerate(csv.DictReader(f), start=2)]
+        rows = [_parse(n, raw) for n, raw in enumerate(csv.DictReader(f), start=2)]
+    return [r for r in rows if taught or r.extra.get("taught") is not True]
 
 
 def write(name: str, rows: list[dict[str, Any]]) -> None:

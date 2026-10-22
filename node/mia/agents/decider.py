@@ -55,6 +55,7 @@ class Decision(BaseModel):
     alternatives: list[Alternative] = Field(default_factory=list)
     missing: str | None = None  # a required input that was not found
     phrasebook_version: int | None = None  # the phrasebook a Jev decision read (chat.phrases)
+    guarded: bool = False  # an agent's own guard asks: a phrase never overrides it
 
 
 class Reader:
@@ -194,13 +195,14 @@ async def decide(
 def _phrasebook(
     session: Any, branch_id: str, agent_id: str
 ) -> tuple[int, dict[str, str], dict[str, list[str]]]:
-    """(version, message key to this agent's taught action, examples per action)."""
+    """(the branch's version, message key to this agent's phrase action when that action only
+    reads, examples per action from owner- or admin-taught phrases)."""
     from mia.chat import phrases  # chat imports the agents; the agents read chat lazily
 
-    version, book = phrases.phrasebook(session, branch_id)
-    taught = {key: action for key, (agent, action) in book.items() if agent == agent_id}
-    examples = phrases.examples(session, branch_id, agent_id)
-    return version, taught, examples
+    version, found = phrases.snapshot(session, branch_id)
+    reads = phrases.reads(agent_id)
+    picks = {p.key: p.action for p in found if p.agent_id == agent_id and p.action in reads}
+    return version, picks, phrases.examples(found, agent_id)
 
 
 def with_examples(body: dict[str, Any], examples: Mapping[str, list[str]]) -> dict[str, Any]:
@@ -231,11 +233,13 @@ def with_examples(body: dict[str, Any], examples: Mapping[str, list[str]]) -> di
 
 
 def honour(decision: Decision, taught: str | None) -> Decision:
-    """The decision with the taught action for the message's key taken when Jev was unsure:
-    a clarify from Jev's own pick or a low confidence (never one an agent's guard made, nor
-    one with a missing input) whose alternatives include the taught action with no missing or
-    uncertain input. Otherwise the decision unchanged."""
+    """The decision with the phrase's action for the message's key (a read: _phrasebook
+    passes no other) taken when Jev was unsure: a clarify from Jev's own pick or a low
+    confidence (never a guarded one, nor one with a missing input) whose alternatives include
+    the action with no missing or uncertain input. Otherwise the decision unchanged."""
     if taught is None or decision.action != "clarify" or decision.missing is not None:
+        return decision
+    if decision.guarded:
         return decision
     if decision.raw_action != "clarify" and decision.confidence >= THRESHOLD:
         return decision  # an agent's guard asked: the phrase never bypasses it

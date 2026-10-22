@@ -23,10 +23,10 @@ from mia.chat.blocks import ChatReply
 from mia.chat.service import ChatError, run_turn
 from mia.core.ids import new_id
 from mia.core.models import Message, Person, Thread
-from mia.core.rbac import PermissionDenied, Resource, get_rbac
+from mia.core.rbac import PermissionDenied, get_rbac
 
 router = APIRouter()
-FEATURE_REQUESTS = Resource(kind="data", name="feature_requests")
+FEATURE_REQUESTS = features.RESOURCE
 MAX_TEXT = 4000
 
 

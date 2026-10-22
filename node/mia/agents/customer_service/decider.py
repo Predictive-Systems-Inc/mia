@@ -101,7 +101,7 @@ def parse(answers: dict[str, Any], q: Query) -> Decision:
     return (
         d
         if raw in allowed or not isinstance(top, dict)
-        else d.model_copy(update={"raw_action": raw})
+        else d.model_copy(update={"raw_action": raw, "guarded": True})
     )
 
 

@@ -219,4 +219,5 @@ def parse(answers: dict[str, Any], q: Query) -> Decision:
     if d.action != "place_order" or has_buy_word(q.message):
         return d
     first = Alternative(action=d.action, args=d.args, probability=d.confidence)
-    return d.model_copy(update={"action": "clarify", "alternatives": [first, *d.alternatives][:3]})
+    alternatives = [first, *d.alternatives][:3]
+    return d.model_copy(update={"action": "clarify", "alternatives": alternatives, "guarded": True})

@@ -137,7 +137,7 @@ def parse(answers: dict[str, Any], q: Query) -> Decision:
     d = shared.parse(
         {**answers, "action": {**top, "choice": "clarify"}}, q, actions=ACTIONS, args=_args
     )
-    return d.model_copy(update={"raw_action": raw})
+    return d.model_copy(update={"raw_action": raw, "guarded": True})
 
 
 async def decide(q: Query) -> Decision:

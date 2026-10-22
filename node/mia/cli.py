@@ -354,7 +354,11 @@ def phrases_import(args: argparse.Namespace) -> int:
     from mia.i18n import t
 
     with session_scope() as session:
-        taught = phrases.import_rows(session, Path(args.dir), _first_branch_id(session))
+        if args.every_branch:
+            branch_id = args.branch or _first_branch_id(session)
+        else:
+            branch_id = _only_branch_id(session, args.branch)
+        taught = phrases.import_rows(session, Path(args.dir), branch_id, every=args.every_branch)
     print(t("cli.phrases.imported", "en", count=taught))
     return 0
 
@@ -857,6 +861,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=phrases_export)
     p = ph.add_parser("import", help="replay the CSV rows marked taught as phrase.taught")
     p.add_argument("dir")
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.add_argument("--every-branch", action="store_true", help="teach for every branch")
     p.set_defaults(func=phrases_import)
     rq = sub.add_parser("requests", help="feature requests").add_subparsers(
         dest="requests_command", required=True

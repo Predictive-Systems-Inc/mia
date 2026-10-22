@@ -66,8 +66,11 @@ def test_teach_from_a_phone_lists_retires_and_refuses_money(
     session.expire_all()
     ev = session.exec(select(Event).where(Event.action == phrases.TAUGHT)).one()
     assert (ev.actor_id, ev.on_behalf_of) == (rosa.id, "sim:tester")
+    assert (ev.after or {})["roles"] == rosa.roles
+    res = client.post("/sim/teach", json={**body, "text": "12", "action": "sales_today"})
+    assert res.status_code == 422  # a bare number is never a phrase
     listed = client.get("/sim/phrases").json()
-    assert listed["version"] == 1
+    assert 1 in listed["versions"].values()
     (row,) = listed["phrases"]
     assert (row["text"], row["action"], row["taught"]) == ("sales today?", "sales_today", True)
     res = client.post(
@@ -99,7 +102,7 @@ def test_export_appends_short_rows_once_and_import_replays_them(
     before = (cases / "sales_supervisor.csv").read_text(encoding="utf-8")
     phrases.teach(
         session, Actor.person(rosa), None, "total benta", "sales_supervisor", "sales_today",
-        lang="fil", role="owner",
+        lang="fil", roles=["owner"],
     )  # fmt: skip
     assert phrases.export_rows(session, cases) == 1
     assert phrases.export_rows(session, cases) == 0  # already present
@@ -119,3 +122,6 @@ def test_export_appends_short_rows_once_and_import_replays_them(
     assert book == {"total benta": ("sales_supervisor", "sales_today")}
     last_taught = session.exec(select(Event).where(Event.action == phrases.TAUGHT)).all()[-1]
     assert last_taught.actor_type == "system"
+    after = last_taught.after or {}
+    assert after["branch_id"] == rosa.branch_id and after["roles"] == ["owner"]  # M3: no widening
+    assert phrases.phrasebook(session, "another-branch")[1] == {}

@@ -3,6 +3,7 @@ decider's taught examples and hint, and learning from "Did you mean" taps."""
 
 import asyncio
 import functools
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -151,14 +152,31 @@ def test_a_retired_phrase_stops_routing(
 def test_taught_examples_reach_the_decider_option_text(
     session: Session, ferinos: tuple[Any, dict[str, Person]], fake: Jev
 ) -> None:
-    rosa = _rosa(ferinos)
+    """Only an owner's or admin's taught phrase of at most 60 characters is an example; a
+    clerk's teach, a long one and a tapped phrase never are (H3)."""
+    rosa, ana = _rosa(ferinos), ferinos[1]["Ana"]
+    owner = Actor.person(rosa)
     phrases.teach(
-        session, Actor.person(rosa), None, "kumusta benta", "sales_supervisor", "sales_today"
+        session, owner, None, "kumusta benta", "sales_supervisor", "sales_today", roles=["owner"]
     )
+    phrases.teach(
+        session, Actor.person(ana), None, "benta ng clerk", "sales_supervisor", "sales_today",
+        roles=["clerk"],
+    )  # fmt: skip
+    long = "ano na ang benta natin ngayong araw sa lahat ng mga kiosk po ba"
+    phrases.teach(session, owner, None, long, "sales_supervisor", "sales_today", roles=["owner"])
+    from mia.core import events
+
+    tap = {"key": "tapped benta", "agent_id": "sales_supervisor", "action": "sales_today"}
+    events.emit(session, phrases.CONFIRMED, ("phrase", "tapped benta"), None, tap, owner)
+    session.commit()
     _turn(session, rosa, "kumusta benta")
     criteria = fake.decided[-1]["questions"]["action"]["criteria"]
     assert '"kumusta benta"' in criteria["sales_today"]
     assert "taught" not in criteria["sales_period"]
+    sent = json.dumps(fake.decided[-1])
+    assert "benta ng clerk" not in sent and "lahat ng mga kiosk" not in sent
+    assert "tapped benta" not in sent
 
 
 def test_honour_takes_the_taught_action_only_when_jev_was_unsure() -> None:
@@ -174,6 +192,30 @@ def test_honour_takes_the_taught_action_only_when_jev_was_unsure() -> None:
     assert decider.honour(missing, "sales_today").action == "clarify"
     assert decider.honour(unsure, "sales_period").action == "clarify"  # not an alternative
     assert decider.honour(unsure, None) is unsure
+    flagged = unsure.model_copy(update={"guarded": True})
+    assert decider.honour(flagged, "sales_today") is flagged
+
+
+def test_a_phrase_never_picks_a_write(
+    session: Session, ferinos: tuple[Any, dict[str, Person]], fake: Jev
+) -> None:
+    """A tapped report_sales phrase plus Jev unsure with confident counts still asks (H1):
+    the phrase only routes; a write keeps its Did you mean."""
+    rosa = _rosa(ferinos)
+    actor = Actor.person(rosa)
+    from mia.core import events
+
+    tap = {"key": "ube # pan #", "agent_id": "sales_supervisor", "action": "report_sales"}
+    events.emit(session, phrases.CONFIRMED, ("phrase", "ube # pan #"), None, tap, actor)
+    session.commit()
+    assert phrases.phrasebook(session, rosa.branch_id)[1]["ube # pan #"][1] == "report_sales"
+    probabilities = {"report_sales": 0.45, "sales_today": 0.3}
+    fake.answer = lambda b: answers_for(b, "report_sales", 0.45, probabilities)
+    reply = _turn(session, rosa, "ube 2 pan 7?")
+    assert _buttons(reply)
+    made = session.exec(select(Event).where(Event.action == "decision.made")).all()
+    assert (made[-1].after or {})["action"] == "clarify"
+    assert "report_sales" not in phrases.reads("sales_supervisor")
 
 
 # ---- learning from "Did you mean" taps -----------------------------------------------------
@@ -203,7 +245,7 @@ def test_a_did_you_mean_tap_is_learned_and_unlearned(
     assert [(e.after or {})["key"] for e in confirmed] == ["total benta"]
     assert (confirmed[0].after or {})["action"] == "sales_today"
     routed = len(fake.routed)
-    again = _turn(session, rosa, "Total benta", asked.thread_id)
+    again = _turn(session, rosa, "Total benta")  # a new thread: a tapped phrase routes
     assert len(fake.routed) == routed and not _buttons(again) and "Mall kiosk" in again.text()
     entry = phrases.entries(session, rosa.branch_id)[0]
     assert (entry.confidence, entry.taps, entry.taught) == (1, 1, False)
@@ -266,4 +308,92 @@ def test_a_taught_phrase_outranks_taps(
     phrases.teach(session, actor, rosa.branch_id, "benta", "sales_supervisor", "sales_today")
     assert phrases.phrasebook(session, rosa.branch_id)[1]["benta"][1] == "sales_today"
     ids = session.exec(select(Event.id).where(col(Event.action).in_(phrases.ALL))).all()
-    assert phrases.version(session) == len(ids) == 4
+    assert phrases.version(session, rosa.branch_id) == len(ids) == 4
+
+
+# ---- review round 1 ------------------------------------------------------------------------
+
+
+def test_a_bare_number_is_never_a_phrase(
+    session: Session, ferinos: tuple[Any, dict[str, Person]], fake: Jev
+) -> None:
+    """ "12" asked Did you mean and the tap answers, but key "#" is never learned or taught."""
+    rosa = _rosa(ferinos)
+    with pytest.raises(phrases.TeachError):
+        phrases.teach(session, Actor.person(rosa), None, "12", "sales_supervisor", "sales_today")
+    fake.answer = _unsure
+    asked = _turn(session, rosa, "12")
+    today = t("intent.sales_supervisor.sales_today", rosa.language)
+    assert today in _buttons(asked)
+    _turn(session, rosa, today, asked.thread_id)
+    assert not session.exec(select(Event).where(Event.action == phrases.CONFIRMED)).all()
+
+
+def test_a_tapped_phrase_never_switches_an_active_agent(
+    session: Session, ferinos: tuple[Any, dict[str, Person]], fake: Jev
+) -> None:
+    """A learned (tapped) phrase routes only when no agent is active (H4); taught ones may."""
+    from mia.chat.channels import notify
+    from mia.core import events
+
+    rosa = _rosa(ferinos)
+    tap = {"key": "stock benta", "agent_id": "sales_supervisor", "action": "sales_today"}
+    events.emit(
+        session, phrases.CONFIRMED, ("phrase", "stock benta"), None, tap, Actor.person(rosa)
+    )
+    note = notify(session, rosa, [], Actor.system(rosa.branch_id), "inventory_manager")
+    session.commit()
+    _turn(session, rosa, "stock benta", note.thread_id)
+    assert len(fake.routed) == 1  # Jev routed it: the tap did not switch the live agent
+    fresh = _turn(session, rosa, "stock benta")  # a new thread, no agent active
+    assert len(fake.routed) == 1 and fresh.agent_id == "sales_supervisor"
+
+
+def test_the_version_counts_the_branchs_events_only(
+    session: Session, ferinos: tuple[Any, dict[str, Person]]
+) -> None:
+    from mia.core import events
+
+    rosa = _rosa(ferinos)
+    other = Actor.system("another-branch")
+    tap = {"key": "benta", "agent_id": "sales_supervisor", "action": "sales_today"}
+    events.emit(session, phrases.CONFIRMED, ("phrase", "benta"), None, tap, other)
+    session.commit()
+    assert phrases.version(session, rosa.branch_id) == 0
+    assert phrases.version(session, "another-branch") == 1
+
+
+def test_pagsira_stays_a_question_after_a_tap(
+    session: Session, bk: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bookkeeper's cash count or expense guard (H2): a tap on its Cash count is not a
+    licence; the next "pagsira 800" with Jev unsure asks again and writes nothing."""
+    from mia.agents.bookkeeper import MANIFEST
+    from mia.agents.bookkeeper.models import CashCount, Expense
+    from mia.core import people
+
+    only = orgconfig.load().model_copy(update={"agents": [MANIFEST.id]})
+    monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: only))
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")
+    get_settings.cache_clear()
+    probabilities = {"expense": 0.55, "cash_count": 0.4}
+    monkeypatch.setattr(
+        jev,
+        "_inner",
+        lambda: fake_jev(
+            lambda b: answers_for(
+                b, "expense", 0.55, probabilities, amount="p0", category="repairs"
+            )
+        ),
+    )
+    marites = people.set_language(session, Actor.system(bk[0].id), bk[1]["Marites"], "war")
+    session.commit()
+    asked = _turn(session, marites, "pagsira 500")
+    count = t("intent.bookkeeper.cash_count", "war")
+    assert count in _buttons(asked)
+    _turn(session, marites, count, asked.thread_id)
+    again = _turn(session, marites, "pagsira 800")
+    assert _buttons(again)
+    assert session.exec(select(CashCount).where(CashCount.counted == 80_000)).all() == []
+    assert session.exec(select(Expense).where(Expense.amount == 80_000)).all() == []

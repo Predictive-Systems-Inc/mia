@@ -31,6 +31,7 @@ from mia.core.db import utcnow
 from mia.core.egress import EgressContext, Pseudonymiser, egress_context
 from mia.core.jev import JevError, JevUnreachable
 from mia.core.models import Actor, Branch, Event, Message, Organisation, Person, Thread
+from mia.core.rbac import PermissionDenied, get_rbac
 from mia.i18n import t
 from mia.i18n.strings import STRINGS
 from mia.settings import get_settings
@@ -232,7 +233,12 @@ def _feature_request(
         if failed is None:
             return None
         wanted = failed.text
-    features.request(session, deps.person, wanted, Actor.person(deps.person), failed=failed)
+    asker = Actor.person(deps.person)
+    try:  # the same check as POST /feature-requests (rule 4)
+        get_rbac().require(asker, features.RESOURCE, "write", session=session)
+    except PermissionDenied:
+        return reply_text(session, deps, thread, t("denied.generic", deps.lang))
+    features.request(session, deps.person, wanted, asker, failed=failed)
     return reply_text(session, deps, thread, t("feature.recorded", deps.lang))
 
 
@@ -485,15 +491,18 @@ def _settle(
 def _taught(
     session: Session, deps: AgentDeps, text: str, agents: list[AgentSpec], active: str | None
 ) -> agent_router.Route | None:
-    """The phrasebook's agent for the message's key (chat.phrases), also when another agent
-    is active (a switch: a person said what the words mean), or None when the key has no
-    phrase or its agent is no longer one of the person's (rule 4)."""
-    _, book = phrases.phrasebook(session, deps.branch.id)
-    hit = book.get(route_memory.key_of(text))
-    if hit is None or hit[0] not in {a.id for a in agents}:
+    """The phrasebook's agent for the message's key (chat.phrases): a taught phrase also when
+    another agent is active (a switch: a person said what the words mean), a tapped one only
+    when none is (as _recalled). None when the key has no phrase or its agent is no longer one
+    of the person's (rule 4)."""
+    key = route_memory.key_of(text)
+    hit = next((p for p in phrases.entries(session, deps.branch.id) if p.key == key), None)
+    if hit is None or hit.agent_id not in {a.id for a in agents}:
         return None
-    switch = active is not None and active != hit[0]
-    return agent_router.Route("switch" if switch else "chosen", hit[0])
+    if active is not None and not hit.taught:
+        return None
+    switch = active is not None and active != hit.agent_id
+    return agent_router.Route("switch" if switch else "chosen", hit.agent_id)
 
 
 def _recalled(

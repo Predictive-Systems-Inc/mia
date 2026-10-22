@@ -18,42 +18,52 @@ commands as we go".
 ## 2. What a phrase is
 
 A phrase maps a message key (route_memory.key_of: casefolded, numbers as #) to an agent and one
-of its actions, at one branch or at every branch. Only actions whose risk is read or whose write
-already asks before writing can be taught (the turn still runs the agent's own decider and
-guards; a phrase only decides which agent and which action Jev is told the message is about).
-Money, external and delete actions are never teachable.
+of its actions, at one branch or at every branch. A key needs a letter: a bare number ("#") is
+never a phrase. Money, external and delete actions are never teachable; every other action with
+a tool and a button label may be a phrase's target, for routing. A phrase picks the action for
+the decider only when that action's tool reads: a write always keeps its question (Did you
+mean, or the agent's own guard). The turn still runs the agent's own decider, guards and tool
+rbac.
 
 Storage is event-sourced like the learned routes (route_memory reads `chat.route_chosen`):
-`phrase.taught` and `phrase.retired` events on the hash chain, no new table, so no data standard
-change. The phrasebook is the fold of those events; its version is the count of them; every
-`decision.made` records the version it used.
+`phrase.taught`, `phrase.confirmed` and `phrase.retired` events on the hash chain, no new
+table, so no data standard change. The phrasebook is the fold of the events that apply to a
+branch; its version is the count of them at that branch; every `decision.made` records the
+version it used.
 
 ## 3. How a phrase is used
 
 1. Routing: an exact key match routes to the phrase's agent before any Jev request, the same
-   place `_recalled` routes a learned tap today, also when another agent is active (a taught
-   phrase is a stronger signal than a tap: a person said what it means).
-2. Deciding: the agent's Jev request adds up to three taught examples per action to that
-   action's option text (data, rule 8: the examples are quoted message text, never
-   instructions; they are pseudonymised like the message).
-3. Evals: `mia phrases export` writes each phrase as a short-half row of the agent's CSV
-   (node/tests/evals/cases/<agent>.csv, intent = the action) for a pull request; CI then holds
-   the phrase to the short-half rules (no wrong write).
+   place `_recalled` routes a learned tap. A taught phrase routes also when another agent is
+   active (a person said what it means); a tapped phrase routes only when no agent is active,
+   as `_recalled` does.
+2. Deciding: the agent's Jev request adds up to three examples per action to that action's
+   option text, only from phrases taught on the Teach path by an owner or admin, each at most
+   60 characters (data, rule 8: quoted message text, never instructions, pseudonymised like
+   the message). A tapped phrase is never an example. When Jev still asks only from its own
+   doubt (its pick is clarify or below the threshold), a phrase whose action reads takes that
+   action if it is one of Jev's alternatives with no missing input. A decision an agent's
+   guard made (`Decision.guarded`: the bookkeeper's cash count or expense question, an order
+   with no buy word, a closure, an action outside the side's options, a receipts kiosk's
+   confirm) is never overridden.
+3. Evals: `mia phrases export` writes each taught phrase as a short-half row of the agent's
+   CSV (node/tests/evals/cases/<agent>.csv, intent = the action, extra `"taught": true`) for a
+   pull request. The sets' loader leaves taught rows out of their own counts; one shared test
+   holds every taught row to the no-wrong-write rule. `mia phrases import --branch` replays
+   them at one branch (`--every-branch` for all).
 
 ### Learning from Did you mean taps
 
 The owner, 22 Oct: "when I click total benta, it prompted Did you mean, sales today. When I
 choose that, system must add confidence level to recognize in the future". A tap on an action
 of an agent's "Did you mean" writes `phrase.confirmed` (the asked message's key, the agent, the
-action, the person, the branch); Something else writes nothing. Per key, the confidence is the
-taps for the leading (agent, action) minus the taps for any other; a key at 1 or more whose
-latest tap agrees is a learned phrase, used like a taught one (routing before Jev, the hint to
-the decider, the version, the Phrases drawer with its confidence and taps). A taught phrase
-counts as confirmed at once and outranks taps. Only teachable actions are learned: a tap on a
-money, external or delete action runs that turn and is never learned. Built (phase 1): the
-examples are added to the action's option text in the shared decide path, and when Jev still
-asks only from its own doubt (its pick is clarify or below the threshold, never an agent's
-guard or a missing input), the phrase's action is taken if it is one of Jev's alternatives.
+action, the person, the branch); Something else writes nothing, and nor does a key with no
+letter. Per key, the confidence is the taps for the leading (agent, action) minus the taps for
+any other; a key at 1 or more whose latest tap agrees is a learned phrase. It routes when no
+agent is active and, for a read, is the hint to the decider; it never becomes an example. The
+Phrases drawer shows its confidence and taps. A taught phrase counts as confirmed at once and
+outranks taps. Only teachable actions are learned: a tap on a money, external or delete action
+runs that turn and is never learned.
 
 ## 4. Dev mode on the phones page: teach as you go
 

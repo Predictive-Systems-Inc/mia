@@ -2,19 +2,24 @@
 2026-10-22-teach-mia-design, phase 1). Event-sourced like route_memory, no table: a tester's
 pick on the phones page writes `phrase.taught`, a tap on an agent's "Did you mean" writes
 `phrase.confirmed`, `phrase.retired` withdraws a key. The phrasebook is the fold of those
-events and its version is their count. Only teachable actions (a tool whose risk is not money,
-external or delete) are ever learned. Keys are route_memory.key_of; the text is data (rule 8).
+events at the branch and its version is their count there. Only teachable actions (a tool whose
+risk is not money, external or delete) are ever learned, and a phrase picks the action for the
+decider only when that action reads (writes keep their question). Only phrases an owner or
+admin taught become examples in the decider's option text; tapped phrases never do. Keys are
+route_memory.key_of and need a letter (a bare number is never a phrase); the text is data
+(rule 8).
 """
 
 import csv
 import json
+import re
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from importlib import import_module
 from pathlib import Path
 
-from sqlmodel import Session, col, func, select
+from sqlmodel import Session, col, select
 
 from mia.agents.decider import Action
 from mia.chat.route_memory import key_of
@@ -28,6 +33,9 @@ CONFIRMED = "phrase.confirmed"
 ALL = (TAUGHT, RETIRED, CONFIRMED)
 UNTEACHABLE = frozenset({"money", "external", "delete"})
 EXAMPLES = 3  # taught examples per action in the decider's option text
+EXAMPLE_ROLES = frozenset({"owner", "admin"})  # whose taught phrases become examples
+EXAMPLE_CHARS = 60  # a longer phrase is never an example (the short-half shape)
+_LETTER = re.compile(r"[^\W\d_]")
 
 
 class TeachError(ValueError):
@@ -61,6 +69,23 @@ def teachable(agent_id: str) -> dict[str, Action]:
     }
 
 
+def reads(agent_id: str) -> set[str]:
+    """The agent's teachable actions whose tool only reads: the ones a phrase may pick for
+    the decider."""
+    from mia.agents.registry import AGENTS
+
+    spec = AGENTS.get(agent_id)
+    if spec is None:
+        return set()
+    risks = {tool.name: tool.risk for tool in spec.manifest.tools}
+    return {name for name, a in teachable(agent_id).items() if risks.get(str(a.tool)) == "read"}
+
+
+def has_letter(key: str) -> bool:
+    """True when the key has a letter: "#" (a bare number) or "?" is never a phrase."""
+    return bool(_LETTER.search(key))
+
+
 @dataclass
 class Phrase:
     """One key of a branch's phrasebook: taught (outranks taps) or learned from taps."""
@@ -74,7 +99,7 @@ class Phrase:
     confidence: int = 0  # taps for this (agent, action) minus taps for any other
     taps: int = 0
     lang: str = "en"
-    role: str = ""
+    roles: tuple[str, ...] = ()  # the teacher's roles (taught phrases)
 
 
 @dataclass
@@ -98,19 +123,29 @@ def _events(session: Session, branch_id: str) -> Sequence[Event]:
     return out
 
 
-def version(session: Session) -> int:
-    """The phrasebook version: how many phrase events the node has (append-only, so it only
-    grows)."""
-    return int(session.exec(select(func.count()).where(col(Event.action).in_(ALL))).one())
+def version(session: Session, branch_id: str) -> int:
+    """The branch's phrasebook version: how many phrase events apply to it (append-only, so it
+    only grows)."""
+    return len(_events(session, branch_id))
+
+
+def snapshot(session: Session, branch_id: str) -> tuple[int, list[Phrase]]:
+    """(version, entries) for the branch from one read of its phrase events."""
+    found = _events(session, branch_id)
+    return len(found), _fold(found, branch_id)
 
 
 def entries(session: Session, branch_id: str) -> list[Phrase]:
     """The branch's live phrases: a taught key (latest teach, not retired since), else a key
     whose taps since its last retirement lead one teachable (agent, action) by at least one
     and whose latest tap agrees. Reads only."""
-    # ponytail: a scan of every phrase event per call; index or cache past thousands of them.
+    return snapshot(session, branch_id)[1]
+
+
+def _fold(found: Sequence[Event], branch_id: str) -> list[Phrase]:
+    # ponytail: a scan of every phrase event per turn; index or cache past thousands of them.
     keys: dict[str, _Key] = {}
-    for ev in _events(session, branch_id):
+    for ev in found:
         a = ev.after or {}
         key = str(a.get("key", ""))
         if ev.action == RETIRED:
@@ -134,7 +169,7 @@ def entries(session: Session, branch_id: str) -> list[Phrase]:
                     confidence=k.taps.count(pair) + 1,
                     taps=len(k.taps),
                     lang=str(a.get("lang", "en")),
-                    role=str(a.get("role", "")),
+                    roles=tuple(a.get("roles") or ([a["role"]] if a.get("role") else [])),
                 )
             )
             continue
@@ -153,16 +188,20 @@ def entries(session: Session, branch_id: str) -> list[Phrase]:
 
 def phrasebook(session: Session, branch_id: str) -> tuple[int, dict[str, tuple[str, str]]]:
     """(version, key to (agent id, action)) for the branch. Reads only."""
-    return version(session), {p.key: (p.agent_id, p.action) for p in entries(session, branch_id)}
+    v, found = snapshot(session, branch_id)
+    return v, {p.key: (p.agent_id, p.action) for p in found}
 
 
-def examples(session: Session, branch_id: str, agent_id: str) -> dict[str, list[str]]:
-    """Up to EXAMPLES phrase texts per action of the agent at the branch, newest first."""
+def examples(found: Sequence[Phrase], agent_id: str) -> dict[str, list[str]]:
+    """Up to EXAMPLES texts per action of the agent, newest first, only from phrases taught
+    by an owner or admin and at most EXAMPLE_CHARS long (a tapped phrase is never one)."""
     out: dict[str, list[str]] = {}
-    for p in reversed(entries(session, branch_id)):
+    for p in reversed(found):
+        if not (p.taught and EXAMPLE_ROLES & set(p.roles) and len(p.text) <= EXAMPLE_CHARS):
+            continue
         if p.agent_id == agent_id and len(out.setdefault(p.action, [])) < EXAMPLES:
             out[p.action].append(p.text)
-    return out
+    return {k: v for k, v in out.items() if v}
 
 
 def teach(
@@ -174,18 +213,19 @@ def teach(
     action: str,
     *,
     lang: str = "en",
-    role: str = "",
+    roles: Sequence[str] = (),
 ) -> Event:
     """Emits phrase.taught for the key of `text` at the branch (None: every branch) and
-    commits. Raises TeachError for an action that is not one of the agent's teachable
-    actions (an unknown one, or one whose tool risks money, external or delete)."""
+    commits; `roles` are the teacher's. Raises TeachError for an action that is not one of the
+    agent's teachable actions (an unknown one, or one whose tool risks money, external or
+    delete) and for a text with no letter."""
     if action not in actions_of(agent_id):
         raise TeachError(f"{agent_id} has no action {action}")
     if action not in teachable(agent_id):
         raise TeachError(f"{agent_id}.{action} cannot be taught")
     key = key_of(text)
-    if not key:
-        raise TeachError("empty text")
+    if not has_letter(key):
+        raise TeachError("a phrase needs a word, not only numbers")
     after = {
         "key": key,
         "text": text.strip(),
@@ -193,7 +233,7 @@ def teach(
         "action": action,
         "branch_id": branch_id,
         "lang": lang,
-        "role": role,
+        "roles": list(roles),
     }
     ev = events.emit(session, TAUGHT, ("phrase", key), None, after, actor)
     session.commit()
@@ -216,7 +256,8 @@ def confirm_tap(
     """Emits phrase.confirmed (in the caller's transaction) when `text` taps an action of the
     agent's "Did you mean" (a decision.clarify_asked whose options include Something else)
     that is the thread's `question`; the key is that of the user message it asked about. A tap
-    of Something else, of another question, or with no message before it writes nothing."""
+    of Something else, of another question, with no message before it, or for a message with
+    no letter (a bare number) writes nothing."""
     asked = session.exec(
         select(Event)
         .where(Event.action == "decision.clarify_asked")
@@ -240,7 +281,7 @@ def confirm_tap(
         .where(col(Message.id) < question.id)
         .order_by(col(Message.id).desc())
     ).first()
-    if original is None or not key_of(original.text):
+    if original is None or not has_letter(key_of(original.text)):
         return
     key = key_of(original.text)
     confirmed = {
@@ -297,7 +338,7 @@ def export_rows(session: Session, folder: Path) -> int:
         lang = p.lang if p.lang in CASE_LANGS else "fil"
         extra = json.dumps({"scenario": "taught", "taught": True})
         row = {"intent": p.action, "message": p.text, "lang": lang, "half": "short",
-               "role": p.role, "extra": extra}  # fmt: skip
+               "role": p.roles[0] if p.roles else "", "extra": extra}  # fmt: skip
         with path.open("a", encoding="utf-8", newline="") as f:
             csv.DictWriter(f, header, lineterminator="\n").writerow(
                 {k: row.get(k, "") for k in header}
@@ -306,10 +347,11 @@ def export_rows(session: Session, folder: Path) -> int:
     return added
 
 
-def import_rows(session: Session, folder: Path, branch_id: str) -> int:
+def import_rows(session: Session, folder: Path, branch_id: str, *, every: bool = False) -> int:
     """Replays every row of <folder>/<agent>.csv whose extra says "taught": true as a
-    phrase.taught for every branch by the system actor (branch_id is the actor's), skipping
-    phrases already taught. Returns how many were taught."""
+    phrase.taught at the branch (every branch with every=True) by the system actor, the row's
+    role as the teacher's, skipping phrases already taught there. Returns how many were
+    taught."""
     live = {(p.key, p.agent_id, p.action) for p in entries(session, branch_id) if p.taught}
     actor = Actor.system(branch_id)
     taught = 0
@@ -322,8 +364,9 @@ def import_rows(session: Session, folder: Path, branch_id: str) -> int:
                 continue
             if (key_of(r["message"]), path.stem, r["intent"]) in live:
                 continue
-            teach(session, actor, None, r["message"], path.stem, r["intent"],
-                  lang=r.get("lang") or "en", role=r.get("role") or "")  # fmt: skip
+            role = [r["role"]] if r.get("role") else []
+            teach(session, actor, None if every else branch_id, r["message"], path.stem,
+                  r["intent"], lang=r.get("lang") or "en", roles=role)  # fmt: skip
             live.add((key_of(r["message"]), path.stem, r["intent"]))
             taught += 1
     return taught

@@ -521,7 +521,8 @@ async function openPhrases() {
   const res = await fetch("/sim/phrases");
   if (!res.ok) { list.append(el("div", "sys", `No phrases (${res.status}).`)); return; }
   const book = await res.json();
-  list.append(el("div", "status", `Phrasebook version ${book.version}. Taught phrases outrank Did you mean taps.`));
+  const versions = Object.entries(book.versions).map(([b, v]) => `${b} v${v}`).join(", ");
+  list.append(el("div", "status", `Phrasebook versions: ${versions}. Taught phrases outrank Did you mean taps; a phrase picks the action only for a read, and only an owner's or admin's taught phrase is an example for Jev.`));
   if (!book.phrases.length) { list.append(el("div", "sys", "No phrases yet: use Teach under a reply.")); return; }
   list.append(table(["Text", "Agent", "Action", "Source", "Branch", ""], book.phrases.map(p => {
     const b = el("button", null, "Retire");

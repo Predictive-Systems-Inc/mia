@@ -274,9 +274,11 @@ def _for_kiosk(
     if decision.raw_action != right:
         return decision
     if right == "report_sales" and (converted or q.receipt_word):
-        return decision.model_copy(update={"args": {**decision.args, "as_count": True}})
+        update = {"args": {**decision.args, "as_count": True}, "guarded": True}
+        return decision.model_copy(update=update)
     if right == "record_receipt" and converted and not q.receipt_word:
-        return decision.model_copy(update={"args": {**decision.args, "confirm": True}})
+        update = {"args": {**decision.args, "confirm": True}, "guarded": True}
+        return decision.model_copy(update=update)
     return decision
 
 
