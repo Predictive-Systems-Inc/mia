@@ -254,14 +254,17 @@ def ask_confirm(
     that records it (the decision without confirm), plus Something else (as ask_total)."""
     total = format_money(out.total, out.currency, lang)
     lines = _lines([(x.quantity, x.item) for x in out.lines], lang)
-    use = t("sales.receipt.use_computed", lang, total=total)
+    tender = t(f"bk.tender.{out.tender}", lang)
+    use = t("sales.receipt.ring_up", lang)
     other = t("clarify.something_else", lang)
     options: Options = {
         use: _asked(decision, {**decision.args, "confirm": False}),
         other: Decision(action="clarify", confidence=1.0).model_dump(mode="json"),
     }
     blocks: list[Block] = [
-        TextBlock(text=t("sales.receipt.confirm_one", lang, lines=lines, total=total)),
+        TextBlock(
+            text=t("sales.receipt.confirm_one", lang, lines=lines, total=total, tender=tender)
+        ),
         QuickRepliesBlock(options=list(options)),
     ]
     return blocks, options

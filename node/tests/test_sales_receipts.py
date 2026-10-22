@@ -1764,9 +1764,13 @@ def test_a_count_on_a_receipts_kiosk_asks_before_ringing_one_receipt(
         [int(w) for w in text.split() if w.isdigit()], picks.values(), strict=True
     ))  # fmt: skip
     assert asked.blocks[0].text == t(  # type: ignore[union-attr]
-        "sales.receipt.confirm_one", "fil", lines=shown, total=money(total)
+        "sales.receipt.confirm_one",
+        "fil",
+        lines=shown,
+        total=money(total),
+        tender=t("bk.tender.cash", "fil"),
     )
-    use = t("sales.receipt.use_computed", "fil", total=money(total))
+    use = t("sales.receipt.ring_up", "fil")
     assert _buttons(asked) == [use, t("clarify.something_else", "fil")]
     _turn(session, rs[1]["Ana"], use, asked.thread_id)
     (r,) = _receipts(session)
@@ -1890,3 +1894,32 @@ def test_the_drawer_reads_run_under_the_write_lock(
         bk_deps(session, rs[1]["Marites"]), CashCountInput(counted=100_000), "c"
     )
     assert out.clerk == "Ana"
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_the_ring_up_question_names_the_items_and_the_total(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A count-shaped message Jev is unsure about asks to ring it up with the lines, the
+    computed total and the tender in the question; the tap records receipt #1 at that total."""
+    _open_drawer(session, rs, monkeypatch)
+    cl, sp = item(session, "Classic").id, item(session, "Special").id
+    split = {"record_receipt": 0.5, "report_sales": 0.45}
+    ss_answers(
+        monkeypatch, "record_receipt", confidence=0.5, probabilities=split,
+        item_0=cl, item_1=sp, conversation="other", tender="gcash",
+    )  # fmt: skip
+    asked = _turn(session, rs[1]["Ana"], "2 classic 1 special gcash")
+    assert _receipts(session) == []
+    total = 2 * price_on(session, item(session, "Classic"), rs[0].id, RS_TODAY) + price_on(
+        session, item(session, "Special"), rs[0].id, RS_TODAY
+    )
+    assert asked.blocks[0].text == t(  # type: ignore[union-attr]
+        "sales.receipt.confirm_one", "fil", lines="2 Classic, 1 Special", total=money(total),
+        tender=t("bk.tender.gcash", "fil"),
+    )  # fmt: skip
+    ring = t("sales.receipt.ring_up", "fil")
+    assert _buttons(asked) == [ring, t("clarify.something_else", "fil")]
+    _turn(session, rs[1]["Ana"], ring, asked.thread_id)
+    (r,) = _receipts(session)
+    assert (r.receipt_no, r.total) == ("1", total)

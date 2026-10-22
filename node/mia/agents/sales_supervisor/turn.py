@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
-from mia.agents.decider import THRESHOLD, Decision
+from mia.agents.decider import THRESHOLD, Alternative, Decision
 from mia.agents.sales_supervisor import MANIFEST, actions, decider, due, replies
 from mia.agents.sales_supervisor.tools import (
     BINDINGS,
@@ -116,6 +116,12 @@ def _ask(
     return reply
 
 
+def _only_ring_up(decision: Decision) -> Alternative | None:
+    """The one offerable alternative when it is record_receipt (a complete one), else None."""
+    offers = [a for a in decision.alternatives if a.missing is None and a.action in actions.ACTIONS]
+    return offers[0] if len(offers) == 1 and offers[0].action == "record_receipt" else None
+
+
 def _did_you_mean(
     session: Session, deps: AgentDeps, thread: Thread, decision: Decision
 ) -> ChatReply:
@@ -215,7 +221,12 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
         if decision.confidence >= THRESHOLD:
             action = decision.raw_action  # a clear receipt: the tender buttons below
     if action == "clarify":
-        return _did_you_mean(session, deps, thread, decision)
+        ring = _only_ring_up(decision)
+        if ring is None:
+            return _did_you_mean(session, deps, thread, decision)
+        # one offer, ringing a sale: ask with its lines, total and tender, not "Did you mean"
+        decision = decision.model_copy(update={"args": {**ring.args, "confirm": True}})
+        action = ring.action
     spec = actions.ACTIONS.get(action)
     if spec is None:  # a tapped decision of another agent
         return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
