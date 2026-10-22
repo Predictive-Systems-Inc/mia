@@ -58,7 +58,7 @@ SHORT_LANGS = ("en", "fil")
 EVALS = Path(__file__).parent
 RESEARCH = EVALS.parents[2] / "docs" / "research"
 ShortRow = tuple[str, str, str, str, int | None, int | None]  # lang text action item amount number
-SHORT_ROWS = {"sales_supervisor": 17}  # its four receipt rows and item_codes; twelve otherwise
+SHORT_ROWS = {"sales_supervisor": 18}  # its receipt rows, item_codes, a breakdown; else twelve
 
 
 def actions(agent: str) -> dict[str, Any]:

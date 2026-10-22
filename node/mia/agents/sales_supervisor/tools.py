@@ -501,6 +501,9 @@ class PeriodReportInput(BaseModel):
         None, description='Another branch, or "all" (only an owner or admin)'
     )
     item_id: str | None = None
+    breakdown: Literal["item", "kiosk"] | None = Field(
+        None, description="Per item or per kiosk, when the message asks (code reads the words)"
+    )
 
 
 class PeriodRow(BaseModel):
@@ -511,11 +514,18 @@ class PeriodRow(BaseModel):
     amount: int
 
 
+class BreakdownLine(BaseModel):
+    name: str  # the item or the kiosk
+    quantity: int
+    amount: int
+
+
 class PeriodReportOutput(BaseModel):
     rows: list[PeriodRow]
     best_day: dt.date | None
     total: int
     currency: str
+    breakdown: list[BreakdownLine] = []  # per item (menu order) or per kiosk, when asked
 
 
 def period_report(
@@ -523,7 +533,9 @@ def period_report(
 ) -> PeriodReportOutput:
     """Totals per (branch, item) from start to end inclusive, each date from its one source
     (sales.sale_rows: counts, or receipts on a receipts day), the day with the highest amount
-    and the grand total. Raises LookupError when end is before start."""
+    and the grand total; with a breakdown, the period's sums per item (menu order, every
+    branch read together) or per kiosk (the branches' order). Raises LookupError when end is
+    before start, and sales.SalesRangeError("range") for more than MAX_SALES_DAYS days."""
     branches = _branches(deps, args.branch_id, COUNTS, "read", tool_call_id)
     if branches != [deps.branch]:
         for table in RECEIPT_TABLES:
@@ -560,7 +572,25 @@ def period_report(
         best_day=max(by_day, key=lambda d: by_day[d]) if by_day else None,
         total=sum(by_day.values()),
         currency=_currency(deps.session, branches[0].id),
+        breakdown=_breakdown(out, args.breakdown, names),
     )
+
+
+def _breakdown(
+    rows: list[PeriodRow], by: str | None, names: dict[str, RetailItem]
+) -> list[BreakdownLine]:
+    """The (branch, item) rows summed per item in menu order or per kiosk in row order; empty
+    without a breakdown."""
+    if by is None:
+        return []
+    sums: dict[str, BreakdownLine] = {}
+    for r in rows:
+        key, name = (r.item_id, r.item) if by == "item" else (r.branch, r.branch)
+        line = sums.setdefault(key, BreakdownLine(name=name, quantity=0, amount=0))
+        line.quantity += r.quantity
+        line.amount += r.amount
+    keys = sorted(sums, key=lambda k: names[k].sort_order) if by == "item" else list(sums)
+    return [sums[k] for k in keys]
 
 
 # ---- set_target ---------------------------------------------------------------------------

@@ -380,6 +380,67 @@ def test_best_day_this_month(
     assert reply.text() == expected
 
 
+def _last_week() -> tuple[dt.date, dt.date]:
+    today = dt.datetime.now(MNL).date()
+    monday = today - dt.timedelta(days=today.weekday())
+    return monday - dt.timedelta(days=7), monday - dt.timedelta(days=1)
+
+
+def test_last_weeks_sales_per_item(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The owner's ask: "benta last week per item" gave only the total. The period line, then
+    one line per item in menu order with the seeded figures."""
+    _, people = ferinos
+    rosa = people["Rosa"]
+    _answers(monkeypatch, "sales_period", period="last_week")
+    reply = _turn(session, rosa, "benta last week per item")
+    start, end = _last_week()
+    args = tools.PeriodReportInput(start=start, end=end, breakdown="item")
+    out = tools.period_report(deps_for(session, rosa), args, "c1")
+    lang = rosa.language
+    head = t(
+        "sales.period",
+        lang,
+        start=start.isoformat(),
+        end=end.isoformat(),
+        total=format_money(out.total, out.currency, lang),
+        best_day=out.best_day.isoformat() if out.best_day else "",
+    )
+    lines = reply.text().split("\n")
+    assert lines[0] == head and len(lines) == 1 + len(out.breakdown) == 9
+    first = out.breakdown[0]
+    money = format_money(first.amount, "PHP", lang)
+    assert lines[1] == f"{first.name}: {first.quantity:,} pcs, {money}"
+    assert [x.split(":")[0] for x in lines[1:]] == [b.name for b in out.breakdown]
+
+
+def test_sales_per_kiosk_and_no_breakdown_word_unchanged(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = ferinos
+    _answers(monkeypatch, "sales_period", period="last_week")
+    lines = _turn(session, people["Rosa"], "benta last week per kiosk").text().split("\n")
+    assert [x.split(":")[0] for x in lines[1:]] == ["Mall kiosk", "Street stall"]
+    plain = _turn(session, people["Rosa"], "benta last week").text()
+    assert "\n" not in plain and plain.startswith(lines[0].split(":")[0])
+
+
+def test_a_breakdown_shows_ten_lines_then_how_many_more() -> None:
+    from mia.agents.sales_supervisor.replies import tool_reply
+
+    rows = [tools.BreakdownLine(name=f"Item {i}", quantity=i, amount=i * 100) for i in range(12)]
+    out = tools.PeriodReportOutput(
+        rows=[], best_day=dt.date(2026, 10, 17), total=6600, currency="PHP", breakdown=rows
+    )
+    args = {"start": "2026-10-12", "end": "2026-10-18", "breakdown": "item"}
+    lines = tool_reply("period_report", out.model_dump(), args, "en")[0].text.split("\n")  # type: ignore[union-attr]
+    assert len(lines) == 12 and lines[1] == "Item 0: 0 pcs, \u20b10.00"
+    assert lines[-1] == t("sales.period.more", "en", n=2) == "and 2 more"
+    fi = tool_reply("period_report", out.model_dump(), args, "fi")[0].text  # type: ignore[union-attr]
+    assert "Item 1: 1 kpl" in fi
+
+
 def test_which_branch_sells_most_ube(
     session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

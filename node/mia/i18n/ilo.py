@@ -39,6 +39,8 @@ STRINGS: dict[str, str | list[str]] = {
     "sales.period.empty": "{start} agingga iti {end}: awan ti nabilang a lako.",
     "sales.refused.range": "Atiddog unay dayta a panawen a basaen iti maminsan (agarup maysa a tawen laeng). Kiddawem ti ad-adda nga ababa.",
     "sales.period.by_branch": "{item}: {lines}",
+    "sales.period.line": "{name}: {quantity} pcs, {amount}",
+    "sales.period.more": "ken {n} pay",
     "sales.target_set": "Naikeddeng ti target: {amount} para iti {when}.",
     "sales.note_thanks": "Agyamanak, naitalaak.",
     "sales.capabilities": 'Italaak dagiti naglakoyo (kas pagwadan "3 sp 5 cl"), ibarbaro ti bilang, ken ibagak no kasano ti aldaw ita iti target.',

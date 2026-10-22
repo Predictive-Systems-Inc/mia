@@ -35,6 +35,8 @@ CONVERSATION_KEYS = {
     "other": "sales.capabilities",
 }
 
+TOP = 10  # a breakdown's lines shown before "and N more"
+
 # (label, the stored decision a tap runs)
 Options = dict[str, dict[str, Any]]
 
@@ -118,7 +120,21 @@ def tool_reply(tool: str, out: dict[str, Any], args: dict[str, Any], lang: str) 
             return _text("sales.period.by_branch", lang, item=ranked[0].item, lines=lines)
         total = format_money(rep.total, rep.currency, lang)
         best = rep.best_day.isoformat()
-        return _text("sales.period", lang, start=start, end=end, total=total, best_day=best)
+        head = t("sales.period", lang, start=start, end=end, total=total, best_day=best)
+        shown = [
+            t(
+                "sales.period.line",
+                lang,
+                name=b.name,
+                quantity=format_int(b.quantity, lang),
+                amount=format_money(b.amount, rep.currency, lang),
+            )
+            for b in rep.breakdown[:TOP]
+        ]
+        more = len(rep.breakdown) - TOP
+        if more > 0:
+            shown.append(t("sales.period.more", lang, n=format_int(more, lang)))
+        return [TextBlock(text="\n".join([head, *shown]))]
     if tool == "item_codes":
         menu = ItemCodesOutput.model_validate(out)
         rows = [

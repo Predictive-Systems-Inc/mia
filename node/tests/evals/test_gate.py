@@ -133,9 +133,9 @@ def test_a_cases_row_with_extra_or_missing_fields_is_refused(
         read("x")
 
 
-def test_the_sales_supervisors_short_half_has_seventeen_rows_per_language() -> None:
-    """SHORT_ROWS: seventeen per language for the sales supervisor (its receipt rows and
-    item_codes), twelve for every other agent; two asks each either way."""
+def test_the_sales_supervisors_short_half_has_eighteen_rows_per_language() -> None:
+    """SHORT_ROWS: eighteen per language for the sales supervisor (its receipt rows,
+    item_codes and a breakdown), twelve for every other agent; two asks each either way."""
     from tests.evals.gate import short_failures
 
     def rows(n: int) -> list[gate.ShortRow]:
@@ -148,5 +148,5 @@ def test_the_sales_supervisors_short_half_has_seventeen_rows_per_language() -> N
     def size(agent: str, n: int) -> list[str]:
         return [f for f in short_failures(agent, rows(n)) if f.startswith("counts")]
 
-    assert size("sales_supervisor", 17) == [] and size("sales_supervisor", 12) != []
-    assert size("bookkeeper", 12) == [] and size("bookkeeper", 17) != []
+    assert size("sales_supervisor", 18) == [] and size("sales_supervisor", 12) != []
+    assert size("bookkeeper", 12) == [] and size("bookkeeper", 18) != []

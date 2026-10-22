@@ -39,6 +39,8 @@ STRINGS: dict[str, str | list[str]] = {
     "sales.period.empty": "{start} tubtob {end}: wala sing naihap nga baligya.",
     "sales.refused.range": "Malawig gid ina nga tion para basahon sang isa ka beses (mga isa ka tuig lang). Palihog pangayo sang mas malip-ot.",
     "sales.period.by_branch": "{item}: {lines}",
+    "sales.period.line": "{name}: {quantity} pcs, {amount}",
+    "sales.period.more": "kag {n} pa",
     "sales.target_set": "Natakda na ang target: {amount} para sa {when}.",
     "sales.note_thanks": "Salamat, natala ko na.",
     "sales.capabilities": 'Ginatala ko ang inyo nabaligya (halimbawa "3 sp 5 cl"), ginaayos ang ihap, kag ginasiling kon ano ang kahimtang subong kumpara sa target.',

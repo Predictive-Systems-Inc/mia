@@ -15,11 +15,12 @@ clerk texting on a phone (Q28). The regional language rows (ceb, hil, war, bcl) 
 Oct 2026 to keep the run short; they are in git history. Item names and short codes are the seed's
 (mia/templates/retail/seed.py).
 
-The short half (D42): sixteen en and sixteen fil messages as clerks, head staff and the
+The short half (D42): eighteen en and eighteen fil messages as clerks, head staff and the
 owner type on a phone (lowercase, no punctuation, digits, one to six words), the en and fil
 written apart, not translations; two per language are ambiguous and should ask ("ask"). Four
 per language are receipts (record, void, refund, read) and run on a receipts kiosk (extra
-"source"; the tender, typed total, receipt number and which in extra). Its one
+"source"; the tender, typed total, receipt number and which in extra). One per language asks
+for a period per item (extra "breakdown", what actions.breakdown_of reads). Its one
 rule is no wrong write (gate.wrong_writes); its expected items are reported, never a bar."""
 
 from dataclasses import dataclass, field

@@ -219,6 +219,55 @@ def test_period_report_for_all_branches_and_one_item(session: Session, ferinos: 
     assert {r.item for r in out.rows} == {"Ube"}
 
 
+def _sums(
+    session: Session, start: dt.date, key: str, branch_id: str | None = None
+) -> dict[str, tuple[int, int]]:
+    """Live seeded counts from start to today (one branch, or every one) summed by item id or
+    branch id (the oracle)."""
+    stmt = select(SalesCount).where(col(SalesCount.business_date) >= start)
+    out: dict[str, tuple[int, int]] = {}
+    for r in session.exec(stmt.where(col(SalesCount.superseded_by).is_(None))):
+        if branch_id in (None, r.branch_id):
+            q, a = out.get(getattr(r, key), (0, 0))
+            out[getattr(r, key)] = (q + r.quantity, a + r.amount)
+    return out
+
+
+def test_period_report_per_item_in_menu_order(session: Session, ferinos: Ferinos) -> None:
+    kiosk, people = ferinos
+    start = today() - dt.timedelta(days=13)
+    args = PeriodReportInput(start=start, end=today(), breakdown="item")
+    out = tools.period_report(deps_for(session, people["Rosa"]), args, "c1")
+    sums = _sums(session, start, "item_id", kiosk.id)
+    menu = session.exec(select(RetailItem).order_by(col(RetailItem.sort_order))).all()
+    assert [(b.name, b.quantity, b.amount) for b in out.breakdown] == [
+        (i.name, *sums[i.id]) for i in menu if i.id in sums
+    ]
+    assert len(out.breakdown) == 8 and sum(b.amount for b in out.breakdown) == out.total
+
+
+def test_period_report_per_kiosk(session: Session, ferinos: Ferinos) -> None:
+    kiosk, people = ferinos
+    start = today() - dt.timedelta(days=13)
+    args = PeriodReportInput(start=start, end=today(), branch_id="all", breakdown="kiosk")
+    out = tools.period_report(deps_for(session, people["Rosa"]), args, "c1")
+    sums = _sums(session, start, "branch_id")
+    assert [(b.name, b.quantity, b.amount) for b in out.breakdown] == [
+        ("Mall kiosk", *sums[kiosk.id]),
+        ("Street stall", *sums[stall(session).id]),
+    ]
+    assert sum(b.amount for b in out.breakdown) == out.total
+    plain = PeriodReportInput(start=start, end=today(), branch_id="all")
+    assert tools.period_report(deps_for(session, people["Rosa"]), plain, "c1").breakdown == []
+
+
+def test_a_breakdown_keeps_the_range_cap(session: Session, ferinos: Ferinos) -> None:
+    _, people = ferinos
+    args = PeriodReportInput(start=today() - dt.timedelta(days=400), end=today(), breakdown="item")
+    with pytest.raises(LookupError, match="range"):
+        tools.period_report(deps_for(session, people["Rosa"]), args, "c1")
+
+
 def test_a_supervisor_cannot_report_all_branches(session: Session, ferinos: Ferinos) -> None:
     _, people = ferinos
     args = PeriodReportInput(start=today(), end=today(), branch_id="all")

@@ -20,6 +20,7 @@ from mia.agents.sales_supervisor.actions import (
     _period,
     _target_start,
     _target_starts,
+    breakdown_of,
     build_request,
 )
 
@@ -135,12 +136,15 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         picked = r.pick("period", set(WEEKDAYS) | set(q.periods))
         start, end = _period(picked, q.today, q.lang) or _month(q.today.replace(day=1))
         item = _item(r, 0, fallback=True) if q.groups else r.pick("item", set(q.items), True)
-        return {
+        out = {
             "start": start.isoformat(),
             "end": end.isoformat(),
             "branch_id": _branch(r),
             "item_id": item,
-        }, None
+        }
+        if by := breakdown_of(q.message):  # the words, read by code; a kiosk one reads them all
+            out |= {"breakdown": by, **({"branch_id": "all"} if by == "kiosk" else {})}
+        return out, None
     if action == "item_codes":
         return {}, None
     if action == "set_target":

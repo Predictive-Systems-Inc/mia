@@ -6,7 +6,7 @@ from collections import Counter
 from pathlib import Path
 
 from mia.agents.parsing import menu_tokens, pre_parse, strip_receipt
-from mia.agents.sales_supervisor.actions import ACTIONS
+from mia.agents.sales_supervisor.actions import ACTIONS, breakdown_of
 from mia.templates.retail.seed import ITEMS as MENU
 from tests.evals import gate
 from tests.evals.cases import HEADER, header, read
@@ -122,7 +122,7 @@ def test_no_tagalog() -> None:
 
 
 def test_the_short_half_is_short_and_new() -> None:
-    """D42: seventeen en and seventeen fil (gate.SHORT_ROWS), two asks each, short and
+    """D42: eighteen en and eighteen fil (gate.SHORT_ROWS), two asks each, short and
     unpunctuated, an offered action, the first expected item seeded and typed with its count,
     no text in another half or a raw file."""
     first = [c.expected_items[0] if c.expected_items else ("", None) for c in SHORT]
@@ -136,3 +136,11 @@ def test_the_short_half_is_short_and_new() -> None:
 
 def test_the_csv_has_the_shared_header_and_every_row_parses() -> None:
     assert header("sales_supervisor") == HEADER and len(read("sales_supervisor")) == len(CASES)
+
+
+def test_a_breakdown_in_extra_is_what_code_reads() -> None:
+    """Each short sales_period row's extra "breakdown" (absent: none) is breakdown_of's."""
+    rows = [r for r in read("sales_supervisor") if r.half == "short"]
+    period = [r for r in rows if r.intent == "sales_period"]
+    assert sum("breakdown" in r.extra for r in period) == 2
+    assert all(breakdown_of(r.message) == r.extra.get("breakdown") for r in period)

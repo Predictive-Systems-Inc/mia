@@ -13,6 +13,7 @@ from mia.agents.sales_supervisor.actions import (
     Query,
     _period,
     _target_start,
+    breakdown_of,
     build_query,
     build_request,
 )
@@ -382,3 +383,35 @@ def test_nouls_ask_when_the_runner_up_yes_is_close() -> None:
 def test_nouls_write_when_the_runner_up_yes_is_below_the_margin() -> None:
     d = _noul_parsed("3 sp", report_sales=0.95, sales_today=0.39)
     assert d.action == "report_sales"
+
+
+@pytest.mark.parametrize(
+    ("message", "breakdown"),
+    [
+        ("benta last week per item", "item"),
+        ("sales by item this month", "item"),
+        ("each item yesterday", "item"),
+        ("sales per product", "item"),
+        ("benta kahapon bawat item", "item"),
+        ("kada item last week", "item"),
+        ("benta isa-isa", "item"),
+        ("sales per kiosk", "kiosk"),
+        ("by kiosk last week", "kiosk"),
+        ("benta bawat kiosk", "kiosk"),
+        ("sales last week", None),
+        ("superitem per items", None),
+    ],
+)
+def test_code_reads_the_breakdown_words(message: str, breakdown: str | None) -> None:
+    assert breakdown_of(message) == breakdown
+
+
+def test_a_period_question_carries_the_breakdown_and_a_kiosk_one_reads_every_branch() -> None:
+    picks = {"period": "sun", "branch": "not_stated"}
+    out, _ = args("sales_period", "benta last week per item", picks)
+    assert out["breakdown"] == "item" and out["branch_id"] is None
+    assert out["start"] == out["end"] == "2026-10-18"  # the period still read as before
+    out, _ = args("sales_period", "benta last week per kiosk", picks)
+    assert out["breakdown"] == "kiosk" and out["branch_id"] == "all"
+    out, _ = args("sales_period", "benta last week", picks)
+    assert "breakdown" not in out

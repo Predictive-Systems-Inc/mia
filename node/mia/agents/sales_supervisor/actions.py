@@ -8,6 +8,7 @@ group; with groups, a period question reads its item from `item_0` (ruling 7).
 
 import calendar
 import datetime as dt
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -38,6 +39,29 @@ from mia.templates.retail.models import RetailItem
 
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 NONE = "none"
+# A period question's breakdown words (en and fil); code reads them, Jev never does (rule 7).
+BREAKDOWNS: dict[Literal["item", "kiosk"], tuple[str, ...]] = {
+    "item": (
+        "per item",
+        "by item",
+        "each item",
+        "per product",
+        "bawat item",
+        "kada item",
+        "isa-isa",
+    ),
+    "kiosk": ("per kiosk", "by kiosk", "bawat kiosk"),
+}
+
+
+def breakdown_of(message: str) -> Literal["item", "kiosk"] | None:
+    """The breakdown a message asks for: "item" or "kiosk" when it holds one of BREAKDOWNS'
+    phrases as whole words (an item phrase first), else None."""
+    text = " ".join(message.casefold().split())
+    for by, phrases in BREAKDOWNS.items():
+        if any(re.search(rf"(?<![\w-]){re.escape(p)}(?![\w-])", text) for p in phrases):
+            return by
+    return None
 
 
 def day_when(weekday: int, lang: str) -> str:
