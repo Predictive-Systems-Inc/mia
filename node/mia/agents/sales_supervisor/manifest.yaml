@@ -29,6 +29,7 @@ roles:
     - data:retail_branch_hours:read
     - data:core.person:read
     - data:core.branch:read
+    - data:core.visit:read  # at_visit: a cover sells at the visit's shop
     - tool:sales_supervisor.record_counts:execute
     - tool:sales_supervisor.correct_count:execute
     - tool:sales_supervisor.today:execute

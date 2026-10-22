@@ -19,6 +19,7 @@ from mia.agents.sales_supervisor.tools import (
     BINDINGS,
     RecordReceiptOutput,
     RefundReceiptInput,
+    at_visit,
     receipt_out,
     refund_lines,
 )
@@ -246,9 +247,10 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
         return _refusal(session, deps, thread, decision, tool, out)
     if tool == "record_receipt" and out["status"] == "no_session":
         return reply_text(session, deps, thread, t("sales.receipt.no_session", deps.lang))
-    if tool == "record_receipt" and out["status"] == "total_differs":
+    if tool == "record_receipt" and out["status"] in ("total_differs", "confirm"):
         receipt = RecordReceiptOutput.model_validate(out)
-        blocks, options = replies.ask_total(decision, receipt, deps.lang)
+        ask = replies.ask_total if out["status"] == "total_differs" else replies.ask_confirm
+        blocks, options = ask(decision, receipt, deps.lang)
         return _ask(session, deps, thread, blocks, options)
     blocks = replies.tool_reply(tool, out, decision.args, deps.lang)
     if tool == "record_counts" and decision.args.get("as_count"):
@@ -324,7 +326,8 @@ def _unavailable(session: Session, deps: AgentDeps, thread: Thread) -> ChatReply
 async def handle_turn(turn: Turn) -> ChatReply:
     """The sales supervisor's answer to one stored message: a tapped button, Jev's decision
     run through the tool guard, or reply.unavailable without Jev. The caller commits."""
-    session, deps, thread = turn.session, turn.deps, turn.thread
+    session, thread = turn.session, turn.thread
+    deps = await asyncio.to_thread(at_visit, turn.deps)  # a cover sells at the visit's shop
     if get_settings().MIA_DECIDER != "jev":
         return await asyncio.to_thread(_unavailable, session, deps, thread)
     return await _jev_turn(session, deps, thread, turn.text, turn.ctx)

@@ -17,6 +17,7 @@ from mia.agents.bookkeeper import tools as bk_tools
 from mia.agents.bookkeeper.models import CashCount
 from mia.agents.bookkeeper.tools import CashCountInput, ExpenseInput
 from mia.agents.sales_supervisor import MANIFEST as SS
+from mia.agents.sales_supervisor import actions as actions_mod
 from mia.agents.sales_supervisor import due as ss_due
 from mia.agents.sales_supervisor import replies as ss_replies
 from mia.agents.sales_supervisor import tools as ss_tools
@@ -32,7 +33,7 @@ from mia.agents.shift_supervisor import tools as shift_tools
 from mia.agents.shift_supervisor.rules import fmt_date
 from mia.agents.shift_supervisor.tools import AssignCoverInput, CheckInInput, RespondToCoverInput
 from mia.chat.blocks import TextBlock
-from mia.core import approvals, db, events, orgconfig, sales, store
+from mia.core import approvals, db, events, orgconfig, sales, scheduling, store
 from mia.core.approvals import ApprovalError
 from mia.core.models import (
     TENDERS,
@@ -45,6 +46,7 @@ from mia.core.models import (
     SalesReceipt,
     SalesReceiptLine,
     SalesSession,
+    Visit,
 )
 from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied, Rbac, Resource, get_rbac
@@ -247,14 +249,14 @@ def test_drawer_out_is_taken_from_the_count_not_the_session(
     assert (s.expected, s.difference) == (112_500, -2_000)
 
 
-def test_the_count_closes_the_earliest_open_drawer_and_names_the_others(
+def test_the_count_closes_the_named_drawer_and_names_the_others(
     session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
 ) -> None:
     receipts_kiosk(monkeypatch)
     ana, liza = drawer(session, rs, "Ana", 9), drawer(session, rs, "Liza", 13)
     rs_pin(at(RS_TODAY, 17, 5))
     out = bk_tools.record_cash_count(
-        bk_deps(session, rs[1]["Marites"]), CashCountInput(counted=100_000), "c"
+        bk_deps(session, rs[1]["Marites"]), CashCountInput(counted=100_000, drawer=ana.id), "c"
     )
     session.refresh(ana)
     session.refresh(liza)
@@ -270,9 +272,9 @@ def test_two_drawers_add_their_takings_to_the_undeposited_cash(
     ring(session, rs, liza, "2", [("Classic", 1)], "cash", hh=14)
     rs_pin(at(RS_TODAY, 17, 5))
     deps = bk_deps(session, rs[1]["Marites"])
-    bk_tools.record_cash_count(deps, CashCountInput(counted=112_500), "c")
+    bk_tools.record_cash_count(deps, CashCountInput(counted=112_500, drawer=ana.id), "c")
     rs_pin(at(RS_TODAY, 21, 5))
-    bk_tools.record_cash_count(deps, CashCountInput(counted=105_000), "c")
+    bk_tools.record_cash_count(deps, CashCountInput(counted=105_000, drawer=liza.id), "c")
     session.refresh(liza)
     assert liza.state == "closed"
     undeposited = bk_tools.balance_days(session, rs[0].id, RS_TODAY)[1]
@@ -341,9 +343,9 @@ def test_the_days_drawer_out_is_taken_from_the_first_count_only(
     spend = ExpenseInput(category="supplies", amount=2_000, source="cash", business_date=RS_TODAY)
     bk_tools.record_expense(deps, spend, "c")
     rs_pin(at(RS_TODAY, 17, 5))
-    first = bk_tools.record_cash_count(deps, CashCountInput(counted=110_500), "c")
+    first = bk_tools.record_cash_count(deps, CashCountInput(counted=110_500, drawer=ana.id), "c")
     rs_pin(at(RS_TODAY, 21, 5))
-    second = bk_tools.record_cash_count(deps, CashCountInput(counted=102_000), "c")
+    second = bk_tools.record_cash_count(deps, CashCountInput(counted=102_000, drawer=liza.id), "c")
     assert (first.clerk, first.expected, first.difference) == ("Ana", 110_500, 0)
     assert (second.clerk, second.expected, second.difference) == ("Liza", 104_000, -2_000)
 
@@ -369,36 +371,6 @@ def test_a_stale_drawer_is_never_reused_and_head_staff_count_it_first(
     session.refresh(stale)
     today = select(SalesSession).where(SalesSession.business_date == RS_TODAY)
     assert stale.state == "closed" and session.exec(today).all() == []
-
-
-@pytest.mark.usefixtures("jev_on")
-def test_a_correction_on_a_receipts_day_writes_nothing(
-    session: Session, bk_en: Ferinos, monkeypatch: pytest.MonkeyPatch, bk_pin: Pin
-) -> None:
-    settings = orgconfig.load().model_copy(deep=True)
-    settings.sales.receipts_from = {"Mall kiosk": BK_TODAY}
-    monkeypatch.setattr(orgconfig, "load", lambda org=None: settings)
-    kiosk, people = bk_en
-    for who, hh in (("Ana", 9), ("Liza", 13)):
-        p = people[who]
-        sales.open_for_shift(
-            session,
-            Actor.person(p),
-            kiosk,
-            p.id,
-            None,
-            dt.datetime.combine(BK_TODAY, dt.time(hh), MNL),
-        )
-    session.commit()
-    bk_pin(at(BK_TODAY, 21, 20))
-    _answers(monkeypatch, "cash_count", amount="p0")
-    _turn(session, people["Marites"], "cash count 1000")
-    counts = len(session.exec(select(CashCount)).all())
-    text = _turn(session, people["Marites"], "hindi 1000, 1100").text()
-    assert text == t("bk.correction.ask", "en")
-    assert len(session.exec(select(CashCount)).all()) == counts
-    liza = select(SalesSession).where(SalesSession.person_id == people["Liza"].id)
-    assert session.exec(liza).one().state == "open"
 
 
 def test_a_cover_check_in_opens_the_drawer_at_the_visits_kiosk(
@@ -649,9 +621,9 @@ def test_a_receipt_on_a_counts_kiosk_is_a_count_and_says_so_once(
 ) -> None:
     ana = rs[1]["Ana"]
     ube, cl = item(session, "Ube").id, item(session, "Classic").id
-    ss_answers(monkeypatch, "record_receipt", item_0=ube, conversation="other")
+    ss_answers(monkeypatch, "report_sales", item_0=ube, conversation="other")  # no receipt action
     first = _turn(session, ana, "r 3 ube cash")
-    ss_answers(monkeypatch, "record_receipt", item_0=cl, conversation="other")
+    ss_answers(monkeypatch, "report_sales", item_0=cl, conversation="other")
     second = _turn(session, ana, "r 1 cl cash")
     noted = t("sales.receipt.as_count", "fil")
     assert first.text().startswith(noted) and not second.text().startswith(noted)
@@ -818,7 +790,7 @@ def test_did_you_mean_never_offers_the_other_kiosks_action(
 def test_the_counts_kiosk_notice_is_per_clerk_and_business_date(
     session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
 ) -> None:
-    ss_answers(monkeypatch, "record_receipt", item_0=item(session, "Ube").id, conversation="other")
+    ss_answers(monkeypatch, "report_sales", item_0=item(session, "Ube").id, conversation="other")
     noted = t("sales.receipt.as_count", "fil")
     assert _turn(session, rs[1]["Ana"], "r 3 ube cash").text().startswith(noted)
     assert _turn(session, rs[1]["Liza"], "r 2 ube cash").text().startswith(noted)
@@ -838,7 +810,9 @@ def test_an_unknown_item_keeps_the_full_parse(
     assert _groups(session, rs, "classic 5 halo gcash 4") == ([(5, "classic"), (4, "halo")], None)
     assert _groups(session, rs, "ube 3 halo cash 2") == ([(3, "ube"), (2, "halo")], None)
     assert _groups(session, rs, "resibo 2 cl 1 ube cash 125") == ([(2, "cl"), (1, "ube")], 125)
-    assert _groups(session, rs, "3 sp cash 150") == ([(3, "sp")], 150)
+    # a typed total is read on a receipts kiosk, or after a receipt word (counts parse as before)
+    typed = ([(3, "sp")], 150) if kiosk == "receipts" else ([(3, "sp"), (150, "")], None)
+    assert _groups(session, rs, "3 sp cash 150") == typed
 
 
 @pytest.mark.usefixtures("ss_jev")
@@ -1331,15 +1305,6 @@ def test_receipts_on_a_counts_kiosk_say_so(session: Session, rs: Ferinos) -> Non
         ss_tools.receipts(ss_deps(session, rs[1]["Marites"]), ss_tools.ReceiptsInput(), "c")
 
 
-@pytest.mark.usefixtures("ss_jev")
-def test_receipts_on_a_counts_kiosk_say_so_in_the_chat(
-    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    ss_answers(monkeypatch, "read_receipts", receipts_which="last", conversation="other")
-    reply = _turn(session, rs[1]["Ana"], "huling resibo")
-    assert reply.text() == t("sales.receipts.counts_kiosk", "fil")
-
-
 def test_a_clerk_reads_only_her_receipts(
     session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1488,6 +1453,9 @@ BK_CALLS: dict[str, Callable[[AgentDeps], object]] = {
     "record_payout": lambda d: bk_tools.record_payout(
         d, bk_tools.PayoutInput(provider="grab", amount=0, start=RS_TODAY, end=RS_TODAY), "c"
     ),
+    "sales_journal": lambda d: bk_tools.sales_journal(
+        d, bk_tools.JournalInput(month=RS_TODAY), "c"
+    ),
     "tax_quarter": lambda d: bk_tools.tax_quarter(
         d, bk_tools.TaxInput(quarter_start=RS_TODAY), "c"
     ),
@@ -1565,3 +1533,265 @@ def test_the_last_receipt_says_it_is_a_refund() -> None:
             total=money(4_500), tender=t("bk.tender.cash", "fil"),
         )
     ]  # fmt: skip
+
+
+# ---- the final wave ---------------------------------------------------------------------------
+
+
+def _two_drawers_at_bk(session: Session, bk_en: Ferinos, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Mall kiosk on receipts from BK_TODAY with Ana's drawer open at 9:00 and Liza's at
+    13:00 (committed)."""
+    settings = orgconfig.load().model_copy(deep=True)
+    settings.sales.receipts_from = {"Mall kiosk": BK_TODAY}
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: settings)
+    kiosk, people = bk_en
+    for who, hh in (("Ana", 9), ("Liza", 13)):
+        p = people[who]
+        when = dt.datetime.combine(BK_TODAY, dt.time(hh), MNL)
+        sales.open_for_shift(session, Actor.person(p), kiosk, p.id, None, when)
+    session.commit()
+
+
+def _state(session: Session, who: Person) -> str:
+    return session.exec(select(SalesSession).where(SalesSession.person_id == who.id)).one().state
+
+
+@pytest.mark.usefixtures("jev_on")
+def test_a_recount_asks_which_drawer_and_never_closes_the_next_clerks(
+    session: Session, bk_en: Ferinos, monkeypatch: pytest.MonkeyPatch, bk_pin: Pin
+) -> None:
+    """C1: the probe's three turns. Two drawers open: the count asks whose; the correction
+    says the count is final; the recount asks again and Liza's drawer stays open."""
+    _two_drawers_at_bk(session, bk_en, monkeypatch)
+    people, other = bk_en[1], t("clarify.something_else", "en")
+    bk_pin(at(BK_TODAY, 21, 20))
+    _answers(monkeypatch, "cash_count", amount="p0")
+    asked = _turn(session, people["Marites"], "cash count 1000")
+    assert asked.blocks[0].text == t(  # type: ignore[union-attr]
+        "bk.count.which_drawer", "en", counted=bk_replies.money(100_000, "PHP", "en")
+    )
+    assert _buttons(asked) == ["Ana", "Liza", other]
+    assert (_state(session, people["Ana"]), _state(session, people["Liza"])) == ("open", "open")
+    _turn(session, people["Marites"], "Ana", asked.thread_id)
+    assert (_state(session, people["Ana"]), _state(session, people["Liza"])) == ("closed", "open")
+    counts = len(session.exec(select(CashCount)).all())
+    text = _turn(session, people["Marites"], "hindi 1000, 1100").text()
+    assert text == t("bk.correction.receipts", "en")
+    again = _turn(session, people["Marites"], "cash count 1100")
+    assert _buttons(again) == ["Liza", other]
+    assert _state(session, people["Liza"]) == "open"
+    assert len(session.exec(select(CashCount)).all()) == counts
+
+
+def test_the_count_tool_asks_whose_drawer_when_two_are_open_or_the_date_has_a_count(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    receipts_kiosk(monkeypatch)
+    ana, liza = drawer(session, rs, "Ana", 9), drawer(session, rs, "Liza", 13)
+    rs_pin(at(RS_TODAY, 17, 5))
+    deps = bk_deps(session, rs[1]["Marites"])
+    with pytest.raises(LookupError, match="which_drawer"):
+        bk_tools.record_cash_count(deps, CashCountInput(counted=100_000), "c")
+    bk_tools.record_cash_count(deps, CashCountInput(counted=100_000, drawer=ana.id), "c")
+    with pytest.raises(LookupError, match="which_drawer"):  # one open, but the date has a count
+        bk_tools.record_cash_count(deps, CashCountInput(counted=100_000), "c")
+    session.refresh(liza)
+    assert liza.state == "open"
+
+
+def _cover(
+    session: Session, rs: Ferinos, absent: str, cover: str, day: dt.date, head: str
+) -> Visit:
+    """cover takes absent's visit of day (assigned by head the day before, approved by Rosa,
+    accepted); returns the visit."""
+    people = rs[1]
+    visit = visit_of(session, people[absent], day)
+    before = day - dt.timedelta(days=1)
+    approval = shift_tools.assign_cover(
+        shift_deps(session, people[head], before),
+        AssignCoverInput(visit_id=visit.id, candidate_id=people[cover].id),
+        "a",
+    ).approval_id
+    if approval is not None:
+        shift_decide(session, approval, people["Rosa"], "approved")
+    shift_tools.respond_to_cover(
+        shift_deps(session, people[cover], before), RespondToCoverInput(accept=True), "y"
+    )
+    return visit
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_a_covering_clerks_receipt_lands_at_the_visits_kiosk(
+    session: Session, rs: Ferinos, rs_pin: Pin, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """I1: Pao (Street stall) covers Ana's Tuesday at the Mall kiosk, on receipts."""
+    receipts_kiosk(monkeypatch)
+    pao = rs[1]["Pao"]
+    rs_pin(at(MONDAY, 12))
+    _cover(session, rs, "Ana", "Pao", TUESDAY, "Marites")
+    rs_pin(at(TUESDAY, 8, 50))
+    shift_tools.check_in(shift_deps(session, pao, TUESDAY), CheckInInput(), "c")
+    session.commit()
+    rs_pin(at(TUESDAY, 10))
+    ss_answers(monkeypatch, "record_receipt", item_0=item(session, "Ube").id, conversation="other")
+    _turn(session, pao, "r 3 ube cash")
+    (r,) = _receipts(session)
+    assert (r.branch_id, r.total) == (rs[0].id, 13_500)
+    mine = select(SalesCount).where(SalesCount.reported_by == pao.id)
+    assert [c for c in session.exec(mine) if c.business_date == TUESDAY] == []
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_a_receipts_clerk_covering_a_counts_stall_reports_counts_there(
+    session: Session, rs: Ferinos, rs_pin: Pin, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """I1, the reverse: Ana (Mall kiosk, on receipts) covers Pao's Monday at the Street stall,
+    on counts. Her count lands at the stall; no "check in first"."""
+    receipts_kiosk(monkeypatch)
+    ana = rs[1]["Ana"]
+    visit = visit_of(session, rs[1]["Pao"], MONDAY)
+    scheduling._apply(session, Actor.person(rs[1]["Jun"]), visit, ana, False)  # the cover, set
+    rs_pin(at(MONDAY, 6, 5))
+    shift_tools.check_in(shift_deps(session, ana, MONDAY), CheckInInput(), "c")
+    session.commit()
+    rs_pin(at(MONDAY, 10))
+    ss_answers(monkeypatch, "report_sales", item_0=item(session, "Ube").id, conversation="other")
+    reply = _turn(session, ana, "3 ube cash")
+    assert reply.text() != t("sales.receipt.no_session", "fil")
+    mine = select(SalesCount).where(SalesCount.reported_by == ana.id)
+    rows = [c for c in session.exec(mine) if c.business_date == MONDAY]
+    assert [(c.branch_id, c.quantity) for c in rows] == [(visit.branch_id, 3)]
+    assert _receipts(session) == []
+
+
+PRE_PLAN_ACTIONS = [
+    "report_sales", "correct_sales", "sales_today", "sales_period", "set_target", "why_answer",
+    "reply_only", "clarify",
+]  # fmt: skip
+PRE_PLAN_QUESTIONS = {"period", "branch", "target_period", "target_start", "conversation"}
+RECEIPT_ACTIONS = ["record_receipt", "void_receipt", "refund_receipt", "read_receipts"]
+
+
+@pytest.mark.parametrize("kiosk", ["counts", "receipts"])
+def test_a_counts_kiosks_request_is_the_pre_plan_one(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, kiosk: str
+) -> None:
+    """I2: a counts kiosk's Jev request offers the actions and questions it offered before the
+    receipts plan; a receipts kiosk adds the receipt actions and receipts_which."""
+    if kiosk == "receipts":
+        receipts_kiosk(monkeypatch)
+    extra = RECEIPT_ACTIONS if kiosk == "receipts" else []
+    for mode in ("choice", "nouls"):
+        monkeypatch.setenv("MIA_SALES_QUESTION", mode)
+        get_settings.cache_clear()
+        q = build_query(ss_deps(session, rs[1]["Ana"]), "3 ube", "")
+        questions = actions_mod.build_request(q, "m")["questions"]
+        if mode == "choice":
+            offered = list(questions["action"]["criteria"])
+            want = [*PRE_PLAN_ACTIONS[:1], *extra, *PRE_PLAN_ACTIONS[1:]]
+        else:
+            offered = [k.removeprefix("is_") for k in questions if k.startswith("is_")]
+            want = [a for a in [*PRE_PLAN_ACTIONS[:1], *extra, *PRE_PLAN_ACTIONS[1:]]]
+            want = [a for a in want if a in actions_mod.NOULS]
+        assert offered == want
+        rest = {k for k in questions if k != "action" and not k.startswith(("is_", "item"))}
+        assert rest == PRE_PLAN_QUESTIONS | ({"receipts_which"} if extra else set())
+    get_settings.cache_clear()
+
+
+@pytest.mark.usefixtures("ss_jev")
+@pytest.mark.parametrize(
+    ("text", "picks"),
+    [
+        ("cash 3 ube", {"item_0": "Ube"}),
+        ("cl 20 ube 15 sp 8 cash", {"item_0": "Classic", "item_1": "Ube", "item_2": "Special"}),
+    ],
+)
+def test_a_count_on_a_receipts_kiosk_asks_before_ringing_one_receipt(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, text: str,
+    picks: dict[str, str],
+) -> None:  # fmt: skip
+    """I3: a count with a tender and no receipt word on a receipts kiosk asks with the computed
+    receipt on a confirm button; the tap rings it."""
+    _open_drawer(session, rs, monkeypatch)
+    ids = {k: item(session, v).id for k, v in picks.items()}
+    ss_answers(monkeypatch, "report_sales", conversation="other", **ids)
+    asked = _turn(session, rs[1]["Ana"], text)
+    assert _receipts(session) == []
+    total = sum(
+        g * price_on(session, item(session, n), rs[0].id, RS_TODAY)
+        for g, n in zip([int(w) for w in text.split() if w.isdigit()], picks.values(), strict=True)
+    )
+    shown = ", ".join(f"{g} {n}" for g, n in zip(
+        [int(w) for w in text.split() if w.isdigit()], picks.values(), strict=True
+    ))  # fmt: skip
+    assert asked.blocks[0].text == t(  # type: ignore[union-attr]
+        "sales.receipt.confirm_one", "fil", lines=shown, total=money(total)
+    )
+    use = t("sales.receipt.use_computed", "fil", total=money(total))
+    assert _buttons(asked) == [use, t("clarify.something_else", "fil")]
+    _turn(session, rs[1]["Ana"], use, asked.thread_id)
+    (r,) = _receipts(session)
+    assert r.total == total
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_a_count_with_a_receipt_word_still_rings_without_asking(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _open_drawer(session, rs, monkeypatch)
+    ss_answers(monkeypatch, "report_sales", item_0=item(session, "Ube").id, conversation="other")
+    _turn(session, rs[1]["Ana"], "resibo 3 ube cash")
+    (r,) = _receipts(session)
+    assert r.total == 13_500
+
+
+def test_the_sales_journal_reads_a_receipts_day(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Task 5 must-fix 1: the BIR sales book shows a receipts day by tender (#3 voided)."""
+    _day(session, rs, monkeypatch)
+    out = bk_tools.sales_journal(
+        bk_deps(session, rs[1]["Rosa"]), bk_tools.JournalInput(month=RS_TODAY), "c"
+    )
+    assert out.days[RS_TODAY] == {"cash": 12_500, "gcash": 12_950}
+
+
+def test_the_cost_of_goods_reads_a_receipts_day(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Task 5 must-fix 2: units sold come from the receipts (Classic 2400, Special 2800)."""
+    receipts_kiosk(monkeypatch)
+    s = drawer(session, rs)
+    ring(session, rs, s, "1", [("Classic", 2)], "cash")
+    ring(session, rs, s, "2", [("Special", 1)], "gcash", hh=11)
+    goods, _ = bk_tools._at_cost(session, rs[0].id, RS_TODAY, RS_TODAY)
+    assert goods == 2 * 2400 + 2800
+
+
+def test_today_counts_the_sales_not_the_refunds() -> None:
+    """A day of one sale and one refund says one receipt, the total net."""
+    sale = _receipts_out("sale", "paid", 13_500)
+    refund = _receipts_out("refund", "paid", -4_500)
+    out = sale.model_copy(
+        update={
+            "receipts": sale.receipts + refund.receipts,
+            "total": 9_000,
+            "by_tender": {"cash": 9_000},
+        }
+    )
+    tenders = t(
+        "sales.receipts.tender", "fil", tender=t("bk.tender.cash", "fil"), amount=money(9_000)
+    )
+    assert [
+        b.text for b in ss_replies.receipts_read(out, "today", "fil") if isinstance(b, TextBlock)
+    ] == [
+        t(
+            "sales.receipts.today",
+            "fil",
+            branch="Mall kiosk",
+            count="1",
+            total=money(9_000),
+            tenders=tenders,
+        )
+    ]

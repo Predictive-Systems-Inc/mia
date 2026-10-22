@@ -50,8 +50,9 @@ def gate_reported(gated: dict[str, Any]) -> list[str]:
     return reported
 
 
-# The short half (D42): twelve short en and twelve short fil messages per agent in each agent's
-# cases file (half "short"), as staff type on a phone. Expected "ask" for the two ambiguous ones.
+# The short half (D42): SHORT_ROWS short en and as many short fil messages per agent (twelve
+# unless named) in each agent's cases file (half "short"), as staff type on a phone. Expected
+# "ask" for the two ambiguous ones.
 ASK = "ask"
 SHORT_LANGS = ("en", "fil")
 EVALS = Path(__file__).parent
@@ -130,10 +131,10 @@ def _seed() -> tuple[frozenset[str], dict[str, frozenset[str]], frozenset[str]]:
 
 def short_failures(agent: str, rows: list[ShortRow]) -> list[str]:
     """What is wrong with an agent's short half, empty when well formed: SHORT_ROWS rows per
-    language (twelve unless named; en and fil only) with two asks, one to six lowercase unpunctuated words, unique
-    texts, an expected action the agent offers (or "ask"), an amount the agent's parser finds,
-    an item that is seeded and typed (its code, or one of its seeded name's codes) and a number
-    that is typed."""
+    language (twelve unless named; en and fil only) with two asks, one to six lowercase
+    unpunctuated words, unique texts, an expected action the agent offers (or "ask"), an amount
+    the agent's parser finds, an item that is seeded and typed (its code, or one of its seeded
+    name's codes) and a number that is typed."""
     from mia.agents.bookkeeper import words
     from mia.agents.parsing import find_prices
 

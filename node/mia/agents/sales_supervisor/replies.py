@@ -204,6 +204,26 @@ def ask_total(
     return blocks, options
 
 
+def ask_confirm(
+    decision: Decision, out: RecordReceiptOutput, lang: str
+) -> tuple[list[Block], Options]:
+    """A count rung as one receipt on a receipts kiosk: the computed receipt asked on a button
+    that records it (the decision without confirm), plus Something else (as ask_total)."""
+    total = format_money(out.total, out.currency, lang)
+    lines = _lines([(x.quantity, x.item) for x in out.lines], lang)
+    use = t("sales.receipt.use_computed", lang, total=total)
+    other = t("clarify.something_else", lang)
+    options: Options = {
+        use: _asked(decision, {**decision.args, "confirm": False}),
+        other: Decision(action="clarify", confidence=1.0).model_dump(mode="json"),
+    }
+    blocks: list[Block] = [
+        TextBlock(text=t("sales.receipt.confirm_one", lang, lines=lines, total=total)),
+        QuickRepliesBlock(options=list(options)),
+    ]
+    return blocks, options
+
+
 def void_asked(out: ReceiptOut, lang: str) -> list[Block]:
     """The void was sent to head staff: the receipt's number, lines and total, so a wrong
     number is seen."""
@@ -230,10 +250,10 @@ def _tender(tender: str, lang: str) -> str:
 
 
 def receipts_read(out: ReceiptsOutput, which: str, lang: str) -> list[Block]:
-    """Today's receipts (how many were paid, the total and each tender in TENDERS order), or
+    """Today's receipts (how many sales were paid, the net total and each tender in TENDERS order), or
     the last one with its time, lines, total and tender (voided or refund said); none yet, or
     none paid for today, says so."""
-    paid = sum(r.status == "paid" for r in out.receipts)
+    paid = [r for r in out.receipts if r.status == "paid"]
     if not out.receipts or (which != "last" and not paid):
         return _text("sales.receipts.today_empty", lang, branch=out.branch)
     if which == "last":
@@ -267,7 +287,7 @@ def receipts_read(out: ReceiptsOutput, which: str, lang: str) -> list[Block]:
         "sales.receipts.today",
         lang,
         branch=out.branch,
-        count=format_int(paid, lang),
+        count=format_int(sum(r.kind != "refund" for r in paid), lang),  # sales; the total is net
         total=format_money(out.total, out.currency, lang),
         tenders=tenders,
     )

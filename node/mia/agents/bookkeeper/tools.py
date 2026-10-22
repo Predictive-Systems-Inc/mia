@@ -66,12 +66,16 @@ from mia.core.models import (
 )
 from mia.core.money import format_money
 from mia.core.rbac import Resource, get_rbac
-from mia.core.sales import live_counts
 from mia.i18n import t
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailItem
 
 PETTY = "petty"  # the bank of a petty refill and the source of a petty spend
+
+
+def _dates(start: dt.date, end: dt.date) -> list[dt.date]:
+    """Every date from start to end, inclusive."""
+    return [start + dt.timedelta(days=n) for n in range((end - start).days + 1)]
 
 
 def tender_sales(
@@ -82,8 +86,8 @@ def tender_sales(
     counts day and the paid receipts' payments on a receipts day."""
     # ponytail: one day_sales query pair per day of the range; a range query when it shows
     total = 0
-    for n in range((end - start).days + 1):
-        by = sales.day_sales(session, branch_id, start + dt.timedelta(days=n)).by_tender
+    for day in _dates(start, end):
+        by = sales.day_sales(session, branch_id, day).by_tender
         total += sum(by.values()) if tender is None else by.get(tender, 0)
     return total
 
@@ -257,6 +261,7 @@ class CashCountInput(BaseModel):
     counted: int = Field(ge=0, description="The cash counted, minor units")
     business_date: dt.date | None = Field(None, description="Only when the user names the day")
     source_message_id: str | None = None
+    drawer: str | None = Field(None, description="The open sales session counted (a tap only)")
 
 
 class CashCountOut(BaseModel):
@@ -269,7 +274,7 @@ class CashCountOut(BaseModel):
     currency: str
     clerk: str | None = None  # a receipts day: the first name of the drawer's clerk
     opening_float: int | None = None
-    cash: int | None = None  # the session's cash receipts (its expected less its float)
+    cash: int | None = None  # the drawer's cash receipts less the drawer_out taken from it
     still_open: list[str] = Field(default_factory=list)  # the other open drawers' clerks
 
 
@@ -297,11 +302,11 @@ def record_cash_count(deps: AgentDeps, args: CashCountInput, tool_call_id: str) 
     a flagged one tells them first that the earlier alert is withdrawn. Raises
     LookupError("business_date") for another stated day.
 
-    On a receipts day (sales.source_of) the count closes the branch's earliest open drawer
-    (sales.close_session) and is held against that session's expected cash less drawer_out
-    (the first count of the date only);
-    each count is its own drawer, so no earlier alert is withdrawn. LookupError("no_session")
-    before any write when no drawer is open."""
+    On a receipts day (sales.source_of) the count closes one open drawer (sales.close_session)
+    and is held against that session's expected cash less drawer_out (the first count of the
+    date only); each count is its own drawer, so no earlier alert is withdrawn. Before any
+    write: LookupError("no_session") when no drawer is open, LookupError("which_drawer") when
+    args.drawer is unset and more than one is open or the date already has a count."""
     _check(deps, CASH, "write", tool_call_id)
     for source in SOURCES:
         _check(deps, source, "read", tool_call_id)
@@ -372,7 +377,8 @@ def record_cash_count(deps: AgentDeps, args: CashCountInput, tool_call_id: str) 
     )
 
 
-def _first_name(session: Session, person_id: str) -> str:
+def first_name(session: Session, person_id: str) -> str:
+    """The person's first name, "?" when the row is gone."""
     person = session.get(Person, person_id)
     return person.name.split()[0] if person else "?"
 
@@ -380,30 +386,38 @@ def _first_name(session: Session, person_id: str) -> str:
 def _close_drawer(
     deps: AgentDeps, args: CashCountInput, day: dt.date, tool_call_id: str
 ) -> CashCountOut:
-    """record_cash_count on a receipts day: close the earliest open session with the count,
-    store the CashCount against its expected less drawer_out and tell the leads when flagged."""
+    """record_cash_count on a receipts day: close the named open session (args.drawer; the
+    only one when one is open and the date has no count yet) with the count, store the
+    CashCount against its expected less drawer_out and tell the leads when flagged. A recount
+    or a second drawer never closes a drawer nobody named (LookupError("which_drawer"))."""
+    _check(deps, SESSIONS, "read", tool_call_id)
     _check(deps, SESSIONS, "write", tool_call_id)
     open_ = sales.open_sessions(deps.session, deps.branch.id)
     if not open_:
         raise LookupError("no_session")
+    counted_before = deps.session.exec(
+        select(CashCount.id).where(
+            CashCount.branch_id == deps.branch.id, CashCount.business_date == day
+        )
+    ).first()
+    if args.drawer is None and (len(open_) > 1 or counted_before):
+        raise LookupError("which_drawer")
+    chosen = next((s for s in open_ if args.drawer in (None, s.id)), None)
+    if chosen is None:
+        raise LookupError("session_closed")  # the tapped drawer was closed meanwhile
     try:
         closed = sales.close_session(
-            deps.session, deps.actor, open_[0], args.counted, deps.person.id, utcnow()
+            deps.session, deps.actor, chosen, args.counted, deps.person.id, utcnow()
         )
     except sales.SalesError as exc:
         raise LookupError(str(exc)) from exc
     assert closed.expected is not None
     # ponytail (Q126): which drawer a cash spend left is unknown, so the day's drawer_out is
     # taken once, from the first drawer counted; a session on the spend would place it
-    counted_before = deps.session.exec(
-        select(CashCount.id).where(
-            CashCount.branch_id == deps.branch.id, CashCount.business_date == day
-        )
-    ).first()
     taken = 0 if counted_before else drawer_out(deps.session, deps.branch.id).get(day, 0)
     expected = closed.expected - taken
     m = calc.match(args.counted, expected, 0, _settings().threshold)
-    currency, clerk = closed.currency, _first_name(deps.session, closed.person_id)
+    currency, clerk = closed.currency, first_name(deps.session, closed.person_id)
     row = store.insert(
         deps.session,
         CashCount(
@@ -443,8 +457,8 @@ def _close_drawer(
         currency=currency,
         clerk=clerk,
         opening_float=closed.opening_float,
-        cash=closed.expected - closed.opening_float,
-        still_open=[_first_name(deps.session, s.person_id) for s in open_[1:]],
+        cash=expected - closed.opening_float,  # less drawer_out: the reply's figures add up
+        still_open=[first_name(deps.session, s.person_id) for s in open_ if s.id != chosen.id],
     )
 
 
@@ -958,15 +972,21 @@ class JournalOut(BaseModel):
 
 
 def sales_journal(deps: AgentDeps, args: JournalInput, tool_call_id: str) -> JournalOut:
-    """The BIR sales journal of the month: gross by business date and tender (tax.journal)."""
-    branch = _scoped(deps, args.branch_id, [COUNTS], tool_call_id)
+    """The BIR sales journal of the month: gross by business date and tender (tax.journal),
+    each day from its one source (sales.day_sales(...).by_tender: counts, or the paid receipts'
+    payments with refunds as negatives)."""
+    branch = _scoped(deps, args.branch_id, [*SOURCES, ITEMS], tool_call_id)
     start, end = _month(args.month)
-    rows = live_counts(deps.session, [branch.id], start, end)
+    rows = [
+        (day, tender, amount)
+        for day in _dates(start, end)
+        for tender, amount in sales.day_sales(deps.session, branch.id, day).by_tender.items()
+    ]
     return JournalOut(
         branch_id=branch.id,
         month=start,
-        days=tax.journal((r.business_date, r.tender, r.amount) for r in rows),
-        total=sum(r.amount for r in rows),
+        days=tax.journal(rows),
+        total=sum(amount for _, _, amount in rows),
         currency=_currency(deps.session, branch.id),
     )
 
@@ -1102,11 +1122,16 @@ def _supplier(session: Session, branch_id: str, start: dt.date, end: dt.date) ->
 def _at_cost(
     session: Session, branch_id: str, start: dt.date, end: dt.date
 ) -> tuple[int | None, int]:
-    """Cost of goods (units sold times cost; None while any sold item has no cost) and item
-    waste at cost (an item without a cost adds nothing)."""
+    """Cost of goods (units sold times cost, per day from sales.day_sales(...).by_item, refunds
+    as negatives; None while any sold item has no cost) and item waste at cost (an item without
+    a cost adds nothing)."""
     mine = or_(col(RetailItem.branch_id) == branch_id, col(RetailItem.branch_id).is_(None))
     costs = {i.id: i.cost for i in session.exec(select(RetailItem).where(mine))}
-    sold = [(r.item_id, r.quantity) for r in live_counts(session, [branch_id], start, end)]
+    sold = [
+        (item_id, quantity)
+        for day in _dates(start, end)
+        for item_id, (quantity, _) in sales.day_sales(session, branch_id, day).by_item.items()
+    ]
     known = all(costs.get(i) is not None for i, q in sold if q)
     goods = sum(q * (costs.get(i) or 0) for i, q in sold) if known else None
     stmt = (

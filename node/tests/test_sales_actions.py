@@ -16,6 +16,7 @@ from mia.agents.sales_supervisor.actions import (
     build_query,
     build_request,
 )
+from mia.agents.sales_supervisor.actions import offered as offered_on
 from mia.agents.sales_supervisor.decider import _args, _parse
 from mia.core.models import Branch, Person
 from mia.i18n import t
@@ -284,7 +285,8 @@ def test_action_instructions_say_who_texts_and_carry_no_message_text(
     get_settings.cache_clear()
     request = build_request(query("zorblax 3 sp"), "m")
     asks = [q for k, q in request["questions"].items() if k == "action" or k.startswith("is_")]
-    assert asks and len(asks) == (1 if mode == "choice" else len(NOULS))
+    offered = [a for a in offered_on("counts") if a in NOULS]  # a counts kiosk (I2)
+    assert asks and len(asks) == (1 if mode == "choice" else len(offered))
     for question in asks:
         assert "zorblax" not in question["instructions"]
         assert "`sender_role`" in question["instructions"]
@@ -321,7 +323,8 @@ def test_nouls_ask_a_yes_or_no_per_action_and_keep_the_slot_questions(
     choice_keys = set(build_request(query("3 sp"), "m")["questions"])
     _nouls(monkeypatch)
     questions = build_request(query("3 sp"), "m")["questions"]
-    assert set(questions) == (choice_keys - {"action"}) | {f"is_{a}" for a in NOULS}
+    asked = {f"is_{a}" for a in offered_on("counts") if a in NOULS}  # a counts kiosk (I2)
+    assert set(questions) == (choice_keys - {"action"}) | asked
     assert "clarify" not in NOULS
     noul = questions["is_report_sales"]
     assert noul["type"] == "noul"

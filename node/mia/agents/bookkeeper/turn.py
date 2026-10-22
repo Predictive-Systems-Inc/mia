@@ -206,10 +206,35 @@ def _run(
         if reason == "no_session":
             text = t("bk.count.no_session", deps.lang, branch=deps.branch.name)
             return reply_text(session, deps, thread, text)
+        if reason == "which_drawer" and isinstance(inp, tools.CashCountInput):
+            return _ask_drawer(session, deps, thread, action, inp, currency)
         key = replies.refusal_key(reason)
         return reply_text(session, deps, thread, t(key, deps.lang, limit=limit))
     text = _result(deps, binding.tool_id.removeprefix(f"{MANIFEST.id}."), inp, out)
     return reply_text(session, deps, thread, "\n".join(filter(None, [lead, text])))
+
+
+def _ask_drawer(
+    session: Session,
+    deps: AgentDeps,
+    thread: Thread,
+    action: str,
+    inp: tools.CashCountInput,
+    currency: str,
+) -> ChatReply:
+    """Whose drawer a receipts day's count closes: one button per open drawer's clerk (the
+    count with that drawer), plus Something else. Nothing is closed until one is tapped."""
+    options: replies.Options = {}
+    for s in sales.open_sessions(session, deps.branch.id):  # the tool checked the sessions read
+        args = {**inp.model_dump(mode="json"), "drawer": s.id}
+        chosen = Decision(action=action, args=args, confidence=1.0)
+        options[tools.first_name(session, s.person_id)] = chosen.model_dump(mode="json")
+    other = t("clarify.something_else", deps.lang)
+    options[other] = Decision(action="clarify", confidence=1.0).model_dump(mode="json")
+    counted = replies.money(inp.counted, currency, deps.lang)
+    return _ask(
+        session, deps, thread, t("bk.count.which_drawer", deps.lang, counted=counted), options
+    )
 
 
 def _log(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) -> None:
@@ -256,8 +281,9 @@ def _todays_count(session: Session, deps: AgentDeps, args: dict[str, Any]) -> Ca
 
 def _correct(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) -> ChatReply:
     """A correction of a write: a cash count replaces the day's count it names (a new row; the
-    latest count of a date wins) and says so; anything else, a count with none to replace, or
-    a count on a receipts date (its drawer is closed), is asked again, never written."""
+    latest count of a date wins) and says so; anything else, or a count with none to replace,
+    is asked again, never written. On a receipts date the count is final (its drawer is
+    closed): bk.correction.receipts, nothing written."""
     _log(session, deps, thread, decision)
     previous = (
         _todays_count(session, deps, decision.args) if decision.action == "cash_count" else None
@@ -265,8 +291,8 @@ def _correct(session: Session, deps: AgentDeps, thread: Thread, decision: Decisi
     if previous is None:
         return reply_text(session, deps, thread, t("bk.correction.ask", deps.lang))
     if sales.source_of(deps.branch, previous.business_date) == "receipts":
-        # a closed drawer never reopens; a new count would close the next clerk's
-        return reply_text(session, deps, thread, t("bk.correction.ask", deps.lang))
+        # a closed drawer never reopens, so its count is final; a new count asks whose drawer
+        return reply_text(session, deps, thread, t("bk.correction.receipts", deps.lang))
     old = replies.money(previous.counted, previous.currency, deps.lang)
     lead = t("bk.count.replaced", deps.lang, old=old)
     return _run(session, deps, thread, decision.action, decision.args, lead)

@@ -323,44 +323,57 @@ With yes to 1 and 2 this becomes data standard 1.9 and ADR 022.
 Built with 1.9 (ADR 022): the four tables, `mia/core/sales.py` (`open_session`, `close_session`,
 `record_receipt` for sales and refunds, `void_receipt`, `receipts`, `day_sales`), the setting
 `sales.receipts_from` (branch name to first receipts day; empty at Ferino's, so every kiosk is on
-counts) and the human rights in policy.csv. Waiting for the till or a receipt entry path:
+counts) and the human rights in policy.csv. What was waiting for the till or a receipt entry
+path then (the chat path, the void and refund cards, the moves onto `day_sales` and the
+sessions are now built, see the dated note below):
 
-- The receipt tools (the till's own spec); the read grants of the sales supervisor, bookkeeper,
-  branch manager and inventory manager are in (round 1), the production planner's and the
-  customer service's arrive with their reads.
-- The chat path: a clerk typing a receipt (`source` chat), and a clerk's count on a receipts day
-  answered with the receipts figures (section 5).
-- The void and refund cards: the approval types `sales.void` (head staff) and `sales.refund`
-  (owner or admin) are checked by the services but nothing requests them yet; the refund card
-  sets `evidence["amount"]`, the amount approved.
+- The till's own receipt tools (the till's own spec); the read grants of the sales supervisor,
+  bookkeeper, branch manager and inventory manager are in (round 1), the production planner's
+  and the customer service's arrive with their reads.
 - Voiding a sale together with its refunds (refused in v1).
-- Moving the sales supervisor's reports and the bookkeeper's `tender_sales` onto `day_sales`
-  (section 8, step 2); the live count query itself is in core (`sales.live_counts`) already.
-- Opening a session on a retail clerk's check-in and closing it from the bookkeeper's closing
-  count; `drawer_out` in the session's expected cash (it lives with the bookkeeper today).
 - A running experiment's `to_price` at the till: `experiment_id` is stored as given, the unit
   price is the dated price.
 
 ### Sales receipts in the chat (22 Oct 2026, plan 2026-10-22-sales-receipts-chat)
 
 Built by that plan: the chat path (a clerk on a receipts kiosk rings a receipt with `source`
-chat at the dated price, `sales_supervisor.record_receipt`; a count typed there is rung as a
-receipt and a receipt typed on a counts kiosk is a count, said once); the void and refund cards
+chat at the dated price, `sales_supervisor.record_receipt`; a count typed there with a receipt
+word is rung as a receipt, and one without asks first with the computed receipt on a button; a
+receipt typed on a counts kiosk is a count, said once); the void and refund cards
 (`sales_supervisor.void_receipt` raises `sales.void` for head staff, `refund_receipt` raises
 `sales.refund` for the owner or admin with `evidence["amount"]` the computed amount, each
 approval used once); the session at check-in (a clerk's check-in on a receipts kiosk opens her
-drawer with the branch's `sales.opening_float`) and at the count (the bookkeeper's closing count
-closes the earliest open drawer and names the others); the moves onto `day_sales` (the sales
-supervisor's today, the owner's report and the closing reminder, the bookkeeper's
-`tender_sales`), and the clerk's receipts read in the chat (`read_receipts`, today or last). The
-end to end day is `test_a_receipts_day_at_the_mall_kiosk` in tests/test_day_sales_clerk.py.
+drawer with the branch's `sales.opening_float`, a cover's at the visit's kiosk) and at the count
+(the bookkeeper's closing count closes a drawer: the only one open when the date has no count
+yet, else the one head staff names on its button; a recount never closes a drawer nobody named,
+and a correction of a receipts day's count says it is final); a cover's sales turn works at the
+shop of her checked-in visit of the day (`sales_supervisor.tools.at_visit`); the moves onto
+`day_sales` (the sales supervisor's today and the owner's report, the bookkeeper's
+`tender_sales`, the BIR sales journal and the cost of goods in `monthly_profit`); the closing
+reminder and the missing counts notice are skipped on a receipts day (not moved); and the
+clerk's receipts read in the chat (`read_receipts`, today or last). Jev is offered the receipt
+actions (record, void, refund, read) and `receipts_which` only on a receipts kiosk, so a counts
+kiosk's request is the one before the plan, and a counts kiosk reads a typed total only after a
+receipt word. The end to end day is `test_a_receipts_day_at_the_mall_kiosk` in
+tests/test_day_sales_clerk.py.
+
+**Do not switch a kiosk to receipts yet** (`sales.receipts_from`): the branch manager's reads
+and the production planner's forecast below still read counts only, so on a receipts day they
+see no sales. Switch a kiosk only after they move onto `day_sales` (their own plan), and after
+a Jev run on the counts kiosks' corrections.
 
 Still carried over:
 
 - Split tender and discounts (senior, PWD) in the chat; a receipt has one tender and no discount.
 - The app's check-in route (`mia/api/schedule.py`) opens no session; the chat is a receipts
   kiosk's check-in path (Q125).
-- `period_report` on receipts (it reads the counts).
+- `period_report` on receipts (it reads the counts; sales_supervisor/tools.py `period_report`).
+- The branch manager's reads onto `day_sales` (each reads `live_counts`, counts only):
+  branch_manager/tools.py `daily` (experiment results), `branch_numbers` (two reads, best days
+  and the year), `coaching`, `_branch_week` and `monthly_letter`; branch_manager/due.py
+  `_amounts`.
+- The production planner's demand forecast onto `day_sales`: production_planner/tools.py
+  `kiosk_data` (a receipts kiosk's forecast falls toward zero).
 - `drawer_out` in the session's own expected cash (the count's expected holds it, Q122).
 - A session's handover float (each session opens with the branch's float).
 - Voiding a sale together with its refunds (refused in v1).
@@ -372,7 +385,9 @@ Still carried over:
 - `tender_sales` over a month or quarter is one `day_sales` query pair per day.
 - A refund is paid only from the requester's own drawer (Q127).
 - Head staff cannot request a refund in the chat.
-- Jev's not-stated item on a refund asks which items instead of widening to the whole sale.
 - A stale drawer is closed by the next count, the CashCount dated by the closing date.
+- A cover's void or refund card goes to her home branch's deciders (an approval's branch is
+  the requester's), while the handler runs at the receipt's kiosk.
+- Two open drawers whose clerks share a first name get one button between them.
 - The money guard does not recognise a `sales.void` approval in `deps.approved` (it fails
   closed: an approved void runs through its handler, never a second tool call).

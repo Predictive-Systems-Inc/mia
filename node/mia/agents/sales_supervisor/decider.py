@@ -186,10 +186,12 @@ def _from_nouls(answers: dict[str, Any]) -> dict[str, Any]:
     already carry `action` (the choice question) pass unchanged."""
     if "action" in answers:
         return answers
-    try:
-        yes = {name: float(answers[f"is_{name}"]["noul"]) for name in NOULS}
+    try:  # the actions offered on the kiosk (actions.offered); a counts kiosk asks fewer
+        yes = {n: float(answers[f"is_{n}"]["noul"]) for n in NOULS if f"is_{n}" in answers}
     except (KeyError, TypeError, ValueError) as exc:
         raise DecideError(f"unexpected answer: {exc!r}") from exc
+    if not yes:
+        raise DecideError("no action answer")
     ranked = sorted(yes, key=lambda name: -yes[name])
     confident = [name for name in ranked if yes[name] >= THRESHOLD]
     if len(confident) == 1 and len(ranked) > 1 and yes[ranked[1]] >= RUNNER_UP:
@@ -250,22 +252,30 @@ def _fold(answers: dict[str, Any], q: Query) -> tuple[dict[str, Any], bool]:
 def _for_kiosk(
     answers: dict[str, Any], q: Query, decision: Decision, converted: bool = False
 ) -> Decision:
-    """The decision as the kiosk's source records sales: on a receipts kiosk a report_sales
-    pick is parsed again as record_receipt, on a counts kiosk a record_receipt pick as
-    report_sales with `as_count` (the turn says so once a day). `raw_action` is the forced
-    action, so the which-item question runs it; the other action is never an alternative."""
+    """The decision as the kiosk's source records sales. On a receipts kiosk a report_sales
+    pick is parsed again as record_receipt, with `confirm` when the message has no receipt
+    word (a count out of habit: the turn asks before ringing it, an ask beats a wrong write).
+    On a counts kiosk a record_receipt pick, or a report_sales pick of a message with a receipt
+    word, is report_sales with `as_count` (the turn says so once a day). `raw_action` is the
+    forced action, so the which-item question runs it; the other action is never an
+    alternative."""
     wrong, right = KIOSK[q.source]
     alternatives = [a for a in decision.alternatives if a.action != wrong]
-    if converted and decision.raw_action == right and right == "report_sales":
-        args = {**decision.args, "as_count": True}  # the nouls said receipt (_fold)
-        return decision.model_copy(update={"alternatives": alternatives, "args": args})
-    if decision.raw_action != wrong:
-        return decision.model_copy(update={"alternatives": alternatives})
-    top = answers["action"]
-    forced = {**answers, "action": {**top, "choice": right, "probabilities": {right: 1.0}}}
-    decision = shared.parse(forced, q, actions=ACTIONS, args=_args)
-    args = {**decision.args, "as_count": True} if right == "report_sales" else decision.args
-    return decision.model_copy(update={"raw_action": right, "args": args})
+    if decision.raw_action == wrong:
+        top = answers["action"]
+        forced = {**answers, "action": {**top, "choice": right, "probabilities": {right: 1.0}}}
+        decision = shared.parse(forced, q, actions=ACTIONS, args=_args)
+        decision = decision.model_copy(update={"raw_action": right})
+        converted = True
+    else:
+        decision = decision.model_copy(update={"alternatives": alternatives})
+    if decision.raw_action != right:
+        return decision
+    if right == "report_sales" and (converted or q.receipt_word):
+        return decision.model_copy(update={"args": {**decision.args, "as_count": True}})
+    if right == "record_receipt" and converted and not q.receipt_word:
+        return decision.model_copy(update={"args": {**decision.args, "confirm": True}})
+    return decision
 
 
 async def decide(q: Query) -> Decision:

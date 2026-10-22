@@ -1,7 +1,8 @@
 """Sales supervisor tools: typed inputs and outputs, permission checked data access, writes only
 through mia.core.store. Target share and totals are pure code in calc.py.
 
-Branch scoping: every tool works on the person's own branch. Naming another branch of the
+Branch scoping: every tool works on the person's own branch, or on the shop of her checked-in
+visit of the day when she covers another (at_visit, applied once to the turn's deps). Naming another branch of the
 organisation (or "all") needs the read_all or write_all action on the data resource in RBAC
 (admin, and the owner through the hierarchy); anyone else gets PermissionDenied. An owner or
 admin who names no branch in `today` sees every branch.
@@ -10,6 +11,7 @@ The business date of a count (the retail template's hours.business_date) is the 
 only just after a late closing, before the next opening; it is never asked.
 """
 
+import dataclasses
 import datetime as dt
 from collections.abc import Callable, Sequence
 from typing import Literal
@@ -41,6 +43,7 @@ from mia.core.models import (
     SalesSession,
     SalesTarget,
     Tender,
+    Visit,
 )
 from mia.core.money import format_int, format_money
 from mia.core.rbac import Resource, get_rbac
@@ -65,6 +68,32 @@ RECEIPT_TABLES = [
 
 
 # ---- shared helpers -----------------------------------------------------------------------
+
+VISITS = Resource(kind="data", name="core.visit")
+
+
+def at_visit(deps: AgentDeps) -> AgentDeps:
+    """deps at the shop of the person's checked-in visit of the business date (a D39 cover's
+    kiosk, the latest check-in), with that shop's local date; deps unchanged without one or
+    when the visits read is not allowed. Every sales read and write of a turn then uses the
+    shop she sells at: her drawer, her receipts and her counts agree."""
+    if not get_rbac().check(
+        deps.actor, VISITS.model_copy(update={"owner_id": deps.person.id}), "read"
+    ):
+        return deps
+    rows = deps.session.exec(
+        select(Visit).where(Visit.date == deps.today, col(Visit.actual_start).is_not(None))
+    )
+    mine = [v for v in rows if deps.person.id in v.assigned_person_ids]
+    visit = max(mine, key=lambda v: v.actual_start or utcnow(), default=None)
+    if visit is None or visit.branch_id == deps.branch.id:
+        return deps
+    branch = deps.session.get(Branch, visit.branch_id)
+    if branch is None or branch.organisation_id != deps.organisation_id:
+        return deps
+    # ponytail: the kiosk's local date; the late-closing rule is applied by each tool as before
+    today = utcnow().astimezone(ZoneInfo(branch.timezone)).date()
+    return dataclasses.replace(deps, branch=branch, today=today)
 
 
 def _check(deps: AgentDeps, resource: Resource, action: str, tool_call_id: str) -> None:
@@ -626,6 +655,7 @@ class RecordReceiptInput(BaseModel):
     tender: Tender
     typed_total: int | None = Field(None, ge=0, description="The total typed, minor units")
     source_message_id: str | None = None
+    confirm: bool = False  # a count rung as a receipt: computed and asked, never written
 
 
 class ReceiptLineOut(BaseModel):
@@ -637,7 +667,7 @@ class ReceiptLineOut(BaseModel):
 
 
 class RecordReceiptOutput(BaseModel):
-    status: Literal["recorded", "total_differs", "no_session"]
+    status: Literal["recorded", "total_differs", "no_session", "confirm"]
     receipt_no: str | None
     lines: list[ReceiptLineOut]
     total: int
@@ -662,7 +692,8 @@ def record_receipt(
 ) -> RecordReceiptOutput:
     """Ring up one sale on the clerk's open session of the business date, paid in full by one
     tender, at the dated prices (core.sales.record_receipt, source chat). Nothing is written
-    when the typed total differs from the computed one (total_differs) or the clerk has no open
+    when the typed total differs from the computed one (total_differs), when args.confirm asks
+    first (confirm: the computed receipt, for the turn's question) or the clerk has no open
     session of the business date (no_session; a session is never opened here). Raises
     LookupError("counts_kiosk") on a kiosk that reports counts, LookupError for an item the
     branch does not sell, LookupError(<code>) for a refused core write."""
@@ -692,7 +723,8 @@ def record_receipt(
     total = sum(line.line_total for line in lines)
 
     def out(
-        status: Literal["recorded", "total_differs", "no_session"], no: str | None = None
+        status: Literal["recorded", "total_differs", "no_session", "confirm"],
+        no: str | None = None,
     ) -> RecordReceiptOutput:
         return RecordReceiptOutput(
             status=status,
@@ -706,6 +738,8 @@ def record_receipt(
 
     if args.typed_total is not None and args.typed_total != total:
         return out("total_differs")
+    if args.confirm:
+        return out("confirm")
     events.write_lock(deps.session)  # the session and the next number decide the write
     mine = deps.session.exec(
         select(SalesSession).where(
@@ -1058,12 +1092,13 @@ def void_receipt(deps: AgentDeps, args: VoidReceiptInput, tool_call_id: str) -> 
 
 def refund_receipt(deps: AgentDeps, args: RefundReceiptInput, tool_call_id: str) -> ReceiptOut:
     """Record the refund with its approved sales.refund approval in deps.approved (run by the
-    approval handler): a new receipt in the requester's open drawer, else the branch's earliest
-    open one (none: LookupError("no_session")), paid back in the sale's one tender (else cash).
+    approval handler): a new receipt in the requester's open drawer of the business date
+    (none: LookupError("no_session")), paid back in the sale's one tender (else cash).
     core.sales refuses a second use and more than the approved amount."""
     for table in RECEIPT_TABLES:
         _check(deps, _as_reporter(table, deps), "write", tool_call_id)
     _check(deps, _as_reporter(SESSIONS, deps), "read", tool_call_id)
+    _check(deps, _as_reporter(RECEIPT_TABLES[2], deps), "read", tool_call_id)  # the sale's tender
     sale = _find_receipt(deps, args.receipt_no, tool_call_id)
     approval = _approval_of(deps, sales.REFUND, sale.id)
     lines = refund_lines(deps.session, sale, args.items)
@@ -1071,7 +1106,10 @@ def refund_receipt(deps: AgentDeps, args: RefundReceiptInput, tool_call_id: str)
     events.write_lock(deps.session)  # the drawer and the next number decide the write
     drawers = sales.open_sessions(deps.session, deps.branch.id)
     # the requester's own drawer pays it out, never another clerk's (her count would be short)
-    s = next((d for d in drawers if d.person_id == deps.person.id), None)
+    s = next(
+        (d for d in drawers if d.person_id == deps.person.id and d.business_date == deps.today),
+        None,
+    )  # never a stale drawer of an earlier date
     if s is None:
         raise LookupError("no_session")
     tenders = {
@@ -1098,10 +1136,12 @@ def refund_receipt(deps: AgentDeps, args: RefundReceiptInput, tool_call_id: str)
 
 
 def _requester_deps(session: Session, approval: Approval) -> AgentDeps:
-    """The requester's deps on their branch's business date now, with the approval approved
+    """The requester's deps at the receipt's branch (a cover's sale is at the visit's kiosk,
+    at_visit) on its business date now, with the approval approved
     (bookkeeper.tools._requester_deps, which this module cannot import)."""
     person = session.get(Person, approval.requester_on_behalf_of or "")
-    branch = session.get(Branch, person.branch_id) if person is not None else None
+    receipt = session.get(SalesReceipt, approval.subject_id)  # the voided or refunded sale
+    branch = session.get(Branch, receipt.branch_id) if receipt is not None else None
     if person is None or branch is None:
         raise LookupError("the requester")
     today = retail_hours.business_date_at(branch, retail_hours.load(session, branch.id), utcnow())

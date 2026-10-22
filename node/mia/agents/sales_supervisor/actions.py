@@ -200,6 +200,7 @@ class Query:
     source: Literal["counts", "receipts"] = "counts"  # the kiosk's sales source today
     receipt_no: str | None = None  # the receipt a void or refund names (parsing.strip_receipt)
     names_item: bool = False  # a word of the message (receipt number stripped) is a menu token
+    receipt_word: bool = False  # the message says resibo, receipt, rcpt or r (RECEIPT_WORDS)
 
 
 def _periods(lang: str) -> dict[str, str]:
@@ -316,7 +317,8 @@ def build_query(
     base = strip_receipt(message, total=False, receipt_no=on_receipts)
     groups, total = pre_parse(base.text if on_receipts else message, menu)
     cut = strip_receipt(message, receipt_no=on_receipts)
-    if total is None and cut.total is not None:
+    receipt_word = any(w in RECEIPT_WORDS for w in message.casefold().split())
+    if total is None and cut.total is not None and (on_receipts or receipt_word):
         typed = pre_parse(cut.text, menu)[0]
         kept = _named(typed, menu) >= _named(groups, menu) and _worded(typed) >= _worded(groups)
         if kept:  # the typed total takes no item's count, known or unknown
@@ -343,6 +345,7 @@ def build_query(
         source=source,
         receipt_no=base.receipt_no,
         names_item=any(w in menu for w in base.text.casefold().split()),
+        receipt_word=receipt_word,
     )
 
 
@@ -366,15 +369,26 @@ def _choice(instructions: str, options: dict[str, str]) -> dict[str, Any]:
     return {"type": "choice", "instructions": instructions, "criteria": options}
 
 
-def _action_questions(org: str) -> dict[str, Any]:
-    """The action question: one choice over ACTIONS, or under MIA_SALES_QUESTION=nouls one
-    yes-or-no `is_<action>` per NOULS entry, all in the same request."""
+# Offered only on a receipts kiosk: a counts kiosk's request is the one before receipts (I2).
+RECEIPT_ACTIONS = frozenset(["record_receipt", "void_receipt", "refund_receipt", "read_receipts"])
+
+
+def offered(source: str) -> list[str]:
+    """The ACTIONS offered to Jev on a kiosk of the source, in ACTIONS order."""
+    return [a for a in ACTIONS if source == "receipts" or a not in RECEIPT_ACTIONS]
+
+
+def _action_questions(org: str, source: str) -> dict[str, Any]:
+    """The action question over the actions offered on the kiosk: one choice, or under
+    MIA_SALES_QUESTION=nouls one yes-or-no `is_<action>` per NOULS entry, all in the same
+    request."""
+    names = offered(source)
     if get_settings().MIA_SALES_QUESTION == "choice":
         return {
             "action": _choice(
                 f"Which one action does {who(org)} want from Mia, the shops' sales supervisor?"
                 f" {SHAPE}",
-                {name: a.description for name, a in ACTIONS.items()},
+                {name: ACTIONS[name].description for name in names},
             )
         }
     return {
@@ -384,6 +398,7 @@ def _action_questions(org: str) -> dict[str, Any]:
             "criteria": {"true": ACTIONS[name].description, "false": "No, something else."},
         }
         for name, ask in NOULS.items()
+        if name in names
     }
 
 
@@ -400,7 +415,7 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
         "total": q.total,
     }
     questions: dict[str, Any] = {
-        **_action_questions(q.org),
+        **_action_questions(q.org, q.source),
         "period": _choice(
             "Which period of sales does the sender ask about, or which day is a count for?"
             " Not stated when the message names no period or day (a plain count).",
@@ -417,10 +432,6 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
         "target_start": _choice(
             "Which day or month is the target for?", {**_target_starts(), **unsaid}
         ),
-        "receipts_which": _choice(
-            "Which receipts does the sender ask about?",
-            {"today": "Today's receipts", "last": "The last receipt", **unsaid},
-        ),
         "conversation": _choice(
             "What kind of message is it?",
             {
@@ -432,6 +443,11 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
             },
         ),
     }
+    if q.source == "receipts":
+        questions["receipts_which"] = _choice(
+            "Which receipts does the sender ask about?",
+            {"today": "Today's receipts", "last": "The last receipt", **unsaid},
+        )
     if not q.groups:  # with groups, a period question's item is item_0 (ruling 7)
         questions["item"] = _choice(
             "Which one menu item does the sender ask about, for a question about sales over a"
