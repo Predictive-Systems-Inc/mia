@@ -3,6 +3,7 @@ format_money, counts through format_int), the conversation replies, and the ques
 asks (which item). Code words the numbers; no model writes a reply."""
 
 import copy
+import datetime as dt
 from typing import Any
 
 from mia.agents.decider import Decision
@@ -19,6 +20,7 @@ from mia.agents.sales_supervisor.tools import (
     SetTargetOutput,
     TodayOutput,
 )
+from mia.agents.shift_supervisor.rules import fmt_date
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.core.models import TENDERS
 from mia.core.money import format_int, format_money
@@ -74,6 +76,13 @@ def _branch_today(day: BranchToday, lang: str) -> Block:
     return TextBlock(text=text)
 
 
+def _when(day: dt.date, at: dt.datetime, lang: str) -> str:
+    """The business date and the local time of `at`: "Fri 23 Oct, 12:05", "23.10. klo 12.05"."""
+    if lang == "fi":
+        return f"{fmt_date(day.isoformat(), lang)} klo {at:%H.%M}"
+    return f"{fmt_date(day.isoformat(), lang)}, {at:%H:%M}"
+
+
 def _text(key: str, lang: str, **values: Any) -> list[Block]:
     return [TextBlock(text=t(key, lang, **values))]
 
@@ -86,11 +95,8 @@ def tool_reply(tool: str, out: dict[str, Any], args: dict[str, Any], lang: str) 
     if tool == "receipts":
         return receipts_read(ReceiptsOutput.model_validate(out), str(args.get("which")), lang)
     if tool == "record_counts":
-        rec = RecordCountsOutput.model_validate(out)
-        lines = _lines([(c.quantity, c.item) for c in rec.recorded], lang)
-        total = format_money(rec.day_total, rec.currency, lang)
-        target = _target(rec.day_total, rec.target_share, rec.currency, lang)
-        return _text("sales.recorded", lang, lines=lines, total=total, target=target)
+        rec = RecordCountsOutput.model_validate(out)  # the owner's ask: no running total
+        return _text("sales.recorded", lang, when=_when(rec.business_date, rec.reported_at, lang))
     if tool == "correct_count":
         cor = CorrectCountOutput.model_validate(out)
         quantity, previous = (

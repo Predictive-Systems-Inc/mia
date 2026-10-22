@@ -160,7 +160,7 @@ def test_a_normal_day_at_the_mall_kiosk(day: Day, session: Session) -> None:
     day.tick()  # the morning work (the seed's late shift yesterday goes to Marites here)
     noon = report(day, NOON)
     total_noon = amount(day, [NOON])
-    assert money(total_noon) in noon.text()  # the running total, worded
+    assert money(total_noon) not in noon.text() and "12:00" in noon.text()  # recorded and when
     check_in(day, "Liza", 13)
     day.at(13, 20)
     assert day.told("Marites", step=day.tick()) == []  # Liza checked in: no missed check-in

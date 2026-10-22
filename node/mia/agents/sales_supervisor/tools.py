@@ -278,6 +278,7 @@ class RecordCountsInput(BaseModel):
 class RecordCountsOutput(BaseModel):
     recorded: list[CountOut]
     business_date: dt.date
+    reported_at: dt.datetime  # when the count was said, in the branch's time zone
     day_total: int
     currency: str
     target_share: int | None
@@ -352,6 +353,9 @@ def record_counts(
     return RecordCountsOutput(
         recorded=[_count_out(r, catalog[r.item_id]) for r in rows],
         business_date=day,
+        reported_at=_reported_at(deps, args.source_message_id).astimezone(
+            ZoneInfo(deps.branch.timezone)
+        ),
         day_total=sum(a for _, a in calc.totals(_plain(live)).values()),
         currency=rows[0].currency,  # ponytail: one currency per branch in v1
         target_share=target_share(deps, deps.branch.id, day, tool_call_id),

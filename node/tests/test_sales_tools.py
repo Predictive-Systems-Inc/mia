@@ -83,6 +83,7 @@ def test_record_counts_writes_rows_and_events(session: Session, ferinos: Ferinos
     out = tools.record_counts(deps_for(session, people["Ana"]), args, "c1")
     # Special is 49.50 at the kiosk while the seeded experiment runs (TODAY minus 4 days on).
     assert out.day_total == 3 * 4950 + 5 * 4000 and out.currency == "PHP"
+    assert out.reported_at.utcoffset() == dt.timedelta(hours=8)  # the branch's local time
     assert out.business_date == today() and out.target_share is not None
     rows = counts(session, people["Ana"], today())
     assert {(r.item_id, r.quantity, r.amount) for r in rows} == {

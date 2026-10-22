@@ -110,6 +110,12 @@ def _counted(session: Session) -> list[Event]:
     return list(session.exec(select(Event).where(Event.action == "sales.counted")).all())
 
 
+def _recorded(text: str, lang: str = "fil") -> bool:
+    """The count's reply: "Recorded, <date>, <time>." in the language, with no money."""
+    head = t("sales.recorded", lang, when="").removesuffix(".")
+    return text.startswith(head) and "₱" not in text
+
+
 def test_a_count_is_recorded_and_echoed(
     session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -117,8 +123,7 @@ def test_a_count_is_recorded_and_echoed(
     sp, cl = _item(session, "Special"), _item(session, "Classic")
     _answers(monkeypatch, "report_sales", item_0=sp, item_1=cl, conversation="other")
     reply = _turn(session, people["Ana"], "3 sp 5 cl")
-    text = reply.text()
-    assert "3 Special" in text and "5 Classic" in text and "₱348.50" in text  # 3x49.50 + 5x40
+    assert _recorded(reply.text())
     assert len(_counted(session)) == 2
     said = session.exec(select(Message).where(Message.text == "3 sp 5 cl")).one()
     rows = session.exec(select(SalesCount).where(SalesCount.reported_by == people["Ana"].id))
@@ -148,10 +153,13 @@ def test_today_so_far_is_the_running_total(
     _, people = ferinos
     _answers(monkeypatch, "report_sales", item_0=_item(session, "Special"))
     first = _turn(session, people["Ana"], "3 sp")
-    assert "₱148.50" in first.text()  # Special is 49.50 while the seeded experiment runs
+    assert _recorded(first.text())  # the owner's ask: no running total on a count
     _answers(monkeypatch, "report_sales", item_0=_item(session, "Classic"))
     second = _turn(session, people["Ana"], "5 cl", first.thread_id)
-    assert "₱348.50" in second.text()  # 148.50 + 200.00
+    assert _recorded(second.text())
+    _answers(monkeypatch, "sales_today", period="today")
+    today = _turn(session, people["Ana"], "kumusta benta", second.thread_id)
+    assert "₱348.50" in today.text()  # 3x49.50 (the seeded experiment's price) + 5x40
 
 
 def test_an_unsure_item_asks_which_item(
@@ -166,7 +174,7 @@ def test_an_unsure_item_asks_which_item(
     assert _buttons(asked)[:3] == ["Ube", "Special", "Classic"]
     assert not _counted(session)
     reply = _turn(session, people["Ana"], "Special", asked.thread_id)
-    assert "3 Special" in reply.text()
+    assert _recorded(reply.text())
     row = session.exec(select(SalesCount).where(SalesCount.reported_by == people["Ana"].id))
     assert sp in {r.item_id for r in row} and len(_counted(session)) == 1
 
@@ -241,7 +249,7 @@ def test_a_count_after_closing_is_recorded_on_today_without_asking(
     _, people = ferinos  # Ana reported yesterday (seed); the kiosk closed at 21:00
     _answers(monkeypatch, "report_sales", item_0=_item(session, "Special"))
     reply = _turn(session, people["Ana"], "3 sp")
-    assert "3 Special" in reply.text() and not any(
+    assert _recorded(reply.text()) and not any(
         isinstance(b, QuickRepliesBlock) for b in reply.blocks
     )
     newest = session.exec(select(SalesCount).order_by(col(SalesCount.reported_at).desc())).first()
@@ -310,6 +318,27 @@ def test_today_reply_shows_the_share_of_the_target_reached() -> None:
     assert text == "Mall kiosk today: 1,200 Special. Total ₱54,000.00 of ₱36,000.00 (150%)."
     fi = tool_reply("today", out, {}, "fi")[0].text  # type: ignore[union-attr]
     assert "54\u202f000,00\xa0₱" in fi and "(150 %)" in fi
+
+
+def test_a_count_is_answered_with_recorded_and_the_date_and_time() -> None:
+    """The owner's ask: "Recorded" and when (the business date, the local time it was said), no
+    lines, running total or target."""
+    from mia.agents.sales_supervisor.replies import tool_reply
+
+    line = {"count_id": "c", "item_id": "i1", "item": "Special", "quantity": 3, "amount": 13500}
+    out = {
+        "recorded": [line | {"tender": "cash"}],
+        "business_date": "2026-10-23",
+        "reported_at": "2026-10-23T12:05:00+08:00",
+        "day_total": 13500,
+        "currency": "PHP",
+        "target_share": 3600000,
+    }
+    assert tool_reply("record_counts", out, {}, "en")[0].text == (  # type: ignore[union-attr]
+        "Recorded, Fri 23 Oct, 12:05."
+    )
+    fi = tool_reply("record_counts", out, {}, "fi")[0].text  # type: ignore[union-attr]
+    assert fi == "Kirjattu, 23.10. klo 12.05."
 
 
 def test_owner_sets_a_month_target_and_today_uses_its_share(
