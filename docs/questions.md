@@ -80,3 +80,42 @@ Format for each entry:
 - Assumed answer: no. A person's latest thread with the agent is shared by the app and every
   channel, so history and approvals stay in one place; the app shows the whole conversation.
 - Blocking: no
+
+## Q10: JEV rule format and interpreter
+- Where: docs/superpowers/specs/2026-10-22-erp-builder-and-jev-design.md, section 3; ADR 008
+- Question: "JEV" was described as JSON decision rules. Use an existing format (JSON Logic, CEL)
+  or a Mia format?
+- Assumed answer: a Mia format close to JSON Logic (first-match lists and decision tables,
+  closed operator set, integer money), evaluated by mia/core/rules.py. No new dependency.
+- Blocking: no
+
+## Q11: Decision records in the core data standard
+- Where: design section 3, "Decision records"
+- Question: storing every rule evaluation needs a new core table (data standard 1.3).
+- Assumed answer: a `rule_decision` table in core, written through the store with a
+  `rule.decided` event. Not built until the product owner approves.
+- Blocking: yes, for building the interpreter's storage (not for the design)
+
+## Q12: Where industry-neutral ERP tables live
+- Where: design section 4, "Map"; decision D8
+- Question: purchasing and inventory are industry-neutral, so D8 points to core, but they are
+  large and not every branch needs them.
+- Assumed answer: optional standard modules owned by Better Labs (tables prefixed
+  `purchasing_*`, `inventory_*`), each versioned with the data standard and installed only when
+  a package needs it.
+- Blocking: no
+
+## Q13: What the architect agent may see
+- Where: design section 6
+- Question: the architect uses a cloud model at build time, outside core/egress.py.
+- Assumed answer: it runs on a developer machine or in CI, not on a node, and sees only the
+  business brief, the catalogue, the code and synthetic data, never client records.
+- Blocking: no
+
+## Q14: Organisation rule parameters
+- Where: design section 3, "Organisation parameters"
+- Question: can organisations change rule thresholds?
+- Assumed answer: only parameters marked `org_editable`, within declared min and max, in
+  node/config/org/<org>/rules.yaml; editing is privileged, logged and followed by the rule's
+  test vectors.
+- Blocking: no
