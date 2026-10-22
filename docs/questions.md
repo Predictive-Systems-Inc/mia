@@ -859,4 +859,5 @@ Format for each entry:
 - Where: docs/superpowers/specs/2026-10-22-sales-operations-design.md (mapped from docs/reference/odoo-schema, Odoo 17.0 point of sale); node/mia/core/models.py, node/migrations/versions/0000_initial
 - Question: May the data standard gain four core sales tables for receipt-level sales, `sales_sessions` (a clerk's shift, opening float to closing count, Odoo pos.session), `sales_receipts` (one sale or refund, Odoo pos.order), `sales_receipt_lines` (Odoo pos.order.line) and `sales_payments` (by tender, Odoo pos.payment), with `sales_counts` kept as the source of a day until a receipts date is set per kiosk, never both? The spec's section 11 lists the six yes-or-no questions.
 - Assumed answer: core, data standard 1.9, after the owner's yes; nothing is built until then.
-- Blocking: yes, until answered.
+- Answer (22 Oct 2026, D43): yes, the four tables now as core (1.9); a session per clerk shift; void by head staff, refund by owner or admin; both sources supported, set up per kiosk.
+- Blocking: no (answered)
