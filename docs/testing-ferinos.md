@@ -92,6 +92,8 @@ only in dev mode from loopback, like the sim channel itself (ADR 021); anywhere 
 - Mia's buttons and list rows are chips: tapping one sends it as a button tap. Each phone fetches
   what waits for it every 2 seconds (alerts, cards, tick messages). `Tick now` runs one round of
   due work, as `uv run mia tick`.
+- After moving the clock forward a day, phones get a "New message from Mia. Reply to see it." notice
+  instead of messages (WhatsApp's 24-hour rule, copied by the sim channel); tap Show or send anything.
 - `App` on a staff phone opens the person's approval cards (`/notifications`) with Approve and
   Reject, as on the dev chat page.
 - Test in English first: the seed sets everyone to Filipino, so click "All phones: English" once

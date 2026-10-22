@@ -251,10 +251,20 @@ function render(v, entry) {
   const b = entry.body;
   const box = el("div", "msg" + (entry.me ? " me" : ""));
   if (entry.me) { box.append(el("div", "bubble", b.text)); return box; }
+  if (b.kind === "template" && b.name === "mia_new_message") {
+    // WhatsApp's 24-hour notice: any reply reopens the window and releases the held messages.
+    box.append(el("div", "bubble", "New message from Mia. Reply to see it."));
+    const chips = el("div", "chips");
+    const c = el("button", null, "Show");
+    c.onclick = () => send(v, "ok", null);
+    chips.append(c);
+    box.append(chips);
+    return box;
+  }
   if (b.kind === "template") {
     const card = el("div", "card");
     card.append(el("h3", null, `Template ${b.name} (${b.lang})`));
-    if (b.params?.length) card.append(el("div", null, b.params.join("\n")));
+    if (b.params?.length) card.append(el("div", null, b.params.map((x, i) => `${i + 1}. ${x}`).join("\n")));
     box.append(card);
   } else if (b.text) {
     box.append(el("div", "bubble", b.text));
