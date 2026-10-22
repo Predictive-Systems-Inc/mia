@@ -25,8 +25,8 @@ from sqlmodel import Session, select
 from mia.agents.shift_supervisor import tools
 from mia.agents.shift_supervisor.agent import AGENT_DIR, MANIFEST, create_agent
 from mia.chat.service import run_turn
-from mia.core import db
-from mia.core.models import Event, Person
+from mia.core import db, people
+from mia.core.models import Actor, Event, Person
 from mia.learning.checks import hint_language
 from mia.schema import create_all
 from mia.templates.cleaning.seed import seed
@@ -117,6 +117,9 @@ async def _run_once(scenario: dict[str, Any], db_path: Path) -> list[str]:
     failures: list[str] = []
     with Session(engine, expire_on_commit=False) as session:
         sender = _person(session, scenario["as"])
+        if "lang" in scenario:  # the sender's chosen reply language (ADR 016), as a tap sets it
+            people.set_language(session, Actor.person(sender), sender, scenario["lang"])
+            session.commit()
         threads: dict[str, str] = {}
         for line in scenario.get("setup", []):
             text, _, who = line.partition("|")
