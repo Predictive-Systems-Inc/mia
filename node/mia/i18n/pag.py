@@ -704,4 +704,10 @@ STRINGS: dict[str, str | list[str]] = {
     "sales.refund.changed": "Ag inrekord so refund ed resibo #{no}: nanbaliw so resibo nanlapud kerew.",
     "sales.void.not_done": "Ag na-void so resibo #{no}: nanbaliw nanlapud kerew.",
     "sales.refund.which_items": "Pigara tan antoy imbangat nanlapud resibo #{no}? Ibaga so bilang na kada item.",
+    "sales.receipts.today": "{branch} natan: {count} a resibo, {total} ({tenders}).",
+    "sales.receipts.today_empty": "Anggapo ni so resibo natan ed {branch}.",
+    "sales.receipts.tender": "{tender} {amount}",
+    "sales.receipts.last": "Kaunor a resibo #{no} ed {time}: {lines}, {total} {tender}.",
+    "sales.receipts.last_voided": "Kaunor a resibo #{no} ed {time}: {lines}, {total} {tender} (na-void).",
+    "intent.sales_supervisor.read_receipts": "Saray resibo",
 }

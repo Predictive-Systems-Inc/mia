@@ -12,6 +12,7 @@ from mia.agents.sales_supervisor.tools import (
     CorrectCountOutput,
     PeriodReportOutput,
     ReceiptOut,
+    ReceiptsOutput,
     RecordCountsOutput,
     RecordReceiptOutput,
     SetTargetOutput,
@@ -81,6 +82,8 @@ def tool_reply(tool: str, out: dict[str, Any], args: dict[str, Any], lang: str) 
     args is the tool input, for the period's dates)."""
     if tool == "record_receipt":
         return receipt_recorded(RecordReceiptOutput.model_validate(out), lang)
+    if tool == "receipts":
+        return receipts_read(ReceiptsOutput.model_validate(out), str(args.get("which")), lang)
     if tool == "record_counts":
         rec = RecordCountsOutput.model_validate(out)
         lines = _lines([(c.quantity, c.item) for c in rec.recorded], lang)
@@ -220,3 +223,44 @@ def refund_asked(
     asked for, so a refund wider than meant is seen."""
     money = format_money(amount, currency, lang)
     return _text("sales.refund.asked", lang, amount=money, no=no, lines=_lines(lines, lang))
+
+
+def _tender(tender: str, lang: str) -> str:
+    return t(f"bk.tender.{tender}", lang) if tender in TENDERS else tender  # "split" as is
+
+
+def receipts_read(out: ReceiptsOutput, which: str, lang: str) -> list[Block]:
+    """Today's receipts (how many were paid, the total and each tender in TENDERS order), or
+    the last one with its time, lines, total and tender (voided said); none yet says so."""
+    if not out.receipts:
+        return _text("sales.receipts.today_empty", lang, branch=out.branch)
+    if which == "last":
+        r = out.receipts[-1]
+        return _text(
+            "sales.receipts.last_voided" if r.status == "voided" else "sales.receipts.last",
+            lang,
+            no=r.receipt_no,
+            time=r.time,
+            lines=_lines([(abs(x.quantity), x.item) for x in r.lines], lang),
+            total=format_money(r.total, r.currency, lang),
+            tender=_tender(r.tender, lang),
+        )
+    tenders = ", ".join(
+        t(
+            "sales.receipts.tender",
+            lang,
+            tender=_tender(x, lang),
+            amount=format_money(out.by_tender[x], out.currency, lang),
+        )
+        for x in TENDERS
+        if out.by_tender.get(x)
+    )
+    paid = sum(r.status == "paid" for r in out.receipts)
+    return _text(
+        "sales.receipts.today",
+        lang,
+        branch=out.branch,
+        count=format_int(paid, lang),
+        total=format_money(out.total, out.currency, lang),
+        tenders=tenders,
+    )

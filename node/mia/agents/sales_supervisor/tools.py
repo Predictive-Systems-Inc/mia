@@ -417,8 +417,12 @@ class TodayOutput(BaseModel):
 
 
 def _branch_today(deps: AgentDeps, branch: Branch, tool_call_id: str) -> BranchToday:
+    """The branch's business date from its one source (sales.day_sales), after the read check
+    on that source's table (counts, or receipts on a receipts kiosk)."""
     day = _business_day(deps, branch, tool_call_id)
-    sums = calc.totals(_plain(live_counts(deps.session, [branch.id], day, day)))
+    source = COUNTS if sales.source_of(branch, day) == "counts" else RECEIPT_TABLES[0]
+    _check(deps, _as_reporter(source, deps), "read", tool_call_id)
+    sums = sales.day_sales(deps.session, branch.id, day).by_item
     names = _names(deps.session)
     items = [
         ItemTotal(item_id=i, item=names[i].name, quantity=q, amount=a)
@@ -444,7 +448,6 @@ def today(deps: AgentDeps, args: TodayInput, tool_call_id: str) -> TodayOutput:
     if branch_id is None and _is_lead(deps.person):
         branch_id = "all"
     branches = _branches(deps, branch_id, COUNTS, "read", tool_call_id)
-    _check(deps, _as_reporter(COUNTS, deps), "read", tool_call_id)
     return TodayOutput(branches=[_branch_today(deps, b, tool_call_id) for b in branches])
 
 
@@ -809,6 +812,45 @@ def _find_receipt(deps: AgentDeps, receipt_no: str, tool_call_id: str) -> SalesR
     if r is None or not (mine or get_rbac().check(deps.actor, RECEIPTS, "read")):
         raise LookupError("receipt")
     return r
+
+
+class ReceiptsInput(BaseModel):
+    which: Literal["today", "last"] = "today"
+
+
+class ReceiptsOutput(BaseModel):
+    branch: str
+    receipts: list[ReceiptOut]
+    by_tender: dict[str, int]  # the paid receipts' payments, refunds negative
+    total: int
+    currency: str
+
+
+def receipts(deps: AgentDeps, args: ReceiptsInput, tool_call_id: str) -> ReceiptsOutput:
+    """The branch's receipts of the business date the person may read (sales.receipts checks
+    the rights: a clerk gets her own, head staff the branch's), oldest first; `last` keeps only
+    the latest. by_tender and total are over the kept paid receipts' payments (head staff's
+    today equals day_sales(...).by_tender). LookupError("counts_kiosk") on a counts kiosk."""
+    for table in RECEIPT_TABLES:
+        _check(deps, _as_reporter(table, deps), "read", tool_call_id)
+    _check(deps, ITEMS, "read", tool_call_id)
+    day = _business_day(deps, deps.branch, tool_call_id)
+    if sales.source_of(deps.branch, day) == "counts":
+        raise LookupError("counts_kiosk")
+    rows = sales.receipts(deps.session, deps.actor, deps.branch.id, day)
+    if args.which == "last":
+        rows = rows[-1:]
+    paid = [r.id for r in rows if r.status == "paid"]
+    by_tender: dict[str, int] = {}
+    for p in deps.session.exec(select(SalesPayment).where(col(SalesPayment.receipt_id).in_(paid))):
+        by_tender[p.tender] = by_tender.get(p.tender, 0) + p.amount
+    return ReceiptsOutput(
+        branch=deps.branch.name,
+        receipts=[receipt_out(deps.session, deps.branch, r) for r in rows],
+        by_tender=by_tender,
+        total=sum(by_tender.values()),
+        currency=_currency(deps.session, deps.branch.id),
+    )
 
 
 def _on_receipts(deps: AgentDeps, tool_call_id: str) -> None:
@@ -1188,6 +1230,12 @@ BINDINGS = [
         record_receipt,
         RecordReceiptInput,
         "Ring up one customer's sale on the clerk's open drawer.",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.receipts",
+        receipts,
+        ReceiptsInput,
+        "Today's receipts of the branch the person may read, or the last one.",
     ),
     ToolBinding(
         VOID_TOOL,

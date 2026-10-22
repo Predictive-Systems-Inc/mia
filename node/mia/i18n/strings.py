@@ -1010,6 +1010,12 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "sales.refund.changed": "The refund on receipt #{no} could not be recorded: the receipt changed since the request.",
         "sales.void.not_done": "Receipt #{no} could not be voided: it changed since the request.",
         "sales.refund.which_items": "How many of which items come back from receipt #{no}? Say the count with each item.",
+        "sales.receipts.today": "{branch} today: {count} receipts, {total} ({tenders}).",
+        "sales.receipts.today_empty": "{branch} has no receipts today yet.",
+        "sales.receipts.tender": "{tender} {amount}",
+        "sales.receipts.last": "Last receipt #{no} at {time}: {lines}, {total} {tender}.",
+        "sales.receipts.last_voided": "Last receipt #{no} at {time}: {lines}, {total} {tender} (voided).",
+        "intent.sales_supervisor.read_receipts": "Receipts",
     },
     "fi": {
         "absence.recorded": [
@@ -2009,5 +2015,11 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "sales.refund.changed": "Kuitin #{no} hyvitystä ei voitu kirjata: kuitti on muuttunut pyynnön jälkeen.",
         "sales.void.not_done": "Kuittia #{no} ei voitu mitätöidä: se on muuttunut pyynnön jälkeen.",
         "sales.refund.which_items": "Montako mitäkin tuotetta kuitilta #{no} palautetaan? Kerro määrä jokaisen tuotteen kanssa.",
+        "sales.receipts.today": "{branch} tänään: {count} kuittia, {total} ({tenders}).",
+        "sales.receipts.today_empty": "Kohteessa {branch} ei ole vielä tänään kuitteja.",
+        "sales.receipts.tender": "{tender} {amount}",
+        "sales.receipts.last": "Viimeisin kuitti #{no} klo {time}: {lines}, {total} {tender}.",
+        "sales.receipts.last_voided": "Viimeisin kuitti #{no} klo {time}: {lines}, {total} {tender} (mitätöity).",
+        "intent.sales_supervisor.read_receipts": "Kuitit",
     },
 }

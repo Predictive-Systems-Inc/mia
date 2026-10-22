@@ -25,7 +25,7 @@ from mia.agents.sales_supervisor import MANIFEST, actions, calc, replies, tools
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import Block, TextBlock
 from mia.chat.channels import notify
-from mia.core import orgconfig
+from mia.core import orgconfig, sales
 from mia.core.models import Actor, Branch, Message, Person, Visit
 from mia.core.money import format_int, format_money
 from mia.core.sales import live_counts
@@ -108,21 +108,24 @@ def _clerks(session: Session, branch_id: str, day: dt.date) -> list[Person]:
     return [p for p in clerks if p.id in on_shift]
 
 
+def _day_total(session: Session, branch_id: str, day: dt.date) -> int | None:
+    """The day's sales amount from its one source (sales.day_sales), None with no sales rows."""
+    items = sales.day_sales(session, branch_id, day).by_item
+    return sum(a for _, a in items.values()) if items else None
+
+
 def _total(session: Session, branch_id: str, day: dt.date) -> int:
-    rows = live_counts(session, [branch_id], day, day)
-    return sum(a for _, a in calc.totals(tools._plain(rows)).values())
+    return _day_total(session, branch_id, day) or 0
 
 
 def _history(session: Session, branch_id: str, day: dt.date) -> tuple[int | None, int | None]:
     """(the same weekday last week's total, the mean of the last four same-weekday totals);
-    weeks without counts are left out, None when there are none."""
-    rows = live_counts(session, [branch_id], day - dt.timedelta(days=28), day)
-    by_day: dict[dt.date, int] = {}
-    for row in rows:
-        by_day[row.business_date] = by_day.get(row.business_date, 0) + row.amount
-    weeks = [by_day[d] for k in range(1, 5) if (d := day - dt.timedelta(weeks=k)) in by_day]
+    weeks without sales are left out, None when there are none."""
+    # ponytail: one day_sales query pair per same weekday (four days); a range query when it shows
+    totals = [_day_total(session, branch_id, day - dt.timedelta(weeks=k)) for k in range(1, 5)]
+    weeks = [x for x in totals if x is not None]
     average = (sum(weeks) + len(weeks) // 2) // len(weeks) if weeks else None
-    return by_day.get(day - dt.timedelta(weeks=1)), average
+    return totals[0], average
 
 
 # ---- senders ------------------------------------------------------------------------------
@@ -142,6 +145,8 @@ def _text(
 
 
 def _remind(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Message]:
+    if sales.source_of(branch, day) == "receipts":
+        return []  # clerks ring up receipts: there is no count to remind of
     reported = _reporters(session, branch.id, day)
     return [
         _text(session, branch, p, t("sales.reminder", p.language))
@@ -151,6 +156,8 @@ def _remind(session: Session, branch: Branch, hours: Hours, day: dt.date) -> lis
 
 
 def _missing(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Message]:
+    if sales.source_of(branch, day) == "receipts":
+        return []
     reported = _reporters(session, branch.id, day)
     names = [p.name for p in _clerks(session, branch.id, day) if p.id not in reported]
     if not names:
@@ -206,7 +213,7 @@ def _report_blocks(d: _Day, lang: str) -> list[Block]:
 
 
 def _report(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Message]:
-    sums = calc.totals(tools._plain(live_counts(session, [branch.id], day, day)))
+    sums = sales.day_sales(session, branch.id, day).by_item
     names = tools._names(session)
     ordered = sorted(sums.items(), key=lambda kv: names[kv[0]].sort_order)
     last_week, average = _history(session, branch.id, day)

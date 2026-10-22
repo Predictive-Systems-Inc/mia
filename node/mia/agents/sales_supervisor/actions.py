@@ -98,6 +98,13 @@ ACTIONS: dict[str, Action] = {
         (),
         f"intent.{MANIFEST.id}.refund_receipt",
     ),
+    "read_receipts": Action(
+        "The sender asks about receipts: today's receipts, the last one, resibo ngayon, huling"
+        " resibo.",
+        "receipts",
+        ("receipts_which",),
+        f"intent.{MANIFEST.id}.read_receipts",
+    ),
     "correct_sales": Action(
         "The sender fixes a count already sent: a number with a correction cue (not, hindi,"
         " wrong, mali, sorry, should be, dapat, make it, gawin, change, palitan, fix, ayusin)."
@@ -159,6 +166,7 @@ NOULS = {
     "record_receipt": "Does {who} ring up one customer's sale (a receipt)?",
     "void_receipt": "Does {who} ask to void or cancel a receipt?",
     "refund_receipt": "Does {who} ask to refund or return a paid sale?",
+    "read_receipts": "Does {who} ask about receipts (today's or the last one)?",
     "correct_sales": "Does {who} correct a count already reported?",
     "sales_today": "Does {who} ask how today's sales are going?",
     "sales_period": "Does {who} ask about sales on a past day or over a period?",
@@ -191,6 +199,7 @@ class Query:
     org: str = "the shops"  # the organisation's name, for the sender phrase (who)
     source: Literal["counts", "receipts"] = "counts"  # the kiosk's sales source today
     receipt_no: str | None = None  # the receipt a void or refund names (parsing.strip_receipt)
+    names_item: bool = False  # a word of the message (receipt number stripped) is a menu token
 
 
 def _periods(lang: str) -> dict[str, str]:
@@ -333,6 +342,7 @@ def build_query(
         org=org.name if (org := session.get(Organisation, deps.organisation_id)) else "the shops",
         source=source,
         receipt_no=base.receipt_no,
+        names_item=any(w in menu for w in base.text.casefold().split()),
     )
 
 
@@ -406,6 +416,10 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
         ),
         "target_start": _choice(
             "Which day or month is the target for?", {**_target_starts(), **unsaid}
+        ),
+        "receipts_which": _choice(
+            "Which receipts does the sender ask about?",
+            {"today": "Today's receipts", "last": "The last receipt", **unsaid},
         ),
         "conversation": _choice(
             "What kind of message is it?",

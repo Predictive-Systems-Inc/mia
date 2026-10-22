@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, ToolBinding, call_tool
 from mia.agents.bookkeeper import replies as bk_replies
@@ -17,6 +17,7 @@ from mia.agents.bookkeeper import tools as bk_tools
 from mia.agents.bookkeeper.models import CashCount
 from mia.agents.bookkeeper.tools import CashCountInput, ExpenseInput
 from mia.agents.sales_supervisor import MANIFEST as SS
+from mia.agents.sales_supervisor import due as ss_due
 from mia.agents.sales_supervisor import tools as ss_tools
 from mia.agents.sales_supervisor.actions import build_query
 from mia.agents.sales_supervisor.tools import (
@@ -36,6 +37,7 @@ from mia.core.models import (
     TENDERS,
     Actor,
     Approval,
+    Event,
     Person,
     SalesCount,
     SalesPayment,
@@ -90,6 +92,7 @@ def ring(
     lines: list[tuple[str, int]],
     tender: str,
     hh: int = 10,
+    mm: int = 0,
 ) -> SalesReceipt:
     """sales.record_receipt of the lines (item name, quantity) at the dated prices, paid in full
     by one tender, source chat."""
@@ -102,7 +105,7 @@ def ring(
         Actor.person(clerk),
         s,
         no,
-        at(RS_TODAY, hh),
+        at(RS_TODAY, hh, mm),
         [LineIn(item_id=i.id, quantity=q) for i, q in rows],
         [PaymentIn(tender=tender, amount=total)],  # type: ignore[arg-type]
         source="chat",
@@ -1298,4 +1301,175 @@ def test_a_refund_of_a_voided_sale_says_it_cannot_be_refunded(
     ss_answers(monkeypatch, "refund_receipt", conversation="other")
     reply = _turn(session, rs[1]["Ana"], "refund resibo 3")
     assert reply.text() == t("sales.refund.not_refundable", "fil", no="3")
+    assert _cards(session, sales.REFUND) == []
+
+
+# ---- Task 4: reading receipts; today, the owner's report and tender sales over day_sales ----
+
+
+def _day(session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch) -> list[SalesReceipt]:
+    """Ana's drawer on a receipts kiosk with #1 = 2 Classic 1 Ube cash 12_500 (10:00),
+    #2 = 2 Classic 1 Special gcash 12_950 (11:00) and #3 = 3 Ube cash 13_500 (12:05), #3 voided
+    by Marites (committed)."""
+    receipts_kiosk(monkeypatch)
+    s = drawer(session, rs)
+    rows = [
+        ring(session, rs, s, "1", [("Classic", 2), ("Ube", 1)], "cash", 10),
+        ring(session, rs, s, "2", [("Classic", 2), ("Special", 1)], "gcash", 11),
+        ring(session, rs, s, "3", [("Ube", 3)], "cash", 12, 5),
+    ]
+    marites = rs[1]["Marites"]
+    ok = approve(session, rs, sales.VOID, rows[2].id, "supervisor", "Marites")
+    sales.void_receipt(session, Actor.person(marites), rows[2], ok, "mali")
+    session.commit()
+    return rows
+
+
+def test_receipts_on_a_counts_kiosk_say_so(session: Session, rs: Ferinos) -> None:
+    with pytest.raises(LookupError, match="counts_kiosk"):
+        ss_tools.receipts(ss_deps(session, rs[1]["Marites"]), ss_tools.ReceiptsInput(), "c")
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_receipts_on_a_counts_kiosk_say_so_in_the_chat(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ss_answers(monkeypatch, "read_receipts", receipts_which="last", conversation="other")
+    reply = _turn(session, rs[1]["Ana"], "huling resibo")
+    assert reply.text() == t("sales.receipts.counts_kiosk", "fil")
+
+
+def test_a_clerk_reads_only_her_receipts(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _day(session, rs, monkeypatch)
+    ring(session, rs, drawer(session, rs, "Liza", 13), "4", [("Kape", 1)], "cash", 14)
+    session.commit()
+    mine = ss_tools.receipts(ss_deps(session, rs[1]["Ana"]), ss_tools.ReceiptsInput(), "c")
+    assert [r.receipt_no for r in mine.receipts] == ["1", "2", "3"]
+    assert mine.by_tender == {"cash": 12_500, "gcash": 12_950}
+    head = ss_tools.receipts(ss_deps(session, rs[1]["Marites"]), ss_tools.ReceiptsInput(), "c")
+    assert [r.receipt_no for r in head.receipts] == ["1", "2", "3", "4"]
+    assert head.by_tender == {"cash": 15_000, "gcash": 12_950}
+
+
+def test_receipts_today_by_tender(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _day(session, rs, monkeypatch)
+    kiosk, marites = rs[0], rs[1]["Marites"]
+    out = ss_tools.receipts(ss_deps(session, marites), ss_tools.ReceiptsInput(), "c")
+    assert ([r.receipt_no for r in out.receipts], out.by_tender, out.total) == (
+        ["1", "2", "3"], {"cash": 12_500, "gcash": 12_950}, 25_450,
+    )  # fmt: skip
+    assert out.by_tender == sales.day_sales(session, kiosk.id, RS_TODAY).by_tender
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_the_receipts_reply_counts_the_paid_ones_by_tender(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _day(session, rs, monkeypatch)
+    ss_answers(monkeypatch, "read_receipts", conversation="other")
+    reply = _turn(session, rs[1]["Marites"], "resibo ngayon")
+    tenders = ", ".join(
+        t("sales.receipts.tender", "fil", tender=t(f"bk.tender.{x}", "fil"), amount=money(a))
+        for x, a in (("cash", 12_500), ("gcash", 12_950))
+    )
+    assert reply.text() == t(
+        "sales.receipts.today", "fil", branch=rs[0].name, count="2", total=money(25_450),
+        tenders=tenders,
+    )  # fmt: skip
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_the_last_receipt_says_it_was_voided(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _day(session, rs, monkeypatch)
+    ss_answers(monkeypatch, "read_receipts", receipts_which="last", conversation="other")
+    reply = _turn(session, rs[1]["Ana"], "huling resibo")
+    assert reply.text() == t(
+        "sales.receipts.last_voided", "fil", no="3", time="12:05", lines="3 Ube",
+        total=money(13_500), tender=t("bk.tender.cash", "fil"),
+    )  # fmt: skip
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_no_receipts_yet_says_so(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipts_kiosk(monkeypatch)
+    ss_answers(monkeypatch, "read_receipts", conversation="other")
+    reply = _turn(session, rs[1]["Ana"], "resibo ngayon")
+    assert reply.text() == t("sales.receipts.today_empty", "fil", branch=rs[0].name)
+
+
+def test_sales_today_reads_receipts_on_a_receipts_kiosk(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _day(session, rs, monkeypatch)
+    out = ss_tools.today(ss_deps(session, rs[1]["Marites"]), ss_tools.TodayInput(), "c")
+    (day,) = out.branches
+    assert [(i.item, i.quantity, i.amount) for i in day.items] == [
+        ("Special", 1, 4_950), ("Classic", 4, 16_000), ("Ube", 1, 4_500),
+    ]  # fmt: skip
+    assert day.total == 25_450
+
+
+def _kiosk_report(session: Session, rs: Ferinos) -> list[str]:
+    return [m for m in told(session, rs[1]["Rosa"]) if rs[0].name in m]
+
+
+def test_the_owners_report_reads_receipts(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _day(session, rs, monkeypatch)
+    ss_due.run_due(session, at(RS_TODAY, 22, 5))
+    (line,) = _kiosk_report(session, rs)
+    assert money(25_450) in line and "4 Classic" in line
+
+
+def test_the_closing_reminder_skips_a_receipts_kiosk(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipts_kiosk(monkeypatch)
+    for tick in (at(RS_TODAY, 20, 35), at(RS_TODAY, 21, 35)):
+        ss_due.run_due(session, tick)
+    marked = session.exec(
+        select(Event).where(
+            col(Event.action).in_([ss_due.REMINDER, ss_due.MISSING]), Event.entity_id == rs[0].id
+        )
+    ).all()
+    assert marked == []
+
+
+def test_the_closing_reminder_still_runs_on_a_counts_kiosk(session: Session, rs: Ferinos) -> None:
+    for tick in (at(RS_TODAY, 20, 35), at(RS_TODAY, 21, 35)):
+        ss_due.run_due(session, tick)
+    marked = session.exec(
+        select(Event).where(
+            col(Event.action).in_([ss_due.REMINDER, ss_due.MISSING]), Event.entity_id == rs[0].id
+        )
+    ).all()
+    assert marked != []
+
+
+def test_tender_sales_reads_the_receipts(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _day(session, rs, monkeypatch)
+    kiosk = rs[0]
+    assert bk_tools.tender_sales(session, kiosk.id, "gcash", RS_TODAY, RS_TODAY) == 12_950
+    assert bk_tools.tender_sales(session, kiosk.id, None, RS_TODAY, RS_TODAY) == 25_450
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_a_refund_naming_an_item_jev_did_not_pick_asks_which_items(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    ss_answers(monkeypatch, "refund_receipt", conversation="other")  # item: not stated
+    reply = _turn(session, rs[1]["Ana"], "refund ube resibo 1")
+    assert reply.text() == t("sales.refund.which_items", "fil", no="1")
     assert _cards(session, sales.REFUND) == []

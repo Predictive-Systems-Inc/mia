@@ -76,10 +76,15 @@ PETTY = "petty"  # the bank of a petty refill and the source of a petty spend
 def tender_sales(
     session: Session, branch_id: str, tender: str | None, start: dt.date, end: dt.date
 ) -> int:
-    """The branch's live sales amount from start to end (inclusive) paid by tender (None: every
-    tender), in minor units."""
-    rows = live_counts(session, [branch_id], start, end)
-    return sum(r.amount for r in rows if tender is None or r.tender == tender)
+    """The branch's sales amount from start to end (inclusive) paid by tender (None: every
+    tender), in minor units: per business date sales.day_sales(...).by_tender, live counts on a
+    counts day and the paid receipts' payments on a receipts day."""
+    # ponytail: one day_sales query pair per day of the range; a range query when it shows
+    total = 0
+    for n in range((end - start).days + 1):
+        by = sales.day_sales(session, branch_id, start + dt.timedelta(days=n)).by_tender
+        total += sum(by.values()) if tender is None else by.get(tender, 0)
+    return total
 
 
 def drawer_out(session: Session, branch_id: str) -> dict[dt.date, int]:

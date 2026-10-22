@@ -220,7 +220,8 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     if tool is None:  # reply_only
         kind = str(decision.args.get("kind", "other"))
         return store_reply(session, deps, thread, replies.conversation_reply(kind, deps.lang))
-    if tool in RECEIPT_TOOLS and sales.source_of(deps.branch, deps.today) == "counts":
+    on_counts = sales.source_of(deps.branch, deps.today) == "counts"
+    if tool in (*RECEIPT_TOOLS, "receipts") and on_counts:
         return reply_text(session, deps, thread, t("sales.receipts.counts_kiosk", deps.lang))
     if tool in RECEIPT_TOOLS and not decision.args.get("receipt_no"):
         return reply_text(session, deps, thread, t("sales.receipt.which_no", deps.lang))
