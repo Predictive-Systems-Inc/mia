@@ -153,3 +153,15 @@ def test_the_short_half_is_short_and_new() -> None:
 
 def test_the_csv_has_the_shared_header_and_every_row_parses() -> None:
     assert header("inventory_manager") == HEADER and len(read("inventory_manager")) == len(CASES)
+
+
+def test_an_on_hand_read_is_not_a_wrong_write() -> None:
+    """report_stock marked on_hand runs the on_hand read and writes nothing ("ilan pa ube",
+    expected ask): never a wrong write. The same action unmarked is one."""
+    from tests.evals.test_inventory_manager_evals import _wrong_writes
+
+    r = {"half": "short", "error": None, "missing": None, "expected_action": "ask"}
+    r |= {"action": "report_stock", "score": "wrong"}
+    event = {"kind": "count", "item_id": "u", "quantity": None}
+    assert not _wrong_writes([r | {"args": event | {"on_hand": True}}])
+    assert _wrong_writes([r | {"args": {"events": [event | {"quantity": 3}]}}])

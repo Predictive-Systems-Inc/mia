@@ -12,7 +12,7 @@ how many, a how-many-left question when it is the on_hand question of the item),
 action at >= the threshold), wrong_items (the expected action with other items, kind or a
 guessed reason: a wrong write, counted apart), ask (clarify or another missing input), other
 (an error). The short half (D42), printed per language, its one assertion no wrong write
-(gate.wrong_writes):
+(gate.wrong_writes, an on_hand read never one):
 MIA_EVAL_HALVES=short MIA_DECIDER=jev uv run pytest node/tests/evals/test_inventory_manager_evals.py -m evals -s"""
 
 import asyncio
@@ -157,6 +157,13 @@ def _score(r: dict[str, Any]) -> str:
     return "right" if Counter(tuple(p) for p in r["found_items"]) == expected else "wrong_items"
 
 
+def _wrong_writes(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """gate.wrong_writes less the reads: report_stock marked ON_HAND runs the on_hand read and
+    writes nothing (turn.py), so it is never a wrong write; its classifier score stands."""
+    wrong = gate.wrong_writes(results, MANIFEST.id)
+    return [r for r in wrong if not (r.get("args") or {}).get(ON_HAND)]
+
+
 def _row(rows: list[dict[str, Any]]) -> dict[str, Any]:
     n = len(rows) or 1
     secs = sorted(r["seconds"] for r in rows if r.get("seconds"))
@@ -251,7 +258,7 @@ def test_decider(engine: Engine, session: Session, ferinos: Ferinos) -> None:
     text = json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=1)
     report.write_text(text + "\n", encoding="utf-8")
     write_results(report, results)  # a spreadsheet of the run
-    wrong = gate.wrong_writes(results, MANIFEST.id)
+    wrong = _wrong_writes(results)
     assert not wrong, [(r["text"], gate.decided(r)) for r in wrong]  # D42, the short half
     if gated_rows:  # a tune-only run has no gate to assert
         failed = gate.gate_failures(gated)  # the D40 bar, as the router's

@@ -6,6 +6,8 @@ from collections import Counter, defaultdict
 from itertools import combinations
 from pathlib import Path
 
+import pytest
+
 from mia.agents.registry import AGENTS
 from tests.evals.cases import HEADER, header, read
 from tests.evals.router_cases import CASES, GATED_LANGS, PENDING, REPORTED_LANGS, ROUTED, Case
@@ -228,3 +230,13 @@ def test_the_csv_has_the_shared_header_and_routed_names_its_agents() -> None:
     reads) is the agents with cases."""
     assert header("router") == HEADER and len(read("router")) == len(CASES)
     assert {c.expected for c in CASES} - {"any", "small_talk"} == set(ROUTED)
+
+
+def test_an_empty_half_skips_the_router_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """router.csv has no short rows: MIA_EVAL_HALVES=short skips with a message, never divides
+    by zero."""
+    from tests.evals.test_router_eval import test_router
+
+    monkeypatch.setenv("MIA_EVAL_HALVES", "short")
+    with pytest.raises(pytest.skip.Exception, match="no router cases"):
+        test_router(None, None)  # type: ignore[arg-type]

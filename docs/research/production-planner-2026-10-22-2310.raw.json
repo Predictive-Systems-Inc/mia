@@ -1,0 +1,758 @@
+{
+ "gated": {
+  "all": {
+   "n": 0,
+   "right": 0.0,
+   "wrong": 0.0,
+   "ask": 0.0,
+   "other": 0.0
+  },
+  "by_language": {}
+ },
+ "results": [
+  {
+   "i": 0,
+   "lang": "en",
+   "scenario": "short",
+   "text": "plan tmrw",
+   "expected_action": "plan",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "plan",
+   "error": null,
+   "missing": null,
+   "args": {
+    "production_date": "2026-11-11"
+   },
+   "raw_action": "plan",
+   "confidence": 1.0,
+   "seconds": 0.3687546669971198,
+   "resolved": {
+    "item": null,
+    "kiosk": null,
+    "direction": null,
+    "number": null
+   },
+   "tokens": 2429,
+   "score": "right"
+  },
+  {
+   "i": 1,
+   "lang": "en",
+   "scenario": "short",
+   "text": "add 1 batch ube",
+   "expected_action": "change_plan",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Ube",
+    "number": 1
+   },
+   "action": "change_plan",
+   "error": null,
+   "missing": null,
+   "args": {
+    "item_id": "01M5J2K5JX2B3QVTJCFGW976T3",
+    "batches": 2,
+    "production_date": null
+   },
+   "raw_action": "change_plan",
+   "confidence": 1.0,
+   "seconds": 0.3411223329603672,
+   "resolved": {
+    "item": "Ube",
+    "kiosk": null,
+    "direction": "add",
+    "number": 1
+   },
+   "tokens": 2431,
+   "score": "right"
+  },
+  {
+   "i": 2,
+   "lang": "en",
+   "scenario": "short",
+   "text": "less classic 2 batch",
+   "expected_action": "change_plan",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Classic",
+    "number": 2
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": "item",
+   "args": {
+    "item_id": null,
+    "batches": null,
+    "production_date": null
+   },
+   "raw_action": "change_plan",
+   "confidence": 0.83,
+   "seconds": 0.3878596250433475,
+   "resolved": {
+    "item": null,
+    "kiosk": null,
+    "direction": "remove",
+    "number": 2
+   },
+   "tokens": 2410,
+   "score": "ask"
+  },
+  {
+   "i": 3,
+   "lang": "en",
+   "scenario": "short",
+   "text": "plan ok go",
+   "expected_action": "confirm_plan",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": "date",
+   "args": {
+    "production_date": null
+   },
+   "raw_action": "confirm_plan",
+   "confidence": 0.99,
+   "seconds": 0.33408979198429734,
+   "resolved": {
+    "item": null,
+    "kiosk": null,
+    "direction": null,
+    "number": null
+   },
+   "tokens": 2386,
+   "score": "ask"
+  },
+  {
+   "i": 4,
+   "lang": "en",
+   "scenario": "short",
+   "text": "batch sheet sp",
+   "expected_action": "batch_sheet",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Special"
+   },
+   "action": "batch_sheet",
+   "error": null,
+   "missing": null,
+   "args": {
+    "item_id": "01M5J2K5JW31SH3EC75ZQ14X3J",
+    "production_date": null
+   },
+   "raw_action": "batch_sheet",
+   "confidence": 0.7,
+   "seconds": 0.3624961249297485,
+   "resolved": {
+    "item": "Special",
+    "kiosk": null,
+    "direction": null,
+    "number": null
+   },
+   "tokens": 2408,
+   "score": "right"
+  },
+  {
+   "i": 5,
+   "lang": "en",
+   "scenario": "short",
+   "text": "batch2 cl 45 ok 3 burnt",
+   "expected_action": "record_batch",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Classic"
+   },
+   "action": "record_batch",
+   "error": null,
+   "missing": null,
+   "args": {
+    "item_id": "01M5J2K5JX2B3QVTJCFGW976T0",
+    "batch_no": 2,
+    "good": 45,
+    "waste": 3,
+    "reason": "burnt"
+   },
+   "raw_action": "record_batch",
+   "confidence": 0.98,
+   "seconds": 0.36462274997029454,
+   "resolved": {
+    "item": "Classic",
+    "kiosk": null,
+    "direction": null,
+    "number": 3
+   },
+   "tokens": 2489,
+   "score": "right"
+  },
+  {
+   "i": 6,
+   "lang": "en",
+   "scenario": "short",
+   "text": "recipe ube 36 pcs 2kg flour",
+   "expected_action": "set_recipe",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Ube"
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": "recipe",
+   "args": {
+    "item_id": "01M5J2K5JX2B3QVTJCFGW976T3",
+    "batch_yield": 36,
+    "oven_minutes": null,
+    "lines": []
+   },
+   "raw_action": "set_recipe",
+   "confidence": 0.98,
+   "seconds": 0.37320299993734807,
+   "resolved": {
+    "item": "Ube",
+    "kiosk": null,
+    "direction": "set",
+    "number": null
+   },
+   "tokens": 2463,
+   "score": "ask"
+  },
+  {
+   "i": 7,
+   "lang": "en",
+   "scenario": "short",
+   "text": "delivered mall",
+   "expected_action": "delivered",
+   "role": "driver",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "kiosk_id": "01M5J2K5JTC8ZNC2RDCC8CF1SR",
+    "business_date": null
+   },
+   "raw_action": "delivered",
+   "confidence": 0.58,
+   "seconds": 0.398941959021613,
+   "resolved": {
+    "item": null,
+    "kiosk": "Mall kiosk",
+    "direction": null,
+    "number": null
+   },
+   "tokens": 2403,
+   "score": "ask"
+  },
+  {
+   "i": 8,
+   "lang": "en",
+   "scenario": "short",
+   "text": "whats coming to mall",
+   "expected_action": "dispatch",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "kiosk_id": "01M5J2K5JTC8ZNC2RDCC8CF1SR",
+    "business_date": null
+   },
+   "raw_action": "dispatch",
+   "confidence": 0.41,
+   "seconds": 0.38143679208587855,
+   "resolved": {
+    "item": null,
+    "kiosk": "Mall kiosk",
+    "direction": null,
+    "number": null
+   },
+   "tokens": 2405,
+   "score": "ask"
+  },
+  {
+   "i": 9,
+   "lang": "en",
+   "scenario": "short",
+   "text": "capacity 200 cl dec 24",
+   "expected_action": "capacity",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Classic",
+    "number": 200
+   },
+   "action": "capacity",
+   "error": null,
+   "missing": null,
+   "args": {
+    "day": "2026-12-24",
+    "item_id": "01M5J2K5JX2B3QVTJCFGW976T0",
+    "pieces": 200
+   },
+   "raw_action": "capacity",
+   "confidence": 0.94,
+   "seconds": 0.3395654580090195,
+   "resolved": {
+    "item": null,
+    "kiosk": null,
+    "direction": "set",
+    "number": 200
+   },
+   "tokens": 2458,
+   "score": "wrong"
+  },
+  {
+   "i": 10,
+   "lang": "en",
+   "scenario": "short",
+   "text": "ube 2",
+   "expected_action": "ask",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Ube",
+    "number": 2
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": "unit",
+   "args": {
+    "item_id": "01M5J2K5JX2B3QVTJCFGW976T3",
+    "batches": null,
+    "production_date": null
+   },
+   "raw_action": "change_plan",
+   "confidence": 0.35,
+   "seconds": 0.41413854097481817,
+   "resolved": {
+    "item": "Ube",
+    "kiosk": null,
+    "direction": "set",
+    "number": 2
+   },
+   "tokens": 2429,
+   "score": "ask"
+  },
+  {
+   "i": 11,
+   "lang": "en",
+   "scenario": "short",
+   "text": "done",
+   "expected_action": "ask",
+   "role": "driver",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "kind": "other"
+   },
+   "raw_action": "reply_only",
+   "confidence": 0.55,
+   "seconds": 0.3484574160538614,
+   "resolved": {
+    "item": null,
+    "kiosk": null,
+    "direction": null,
+    "number": null
+   },
+   "tokens": 2384,
+   "score": "ask"
+  },
+  {
+   "i": 12,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "ano lutuin bukas",
+   "expected_action": "plan",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "plan",
+   "error": null,
+   "missing": null,
+   "args": {
+    "production_date": "2026-11-11"
+   },
+   "raw_action": "plan",
+   "confidence": 0.98,
+   "seconds": 0.34715029096696526,
+   "resolved": {
+    "item": null,
+    "kiosk": null,
+    "direction": null,
+    "number": null
+   },
+   "tokens": 2431,
+   "score": "right"
+  },
+  {
+   "i": 13,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "dagdag 1 batch se",
+   "expected_action": "change_plan",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Salted egg",
+    "number": 1
+   },
+   "action": "change_plan",
+   "error": null,
+   "missing": null,
+   "args": {
+    "item_id": "01M5J2K5JYW4DCNYYYX8KF9047",
+    "batches": 2,
+    "production_date": null
+   },
+   "raw_action": "change_plan",
+   "confidence": 0.78,
+   "seconds": 0.38207662501372397,
+   "resolved": {
+    "item": "Salted egg",
+    "kiosk": null,
+    "direction": "add",
+    "number": 1
+   },
+   "tokens": 2429,
+   "score": "right"
+  },
+  {
+   "i": 14,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "bawas ube 1 batch",
+   "expected_action": "change_plan",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Ube",
+    "number": 1
+   },
+   "action": "change_plan",
+   "error": null,
+   "missing": null,
+   "args": {
+    "item_id": "01M5J2K5JX2B3QVTJCFGW976T3",
+    "batches": 0,
+    "production_date": null
+   },
+   "raw_action": "change_plan",
+   "confidence": 0.89,
+   "seconds": 0.4117129590595141,
+   "resolved": {
+    "item": "Ube",
+    "kiosk": null,
+    "direction": "remove",
+    "number": 1
+   },
+   "tokens": 2432,
+   "score": "right"
+  },
+  {
+   "i": 15,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "sige go na plano",
+   "expected_action": "confirm_plan",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": "date",
+   "args": {
+    "production_date": null
+   },
+   "raw_action": "confirm_plan",
+   "confidence": 0.82,
+   "seconds": 0.37946691701654345,
+   "resolved": {
+    "item": null,
+    "kiosk": null,
+    "direction": null,
+    "number": null
+   },
+   "tokens": 2389,
+   "score": "ask"
+  },
+  {
+   "i": 16,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "ilang itlog para sa cl",
+   "expected_action": "batch_sheet",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Classic"
+   },
+   "action": "batch_sheet",
+   "error": null,
+   "missing": null,
+   "args": {
+    "item_id": "01M5J2K5JX2B3QVTJCFGW976T0",
+    "production_date": null
+   },
+   "raw_action": "batch_sheet",
+   "confidence": 0.83,
+   "seconds": 0.36427729204297066,
+   "resolved": {
+    "item": "Classic",
+    "kiosk": null,
+    "direction": null,
+    "number": null
+   },
+   "tokens": 2409,
+   "score": "right"
+  },
+  {
+   "i": 17,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "batch1 sp 40 ok 2 sunog",
+   "expected_action": "record_batch",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Special"
+   },
+   "action": "record_batch",
+   "error": null,
+   "missing": null,
+   "args": {
+    "item_id": "01M5J2K5JW31SH3EC75ZQ14X3J",
+    "batch_no": 1,
+    "good": 40,
+    "waste": 2,
+    "reason": "burnt"
+   },
+   "raw_action": "record_batch",
+   "confidence": 0.91,
+   "seconds": 0.34262183296959847,
+   "resolved": {
+    "item": "Special",
+    "kiosk": null,
+    "direction": null,
+    "number": 40
+   },
+   "tokens": 2490,
+   "score": "right"
+  },
+  {
+   "i": 18,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "recipe se 36 piraso 45 min",
+   "expected_action": "set_recipe",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Salted egg"
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": "recipe",
+   "args": {
+    "item_id": "01M5J2K5JYW4DCNYYYX8KF9047",
+    "batch_yield": 36,
+    "oven_minutes": null,
+    "lines": []
+   },
+   "raw_action": "set_recipe",
+   "confidence": 0.73,
+   "seconds": 0.37813754193484783,
+   "resolved": {
+    "item": "Salted egg",
+    "kiosk": null,
+    "direction": null,
+    "number": null
+   },
+   "tokens": 2466,
+   "score": "ask"
+  },
+  {
+   "i": 19,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "hatid na sa street po",
+   "expected_action": "delivered",
+   "role": "driver",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "kiosk_id": "01M5J2K5JTC8ZNC2RDCC8CF1SS",
+    "business_date": null
+   },
+   "raw_action": "delivered",
+   "confidence": 0.59,
+   "seconds": 0.33400920790154487,
+   "resolved": {
+    "item": null,
+    "kiosk": "Street stall",
+    "direction": null,
+    "number": null
+   },
+   "tokens": 2406,
+   "score": "ask"
+  },
+  {
+   "i": 20,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "ano dadalhin samin bukas",
+   "expected_action": "dispatch",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "dispatch",
+   "error": null,
+   "missing": null,
+   "args": {
+    "kiosk_id": null,
+    "business_date": "2026-11-11"
+   },
+   "raw_action": "dispatch",
+   "confidence": 0.87,
+   "seconds": 0.3362493329914287,
+   "resolved": {
+    "item": null,
+    "kiosk": null,
+    "direction": null,
+    "number": null
+   },
+   "tokens": 2432,
+   "score": "right"
+  },
+  {
+   "i": 21,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "kaya ba 150 ube sab",
+   "expected_action": "capacity",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Ube",
+    "number": 150
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "day": "2026-11-14",
+    "item_id": "01M5J2K5JX2B3QVTJCFGW976T3",
+    "pieces": 5400
+   },
+   "raw_action": "capacity",
+   "confidence": 0.12,
+   "seconds": 0.4009027079446241,
+   "resolved": {
+    "item": "Ube",
+    "kiosk": null,
+    "direction": "set",
+    "number": 150
+   },
+   "tokens": 2477,
+   "score": "ask"
+  },
+  {
+   "i": 22,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "classic 3",
+   "expected_action": "ask",
+   "role": "head",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "item": "Classic",
+    "number": 3
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": "unit",
+   "args": {
+    "item_id": "01M5J2K5JX2B3QVTJCFGW976T0",
+    "batches": null,
+    "production_date": null
+   },
+   "raw_action": "change_plan",
+   "confidence": 0.45,
+   "seconds": 0.3708412500564009,
+   "resolved": {
+    "item": "Classic",
+    "kiosk": null,
+    "direction": "set",
+    "number": 3
+   },
+   "tokens": 2429,
+   "score": "ask"
+  },
+  {
+   "i": 23,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "ok na po",
+   "expected_action": "ask",
+   "role": "driver",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": "date",
+   "args": {
+    "production_date": null
+   },
+   "raw_action": "confirm_plan",
+   "confidence": 0.87,
+   "seconds": 0.366465708008036,
+   "resolved": {
+    "item": null,
+    "kiosk": null,
+    "direction": null,
+    "number": null
+   },
+   "tokens": 2386,
+   "score": "ask"
+  }
+ ]
+}

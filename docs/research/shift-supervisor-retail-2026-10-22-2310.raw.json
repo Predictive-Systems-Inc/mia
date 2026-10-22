@@ -1,0 +1,723 @@
+{
+ "gated": {
+  "all": {
+   "n": 0,
+   "right": 0.0,
+   "wrong": 0.0,
+   "ask": 0.0,
+   "other": 0.0
+  },
+  "by_language": {}
+ },
+ "results": [
+  {
+   "i": 0,
+   "lang": "en",
+   "scenario": "short",
+   "text": "late 15m traffic",
+   "expected_action": "record_absence",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "date": "2026-10-28"
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "date": "2026-10-28",
+    "reason": "late",
+    "partial_day": "morning",
+    "person_name": null
+   },
+   "raw_action": "record_absence",
+   "confidence": 0.45,
+   "seconds": 0.35849016706924886,
+   "resolved": {
+    "person": null,
+    "date": "2026-10-28",
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5255,
+   "score": "ask"
+  },
+  {
+   "i": 1,
+   "lang": "en",
+   "scenario": "short",
+   "text": "sick tmrw cant come",
+   "expected_action": "record_absence",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "date": "2026-10-29"
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "date": "2026-10-29",
+    "reason": "sick",
+    "partial_day": null,
+    "person_name": null
+   },
+   "raw_action": "record_absence",
+   "confidence": 0.37,
+   "seconds": 0.37189812504220754,
+   "resolved": {
+    "person": null,
+    "date": "2026-10-29",
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5264,
+   "score": "ask"
+  },
+  {
+   "i": 2,
+   "lang": "en",
+   "scenario": "short",
+   "text": "here now opening",
+   "expected_action": "check_in",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "check_in",
+   "error": null,
+   "missing": null,
+   "args": {
+    "location_name": null
+   },
+   "raw_action": "check_in",
+   "confidence": 0.99,
+   "seconds": 0.37643716600723565,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5259,
+   "score": "right"
+  },
+  {
+   "i": 3,
+   "lang": "en",
+   "scenario": "short",
+   "text": "done going home",
+   "expected_action": "check_out",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "check_out",
+   "error": null,
+   "missing": null,
+   "args": {
+    "location_name": null
+   },
+   "raw_action": "check_out",
+   "confidence": 0.99,
+   "seconds": 0.37253954203333706,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5257,
+   "score": "right"
+  },
+  {
+   "i": 4,
+   "lang": "en",
+   "scenario": "short",
+   "text": "my sched tmrw",
+   "expected_action": "get_my_visits",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "date": "2026-10-29"
+   },
+   "action": "get_my_visits",
+   "error": null,
+   "missing": null,
+   "args": {
+    "start": "2026-10-29",
+    "end": "2026-10-29",
+    "person_name": null
+   },
+   "raw_action": "get_my_visits",
+   "confidence": 0.99,
+   "seconds": 0.36994441598653793,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": null,
+    "time": "2026-10-29"
+   },
+   "tokens": 5281,
+   "score": "wrong"
+  },
+  {
+   "i": 5,
+   "lang": "en",
+   "scenario": "short",
+   "text": "roster this wk",
+   "expected_action": "week_roster",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "week_roster",
+   "error": null,
+   "missing": null,
+   "args": {
+    "start": "2026-10-28",
+    "person_name": null
+   },
+   "raw_action": "week_roster",
+   "confidence": 0.91,
+   "seconds": 0.3733566669980064,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5846,
+   "score": "right"
+  },
+  {
+   "i": 6,
+   "lang": "en",
+   "scenario": "short",
+   "text": "who can cover ana tmrw",
+   "expected_action": "find_replacements",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "date": "2026-10-29"
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": "visit",
+   "args": {},
+   "raw_action": "find_replacements",
+   "confidence": 0.92,
+   "seconds": 0.3707133340649307,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5882,
+   "score": "ask"
+  },
+  {
+   "i": 7,
+   "lang": "en",
+   "scenario": "short",
+   "text": "swap w liza fri",
+   "expected_action": "swap",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "date": "2026-10-30"
+   },
+   "action": "swap",
+   "error": null,
+   "missing": null,
+   "args": {
+    "person_name": "Liza",
+    "date": "2026-10-30"
+   },
+   "raw_action": "swap",
+   "confidence": 0.84,
+   "seconds": 0.36244525003712624,
+   "resolved": {
+    "person": "Liza",
+    "date": "2026-10-30",
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5280,
+   "score": "right"
+  },
+  {
+   "i": 8,
+   "lang": "en",
+   "scenario": "short",
+   "text": "forgot time out left 9pm",
+   "expected_action": "correct_time",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "correct_time",
+   "error": null,
+   "missing": null,
+   "args": {
+    "date": "2026-10-28",
+    "end": "21:00",
+    "start": null,
+    "person_name": null
+   },
+   "raw_action": "correct_time",
+   "confidence": 0.9,
+   "seconds": 0.3846534159965813,
+   "resolved": {
+    "person": null,
+    "date": "2026-10-28",
+    "kind": null,
+    "time": "21:00"
+   },
+   "tokens": 5284,
+   "score": "right"
+  },
+  {
+   "i": 9,
+   "lang": "en",
+   "scenario": "short",
+   "text": "oven broken",
+   "expected_action": "report_site_problem",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "report_site_problem",
+   "error": null,
+   "missing": null,
+   "args": {
+    "kind": "equipment",
+    "text": "oven broken",
+    "location_name": null
+   },
+   "raw_action": "report_site_problem",
+   "confidence": 1.0,
+   "seconds": 0.45076920790597796,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": "equipment",
+    "time": null
+   },
+   "tokens": 5251,
+   "score": "right"
+  },
+  {
+   "i": 10,
+   "lang": "en",
+   "scenario": "short",
+   "text": "liza fri",
+   "expected_action": "ask",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": "visit",
+   "args": {},
+   "raw_action": "assign_cover",
+   "confidence": 0.57,
+   "seconds": 0.4547284160507843,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5279,
+   "score": "ask"
+  },
+  {
+   "i": 11,
+   "lang": "en",
+   "scenario": "short",
+   "text": "9pm",
+   "expected_action": "ask",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {},
+   "raw_action": "clarify",
+   "confidence": 0.61,
+   "seconds": 0.40627249993849546,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5275,
+   "score": "ask"
+  },
+  {
+   "i": 12,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "late ako 10 mins",
+   "expected_action": "record_absence",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "date": "2026-10-28"
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "date": "2026-10-28",
+    "reason": "late",
+    "partial_day": "morning",
+    "person_name": null
+   },
+   "raw_action": "record_absence",
+   "confidence": 0.51,
+   "seconds": 0.3769830419914797,
+   "resolved": {
+    "person": null,
+    "date": "2026-10-28",
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5255,
+   "score": "ask"
+  },
+  {
+   "i": 13,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "masakit ulo ko absent muna",
+   "expected_action": "record_absence",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "date": "2026-10-28"
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "date": "2026-10-28",
+    "reason": "sick",
+    "partial_day": null,
+    "person_name": null
+   },
+   "raw_action": "record_absence",
+   "confidence": 0.56,
+   "seconds": 0.38330879097338766,
+   "resolved": {
+    "person": null,
+    "date": "2026-10-28",
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5264,
+   "score": "ask"
+  },
+  {
+   "i": 14,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "andito na me sa kiosk",
+   "expected_action": "check_in",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "location_name": "Mall kiosk"
+   },
+   "raw_action": "check_in",
+   "confidence": 0.48,
+   "seconds": 0.39575387502554804,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5274,
+   "score": "ask"
+  },
+  {
+   "i": 15,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "out na ko tnx",
+   "expected_action": "check_out",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "check_out",
+   "error": null,
+   "missing": null,
+   "args": {
+    "location_name": null
+   },
+   "raw_action": "check_out",
+   "confidence": 0.79,
+   "seconds": 0.3818257499951869,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5255,
+   "score": "right"
+  },
+  {
+   "i": 16,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "sched ko bukas",
+   "expected_action": "get_my_visits",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "date": "2026-10-29"
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {},
+   "raw_action": "clarify",
+   "confidence": 0.23,
+   "seconds": 0.42502137494739145,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5278,
+   "score": "ask"
+  },
+  {
+   "i": 17,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "sino pwede kay ana bukas",
+   "expected_action": "find_replacements",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "date": "2026-10-29"
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": "visit",
+   "args": {},
+   "raw_action": "find_replacements",
+   "confidence": 0.91,
+   "seconds": 0.35261779103893787,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5881,
+   "score": "ask"
+  },
+  {
+   "i": 18,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "palit kami ni liza sab",
+   "expected_action": "swap",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "date": "2026-10-31"
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": "date",
+   "args": {
+    "person_name": "Liza",
+    "date": null
+   },
+   "raw_action": "swap",
+   "confidence": 0.93,
+   "seconds": 0.40600166702643037,
+   "resolved": {
+    "person": "Liza",
+    "date": null,
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5275,
+   "score": "ask"
+  },
+  {
+   "i": 19,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "nakalimutan ko time out 9pm",
+   "expected_action": "correct_time",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "date": "2026-10-28",
+    "end": "21:00",
+    "start": null,
+    "person_name": null
+   },
+   "raw_action": "correct_time",
+   "confidence": 0.38,
+   "seconds": 0.3532910000067204,
+   "resolved": {
+    "person": null,
+    "date": "2026-10-28",
+    "kind": null,
+    "time": "21:00"
+   },
+   "tokens": 5282,
+   "score": "ask"
+  },
+  {
+   "i": 20,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "sira ref",
+   "expected_action": "report_site_problem",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "report_site_problem",
+   "error": null,
+   "missing": null,
+   "args": {
+    "kind": "site_problem",
+    "text": "sira ref",
+    "location_name": null
+   },
+   "raw_action": "report_site_problem",
+   "confidence": 0.74,
+   "seconds": 0.45744074997492135,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": "site_problem",
+    "time": null
+   },
+   "tokens": 5253,
+   "score": "right"
+  },
+  {
+   "i": 21,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "sarado mall sa sabado",
+   "expected_action": "close_day",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "date": "2026-10-31"
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "location_name": "Mall kiosk",
+    "date": "2026-10-31",
+    "reason": "sarado mall sa sabado"
+   },
+   "raw_action": "close_day",
+   "confidence": 0.3,
+   "seconds": 0.48452429100871086,
+   "resolved": {
+    "person": null,
+    "date": "2026-10-31",
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5872,
+   "score": "ask"
+  },
+  {
+   "i": 22,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "bukas po",
+   "expected_action": "ask",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {},
+   "raw_action": "clarify",
+   "confidence": 0.32,
+   "seconds": 0.3980674999766052,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5277,
+   "score": "ask"
+  },
+  {
+   "i": 23,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "liza po",
+   "expected_action": "ask",
+   "role": "clerk",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": "visit",
+   "args": {},
+   "raw_action": "assign_cover",
+   "confidence": 0.29,
+   "seconds": 0.3954404580872506,
+   "resolved": {
+    "person": null,
+    "date": null,
+    "kind": null,
+    "time": null
+   },
+   "tokens": 5272,
+   "score": "ask"
+  }
+ ]
+}

@@ -210,3 +210,57 @@ test in its language that asserts the ask and that no row is written, beside the
   picks no item, in the branch manager and the production planner; two items named still ask.
 - **Sales question shape**: the default stays "choice": on this run it read 18 rows right
   against 14 for the yes-or-no shape, at about 22% fewer tokens.
+
+## Second short run (22 Oct, after the guards and the receipts plan)
+
+The same short halves (`MIA_EVAL_HALVES=short MIA_DECIDER=jev`), one agent at a time, from
+23:02 to 23:12, after the code guards above and the sales receipts plan. The sales supervisor's
+half is now sixteen rows per language (its four receipt rows each); it ran twice (2310 and
+2312) with the same scores. Right, wrong and ask of 12 rows per language; the wrong column is
+the classifier score, not wrong writes.
+
+| agent | en | fil |
+|---|---|---|
+| bookkeeper | 7/0/5 | 5/0/7 |
+| branch manager | 9/0/3 | 6/1/5 |
+| customer service | 9/0/3 | 8/0/4 |
+| hr officer | 8/0/4 | 8/1/3 |
+| inventory manager | 9/0/3 | 7/1/4 |
+| production planner | 4/1/7 | 6/0/6 |
+| sales supervisor (16 rows) | 11/0/5 | 10/1/5 |
+| retail shift supervisor | 6/1/5 | 2/0/10 |
+
+Raw files: bookkeeper, branch-manager, customer-service, hr-officer and inventory-manager
+`-2026-10-22-2302`; production-planner, sales-supervisor and shift-supervisor-retail
+`-2026-10-22-2310`; sales-supervisor `-2026-10-22-2312`. Each has its results CSV beside it.
+
+Every scored wrong, and what the turn does:
+
+- "ok ba yung test" (branch manager, fil, expected experiment_status) goes to reply_only: no
+  write.
+- "sahod" (hr officer, fil, expected ask) goes to payday: a read.
+- "ilan pa ube" (inventory manager, fil, expected ask) is report_stock marked on_hand: the turn
+  runs the on_hand read and writes nothing. The harness counted it as a wrong write until this
+  commit; it now leaves an on_hand read out (`_wrong_writes` in
+  test_inventory_manager_evals.py), and its classifier score stays wrong.
+- "yung kahapon" (sales supervisor, fil, expected ask) goes to sales_period for yesterday: a
+  read.
+- "capacity 200 cl dec 24" (production planner, en) picks capacity with the right number. The
+  harness scores Jev's own item slot, which was not stated; the parser filled Classic from the
+  typed code "cl" (parsing.named), so the tool input is capacity 200 Classic on 24 Dec. The row
+  and the parser are right: the harness's `_resolved` reads Jev's picks, not the decision's
+  args. Not fixed here (a scoring change of the planner harness).
+- "my sched tmrw" (retail shift supervisor, en) picks get_my_visits for 2026-10-29, the
+  expected date. The harness's `_resolved` reads `date` and puts `end` under time, while
+  get_my_visits takes `start` and `end`, so the right date scores wrong. The row and the parser
+  are right; the resolver misses `start` (the same reading as the first run). Not fixed here.
+
+**Wrong writes: zero.** Re-scored offline from the raw files with `gate.wrong_writes` (and the
+inventory harness's `_wrong_writes`); no classifier call.
+
+The sales supervisor's counts kiosk: its request is back to the shape before the receipts plan
+(the receipt actions are offered only on a receipts kiosk). Its first twelve rows per language
+are the same texts in the same order as the first run's (sales-supervisor-2026-10-22-1153,
+choice): 10 en and 8 fil right, 18 of 24 as before, and no row's score changed. The four new
+rows per language are the receipt rows: receipts today, resibo 3 ube cash 135 and huling
+resibo right, the other five ask; none wrote.

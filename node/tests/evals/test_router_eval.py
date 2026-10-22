@@ -164,9 +164,12 @@ def _print(title: str, table: dict[str, Any]) -> None:
 
 
 def test_router(engine: Engine, branch: Branch) -> None:
+    halves = os.environ.get("MIA_EVAL_HALVES", "tune,gate")
+    cases = _selected(CASES, halves)
+    if not cases:  # router.csv has no short half
+        pytest.skip(f"no router cases in the halves {halves!r}")
     _needs_key()
     report = _report_path(dt.datetime.now().astimezone())  # before the run, not after it
-    cases = _selected(CASES, os.environ.get("MIA_EVAL_HALVES", "tune,gate"))
 
     async def run() -> list[dict[str, Any]]:
         sem = asyncio.Semaphore(CONCURRENCY)
