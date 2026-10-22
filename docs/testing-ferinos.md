@@ -94,14 +94,20 @@ only in dev mode from loopback, like the sim channel itself (ADR 021); anywhere 
   due work, as `uv run mia tick`.
 - `App` on a staff phone opens the person's approval cards (`/notifications`) with Approve and
   Reject, as on the dev chat page.
+- Real replies need the Jev decider: start the node with `MIA_DECIDER=jev` as the export line
+  above sets, with `MIA_TYPESAFE_KEY` from `.env` (never pasted into a command). With
+  `MIA_MODEL=test` and no decider the phones get the customer's "try later" reply and the
+  agents' fallback apology instead of real answers.
+- A customer's reply that waits for staff (an order confirmed in an App drawer) reaches the
+  customer's phone on its next poll; no tick is needed.
 
 Two phones: switch on Ana and Marites. On Ana's phone send `sp 5 cl 8 ube 3` (or `15 classic pa`
 for a count); her phone gets the reply. On a receipts kiosk Ana can ask `void resibo 3`: the
 request reaches Marites (a notice on her phone, the card in her App drawer); she approves it
 there and Ana's phone shows the outcome on its next poll.
 For a customer, add `+ customer` (say Lorna, `639171234501`), send `pa-order po 10 classic,
-pickup 6pm`; Marites, Ana and Liza get "Bagong order", one of them approves, and after `Tick now`
-the customer's phone shows the confirmation.
+pickup 6pm`; Marites, Ana and Liza get "Bagong order", one of them approves, and the customer's
+phone shows the confirmation on its next poll.
 
 ## A clerk's day
 

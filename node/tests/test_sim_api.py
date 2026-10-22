@@ -1,20 +1,25 @@
 """The phones page (/sim): dev and loopback only, phones linked through the service, replies and
 polls drained per address, and a tick on demand."""
 
+import functools
 from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
+from mia.agents.customer_service import MANIFEST as CS
 from mia.api.main import app
 from mia.channels import linking, registry
 from mia.channels.base import ChannelPayload
 from mia.channels.simulator import SimAdapter
 from mia.core import orgconfig
-from mia.core.models import Actor, ChannelIdentity, Event, Person
+from mia.core.models import Actor, Approval, ChannelIdentity, Event, Person
 from mia.core.orgconfig import ChannelConfig, OrgSettings
+from mia.i18n import t
 from mia.settings import get_settings
+from tests.conftest import Shop
+from tests.jev_fake import answers_for, fake_jev
 
 
 @pytest.fixture
@@ -143,3 +148,45 @@ def test_messages_need_the_sim_channel_on() -> None:
     registry._adapters.clear()
     res = TestClient(app).post("/sim/messages", json={"address": "639000000001", "text": "hi"})
     assert res.status_code == 409
+
+
+def answer(monkeypatch: pytest.MonkeyPatch, action: str, **slots: object) -> None:
+    from mia.core import jev
+
+    respond = lambda body: answers_for(body, action, **slots)
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(respond, None, 200))
+
+
+@pytest.fixture
+def shop(cs: Shop, sim: SimAdapter, monkeypatch: pytest.MonkeyPatch) -> Shop:
+    """Ferino's with the sim channel on, the customer service as its only agent, Jev mode."""
+    settings = orgconfig.load("ferinos").model_copy(
+        update={"channels": {"sim": ChannelConfig(enabled=True)}, "agents": [CS.id]}
+    )
+    monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: settings))
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")
+    get_settings.cache_clear()
+    return cs
+
+
+def test_an_approved_order_reaches_the_customer_phone_on_its_next_poll(
+    shop: Shop, sim: SimAdapter, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = TestClient(app)
+    customer = "639170000199"
+    answer(monkeypatch, "place_order", day="d0", time="t0")
+    sent = {"address": customer, "text": "pa-order 10 bibingka, pickup bukas 10am", "name": "Lorna"}
+    waiting = client.post("/sim/messages", json=sent).json()
+    assert [r["text"] for r in waiting] == [t("cs.order_waiting", "fil", time="10:00")]
+    session.expire_all()
+    approval = session.exec(select(Approval).order_by(col(Approval.id).desc())).first()
+    assert approval is not None
+    ana = {"X-Mia-Actor": shop.people["Ana"].id}
+    decided = client.post(
+        f"/approvals/{approval.id}/decide", json={"outcome": "approved"}, headers=ana
+    )
+    assert decided.status_code == 200, decided.text
+    assert sim.sent == []  # the reply is queued, not sent: no tick ran
+    got = client.get("/sim/messages", params={"address": customer}).json()
+    assert [r["text"] for r in got] == [t("cs.order_confirmed", "fil", time="10:00")]

@@ -17,13 +17,13 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlmodel import Session, col, func, select
 
+from mia.agents.customer_service import public
 from mia.api.deps import DbSession, direct_loopback
 from mia.channels import linking, outbox, registry
 from mia.channels.base import InboundMessage
 from mia.channels.inbound import handle_inbound
 from mia.channels.simulator import SimAdapter
-from mia.core import store
-from mia.core.db import utcnow
+from mia.core import db, store  # db.utcnow: the clock tests pin
 from mia.core.ids import new_id
 from mia.core.models import (
     Actor,
@@ -178,19 +178,21 @@ async def send_message(session: DbSession, body: SimMessage) -> list[dict[str, A
         text=body.text,
         button=body.button,
         name=body.name,
-        received_at=utcnow(),
+        received_at=db.utcnow(),
     )
     inbound_id = await asyncio.to_thread(_store_inbound, session, msg)
     await handle_inbound(inbound_id)
-    await outbox.send_due(utcnow(), on_demand_for=body.address)
+    await outbox.send_due(db.utcnow(), on_demand_for=body.address)
     return _drain(sim, body.address)
 
 
 @router.get("/messages")
 async def poll(address: str) -> list[dict[str, Any]]:
-    """Send what waits for this address (alerts, cards, tick messages) and return it."""
+    """Send what waits for this address (alerts, cards, tick messages) and the queued customer
+    replies (an order confirmed in the app), then return this address's payloads only."""
     sim = _sim()
-    await outbox.send_due(utcnow(), on_demand_for=address)
+    await outbox.send_due(db.utcnow(), on_demand_for=address)
+    await public.send_pending(db.utcnow())  # every queued customer reply; others wait in sim.sent
     return _drain(sim, address)
 
 
