@@ -34,12 +34,20 @@ def _pick(r: Reader, slot: str, options: dict[str, Any]) -> str | None:
     return r.pick(slot, set(options)) if options else None
 
 
+def _item(r: Reader) -> str | None:
+    """Jev's item pick, else the one item the message names by name or short code
+    (parsing.named, "gawing 52 se": Salted egg); None when it names none or two."""
+    q: Query = r.q
+    item = _pick(r, "item", q.items)
+    return item or (next(iter(q.named)) if len(q.named) == 1 else None)
+
+
 def _propose(r: Reader) -> tuple[dict[str, Any], str | None]:
     """No item: {} (the turn offers the engine's suggestion). No price: missing price, unless a
     strategy is picked (to_price None: the tool sizes it through experiments.propose). No
     start: the next open day. strategy_id None is refused by the tool (no_strategy)."""
     q: Query = r.q
-    item = _pick(r, "item", q.items)
+    item = _item(r)
     if item is None:
         return {}, None
     price = _pick(r, "price", q.prices)
@@ -56,7 +64,7 @@ def _propose(r: Reader) -> tuple[dict[str, Any], str | None]:
 
 def _change_price(r: Reader) -> tuple[dict[str, Any], str | None]:
     q: Query = r.q
-    item = _pick(r, "item", q.items)
+    item = _item(r)
     price = _pick(r, "price", q.prices)
     day = _pick(r, "date", q.dates)
     args = {
@@ -92,17 +100,17 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     if action == "change_price":
         return _change_price(r)
     if action == "how_to_sell":
-        item = _pick(r, "item", q.items)
+        item = _item(r)
         return {"item_id": item}, None if item else "item"
     if action == "set_short_code":
-        item, code = _pick(r, "item", q.items), _pick(r, "code", q.codes)
+        item, code = _item(r), _pick(r, "code", q.codes)
         if code and q.codes[code].casefold() in ROLE_WORDS:
             code = None  # a role or common word: ask for the code
         args = {"item_id": item, "code": q.codes[code] if code else None}
         return args, "item" if not item else None if code else "code"
     if action == "coaching_who":  # an item only when one is named ("sino magaling sa ube")
         args = {"person_id": _pick(r, "person", q.people)}
-        if item := _pick(r, "item", q.items):
+        if item := _item(r):
             args["item_id"] = item
         return args, None
     if action == "add_person":

@@ -1,5 +1,7 @@
 import datetime as dt
 
+import pytest
+
 from mia.agents.parsing import (
     DAY_NAMES,
     find_dates,
@@ -9,6 +11,7 @@ from mia.agents.parsing import (
     has_buy_word,
     has_negation,
     menu_tokens,
+    named,
     pre_parse,
     strip_dates,
     strip_menu_names,
@@ -314,3 +317,48 @@ def test_strip_dates_takes_out_times_and_dates_but_a_filipino_may() -> None:
 
 def test_strip_menu_names_takes_out_a_name_with_a_digit() -> None:
     assert strip_menu_names("3 Box of 4 at 2 kape", FERINOS).split() == ["3", "at", "2", "kape"]
+
+
+THURSDAY = dt.date(2026, 10, 22)  # the short run's day
+
+
+@pytest.mark.parametrize(
+    ("text", "lang", "day"),
+    [
+        ("leave tmrw", "en", dt.date(2026, 10, 23)),
+        ("sched tmr", "en", dt.date(2026, 10, 23)),
+        ("off 2moro", "fil", dt.date(2026, 10, 23)),
+        ("bukas po", "fil", dt.date(2026, 10, 23)),
+        ("pa file vl sab", "fil", dt.date(2026, 10, 24)),
+        ("lin", "fil", dt.date(2026, 10, 25)),
+        ("lun", "fil", dt.date(2026, 10, 26)),
+        ("mar", "fil", dt.date(2026, 10, 27)),
+        ("miy", "fil", dt.date(2026, 10, 28)),
+        ("huw", "fil", dt.date(2026, 10, 29)),
+        ("biy", "fil", dt.date(2026, 10, 23)),
+        ("off sat.", "en", dt.date(2026, 10, 24)),
+        ("mon", "en", dt.date(2026, 10, 26)),
+        ("tue", "en", dt.date(2026, 10, 27)),
+        ("wed", "en", dt.date(2026, 10, 28)),
+        ("thu", "en", dt.date(2026, 10, 29)),
+        ("fri", "en", dt.date(2026, 10, 23)),
+        ("sun", "en", dt.date(2026, 10, 25)),
+        ("holiday pay nov 30", "en", dt.date(2026, 11, 30)),
+        ("holiday pay nov 30", "fil", dt.date(2026, 11, 30)),
+    ],
+)
+def test_find_dates_reads_the_short_chat_forms(text: str, lang: str, day: dt.date) -> None:
+    assert find_dates(text, THURSDAY, lang) == [("d0", day)]
+
+
+@pytest.mark.parametrize("text", ["sabi ko", "money", "month", "sunod", "lunch", "may 5 ube"])
+def test_the_short_weekdays_are_whole_words_and_fil_may_stays_out(text: str) -> None:
+    assert find_dates(text, THURSDAY, "fil") == []
+
+
+def test_named_reads_short_codes_as_whole_words() -> None:
+    rows = [("se", ["Salted egg", "se", "salted"]), ("sp", ["Special", "sp"]), ("eg", ["egg"])]
+    assert named("gawing 52 se simula lunes", rows) == {"se"}
+    assert named("salted egg 3", rows) == {"se"}  # the longer name takes "egg" out
+    assert named("sept special", rows) == {"sp"}
+    assert named("se at sp", rows) == {"se", "sp"}

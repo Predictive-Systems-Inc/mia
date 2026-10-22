@@ -36,11 +36,14 @@ def _number(r: Reader) -> int | None:
 
 
 def _item(r: Reader) -> tuple[str | None, bool]:
-    """Jev's item pick and whether it holds: False when the message names two items, or names
-    one and Jev picked another (code finds the names, words.named; checklist: a message that
+    """Jev's item pick (the one item the message names when Jev picks none) and whether it
+    holds: False when the message names two items, or names
+    one and Jev picked another (code finds the names, parsing.named; checklist: a message that
     names two values asks)."""
     q: Query = r.q
     item = r.pick("item", set(q.items))
+    if item is None and len(q.named) == 1:  # a short code Jev did not map ("200 cl")
+        item = next(iter(q.named))
     return item, len(q.named) < 2 and (not q.named or item in q.named)
 
 
@@ -154,8 +157,11 @@ def _args(action: str, r: Reader) -> Args:
         return _batch(r)
     if action == "capacity":
         return _capacity(r)
-    if action in ("plan", "confirm_plan"):
+    if action == "plan":
         return {"production_date": _date(r)}, None
+    if action == "confirm_plan":  # a negated one shows the plan card (the turn)
+        day = _date(r) or q.draft_date
+        return {"production_date": day}, None if day or q.negated else "date"
     if action == "batch_sheet":
         item, holds = _item(r)
         item = item if holds else None

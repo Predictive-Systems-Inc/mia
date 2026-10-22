@@ -183,3 +183,30 @@ expected asks.
   (slot asks with the right pick at 0.97 to 1.00). "ilan pa leave ko" went to file_leave: the
   leave_balance option would need "ilan pa leave". "sahod" alone was read as payday at 0.71, no
   write.
+
+## Code guards (22 Oct 2026)
+
+The three wrong writes are closed in code (rule 7), not in the question; each has a run_turn
+test in its language that asserts the ask and that no row is written, beside the positive case.
+
+- **inventory_manager, "eggs 10"**: a number of stock needs a kind the message states in words
+  (decider.KIND_WORDS or WASTE_WORDS, en and fil with the local words of the kind options) or
+  that the context makes explicit (Mia's last message said the item is not counted yet). A bare
+  item and number asks "left now, left over at closing, or thrown away?" with three kind
+  buttons; Thrown away asks the reason next. "5 ube na lang", "ubos na ang ube" and "received
+  40 classic" still record.
+- **inventory_manager, "ilan pa ube"**: a how-many question (ilan, ilang, gaano, how many, how
+  much, magkano pa, meron pa, or "pa" with "ba") with no number is the on_hand read whatever
+  kind Jev picks; the check runs before the kind pick.
+- **production_planner, "ok na po"**: confirm_plan with no stated date confirms only when Mia's
+  last message is the draft plan (its head line with the draft status), which gives the date;
+  otherwise it asks. The Confirm button (the stored decision) and a negated ok (the plan card)
+  are unchanged.
+- **Parser gaps**: parsing.find_dates reads "tmrw", "tmr", "2moro" and the short weekdays (lun,
+  mar, miy, huw, biy, sab, lin; mon, tue, wed, thu, fri, sat, sun) as whole words only, so
+  "sabi" and "month" are no dates. "nov 30" was already read; the hr officer's holiday_pay now
+  offers a named date past its 14 listed days. parsing.named (moved from the planner's words,
+  one lookup over the catalogue's names and short codes) resolves "se", "sp" and "cl" when Jev
+  picks no item, in the branch manager and the production planner; two items named still ask.
+- **Sales question shape**: the default stays "choice": on this run it read 18 rows right
+  against 14 for the yes-or-no shape, at about 22% fewer tokens.

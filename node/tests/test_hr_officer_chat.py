@@ -365,6 +365,20 @@ def test_holiday_pay_question_reads_the_calendar(
     assert reply.text() == "2026-10-20 is not a holiday: the usual rate (100%)."
 
 
+def test_short_dates_resolve_for_leave_and_holiday_pay(
+    session: Session, hr: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The short run (22 Oct): "sab" and "nov 30" were not read as dates, so both asked. "sab"
+    is the coming Saturday; "nov 30" is past the 14 listed days and is offered as its own day."""
+    ana = hr[1]["Ana"]
+    _answers(monkeypatch, "file_leave", leave_kind="vacation", leave_start="d0")
+    card = _card(_turn(session, ana, "pa file vl sab"))
+    assert ("Dates", "2026-10-24 to 2026-10-24") in [(f.label, f.value) for f in card.fields]
+    _answers(monkeypatch, "holiday_pay", day="hd0")
+    reply = _turn(session, ana, "holiday pay nov 30")
+    assert reply.text().startswith("2026-11-30 is Bonifacio Day")
+
+
 def test_a_payslip_is_resent(
     session: Session, hr: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

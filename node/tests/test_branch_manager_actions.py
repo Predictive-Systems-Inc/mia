@@ -115,8 +115,10 @@ def test_people_are_offered_to_supervisors_and_leads_only(session: Session, bm: 
 
 
 def test_propose_experiment_without_item_price_or_start(session: Session, bm: Ferinos) -> None:
+    bare = actions.build_query(deps_for(session, bm[1]["Marites"]), "subukan natin", "")
+    assert decider._args("propose_experiment", reader(bare)) == ({}, None)
     q = actions.build_query(deps_for(session, bm[1]["Marites"]), "subukan natin ang classic", "")
-    assert decider._args("propose_experiment", reader(q)) == ({}, None)
+    assert decider._args("propose_experiment", reader(q))[1] == "price"  # named: Classic
     args, missing = decider._args("propose_experiment", reader(q, item=item(session, "Classic")))
     assert missing == "price" and args["starts_on"] == "2026-10-27"  # the next open day
     assert args["kind"] == "price"

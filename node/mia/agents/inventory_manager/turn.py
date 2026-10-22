@@ -224,6 +224,10 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     if decision.action == "clarify" and decision.missing == "reason" and sure:
         names = _names(session, decision.args.get("events") or [])
         return _ask(session, deps, thread, *replies.ask_reason(decision, names, deps.lang))
+    said = decision.args.get("events") or []
+    if decision.action == "clarify" and decision.missing == "kind" and sure and said:
+        names = _names(session, said)  # a bare item and number: the kind buttons
+        return _ask(session, deps, thread, *replies.ask_kind(decision, names, deps.lang))
     if decision.action == "clarify" and decision.missing == "quantity" and sure:
         name = next(iter(_names(session, decision.args.get("events") or []).values()), "")
         return reply_text(

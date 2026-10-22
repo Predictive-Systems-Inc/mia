@@ -182,6 +182,34 @@ def ask_reason(decision: Decision, names: dict[str, str], lang: str) -> tuple[li
     return blocks, options
 
 
+ASKED_KINDS = ("count", "leftover", "waste")  # the kinds a number can be, in button order
+
+
+def ask_kind(decision: Decision, names: dict[str, str], lang: str) -> tuple[list[Block], Options]:
+    """Which kind a bare item and number is: the question names each event (quantity, unit,
+    name), one button per ASKED_KINDS runs the same report with that kind on every event; a
+    waste button asks the reason next (the reason buttons), never a waste without one."""
+    said = decision.args.get("events") or []
+    options: Options = {}
+    for kind in ASKED_KINDS:
+        args = copy.deepcopy(decision.args)
+        for event in args.get("events") or []:
+            event["kind"] = kind
+        if kind == "waste":
+            chosen = Decision(
+                action="clarify", args=args, confidence=1.0, raw_action="report_stock",
+                missing="reason",
+            )  # fmt: skip
+            options[t(f"stock.kind.{kind}", lang)] = chosen.model_dump(mode="json")
+        else:
+            options[t(f"stock.kind.{kind}", lang)] = _asked(decision, args)
+    blocks: list[Block] = [
+        TextBlock(text=t("stock.which_kind", lang, items=_wasted(said, names, lang))),
+        QuickRepliesBlock(options=list(options)),
+    ]
+    return blocks, options
+
+
 def ask_offer(ingredient: str, order: dict[str, Any], lang: str) -> tuple[list[Block], Options]:
     """Shall I draft an order for the ingredient: Yes carries the order (draft_order input),
     No declines. The question is its own text block, so offer_texts finds it next turn."""

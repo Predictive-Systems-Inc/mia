@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from sqlmodel import Session, select
 
+from mia.agents import parsing
 from mia.agents.parsing import find_dates, has_negation
 from mia.agents.production_planner import tools, words
 from mia.agents.production_planner.actions import ACTIONS, DIRECTIONS, commissary
@@ -121,7 +122,7 @@ def test_recipes_parse_in_full_and_changed_items_are_planned(
     singles = [(i.name, [i.name, *i.short_codes]) for i in session.exec(select(RetailItem))]
     for c in FRESH:
         if "item" in c.expected:  # the item guard holds: the message names that one item
-            assert words.named(c.text, singles) == {c.expected["item"]}, c
+            assert parsing.named(c.text, singles) == {c.expected["item"]}, c
 
 
 def test_fresh_changes_pass_the_guards() -> None:

@@ -220,6 +220,114 @@ def test_a_left_in_stock_question_with_no_kind_reads_on_hand(
     assert _chat_rows(session) == []
 
 
+def _english(session: Session, ferinos: Ferinos, name: str) -> Person:
+    from mia.core import people as people_service
+
+    branch, people = ferinos
+    person = people_service.set_language(session, Actor.system(branch.id), people[name], "en")
+    session.commit()
+    return person
+
+
+def test_a_bare_item_and_number_asks_the_kind_with_buttons(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The short run (22 Oct): "eggs 10" was a count of 10 trays at 0.78. No kind word and no
+    count asked by Mia: the kind is asked with the kind buttons and nothing is written."""
+    ana = _english(session, ferinos, "Ana")
+    eggs = _id(session, "Eggs")
+    _answers(monkeypatch, "report_stock", confidence=0.78, kind="count", item_0=eggs)
+    asked = _turn(session, ana, "eggs 10")
+    assert asked.text().startswith(t("stock.which_kind", "en", items="10 tray Eggs"))
+    kinds = ("count", "leftover", "waste")
+    assert _buttons(asked) == [t(f"stock.kind.{k}", "en") for k in kinds]
+    assert _chat_rows(session) == []
+    reply = _turn(session, ana, t("stock.kind.count", "en"), asked.thread_id)
+    assert reply.text() == t("stock.counted", "en", quantity="10", item="Eggs")
+    assert [(r.kind, r.quantity) for r in _chat_rows(session)] == [("count", 10)]
+
+
+def test_a_thrown_away_kind_button_asks_the_reason(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _answers(monkeypatch, "report_stock", kind="count", item_0=_id(session, "Classic"))
+    asked = _turn(session, ferinos[1]["Ana"], "classic 4")
+    waste = _turn(session, ferinos[1]["Ana"], t("stock.kind.waste", FIL), asked.thread_id)
+    assert t("stock.which_reason", FIL, items="4 Classic") in waste.text()
+    assert _chat_rows(session) == []
+    burnt = t("stock.reason.burnt", FIL)
+    reply = _turn(session, ferinos[1]["Ana"], burnt, asked.thread_id)
+    assert reply.text() == t("stock.waste", FIL, quantity="4", item="Classic", reason=burnt)
+
+
+@pytest.mark.parametrize(
+    ("text", "kind", "said"),
+    [
+        ("5 ube na lang", "count", "stock.counted"),
+        ("received 40 classic", "count", "stock.counted"),
+    ],
+)
+def test_a_number_with_a_kind_word_still_records(
+    session: Session,
+    ferinos: Ferinos,
+    jev_on: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    text: str,
+    kind: str,
+    said: str,
+) -> None:
+    group = text.split()
+    item = "Ube" if "ube" in group else "Classic"
+    quantity = next(w for w in group if w.isdigit())
+    _answers(monkeypatch, "report_stock", kind=kind, item_0=_id(session, item))
+    reply = _turn(session, ferinos[1]["Ana"], text)
+    assert reply.text() == t(said, FIL, quantity=quantity, item=item)
+    assert [r.quantity for r in _chat_rows(session)] == [int(quantity)]
+
+
+def test_a_count_asked_by_mia_takes_a_bare_number(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Context makes the kind explicit: after "no count of Ube yet", "ube 7" is the count."""
+    ube = _id(session, "Ube")
+    _answers(monkeypatch, "report_stock", kind="count", item=ube)
+    ana = ferinos[1]["Ana"]
+    asked = _turn(session, ana, "ilang ube ang natitira?")
+    kiosk = session.get(Branch, ana.branch_id)
+    assert kiosk is not None
+    assert asked.text() == t("stock.not_counted", FIL, item="Ube", branch=kiosk.name)
+    _answers(monkeypatch, "report_stock", kind="count", item_0=ube)
+    reply = _turn(session, ana, "ube 7", asked.thread_id)
+    assert reply.text() == t("stock.counted", FIL, quantity="7", item="Ube")
+
+
+@pytest.mark.parametrize("kind", ["count", "low", "sold_out", "not_stated"])
+def test_a_how_many_question_reads_on_hand_and_writes_nothing(
+    session: Session,
+    ferinos: Ferinos,
+    jev_on: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    """The short run: "ilan pa ube" (how many ube left) went to report_stock at 0.63 and wrote
+    an event. A question word with no number is the on_hand read, whatever the kind pick."""
+    rosa = ferinos[1]["Rosa"]
+    _answers(monkeypatch, "report_stock", confidence=0.63, kind=kind, item=_id(session, "Ube"))
+    reply = _turn(session, rosa, "ilan pa ube")
+    kiosk = session.get(Branch, rosa.branch_id)
+    assert kiosk is not None
+    assert reply.text() == t("stock.not_counted", FIL, item="Ube", branch=kiosk.name)
+    assert _chat_rows(session) == []
+
+
+def test_a_sold_out_with_no_number_still_records(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _answers(monkeypatch, "report_stock", kind="sold_out", item=_id(session, "Ube"))
+    _turn(session, ferinos[1]["Ana"], "ubos na ang ube")
+    assert [r.kind for r in _chat_rows(session)] == ["sold_out"]
+
+
 def test_leftovers_are_echoed(
     session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

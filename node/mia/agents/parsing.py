@@ -177,6 +177,29 @@ def pre_parse(text: str, menu_tokens: Collection[str]) -> tuple[list[Group], int
     return [Group(n, " ".join(w), f"{n} {' '.join(w)}".strip()) for n, w in groups], total
 
 
+WORD = re.compile(r"\d+(?:\.\d+)?|[^\W\d_]+")  # a word or a number
+
+
+def said(text: str) -> list[str]:
+    """The casefolded words and numbers of the text, in order. Pure."""
+    return WORD.findall(text.casefold())
+
+
+def named(text: str, rows: Iterable[tuple[str, Sequence[str]]]) -> set[str]:
+    """The ids of the rows whose name or a short code (the catalogue's, as seeded or set) the
+    text holds as whole words, from (id, names) pairs: "se" is Salted egg, "cl" Classic. The
+    longest name first, and a name found takes its words out (so "salted egg" is not also
+    "egg"). Pure; the shared code lookup of the agents that read an item from a message."""
+    rest = f" {' '.join(said(text))} "
+    names = [(" ".join(said(n)), rid) for rid, ns in rows for n in ns]
+    found: set[str] = set()
+    for name, rid in sorted(names, key=lambda x: -len(x[0])):
+        if name and f" {name} " in rest:
+            found.add(rid)
+            rest = rest.replace(f" {name} ", "  ")
+    return found
+
+
 # ponytail: "alas n" is pm for 1 to 6 and 12 (a shop is open in the afternoon, not at 2 am),
 # else am.
 ALAS = {
@@ -287,6 +310,7 @@ DAY_WORDS = {
     "today": 0, "tänään": 0, "ngayon": 0, "karon": 0, "subong": 0, "yana": 0, "ngunyan": 0,
     "ngonyan": 0,
     "tomorrow": 1, "huomenna": 1, "bukas": 1, "ugma": 1, "buwas": 1, "sa aga": 1,
+    "tmrw": 1, "tmr": 1, "tmrow": 1, "2moro": 1, "2morrow": 1, "2mrw": 1,
     "yesterday": -1, "eilen": -1, "kahapon": -1, "gahapon": -1, "kagahapon": -1,
     "kakulop": -1, "kasuhapon": -1, "idi kalman": -1,
     "day before yesterday": -2, "toissapäivänä": -2, "kamakalawa": -2,
@@ -312,6 +336,14 @@ def _alt(words: Iterable[str]) -> str:
     return "|".join(sorted({re.escape(w) for w in words}, key=len, reverse=True))
 
 
+# The short weekday forms of a chat message (fil "sab", en "sat"), read as whole words only:
+# "sabi" is no Saturday and "month" no Monday. "mar" before a day number is March (the month
+# alternatives come first).
+SHORT_WEEKDAYS = {
+    "lun": 0, "mar": 1, "miy": 2, "huw": 3, "biy": 4, "sab": 5, "lin": 6,
+    "mon": 0, "tue": 1, "tues": 1, "wed": 2, "thu": 3, "thur": 3, "thurs": 3, "fri": 4,
+    "sat": 5, "sun": 6,
+}  # fmt: skip
 _WEEKDAY_INDEX = {n: i for names in DAY_NAMES.values() for i, n in enumerate(names)}
 _WD = _alt(_WEEKDAY_INDEX)
 _MON = _alt(MONTHS)
@@ -328,7 +360,8 @@ _DATE = re.compile(
     rf"|\b(?P<rel>{_alt(DAY_WORDS)})\b"
     # "(sa) susunod na linggo" and "ngayong linggo" name a week: consumed, never a Sunday.
     r"|\b(?P<week>(?:sa\s+)?susunod\s+na\s+linggo|ngayong\s+linggo)\b"
-    rf"|\b(?P<wd>{_WD})\w*",
+    rf"|\b(?P<wd>{_WD})\w*"
+    rf"|\b(?P<ws>{_alt(SHORT_WEEKDAYS)})\b\.?",
     re.IGNORECASE,
 )
 
@@ -352,9 +385,10 @@ def _after(weekday: int, anchor: dt.date) -> dt.date:
 def find_dates(text: str, today: dt.date, lang: str) -> list[tuple[str, dt.date]]:
     """Dates in the message in text order as (id "d0", "d1", ..., date). Pure. Finds the
     today, tomorrow, yesterday and day-before words (DAY_WORDS: en, fi, fil, ceb, hil, war,
-    bcl, ilo), weekday names (en, fi, fil,
+    bcl, ilo, and the chat forms "tmrw", "tmr", "2moro"), weekday names (en, fi, fil,
     ceb, hil, war, bcl: the next such day after today, or after the date before it in the
-    message, so "next week Monday to Wednesday" is one week), "next week <weekday>" and
+    message, so "next week Monday to Wednesday" is one week; the short forms of
+    SHORT_WEEKDAYS as whole words, "sab", "fri"), "next week <weekday>" and
     "<weekday> next week"
     (that weekday of the following week, also in ceb, hil, war and bcl), "<d> <month>" and
     "<month> <d>" with English or Filipino month names (the year nearest to today), and ISO
@@ -384,7 +418,9 @@ def find_dates(text: str, today: dt.date, lang: str) -> list[tuple[str, dt.date]
             day = today + dt.timedelta(days=DAY_WORDS[m["rel"].lower()])
         else:
             anchor = max([today, *found[-1:]])
-            day = _after(_WEEKDAY_INDEX[m["wd"].lower()], anchor)
+            wd = m["wd"]
+            index = _WEEKDAY_INDEX[wd.lower()] if wd else SHORT_WEEKDAYS[m["ws"].lower()]
+            day = _after(index, anchor)
         if day is not None:
             found.append(day)
     return [(f"d{i}", d) for i, d in enumerate(found)]

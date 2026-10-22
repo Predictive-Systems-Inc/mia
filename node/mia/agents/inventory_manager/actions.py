@@ -177,6 +177,7 @@ class Query:
     units: dict[str, str] = field(default_factory=dict)  # ingredient id -> unit
     supplier_of: dict[str, str] = field(default_factory=dict)  # ingredient id -> supplier
     offer_asked: bool = False
+    count_asked: bool = False  # Mia's last message said an item is not counted yet today
     corrected: bool = False
     lang: str = "en"
     message_id: str | None = None
@@ -220,6 +221,10 @@ def build_query(
         supplier_of=supplier_of,
         offer_asked=bool(
             set(previous_mia_message.splitlines()) & offer_texts(deps.lang, [i.name for i in ings])
+        ),
+        count_asked=bool(
+            set(previous_mia_message.splitlines())
+            & {t("stock.not_counted", deps.lang, item=r.name, branch=branch.name) for r in rows}
         ),
         corrected=was_corrected(message),
         lang=deps.lang,

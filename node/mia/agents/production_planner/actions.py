@@ -7,6 +7,7 @@ dates code found and names of rows, never message words. build_query reads the d
 nothing after it does."""
 
 import datetime as dt
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -14,10 +15,11 @@ from sqlmodel import Session, col, or_, select
 
 from mia.agents.base import AgentDeps
 from mia.agents.decider import NOT_STATED, Action
-from mia.agents.parsing import find_dates, has_negation, menu_tokens
+from mia.agents.parsing import find_dates, has_negation, menu_tokens, named
 from mia.agents.production_planner import MANIFEST, tools, words
 from mia.core import db, orgconfig
 from mia.core.models import Branch
+from mia.i18n import t
 from mia.templates.retail.models import RetailIngredient, RetailItem
 
 CONVERSATION = {
@@ -129,12 +131,13 @@ class Query:
     role: str
     today: dt.date
     items: dict[str, str] = field(default_factory=dict)  # single item id -> "Name (codes)"
-    named: frozenset[str] = frozenset()  # the items the message names (words.named)
+    named: frozenset[str] = frozenset()  # the items the message names (parsing.named)
     kiosks: dict[str, str] = field(default_factory=dict)  # served branch id -> name
     numbers: dict[str, int] = field(default_factory=dict)  # n0 -> count (words.numbers)
     dates: dict[str, str] = field(default_factory=dict)  # d0 -> ISO date, from find_dates
     plan_batches: dict[str, int] = field(default_factory=dict)  # item id -> batches planned
     plan_date: dt.date | None = None  # the production day whose plan plan_batches is
+    draft_date: dt.date | None = None  # the date of the draft plan card Mia sent last (draft_day)
     batch_yields: dict[str, int] = field(default_factory=dict)  # item id -> its recipe's yield
     recipe: words.RecipeParse | None = None
     batch: words.BatchParse | None = None
@@ -147,6 +150,18 @@ def commissary(session: Session, organisation_id: str) -> Branch | None:
     """The organisation's commissary by the settings' name; None when the planner is off
     (tools.commissary)."""
     return tools.commissary(session, organisation_id)
+
+
+def draft_day(previous_mia_message: str, lang: str) -> dt.date | None:
+    """The production date of the plan card when Mia's last message is one for a draft plan
+    (its first line is pp.plan.head with the draft status), else None. Pure."""
+    head = t(
+        "pp.plan.head", lang, date="DATEX", status=t("pp.plan.status.draft", lang), minutes="MINX"
+    )
+    pattern = re.escape(head).replace("DATEX", r"(\d{4}-\d{2}-\d{2})").replace("MINX", r"\d+")
+    first = previous_mia_message.strip().split("\n", 1)[0]
+    m = re.fullmatch(pattern, first)
+    return dt.date.fromisoformat(m[1]) if m else None
 
 
 def _named(row: RetailItem | RetailIngredient) -> str:
@@ -194,7 +209,7 @@ def build_query(
         role=", ".join(deps.person.roles),
         today=deps.today,
         items={i.id: _named(i) for i in singles},
-        named=frozenset(words.named(message, [(i.id, [i.name, *i.short_codes]) for i in singles])),
+        named=frozenset(named(message, [(i.id, [i.name, *i.short_codes]) for i in singles])),
         kiosks=kiosks,
         numbers=words.numbers(
             message, deps.today, deps.lang, menu_tokens((i.name, i.short_codes) for i in items)
@@ -202,6 +217,7 @@ def build_query(
         dates={i: d.isoformat() for i, d in find_dates(message, deps.today, deps.lang)},
         plan_batches={x["item_id"]: int(x["batches"]) for x in plan.lines} if plan else {},
         plan_date=plan.production_date if plan else None,
+        draft_date=draft_day(previous_mia_message, deps.lang),
         batch_yields=yields,
         recipe=words.recipe(message, ings),
         batch=batch,

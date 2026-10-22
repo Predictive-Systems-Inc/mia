@@ -347,6 +347,17 @@ def test_capacity_counts_ovens_hours_and_planned_batches(
     assert out.fits and text.splitlines()[:2] == [asked, fits]
 
 
+def test_a_short_code_names_the_item_when_jev_picks_none(
+    session: Session, pp_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The short run: "capacity 200 cl dec 24" asked for the item; "cl" is Classic's code."""
+    draft(session)
+    _answers(monkeypatch, "capacity", number="n0", date="d0")  # item not stated
+    text = _turn(session, pp_en[1]["Rosa"], "capacity 200 cl dec 24").text()
+    asked = t("pp.capacity.asked", EN, pieces=200, item="Classic", date="2026-12-24")
+    assert text.splitlines()[0] == asked
+
+
 def test_order_notes_never_reach_the_plan(
     session: Session, pp_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -370,6 +381,31 @@ def test_a_negated_ok_does_not_confirm_the_plan(
     assert plan_row(session).status == "draft" and t("pp.plan.confirm", EN) in buttons(reply)
     _turn(session, pp_en[1]["Nonoy"], t("pp.plan.confirm", EN), reply.thread_id)
     assert plan_row(session).status == "confirmed"  # the button runs the stored decision
+
+
+def test_a_bare_ok_with_no_plan_card_asks_and_confirms_nothing(
+    session: Session, pp: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The short run (22 Oct): "ok na po" confirmed a plan with no date at 0.88. A typed
+    confirmation with no date confirms only the draft plan card Mia sent last."""
+    draft(session)
+    _answers(monkeypatch, "confirm_plan", confidence=0.88)
+    reply = _turn(session, pp[1]["Nonoy"], "ok na po")
+    assert plan_row(session).status == "draft"
+    assert reply.text() == t("clarify.rephrase", "fil")
+
+
+def test_a_typed_ok_after_the_plan_card_confirms_its_date(
+    session: Session, pp_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    draft(session)
+    nonoy = pp_en[1]["Nonoy"]
+    _answers(monkeypatch, "plan")
+    card = _turn(session, nonoy, "plan")  # the draft plan, its head line naming the date
+    assert "(draft)" in card.text().splitlines()[0]
+    _answers(monkeypatch, "confirm_plan", confidence=0.88)
+    _turn(session, nonoy, "ok", card.thread_id)
+    assert plan_row(session).status == "confirmed"
 
 
 def test_a_confirm_tap_after_midnight_still_confirms(

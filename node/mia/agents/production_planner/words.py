@@ -4,12 +4,13 @@ a number code read or a value of a fixed list here, never a word of the message.
 
 import datetime as dt
 import re
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import NamedTuple
 
-from mia.agents.parsing import strip_dates, strip_menu_names
+from mia.agents.parsing import WORD as _WORD
+from mia.agents.parsing import said, strip_dates, strip_menu_names
 from mia.templates.retail.models import RetailIngredient
 
 _COMMON = {
@@ -101,7 +102,6 @@ DIRECTION_WORDS: dict[str, dict[str, tuple[str, ...]]] = {
 DIRECTION = {w: d for langs in DIRECTION_WORDS.values() for d, ws in langs.items() for w in ws}
 BATCH_WORDS = ("batch", "batches", "salang")
 
-_WORD = re.compile(r"\d+(?:\.\d+)?|[^\W\d_]+", re.UNICODE)
 # "I mean" and its Philippine forms (machine drafts beyond en and fil, Q28 to Q35): the number
 # before it is the one corrected, as before "pala".
 _I_MEAN = re.compile(
@@ -117,11 +117,6 @@ class _Num(NamedTuple):
     value: int
 
 
-def said(text: str) -> list[str]:
-    """The casefolded words and numbers of the text, in order. Pure."""
-    return _WORD.findall(text.casefold())
-
-
 def directions(text: str) -> set[str]:
     """The directions ("add", "remove") whose words the text holds (DIRECTION). Pure."""
     return {DIRECTION[w] for w in said(text) if w in DIRECTION}
@@ -132,20 +127,6 @@ def units(text: str) -> set[str]:
     words = set(said(text))
     found = {"batches"} if words & set(BATCH_WORDS) else set()
     return found | ({"pieces"} if words & set(PIECE_WORDS) else set())
-
-
-def named(text: str, rows: Iterable[tuple[str, Sequence[str]]]) -> set[str]:
-    """The ids of the rows whose name or a short code the text holds as whole words, from (id,
-    names) pairs; the longest name first, and a name found takes its words out (so "salted egg"
-    is not also "egg"). Pure."""
-    rest = f" {' '.join(said(text))} "
-    names = [(" ".join(said(n)), rid) for rid, ns in rows for n in ns]
-    found: set[str] = set()
-    for name, rid in sorted(names, key=lambda x: -len(x[0])):
-        if name and f" {name} " in rest:
-            found.add(rid)
-            rest = rest.replace(f" {name} ", "  ")
-    return found
 
 
 def numbers(

@@ -17,7 +17,7 @@ from mia.agents.base import AgentDeps
 from mia.agents.branch_manager import MANIFEST
 from mia.agents.branch_manager.models import Strategy
 from mia.agents.decider import NOT_STATED, Action
-from mia.agents.parsing import find_dates, find_prices, has_negation, menu_tokens
+from mia.agents.parsing import find_dates, find_prices, has_negation, menu_tokens, named
 from mia.core.events import mask_phones, phone_candidates
 from mia.core.models import Branch, Person
 from mia.core.people import HUMAN_ROLES
@@ -289,6 +289,7 @@ class Query:
     role: str
     today: dt.date
     items: dict[str, str] = field(default_factory=dict)  # item id -> name, the branch catalogue
+    named: frozenset[str] = frozenset()  # the items the message names or codes (parsing.named)
     prices: dict[str, int] = field(default_factory=dict)  # p0 -> minor units, from find_prices
     dates: dict[str, str] = field(default_factory=dict)  # d0 -> ISO date, from find_dates
     codes: dict[str, str] = field(default_factory=dict)  # c0 -> a message word, no code yet
@@ -387,6 +388,7 @@ def build_query(
         role=", ".join(deps.person.roles),
         today=deps.today,
         items={i.id: i.name for i in rows},
+        named=frozenset(named(words, [(i.id, [i.name, *i.short_codes]) for i in rows])),
         prices=dict(
             find_prices(words, deps.lang, menu_tokens((i.name, i.short_codes) for i in rows))
         ),

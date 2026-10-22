@@ -420,6 +420,27 @@ def ask_price_change(
     return reply, approvals.pending(session, bm[0].id)[0]
 
 
+def test_a_short_code_names_the_price_change_item(
+    session: Session, bm_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The short run (22 Oct): "se" did not resolve, so the change asked for the item. The
+    catalogue's codes are read by code (parsing.named); two items named still ask."""
+    _answers(monkeypatch, "change_price", price="p0", date="d0")  # item not stated
+    _turn(session, bm_en[1]["Marites"], "gawing 52 se simula lunes")
+    (asked,) = approvals.pending(session, bm_en[0].id)
+    assert asked.summary == t(
+        "bm.price.summary",
+        EN,
+        item="Salted egg",
+        from_price="₱50.00",
+        price="₱52.00",
+        date="2026-11-02",
+    )
+    reply = _turn(session, bm_en[1]["Marites"], "gawing 52 se at sp simula lunes")
+    assert len(approvals.pending(session, bm_en[0].id)) == 1
+    assert not [b for b in reply.blocks if isinstance(b, ApprovalCardBlock)]
+
+
 def test_a_price_change_on_a_date_needs_the_owner(
     session: Session, bm_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

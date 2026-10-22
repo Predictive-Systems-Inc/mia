@@ -200,3 +200,21 @@ def test_times_and_groups_are_pseudonymised_in_the_state() -> None:
 def test_query_is_frozen() -> None:
     with pytest.raises(dataclasses.FrozenInstanceError):
         Query("m", "", "clerk", TODAY).message = "x"  # type: ignore[misc]
+
+
+def test_a_bare_item_and_number_is_missing_the_kind(session: Session, ferinos: Any) -> None:
+    q = build(session, ferinos, "eggs 10")
+    out, missing = args(q, "report_stock", kind="count", item_0=named(q, "Eggs"))
+    assert missing == "kind" and [e["quantity"] for e in out["events"]] == [10]
+    assert (
+        args(build(session, ferinos, "10 eggs left"), "report_stock", item_0=named(q, "Eggs"))[1]
+        is None
+    )
+
+
+def test_a_how_many_question_is_on_hand_whatever_the_kind(session: Session, ferinos: Any) -> None:
+    from mia.agents.inventory_manager.decider import ON_HAND
+
+    q = build(session, ferinos, "may ube pa ba")
+    out, missing = args(q, "report_stock", kind="low", item=named(q, "Ube"))
+    assert missing is None and out[ON_HAND] is True

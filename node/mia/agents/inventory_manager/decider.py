@@ -81,8 +81,46 @@ WASTE_WORDS = frozenset({
 })  # fmt: skip
 
 
+# Rule 7: the words that state what a number of stock is (count, leftover, sold out, low,
+# received), en and fil, with the local words of KINDS (machine drafts, Q28 to Q35). A number
+# with none of these, no WASTE_WORDS word and no count asked by Mia is a bare item and number:
+# the kind is asked with the kind buttons, never guessed ("eggs 10" was a count of 10 trays).
+KIND_WORDS = frozenset({
+    "left", "leftover", "leftovers", "remaining", "remain", "remains", "only", "still", "count",
+    "counted", "sold", "out", "finished", "gone", "low", "unsold", "received", "arrived",
+    "delivered", "delivery", "stock", "have", "got",
+    "lang", "la", "sana", "pa", "natitira", "natira", "tira", "naiwan", "sobra", "salin",
+    "ubos", "naubos", "wala", "paubos", "konti", "kaunti", "bilang", "nabilang", "dumating",
+    "natanggap", "meron", "mayroon", "may", "nabilin", "bilin", "nahabilin", "yara", "aada",
+    "yaon", "natada", "naa", "igwa", "hurot", "nahurot", "mayo", "gamay", "diutay", "dikit",
+    "kulang", "nabati", "natamban", "metda",
+})  # fmt: skip
+# A how-many question: one of these words, or "pa" with "ba" ("may ube pa ba", "meron pa ba").
+# With no number it is the on_hand read whatever kind is picked, never a stock event (rule 7).
+QUESTION_WORDS = frozenset({"ilan", "ilang", "gaano"})
+QUESTION_PHRASES = ("how many", "how much", "magkano pa", "meron pa", "mayroon pa")
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"\w+", text.casefold())
+
+
 def _says_waste(text: str) -> bool:
-    return any(w in WASTE_WORDS for w in re.findall(r"\w+", text.casefold()))
+    return any(w in WASTE_WORDS for w in _words(text))
+
+
+def _says_kind(text: str) -> bool:
+    return any(w in KIND_WORDS or w in WASTE_WORDS for w in _words(text))
+
+
+def _asks_how_many(text: str) -> bool:
+    words = _words(text)
+    joined = f" {' '.join(words)} "
+    return (
+        any(w in QUESTION_WORDS for w in words)
+        or any(f" {p} " in joined for p in QUESTION_PHRASES)
+        or {"pa", "ba"} <= set(words)
+    )
 
 
 def _report(r: Reader) -> tuple[dict[str, Any], str | None]:
@@ -91,8 +129,16 @@ def _report(r: Reader) -> tuple[dict[str, Any], str | None]:
     how many are left: the event of the item, marked ON_HAND (the turn runs on_hand). An unsure reason is not stated (it does not count
     toward the confidence), so a waste asks for it with the reason buttons; a waste with no
     number is missing its quantity. No kind and no number is the on_hand question too, unless a
-    WASTE_WORDS word is said; with one, any kind but waste asks the kind (rule 7)."""
+    WASTE_WORDS word is said; with one, any kind but waste asks the kind (rule 7). A how-many
+    question (QUESTION_WORDS) with no number is the on_hand read, whatever the kind pick. A
+    number with no kind word (KIND_WORDS, WASTE_WORDS) asks the kind with its events, unless
+    Mia's last message said the item is not counted yet (count_asked)."""
     q: Query = r.q
+    if not q.groups and _asks_how_many(q.message):  # decisive before the kind pick
+        ref = r.pick("item", set(q.items), fallback=True)
+        if ref is None:
+            return {"events": []}, "item"
+        return _event(r, "count", ref, None, None) | {ON_HAND: True}, None
     kind = r.pick("kind", set(KINDS))
     reason = r.pick("reason", set(REASONS), fallback=True) if kind == "waste" else None
     waste_said = _says_waste(q.message)
@@ -105,6 +151,8 @@ def _report(r: Reader) -> tuple[dict[str, Any], str | None]:
             if ref is None or g.quantity is None:
                 return {"events": []}, f"item_{i}"
             events.append(_event(r, kind or "count", ref, g.quantity, reason))
+        if not _says_kind(q.message) and not q.count_asked:  # a bare item and number
+            return {"events": events, "source_message_id": q.message_id}, "kind"
     else:
         ref = r.pick("item", set(q.items), fallback=True)
         if ref is None:

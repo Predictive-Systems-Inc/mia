@@ -142,7 +142,8 @@ class Query:
     dates: dict[str, str] = field(default_factory=dict)  # d0 -> ISO date, from find_dates
     people: dict[str, str] = field(default_factory=dict)  # leads only: id -> name
     periods: dict[str, str] = field(default_factory=lambda: dict(PERIODS))
-    days: dict[str, str] = field(default_factory=dict)  # h0..h13 -> "ISO date (weekday)"
+    # h0..h13 -> "ISO date (weekday)", the next 14 days; hd0.. -> a later date the message names
+    days: dict[str, str] = field(default_factory=dict)
     lang: str = "en"
     message_id: str | None = None
 
@@ -167,12 +168,17 @@ def build_query(
     for i in range(14):
         d = deps.today + dt.timedelta(days=i)
         days[f"h{i}"] = f"{d.isoformat()} ({names[d.weekday()]})"
+    found = find_dates(message, deps.today, deps.lang)
+    listed = set(days.values())
+    for did, d in found:  # a date the message names beyond the 14 days ("holiday pay nov 30")
+        if (day := f"{d.isoformat()} ({names[d.weekday()]})") not in listed:
+            days[f"h{did}"] = day
     return Query(
         message=message,
         previous_mia_message=previous_mia_message,
         role=", ".join(deps.person.roles),
         today=deps.today,
-        dates={i: d.isoformat() for i, d in find_dates(message, deps.today, deps.lang)},
+        dates={i: d.isoformat() for i, d in found},
         people=people,
         days=days,
         lang=deps.lang,
