@@ -56,18 +56,30 @@ def _side(gap: int, flagged: bool) -> str:
 
 def count_text(out: CashCountOut, lang: str) -> str:
     """The count against the day's cash sales: within the threshold, or short or over (the
-    owner is told by the tool)."""
+    owner is told by the tool). On a receipts day (out.clerk set) the clerk's drawer with its
+    float and cash receipts, and the drawers still open."""
     side = _side(out.difference, out.flagged)
     gap = money(abs(out.difference), out.currency, lang)
-    return t(
-        f"bk.count.{side}",
+    params = {
+        "counted": money(out.counted, out.currency, lang),
+        "expected": money(out.expected, out.currency, lang),
+        "difference": gap,
+        "short": gap,
+        "over": gap,
+    }
+    if out.clerk is None:
+        return t(f"bk.count.{side}", lang, **params)
+    text = t(
+        f"bk.count.drawer.{side}",
         lang,
-        counted=money(out.counted, out.currency, lang),
-        expected=money(out.expected, out.currency, lang),
-        difference=gap,
-        short=gap,
-        over=gap,
+        clerk=out.clerk,
+        float=money(out.opening_float or 0, out.currency, lang),
+        cash=money(out.cash or 0, out.currency, lang),
+        **params,
     )
+    if out.still_open:
+        text += " " + t("bk.count.still_open", lang, names=", ".join(out.still_open))
+    return text
 
 
 def match_text(m: calc.Match, provider: str, lang: str, currency: str) -> str:

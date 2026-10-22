@@ -11,6 +11,7 @@ from pydantic_ai.messages import ToolReturnPart
 from mia.agents.shift_supervisor.roster import REASON_KEYS
 from mia.agents.shift_supervisor.rules import compose, fmt_date, is_retail, word_key
 from mia.chat.blocks import Block, CardBlock, CardField, TextBlock
+from mia.core.money import format_money
 from mia.i18n import t
 from mia.i18n.strings import STRINGS
 
@@ -47,6 +48,10 @@ def tool_reply(tool: str, out: dict[str, Any], lang: str) -> list[Block]:
             return _late(out, lang)
         if tool == "find_replacements" and out.get("candidates"):
             return _cover_card(out, lang)
+        if tool == "check_in" and out.get("opening_float") is not None:
+            drawer = format_money(out["opening_float"], out["currency"], lang)
+            done = compose(ToolReturnPart(tool_name=tool, content=out, tool_call_id="jev"), lang)
+            return [*done, *_text("retail.check_in.drawer", lang, float=drawer)]
     return compose(ToolReturnPart(tool_name=tool, content=out, tool_call_id="jev"), lang)
 
 

@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from typing import Literal
 
 from pydantic import BaseModel, Field
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, or_, select
 
 from mia.core import events, orgconfig, store
 from mia.core.models import (
@@ -196,6 +196,75 @@ def close_session(
         "closed_at": closed_at,
     }
     return store.update(session, sales_session, changes, actor, action="sales.session_closed")
+
+
+def source_of(branch: Branch, day: dt.date) -> Literal["counts", "receipts"]:
+    """Where the branch's sales of a business date come from (SalesSettings.source)."""
+    return orgconfig.load().sales.source(branch.name, day)
+
+
+def open_sessions(session: Session, branch_id: str) -> list[SalesSession]:
+    """The branch's open sessions, earliest opened first (then by id)."""
+    stmt = (
+        select(SalesSession)
+        .where(SalesSession.branch_id == branch_id, SalesSession.state == "open")
+        .order_by(col(SalesSession.opened_at), col(SalesSession.id))
+    )
+    return list(session.exec(stmt))
+
+
+def open_for_shift(
+    session: Session,
+    actor: Actor,
+    branch: Branch,
+    person_id: str,
+    visit_id: str | None,
+    at: dt.datetime,
+) -> SalesSession:
+    """The person's open session at the branch, else a new one (open_session) with the branch's
+    float (SalesSettings.opening_float, 0 when absent) in the currency of the branch's first
+    active item in menu order (SalesError("item") with none). Callers check source_of first:
+    a counts day never gets a session."""
+    found = session.exec(
+        select(SalesSession).where(
+            SalesSession.branch_id == branch.id,
+            SalesSession.person_id == person_id,
+            SalesSession.state == "open",
+        )
+    ).first()
+    if found is not None:
+        return found
+    menu = session.exec(
+        select(RetailItem)
+        .where(col(RetailItem.active).is_(True))
+        .where(or_(col(RetailItem.branch_id).is_(None), RetailItem.branch_id == branch.id))
+        .order_by(col(RetailItem.sort_order))
+    ).first()
+    if menu is None:
+        raise SalesError("item")
+    opening_float = orgconfig.load().sales.opening_float.get(branch.name, 0)
+    return open_session(
+        session,
+        actor,
+        branch.id,
+        person_id,
+        at,
+        menu.currency,
+        visit_id=visit_id,
+        opening_float=opening_float,
+    )
+
+
+def closed_takings(session: Session, branch_id: str) -> dict[dt.date, int]:
+    """Per business date, the cash the branch's closed sessions took: counted less the opening
+    float (the float stays in the drawer)."""
+    out: dict[dt.date, int] = defaultdict(int)
+    closed = select(SalesSession).where(
+        SalesSession.branch_id == branch_id, SalesSession.state == "closed"
+    )
+    for s in session.exec(closed):
+        out[s.business_date] += (s.counted or 0) - s.opening_float
+    return dict(out)
 
 
 def _price(
@@ -457,7 +526,7 @@ def day_sales(session: Session, branch_id: str, business_date: dt.date) -> DaySa
     branch = session.get(Branch, branch_id)
     if branch is None:
         raise SalesError("branch")
-    source = orgconfig.load().sales.source(branch.name, business_date)
+    source = source_of(branch, business_date)
     items: dict[str, tuple[int, int]] = {}
     tenders: dict[str, int] = defaultdict(int)
 

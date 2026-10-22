@@ -9,6 +9,7 @@ roles:
   grants:
     - data:sales_sessions:read
     - data:sales_sessions:read_all
+    - data:sales_sessions:write  # the closing count closes the clerk's drawer
     - data:sales_receipts:read
     - data:sales_receipts:read_all
     - data:sales_receipt_lines:read
@@ -60,7 +61,7 @@ roles:
   approvers:
     bookkeeper.record_large_expense: [owner, admin]
 tools:
-  - {id: bookkeeper.record_cash_count, kind: agent, risk: write_internal, approval: never, reads: [sales_counts, bookkeeper_cash_counts, bookkeeper_expenses, bookkeeper_deposits, retail_items, retail_branch_hours], writes: [bookkeeper_cash_counts]}
+  - {id: bookkeeper.record_cash_count, kind: agent, risk: write_internal, approval: never, reads: [sales_counts, sales_sessions, sales_payments, bookkeeper_cash_counts, bookkeeper_expenses, bookkeeper_deposits, retail_items, retail_branch_hours], writes: [bookkeeper_cash_counts, sales_sessions]}
   - {id: bookkeeper.record_settlement, kind: agent, risk: write_internal, approval: never, reads: [sales_counts, retail_items], writes: [bookkeeper_settlements]}
   - {id: bookkeeper.record_payout, kind: agent, risk: write_internal, approval: never, reads: [sales_counts, retail_items], writes: [bookkeeper_payouts]}
   - {id: bookkeeper.record_expense, kind: agent, risk: write_internal, approval: never, reads: [bookkeeper_expenses, retail_items, retail_branch_hours], writes: [bookkeeper_expenses]}

@@ -15,7 +15,7 @@ from mia.agents.shift_supervisor import cover, scoring
 from mia.agents.shift_supervisor import roster as patterns
 from mia.agents.shift_supervisor import timesheets as sheets
 from mia.agents.shift_supervisor.rules import fmt_date, is_retail
-from mia.core import events, scheduling, store
+from mia.core import events, sales, scheduling, store
 from mia.core.db import utcnow
 from mia.core.models import (
     Absence,
@@ -24,6 +24,7 @@ from mia.core.models import (
     Job,
     Location,
     Person,
+    SalesSession,
     SupplierOrder,
     Timesheet,
     Visit,
@@ -575,6 +576,8 @@ class AttendanceOutput(BaseModel):
     reason: str | None = None  # no_visit, too_early, too_late, already, not_checked_in
     visit: VisitInfo | None = None
     time: str = ""
+    opening_float: int | None = None  # check-in on a receipts kiosk: the drawer's float
+    currency: str = ""
 
 
 class VisitDetailsOutput(BaseModel):
@@ -620,13 +623,23 @@ def _local_time(when: dt.datetime, tz: str) -> str:
 
 
 def check_in(deps: AgentDeps, args: CheckInInput, tool_call_id: str) -> AttendanceOutput:
-    """Check the acting person in to their planned visit whose window holds now."""
+    """Check the acting person in to their planned visit whose window holds now. A retail
+    clerk (never head staff) on a receipts kiosk also gets her open sales session (the drawer,
+    sales.open_for_shift), its write checked before the visit's so a denial writes nothing."""
     _check(
         deps,
         Resource(kind="data", name="core.visit", owner_id=deps.person.id),
         "write",
         tool_call_id,
     )
+    drawer_due = (
+        is_retail()
+        and scheduling.is_staff(deps.person)
+        and sales.source_of(deps.branch, deps.today) == "receipts"
+    )
+    if drawer_due:
+        resource = Resource(kind="data", name=SalesSession.__tablename__, owner_id=deps.person.id)
+        _check(deps, resource, "write", tool_call_id)
     now = utcnow()
     rows = _own_visits_today(deps, args.location_name)
     if any(v.status == "in_progress" for v in rows):
@@ -651,9 +664,18 @@ def check_in(deps: AgentDeps, args: CheckInInput, tool_call_id: str) -> Attendan
     except scheduling.ScheduleError as exc:
         return AttendanceOutput(status="invalid", reason=_reason(exc))
     tz = deps.branch.timezone
-    return AttendanceOutput(
+    out = AttendanceOutput(
         status="ok", visit=visit_info(deps.session, visit, tz), time=_local_time(now, tz)
     )
+    if drawer_due:
+        try:
+            s = sales.open_for_shift(
+                deps.session, deps.actor, deps.branch, deps.person.id, visit.id, now
+            )
+        except sales.SalesError as exc:  # ponytail: only "item" (a kiosk with no menu) is
+            raise LookupError(str(exc)) from exc  # reachable; the visit stays checked in
+        out.opening_float, out.currency = s.opening_float, s.currency
+    return out
 
 
 def check_out(deps: AgentDeps, args: CheckOutInput, tool_call_id: str) -> AttendanceOutput:

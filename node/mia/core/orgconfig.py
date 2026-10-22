@@ -139,6 +139,8 @@ class SalesSettings(BaseModel):
     sales are the clerks' counts; from it, the till's receipts. One source per day, never both."""
 
     receipts_from: dict[str, dt.date] = Field(default_factory=dict)
+    # Branch name to the change fund at a session's opening, minor units; 0 when absent.
+    opening_float: dict[str, int] = Field(default_factory=dict)
 
     def source(self, branch_name: str, day: dt.date) -> Literal["counts", "receipts"]:
         """counts or receipts for the branch's business date (counts unless named and due)."""

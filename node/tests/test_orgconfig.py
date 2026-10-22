@@ -94,6 +94,11 @@ def test_bookkeeper_settings_load() -> None:
     assert "bookkeeper" in orgconfig.load("ferinos").agents
 
 
+def test_sales_settings_load_the_opening_float() -> None:
+    assert orgconfig.SalesSettings().opening_float == {}
+    assert orgconfig.load("ferinos").sales.opening_float == {}
+
+
 def test_delivery_areas_in_two_currencies_fail_to_load() -> None:
     areas = [{"name": "A", "fee": 1, "currency": "PHP"}, {"name": "B", "fee": 1, "currency": "USD"}]
     with pytest.raises(ValidationError, match="one currency"):

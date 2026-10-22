@@ -51,7 +51,7 @@ from mia.agents.sales_supervisor.tools import (
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
-from mia.core import approvals, orgconfig, store
+from mia.core import approvals, orgconfig, sales, store
 from mia.core.db import utcnow
 from mia.core.models import (
     Actor,
@@ -59,6 +59,7 @@ from mia.core.models import (
     Branch,
     Payslip,
     Person,
+    SalesSession,
     StockEvent,
     SupplierOrder,
 )
@@ -101,14 +102,22 @@ def balance_days(
 ) -> tuple[dict[dt.date, int], dict[dt.date, int]]:
     """The petty and undeposited cash balances after each business date with a movement up to
     upto (calc.running). Petty: refills (deposits to bank petty) less petty spends.
-    Undeposited: counted cash (the latest count of a date wins) less every bank deposit, less
-    drawer_out on a date without a count (a count already holds what left before it)."""
+    Undeposited: counted cash (the latest count of a date wins; on a receipts date the closed
+    sessions' takings, sales.closed_takings, as the float stays in the drawer) less every bank
+    deposit, less drawer_out on a date without a count (a count already holds what left before
+    it)."""
     counts = session.exec(
         select(CashCount)
         .where(CashCount.branch_id == branch_id)
         .order_by(col(CashCount.created_at), col(CashCount.id))
     )
     counted = {c.business_date: c.counted for c in counts}  # later rows overwrite earlier
+    branch = session.get(Branch, branch_id)
+    if branch is not None:
+        counted = {d: c for d, c in counted.items() if sales.source_of(branch, d) == "counts"}
+        for day, taken in sales.closed_takings(session, branch_id).items():
+            if sales.source_of(branch, day) == "receipts":
+                counted[day] = taken
     refills: dict[dt.date, int] = defaultdict(int)
     out_cash: dict[dt.date, int] = defaultdict(int)
     out_petty: dict[dt.date, int] = defaultdict(int)
@@ -162,6 +171,7 @@ PAYSLIPS = Resource(kind="data", name=Payslip.__tablename__)
 ORDERS = Resource(kind="data", name=SupplierOrder.__tablename__)
 STOCK = Resource(kind="data", name=StockEvent.__tablename__)
 TAX = Resource(kind="data", name=TaxFigure.__tablename__)
+SESSIONS = Resource(kind="data", name=SalesSession.__tablename__)
 DEFAULT_LANGUAGE = "en"
 
 
@@ -249,6 +259,10 @@ class CashCountOut(BaseModel):
     difference: int
     flagged: bool
     currency: str
+    clerk: str | None = None  # a receipts day: the first name of the drawer's clerk
+    opening_float: int | None = None
+    cash: int | None = None  # the session's cash receipts (its expected less its float)
+    still_open: list[str] = Field(default_factory=list)  # the other open drawers' clerks
 
 
 def closing_date(branch: Branch, hours: retail_hours.Hours, said: dt.datetime) -> dt.date:
@@ -273,11 +287,18 @@ def record_cash_count(deps: AgentDeps, args: CashCountInput, tool_call_id: str) 
     yesterday; event bookkeeper.cash_counted) against the date's cash sales less drawer_out.
     A difference over the threshold tells the owners and admins, urgent; a count that replaces
     a flagged one tells them first that the earlier alert is withdrawn. Raises
-    LookupError("business_date") for another stated day."""
+    LookupError("business_date") for another stated day.
+
+    On a receipts day (sales.source_of) the count closes the branch's earliest open drawer
+    (sales.close_session) and is held against that session's expected cash less drawer_out;
+    each count is its own drawer, so no earlier alert is withdrawn. LookupError("no_session")
+    before any write when no drawer is open."""
     _check(deps, CASH, "write", tool_call_id)
     _check(deps, COUNTS, "read", tool_call_id)
     _read(deps, [deps.branch], [CASH, EXPENSES, DEPOSITS], tool_call_id)
     day = _closing_day(deps, args, tool_call_id)
+    if sales.source_of(deps.branch, day) == "receipts":
+        return _close_drawer(deps, args, day, tool_call_id)
     expected = tender_sales(deps.session, deps.branch.id, "cash", day, day) - drawer_out(
         deps.session, deps.branch.id
     ).get(day, 0)
@@ -338,6 +359,74 @@ def record_cash_count(deps: AgentDeps, args: CashCountInput, tool_call_id: str) 
         difference=m.gap,
         flagged=m.flagged,
         currency=currency,
+    )
+
+
+def _first_name(session: Session, person_id: str) -> str:
+    person = session.get(Person, person_id)
+    return person.name.split()[0] if person else "?"
+
+
+def _close_drawer(
+    deps: AgentDeps, args: CashCountInput, day: dt.date, tool_call_id: str
+) -> CashCountOut:
+    """record_cash_count on a receipts day: close the earliest open session with the count,
+    store the CashCount against its expected less drawer_out and tell the leads when flagged."""
+    _check(deps, SESSIONS, "write", tool_call_id)
+    open_ = sales.open_sessions(deps.session, deps.branch.id)
+    if not open_:
+        raise LookupError("no_session")
+    try:
+        closed = sales.close_session(
+            deps.session, deps.actor, open_[0], args.counted, deps.person.id, utcnow()
+        )
+    except sales.SalesError as exc:
+        raise LookupError(str(exc)) from exc
+    assert closed.expected is not None
+    expected = closed.expected - drawer_out(deps.session, deps.branch.id).get(day, 0)
+    m = calc.match(args.counted, expected, 0, _settings().threshold)
+    currency, clerk = closed.currency, _first_name(deps.session, closed.person_id)
+    row = store.insert(
+        deps.session,
+        CashCount(
+            branch_id=deps.branch.id,
+            business_date=day,
+            counted=args.counted,
+            expected=expected,
+            difference=m.gap,
+            currency=currency,
+            counted_by=deps.person.id,
+        ),
+        deps.actor,
+        action=f"{MANIFEST.id}.cash_counted",
+        tool_call_id=tool_call_id,
+    )
+    if m.flagged:
+        side = "short" if m.gap < 0 else "over"
+        for lead in alerts.leads(deps.session, deps.organisation_id):
+            _tell(
+                deps.session,
+                lead,
+                f"bk.count.drawer.{side}_owner",
+                urgent=True,
+                branch=deps.branch.name,
+                clerk=clerk,
+                counted=_money(args.counted, currency, lead),
+                expected=_money(expected, currency, lead),
+                **{side: _money(abs(m.gap), currency, lead)},
+            )
+    return CashCountOut(
+        id=row.id,
+        business_date=day,
+        counted=row.counted,
+        expected=expected,
+        difference=m.gap,
+        flagged=m.flagged,
+        currency=currency,
+        clerk=clerk,
+        opening_float=closed.opening_float,
+        cash=closed.expected - closed.opening_float,
+        still_open=[_first_name(deps.session, s.person_id) for s in open_[1:]],
     )
 
 

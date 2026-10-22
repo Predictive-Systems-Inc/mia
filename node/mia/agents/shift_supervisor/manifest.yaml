@@ -34,6 +34,8 @@ roles:
     - data:retail_closures:write
     - data:retail_closures:write_all
     - data:retail_branch_hours:read
+    - data:sales_sessions:read
+    - data:sales_sessions:write  # a clerk's check-in on a receipts kiosk opens her drawer
     - tool:shift_supervisor.set_roster:execute
     - tool:shift_supervisor.roster:execute
     - tool:shift_supervisor.swap_shifts:execute
@@ -52,7 +54,7 @@ tools:
   - {id: shift_supervisor.find_replacements, kind: agent, risk: read, approval: never, reads: [visit, person, location, availability, work_limits, absences]}
   - {id: shift_supervisor.assign_cover, kind: agent, risk: write_internal, approval: never, reads: [visit, person, availability, work_limits, absences], writes: [cover_requests, chat_messages, approval]}
   - {id: shift_supervisor.respond_to_cover, kind: agent, risk: write_internal, approval: never, reads: [cover_requests], writes: [visit, cover_requests, chat_messages]}
-  - {id: shift_supervisor.check_in, kind: agent, risk: write_internal, approval: never, reads: [visit, location], writes: [visit]}
+  - {id: shift_supervisor.check_in, kind: agent, risk: write_internal, approval: never, reads: [visit, location], writes: [visit, sales_sessions]}
   - {id: shift_supervisor.check_out, kind: agent, risk: write_internal, approval: never, reads: [visit, location], writes: [visit]}
   - {id: shift_supervisor.visit_details, kind: agent, risk: read, approval: never, reads: [visit, location, job, cleaning_checklists]}
   - {id: shift_supervisor.report_site_problem, kind: agent, risk: write_internal, approval: never, reads: [visit, location, person, supplier_orders], writes: [incidents, chat_messages]}

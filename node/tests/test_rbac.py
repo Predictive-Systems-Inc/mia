@@ -93,6 +93,13 @@ OWN = {"read_own", "write_own"}
 ADMIN_PAY = {"read_all", "read_own", "write_all"}
 ADMIN_HR = ADMIN_PAY | {"read"}
 SALES_READERS = ("sales_supervisor", "bookkeeper", "branch_manager", "inventory_manager")
+SALES_RIGHTS: dict[str, set[str]] = {
+    "clerk": OWN,
+    "supervisor": {"read", "write"},
+    "owner": FULL,
+    "admin": FULL,
+    **{f"agent.{a}": {"read", "read_all"} for a in SALES_READERS},
+}
 SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
     "sales_counts": {
         "clerk": {"read_own", "write_own"},
@@ -164,15 +171,13 @@ SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
         "agent.production_planner": {"read", "read_all"},
     },
     **{
-        table: {
-            "clerk": OWN,
-            "supervisor": {"read", "write"},
-            "owner": FULL,
-            "admin": FULL,
-            **{f"agent.{a}": {"read", "read_all"} for a in SALES_READERS},
-        }
-        for table in ("sales_sessions", "sales_receipts", "sales_receipt_lines", "sales_payments")
+        table: SALES_RIGHTS for table in ("sales_receipts", "sales_receipt_lines", "sales_payments")
     },  # 1.9 (ADR 022): new core tables
+    "sales_sessions": {  # 1.9 writers (spec section 6): check-in opens, the count closes
+        **SALES_RIGHTS,
+        "agent.shift_supervisor": {"read", "write"},
+        "agent.bookkeeper": {"read", "read_all", "write"},
+    },
     "leave": {
         "staff": OWN,
         "clerk": OWN,

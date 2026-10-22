@@ -27,7 +27,7 @@ from mia.agents.sales_supervisor.tools import _currency, _reported_at
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import reply_text, store_reply
-from mia.core import events, orgconfig
+from mia.core import events, orgconfig, sales
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
@@ -202,7 +202,11 @@ def _run(
         if out["status"] == "denied":
             return reply_text(session, deps, thread, t("bk.not_allowed", deps.lang))
         limit = replies.money(orgconfig.load().bookkeeper.expense_limit, currency, deps.lang)
-        key = replies.refusal_key(str(out["message"]))
+        reason = str(out["message"])
+        if reason == "no_session":
+            text = t("bk.count.no_session", deps.lang, branch=deps.branch.name)
+            return reply_text(session, deps, thread, text)
+        key = replies.refusal_key(reason)
         return reply_text(session, deps, thread, t(key, deps.lang, limit=limit))
     text = _result(deps, binding.tool_id.removeprefix(f"{MANIFEST.id}."), inp, out)
     return reply_text(session, deps, thread, "\n".join(filter(None, [lead, text])))
@@ -260,6 +264,8 @@ def _correct(session: Session, deps: AgentDeps, thread: Thread, decision: Decisi
     )
     if previous is None:
         return reply_text(session, deps, thread, t("bk.correction.ask", deps.lang))
+    if sales.source_of(deps.branch, previous.business_date) == "receipts":
+        return _run(session, deps, thread, decision.action, decision.args)  # its own drawer
     old = replies.money(previous.counted, previous.currency, deps.lang)
     lead = t("bk.count.replaced", deps.lang, old=old)
     return _run(session, deps, thread, decision.action, decision.args, lead)
