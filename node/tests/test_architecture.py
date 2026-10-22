@@ -191,7 +191,8 @@ def test_no_module_spells_an_agent_id() -> None:
 
 def test_agent_tables_carry_the_agent_prefix_and_shared_tables_live_in_core() -> None:
     """Rule 9: a table defined in mia/agents/<id>/ is prefixed <id>_; the shared sales and
-    stock tables (data standard 1.5) are defined in mia/core/models.py."""
+    stock tables (data standard 1.5) and the sales operations tables (1.9) are defined in
+    mia/core/models.py."""
     from sqlmodel import SQLModel
 
     import mia.schema  # noqa: F401  (every table module)
@@ -203,8 +204,9 @@ def test_agent_tables_carry_the_agent_prefix_and_shared_tables_live_in_core() ->
         if module.startswith("mia.agents.") and not name.startswith(module.split(".")[2] + "_")
     ]
     assert offenders == []
-    shared = ("sales_counts", "sales_targets", "sales_notes", "stock_events")
-    for name in (*shared, "supplier_orders", "contracts", "payslips", "leave", "customer_orders"):
+    shared = ("sales_counts", "sales_targets", "sales_notes", "stock_events", "customer_orders")
+    sales = ("sales_sessions", "sales_receipts", "sales_receipt_lines", "sales_payments")  # 1.9
+    for name in (*shared, *sales, "supplier_orders", "contracts", "payslips", "leave"):
         assert homes.get(name) == "mia.core.models", name
 
 

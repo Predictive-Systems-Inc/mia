@@ -317,3 +317,24 @@ After sales, in this order, each its own spec and data standard step:
    receipts never both the source of one day's sales?
 
 With yes to 1 and 2 this becomes data standard 1.9 and ADR 022.
+
+## 12. Carried over (after data standard 1.9, 22 Oct 2026)
+
+Built with 1.9 (ADR 022): the four tables, `mia/core/sales.py` (`open_session`, `close_session`,
+`record_receipt` for sales and refunds, `void_receipt`, `receipts`, `day_sales`), the setting
+`sales.receipts_from` (branch name to first receipts day; empty at Ferino's, so every kiosk is on
+counts) and the human rights in policy.csv. Waiting for the till or a receipt entry path:
+
+- The receipt tools (the till's own spec), and the agent grants of the readers (sales
+  supervisor, bookkeeper, branch manager, production planner, customer service) with them.
+- The chat path: a clerk typing a receipt (`source` chat), and a clerk's count on a receipts day
+  answered with the receipts figures (section 5).
+- The void and refund cards: the approval types `sales.void` (head staff) and `sales.refund`
+  (owner or admin) are checked by the services but nothing requests them yet.
+- Moving the sales supervisor's reports and the bookkeeper's `tender_sales` onto `day_sales`
+  (section 8, step 2); `day_sales` repeats the live count query today (core cannot import an
+  agent) and a test pins it equal to the sales supervisor's totals.
+- Opening a session on a retail clerk's check-in and closing it from the bookkeeper's closing
+  count; `drawer_out` in the session's expected cash (it lives with the bookkeeper today).
+- A running experiment's `to_price` at the till: `experiment_id` is stored as given, the unit
+  price is the dated price.

@@ -162,6 +162,10 @@ SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
         "agent.customer_service": {"read", "write"},
         "agent.production_planner": {"read", "read_all"},
     },
+    **{
+        table: {"clerk": OWN, "supervisor": {"read", "write"}, "owner": FULL, "admin": FULL}
+        for table in ("sales_sessions", "sales_receipts", "sales_receipt_lines", "sales_payments")
+    },  # 1.9 (ADR 022): new core tables; agent reads arrive with their reader
     "leave": {
         "staff": OWN,
         "clerk": OWN,
@@ -176,7 +180,8 @@ SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
 def test_shared_tables_keep_exactly_the_rights_they_had() -> None:
     """Data standard 1.5 (the sales and stock tables), 1.6 (supplier orders and the HR tables)
     and 1.8 (customer orders) renamed the tables; the role-by-action table equals the one before
-    each rename (no right dropped, none added). A new reader changes this table with its agent."""
+    each rename (no right dropped, none added); 1.9 added the sales operations tables. A new
+    reader changes this table with its agent."""
     from mia.agents.base import Manifest
 
     rbac = Rbac(get_settings().config_dir / "policies")

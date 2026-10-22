@@ -109,6 +109,42 @@ p, admin, *, data:sales_notes, write, allow
 p, admin, *, data:sales_notes, read_all, allow
 p, admin, *, data:sales_notes, write_all, allow
 
+# sales operations (data standard 1.9, ADR 022): a clerk their own sessions, receipts, lines and
+# payments of their branch; head staff the branch's; admin every branch (owner inherits). Agent
+# reads arrive with the agent that reads them, the void and refund approvals with the till
+p, clerk, *, data:sales_sessions, read_own, allow
+p, clerk, *, data:sales_sessions, write_own, allow
+p, clerk, *, data:sales_receipts, read_own, allow
+p, clerk, *, data:sales_receipts, write_own, allow
+p, clerk, *, data:sales_receipt_lines, read_own, allow
+p, clerk, *, data:sales_receipt_lines, write_own, allow
+p, clerk, *, data:sales_payments, read_own, allow
+p, clerk, *, data:sales_payments, write_own, allow
+p, supervisor, *, data:sales_sessions, read, allow
+p, supervisor, *, data:sales_sessions, write, allow
+p, supervisor, *, data:sales_receipts, read, allow
+p, supervisor, *, data:sales_receipts, write, allow
+p, supervisor, *, data:sales_receipt_lines, read, allow
+p, supervisor, *, data:sales_receipt_lines, write, allow
+p, supervisor, *, data:sales_payments, read, allow
+p, supervisor, *, data:sales_payments, write, allow
+p, admin, *, data:sales_sessions, read, allow
+p, admin, *, data:sales_sessions, write, allow
+p, admin, *, data:sales_sessions, read_all, allow
+p, admin, *, data:sales_sessions, write_all, allow
+p, admin, *, data:sales_receipts, read, allow
+p, admin, *, data:sales_receipts, write, allow
+p, admin, *, data:sales_receipts, read_all, allow
+p, admin, *, data:sales_receipts, write_all, allow
+p, admin, *, data:sales_receipt_lines, read, allow
+p, admin, *, data:sales_receipt_lines, write, allow
+p, admin, *, data:sales_receipt_lines, read_all, allow
+p, admin, *, data:sales_receipt_lines, write_all, allow
+p, admin, *, data:sales_payments, read, allow
+p, admin, *, data:sales_payments, write, allow
+p, admin, *, data:sales_payments, read_all, allow
+p, admin, *, data:sales_payments, write_all, allow
+
 # clerk: report stock, ask how many are left, what is low and the bake plan (own branch; no orders)
 p, clerk, *, tool:inventory_manager.record_events, execute, allow
 p, clerk, *, tool:inventory_manager.low_stock, execute, allow

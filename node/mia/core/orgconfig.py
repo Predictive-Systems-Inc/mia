@@ -133,6 +133,19 @@ class ShiftSupervisorSettings(BaseModel):
     weekly_roster_time: dt.time = dt.time(17, 0)
 
 
+class SalesSettings(BaseModel):
+    """Where a kiosk's day of sales comes from (D43, ADR 022): receipts_from maps a branch name
+    to its first receipts day (a local date). Before it, or for a branch not named, the day's
+    sales are the clerks' counts; from it, the till's receipts. One source per day, never both."""
+
+    receipts_from: dict[str, dt.date] = Field(default_factory=dict)
+
+    def source(self, branch_name: str, day: dt.date) -> Literal["counts", "receipts"]:
+        """counts or receipts for the branch's business date (counts unless named and due)."""
+        start = self.receipts_from.get(branch_name)
+        return "receipts" if start is not None and day >= start else "counts"
+
+
 class OrgSettings(BaseModel):
     # Which demo seed and industry tables the organisation uses.
     template: Literal["cleaning", "retail"] = "cleaning"
@@ -150,6 +163,7 @@ class OrgSettings(BaseModel):
     bookkeeper: BookkeeperSettings = Field(default_factory=BookkeeperSettings)
     production_planner: ProductionPlannerSettings = Field(default_factory=ProductionPlannerSettings)
     shift_supervisor: ShiftSupervisorSettings = Field(default_factory=ShiftSupervisorSettings)
+    sales: SalesSettings = Field(default_factory=SalesSettings)
     # The agents this organisation runs, in routing order.
     agents: list[str] = Field(default_factory=lambda: ["shift_supervisor"])
 

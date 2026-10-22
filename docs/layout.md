@@ -23,7 +23,9 @@ mia/
                             absences, cover requests, timesheets, incidents (data standard 1.4),
                             sales counts, targets and notes, stock events (data standard 1.5),
                             sales tenders, supplier orders, contracts, payslips and leave (1.6),
-                            the kiosk incident kinds (1.7), customer orders (1.8),
+                            the kiosk incident kinds (1.7), customer orders (1.8), sales
+                            (1.9: sessions, receipts, lines and payments, their services and
+                            day_sales over a kiosk's one source; ADR 022),
                             geocoding (pluggable providers), orgconfig (organisation settings),
                             keys (master key, HKDF, scrypt, TOTP), auth (sessions, codes,
                             credentials, devices, clients; ADR 011), scheduling (recurrence,
@@ -105,7 +107,8 @@ mia/
     migrations/             alembic.ini, env.py, versions/
     config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ and org/ferinos/ (instructions, settings.yaml),
                             ollama/ (Modelfiles for local models, ADR 004)
-    tests/                  unit tests; auth/ (login flows); evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
+    tests/                  unit tests (test_data_standard_<n>.py pins each data standard change,
+                            test_data_standard_1_9.py the sales operations tables); auth/ (login flows); evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
                             and intents.py for intent classification; cases/ (one CSV of test
                             messages per agent, <agent_id>.csv, and router.csv, with the shared
                             loader the <id>_cases.py modules build their cases with, and a

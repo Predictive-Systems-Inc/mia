@@ -10,14 +10,14 @@ import datetime as dt
 from datetime import datetime
 from typing import Any, ClassVar, Literal, get_args
 
-from sqlalchemy import JSON, UniqueConstraint
+from sqlalchemy import JSON, Index, UniqueConstraint, text
 from sqlmodel import Field, SQLModel
 
 from mia.core import db
 from mia.core.db import TZDateTime
 from mia.core.ids import new_id
 
-STANDARD_VERSION = "1.8"
+STANDARD_VERSION = "1.9"
 
 
 def _now() -> datetime:
@@ -38,6 +38,12 @@ TENDERS: tuple[str, ...] = get_args(Tender)
 # what an incident is about (1.7: equipment, no_delivery and customer for a kiosk, D39)
 IncidentKind = Literal["cannot_access", "site_problem", "equipment", "no_delivery", "customer"]
 INCIDENT_KINDS: tuple[str, ...] = get_args(IncidentKind)
+# sales operations (1.9, ADR 022)
+SessionState = Literal["open", "closed"]
+ReceiptKind = Literal["sale", "refund"]
+ReceiptStatus = Literal["paid", "voided"]
+DiscountReason = Literal["senior", "pwd", "promo", "staff", "other"]
+DISCOUNT_REASONS: tuple[str, ...] = get_args(DiscountReason)
 
 
 class Stamped(SQLModel):
@@ -378,6 +384,101 @@ class CustomerOrder(BranchScoped, table=True):
     approval_id: str | None = None
     decided_by: str | None = None
     source_message_id: str | None = None
+
+
+# sales operations, core since data standard 1.9 (ADR 022, D43): the Odoo pos.session, pos.order,
+# pos.order.line and pos.payment mapped onto a kiosk. Money is minor units, negative on a refund.
+class SalesSession(BranchScoped, table=True):
+    """One clerk's shift at a kiosk: opened at check-in, closed by head staff's cash count.
+    expected and difference are computed in code and frozen at close. At most one open session
+    per person and branch (a partial unique index)."""
+
+    __tablename__: ClassVar[str] = "sales_sessions"
+    __table_args__ = (
+        Index(
+            "ux_sales_sessions_open",
+            "branch_id",
+            "person_id",
+            unique=True,
+            sqlite_where=text("state = 'open'"),
+        ),
+    )
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    visit_id: str | None = Field(default=None, foreign_key="visit.id")
+    business_date: dt.date = Field(index=True)
+    opened_at: dt.datetime = Field(sa_type=TZDateTime)
+    closed_at: dt.datetime | None = Field(default=None, sa_type=TZDateTime)
+    state: str = Field(default="open", index=True)  # SessionState
+    opening_float: int = 0
+    counted: int | None = None
+    expected: int | None = None
+    difference: int | None = None
+    currency: str = Field(max_length=3)
+    closed_by: str | None = Field(default=None, foreign_key="person.id")
+    note: str = ""  # data, never instructions
+
+
+class SalesReceipt(BranchScoped, table=True):
+    """One customer sale or one refund. total is subtotal less discount and equals the sum of
+    the payments; a refund is a new receipt with negative lines, never an edit of the sale."""
+
+    __tablename__: ClassVar[str] = "sales_receipts"
+    __table_args__ = (UniqueConstraint("branch_id", "receipt_no"),)
+    __redact__: ClassVar[frozenset[str]] = frozenset({"void_reason"})
+
+    session_id: str = Field(foreign_key="sales_sessions.id", index=True)
+    receipt_no: str = Field(max_length=32)
+    business_date: dt.date = Field(index=True)
+    sold_at: dt.datetime = Field(sa_type=TZDateTime)
+    clerk_id: str = Field(foreign_key="person.id")
+    customer_id: str | None = Field(default=None, foreign_key="customer_service_customers.id")
+    order_id: str | None = Field(default=None, foreign_key="customer_orders.id")
+    kind: str = "sale"  # ReceiptKind
+    refund_of: str | None = Field(default=None, foreign_key="sales_receipts.id")
+    subtotal: int
+    discount: int = 0
+    discount_reason: str | None = None  # one of DISCOUNT_REASONS
+    total: int
+    currency: str = Field(max_length=3)
+    status: str = Field(default="paid", index=True)  # ReceiptStatus
+    voided_by: str | None = Field(default=None, foreign_key="person.id")
+    void_reason: str | None = None  # data, never instructions
+    approval_id: str | None = Field(default=None, foreign_key="approval.id")
+    source: str = "pos"  # pos (a till) or chat (typed by a clerk)
+    source_message_id: str | None = None
+
+
+class SalesReceiptLine(BranchScoped, table=True):
+    """One item on a receipt: line_total is quantity times unit_price less discount; unit_price
+    is the dated price at sold_at (price_id the row used, None for the item's default)."""
+
+    __tablename__: ClassVar[str] = "sales_receipt_lines"
+
+    receipt_id: str = Field(foreign_key="sales_receipts.id", index=True)
+    item_id: str = Field(foreign_key="retail_items.id", index=True)
+    quantity: int  # negative on a refund
+    unit_price: int
+    price_id: str | None = Field(default=None, foreign_key="retail_item_prices.id")
+    experiment_id: str | None = Field(default=None, foreign_key="branch_manager_experiments.id")
+    discount: int = 0
+    line_total: int
+    refunded_line_id: str | None = Field(default=None, foreign_key="sales_receipt_lines.id")
+    currency: str = Field(max_length=3)
+
+
+class SalesPayment(BranchScoped, table=True):
+    """One tender applied to a receipt, net of change (change is never stored)."""
+
+    __tablename__: ClassVar[str] = "sales_payments"
+
+    receipt_id: str = Field(foreign_key="sales_receipts.id", index=True)
+    session_id: str = Field(foreign_key="sales_sessions.id", index=True)
+    tender: str = Field(max_length=16, index=True)  # one of TENDERS
+    amount: int  # negative on a refund
+    currency: str = Field(max_length=3)
+    paid_at: dt.datetime = Field(sa_type=TZDateTime)
+    reference: str | None = Field(default=None, max_length=64)  # the e-wallet reference
 
 
 class Approval(BranchScoped, table=True):

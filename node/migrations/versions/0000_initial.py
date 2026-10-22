@@ -1,4 +1,4 @@
-"""initial schema: data standard 1.4 (core, cleaning template, shared agent tables)
+"""initial schema: data standard 1.9 (core, cleaning template, shared agent tables)
 
 Migrations 0001 to 0008 were squashed into this one on 18 Oct 2026, before any production
 release (ADR 014). Its id 0000 is none of the squashed ids, so a database stamped with one of
@@ -1863,6 +1863,227 @@ def upgrade() -> None:
         batch_op.create_index(batch_op.f("ix_timesheets_status"), ["status"], unique=False)
         batch_op.create_index(batch_op.f("ix_timesheets_visit_id"), ["visit_id"], unique=False)
 
+    # data standard 1.9 (ADR 022): the sales operations tables
+    op.create_table(
+        "sales_sessions",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("person_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("visit_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("business_date", sa.Date(), nullable=False),
+        sa.Column("opened_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("closed_at", mia.core.db.TZDateTime(length=40), nullable=True),
+        sa.Column("state", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("opening_float", sa.Integer(), nullable=False),
+        sa.Column("counted", sa.Integer(), nullable=True),
+        sa.Column("expected", sa.Integer(), nullable=True),
+        sa.Column("difference", sa.Integer(), nullable=True),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("closed_by", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("note", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["closed_by"],
+            ["person.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["person_id"],
+            ["person.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["visit_id"],
+            ["visit.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("sales_sessions", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_sales_sessions_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_sales_sessions_business_date"), ["business_date"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_sales_sessions_person_id"), ["person_id"], unique=False
+        )
+        batch_op.create_index(batch_op.f("ix_sales_sessions_state"), ["state"], unique=False)
+        batch_op.create_index(
+            "ux_sales_sessions_open",
+            ["branch_id", "person_id"],
+            unique=True,
+            sqlite_where=sa.text("state = 'open'"),
+        )
+
+    op.create_table(
+        "sales_receipts",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("session_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("receipt_no", sqlmodel.sql.sqltypes.AutoString(length=32), nullable=False),
+        sa.Column("business_date", sa.Date(), nullable=False),
+        sa.Column("sold_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("clerk_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("customer_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("order_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("kind", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("refund_of", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("subtotal", sa.Integer(), nullable=False),
+        sa.Column("discount", sa.Integer(), nullable=False),
+        sa.Column("discount_reason", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("total", sa.Integer(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("status", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("voided_by", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("void_reason", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("approval_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("source", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("source_message_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["approval_id"],
+            ["approval.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["clerk_id"],
+            ["person.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["customer_id"],
+            ["customer_service_customers.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["order_id"],
+            ["customer_orders.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["refund_of"],
+            ["sales_receipts.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_id"],
+            ["sales_sessions.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["voided_by"],
+            ["person.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("branch_id", "receipt_no"),
+    )
+    with op.batch_alter_table("sales_receipts", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_sales_receipts_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_sales_receipts_business_date"), ["business_date"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_sales_receipts_session_id"), ["session_id"], unique=False
+        )
+        batch_op.create_index(batch_op.f("ix_sales_receipts_status"), ["status"], unique=False)
+
+    op.create_table(
+        "sales_payments",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("receipt_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("session_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("tender", sqlmodel.sql.sqltypes.AutoString(length=16), nullable=False),
+        sa.Column("amount", sa.Integer(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.Column("paid_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("reference", sqlmodel.sql.sqltypes.AutoString(length=64), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["receipt_id"],
+            ["sales_receipts.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_id"],
+            ["sales_sessions.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("sales_payments", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_sales_payments_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_sales_payments_receipt_id"), ["receipt_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_sales_payments_session_id"), ["session_id"], unique=False
+        )
+        batch_op.create_index(batch_op.f("ix_sales_payments_tender"), ["tender"], unique=False)
+
+    op.create_table(
+        "sales_receipt_lines",
+        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("created_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("updated_at", mia.core.db.TZDateTime(length=40), nullable=False),
+        sa.Column("branch_id", sqlmodel.sql.sqltypes.AutoString(length=26), nullable=False),
+        sa.Column("receipt_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("item_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("quantity", sa.Integer(), nullable=False),
+        sa.Column("unit_price", sa.Integer(), nullable=False),
+        sa.Column("price_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("experiment_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("discount", sa.Integer(), nullable=False),
+        sa.Column("line_total", sa.Integer(), nullable=False),
+        sa.Column("refunded_line_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(length=3), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["branch_id"],
+            ["branch.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["experiment_id"],
+            ["branch_manager_experiments.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["item_id"],
+            ["retail_items.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["price_id"],
+            ["retail_item_prices.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["receipt_id"],
+            ["sales_receipts.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["refunded_line_id"],
+            ["sales_receipt_lines.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    with op.batch_alter_table("sales_receipt_lines", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_sales_receipt_lines_branch_id"), ["branch_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_sales_receipt_lines_item_id"), ["item_id"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_sales_receipt_lines_receipt_id"), ["receipt_id"], unique=False
+        )
+
     # ### end Alembic commands ###
     # The events table is append-only: abort any UPDATE or DELETE.
     for statement in TRIGGER_SQL:
@@ -1873,6 +2094,34 @@ def downgrade() -> None:
     op.execute("DROP TRIGGER IF EXISTS events_no_update")
     op.execute("DROP TRIGGER IF EXISTS events_no_delete")
     # ### commands auto generated by Alembic - please adjust! ###
+    with op.batch_alter_table("sales_receipt_lines", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_sales_receipt_lines_receipt_id"))
+        batch_op.drop_index(batch_op.f("ix_sales_receipt_lines_item_id"))
+        batch_op.drop_index(batch_op.f("ix_sales_receipt_lines_branch_id"))
+
+    op.drop_table("sales_receipt_lines")
+    with op.batch_alter_table("sales_payments", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_sales_payments_tender"))
+        batch_op.drop_index(batch_op.f("ix_sales_payments_session_id"))
+        batch_op.drop_index(batch_op.f("ix_sales_payments_receipt_id"))
+        batch_op.drop_index(batch_op.f("ix_sales_payments_branch_id"))
+
+    op.drop_table("sales_payments")
+    with op.batch_alter_table("sales_receipts", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_sales_receipts_status"))
+        batch_op.drop_index(batch_op.f("ix_sales_receipts_session_id"))
+        batch_op.drop_index(batch_op.f("ix_sales_receipts_business_date"))
+        batch_op.drop_index(batch_op.f("ix_sales_receipts_branch_id"))
+
+    op.drop_table("sales_receipts")
+    with op.batch_alter_table("sales_sessions", schema=None) as batch_op:
+        batch_op.drop_index("ux_sales_sessions_open", sqlite_where=sa.text("state = 'open'"))
+        batch_op.drop_index(batch_op.f("ix_sales_sessions_state"))
+        batch_op.drop_index(batch_op.f("ix_sales_sessions_person_id"))
+        batch_op.drop_index(batch_op.f("ix_sales_sessions_business_date"))
+        batch_op.drop_index(batch_op.f("ix_sales_sessions_branch_id"))
+
+    op.drop_table("sales_sessions")
     with op.batch_alter_table("timesheets", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_timesheets_visit_id"))
         batch_op.drop_index(batch_op.f("ix_timesheets_status"))
