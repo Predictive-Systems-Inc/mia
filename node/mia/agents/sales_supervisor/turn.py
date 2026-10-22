@@ -15,15 +15,15 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
 from mia.agents.decider import THRESHOLD, Decision
 from mia.agents.sales_supervisor import MANIFEST, actions, decider, due, replies
-from mia.agents.sales_supervisor.tools import BINDINGS, RecordReceiptOutput
+from mia.agents.sales_supervisor.tools import BINDINGS, RecordReceiptOutput, receipt_out
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import reply_text, store_reply
-from mia.core import events
+from mia.core import events, sales
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
-from mia.core.models import Event, Message, Thread
+from mia.core.models import Approval, Event, Message, SalesReceipt, Thread
 from mia.i18n import t
 from mia.settings import get_settings
 from mia.templates.retail.models import RetailItem
@@ -31,6 +31,19 @@ from mia.templates.retail.models import RetailItem
 log = logging.getLogger(__name__)
 _BINDINGS = {b.tool_id: b for b in BINDINGS}
 _warned = False  # the no-Jev warning is logged once per process
+RECEIPT_TOOLS = ("void_receipt", "refund_receipt")
+# a void's or refund's refusal code -> its reply (each takes the receipt number as no)
+RECEIPT_REFUSALS = {
+    "receipt": "sales.void.no_receipt",
+    "status": "sales.void.already",
+    "kind": "sales.void.refund_kind",
+    "refunded": "sales.void.refunded",
+    "session_closed": "sales.void.closed",
+    "quantity": "sales.refund.too_much",
+    "refunded_line": "sales.refund.too_much",
+    "approved_amount": "sales.refund.too_much",
+    "counts_kiosk": "sales.receipts.counts_kiosk",
+}
 
 
 def _last_question(session: Session, thread: Thread) -> Message | None:
@@ -141,6 +154,9 @@ def _refusal(
     """The reply to a refused tool call: no count to correct, another branch or a target not
     allowed, else denied or rephrase (a stated day other than today or yesterday too)."""
     status, message = out.get("status"), out.get("message")
+    if status == "invalid" and tool in RECEIPT_TOOLS and message in RECEIPT_REFUSALS:
+        no = str(decision.args.get("receipt_no", ""))
+        return reply_text(session, deps, thread, t(RECEIPT_REFUSALS[message], deps.lang, no=no))
     if status == "invalid" and message == "count":
         item = session.get(RetailItem, str(decision.args.get("item_id")))
         name = item.name if item is not None else ""
@@ -174,6 +190,12 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     item_missing = (decision.missing or "").startswith("item_")
     if action == "clarify" and item_missing and decision.confidence >= THRESHOLD:
         action = decision.raw_action  # the action is clear, one count's item is not
+    if (
+        action == "clarify"
+        and decision.missing == "receipt_no"
+        and decision.confidence >= THRESHOLD
+    ):
+        action = decision.raw_action or action  # the action is clear, its receipt number is not
     if action == "clarify" and decision.missing == "tender":
         if "typed_total" not in decision.args:  # a count: two tenders are sent apart
             return reply_text(session, deps, thread, t("sales.ask.tender", deps.lang))
@@ -188,6 +210,10 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     if tool is None:  # reply_only
         kind = str(decision.args.get("kind", "other"))
         return store_reply(session, deps, thread, replies.conversation_reply(kind, deps.lang))
+    if tool in RECEIPT_TOOLS and sales.source_of(deps.branch, deps.today) == "counts":
+        return reply_text(session, deps, thread, t("sales.receipts.counts_kiosk", deps.lang))
+    if tool in RECEIPT_TOOLS and not decision.args.get("receipt_no"):
+        return reply_text(session, deps, thread, t("sales.receipt.which_no", deps.lang))
     index = replies.unknown_item(decision.args)
     if index is not None:
         return _ask_item(session, deps, thread, decision, index)
@@ -200,6 +226,8 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     except ValidationError:
         return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
     out = call_tool(deps, binding, args, new_id())
+    if out.get("status") == "approval_required" and tool in RECEIPT_TOOLS:
+        return store_reply(session, deps, thread, _asked(session, deps, str(out["approval_id"])))
     if "status" in out and "message" in out:  # a ToolRefusal
         return _refusal(session, deps, thread, decision, tool, out)
     if tool == "record_receipt" and out["status"] == "no_session":
@@ -212,6 +240,18 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     if tool == "record_counts" and decision.args.get("as_count"):
         blocks = _as_count(session, deps, str(out["business_date"])) + blocks
     return store_reply(session, deps, thread, blocks)
+
+
+def _asked(session: Session, deps: AgentDeps, approval_id: str) -> list[Block]:
+    """The reply to a void or refund sent for approval, from the approval: the receipt it
+    names (its lines and total) for a void, the computed amount for a refund."""
+    approval = session.get(Approval, approval_id)
+    receipt = session.get(SalesReceipt, approval.subject_id) if approval else None
+    assert approval is not None and receipt is not None  # the binding's request wrote both
+    if approval.type == sales.VOID:
+        return replies.void_asked(receipt_out(session, deps.branch, receipt), deps.lang)
+    amount = int(approval.evidence["amount"])
+    return replies.refund_asked(receipt.receipt_no, amount, receipt.currency, deps.lang)
 
 
 AS_COUNT = "sales.as_count_noted"  # marker: the counts-kiosk notice was said (person, date)

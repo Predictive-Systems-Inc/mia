@@ -527,3 +527,23 @@ def test_a_receipt_after_another_sessions_close_is_refused(
     with pytest.raises(SalesError, match="session_closed"):
         sell(session, ferinos, s, "M-1")
     assert written(session) == before
+
+
+def test_refund_total_matches_what_the_refund_records(session: Session, ferinos: Ferinos) -> None:
+    s = opened(session, ferinos)
+    lines = [
+        LineIn(item_id=item(session, "Classic").id, quantity=2),
+        LineIn(item_id=item(session, "Kape").id, quantity=1),
+    ]
+    pays = [PaymentIn(tender="cash", amount=9450)]
+    sale = sales.record_receipt(
+        session, Actor.person(ferinos[1]["Ana"]), s, "M-1", noon(yesterday(), 13), lines, pays,
+        discount=1050, discount_reason="senior",
+    )  # fmt: skip
+    _, kape = classic_and_kape(session)
+    back = [LineIn(item_id=kape.item_id, quantity=-1, refunded_line_id=kape.id)]
+    before = written(session)
+    amount = sales.refund_total(session, sale, back)
+    assert written(session) == before
+    ok = approve(session, ferinos, sales.REFUND, sale.id, "admin", "Rosa")
+    assert amount == -refund(session, ferinos, s, sale, back, -amount, ok).total == 2250

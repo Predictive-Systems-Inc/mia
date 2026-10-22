@@ -36,7 +36,12 @@ roles:
     - tool:sales_supervisor.set_target:execute
     - tool:sales_supervisor.record_note:execute
     - tool:sales_supervisor.record_receipt:execute
+    - tool:sales_supervisor.void_receipt:request
+    - tool:sales_supervisor.refund_receipt:request
   denies: [tool:*:approve]
+  approvers:
+    sales_supervisor.void_receipt: [supervisor, admin, owner]
+    sales_supervisor.refund_receipt: [admin, owner]
 tools:
   - {id: sales_supervisor.record_counts, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_counts, sales_targets], writes: [sales_counts]}
   - {id: sales_supervisor.correct_count, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_counts], writes: [sales_counts]}
@@ -45,4 +50,6 @@ tools:
   - {id: sales_supervisor.set_target, kind: agent, risk: write_internal, approval: never, reads: [branch], writes: [sales_targets]}
   - {id: sales_supervisor.record_note, kind: agent, risk: write_internal, approval: never, writes: [sales_notes]}
   - {id: sales_supervisor.record_receipt, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_sessions, sales_receipts], writes: [sales_receipts, sales_receipt_lines, sales_payments]}
+  - {id: sales_supervisor.void_receipt, kind: agent, risk: money, approval: always, reads: [sales_sessions, sales_receipts, sales_receipt_lines, sales_payments], writes: [sales_receipts, approval]}
+  - {id: sales_supervisor.refund_receipt, kind: agent, risk: money, approval: always, reads: [sales_sessions, sales_receipts, sales_receipt_lines, sales_payments], writes: [sales_receipts, sales_receipt_lines, sales_payments, approval]}
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

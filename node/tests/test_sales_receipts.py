@@ -19,20 +19,28 @@ from mia.agents.bookkeeper.tools import CashCountInput, ExpenseInput
 from mia.agents.sales_supervisor import MANIFEST as SS
 from mia.agents.sales_supervisor import tools as ss_tools
 from mia.agents.sales_supervisor.actions import build_query
-from mia.agents.sales_supervisor.tools import CountIn, RecordReceiptInput
+from mia.agents.sales_supervisor.tools import (
+    CountIn,
+    RecordReceiptInput,
+    RefundReceiptInput,
+    VoidReceiptInput,
+)
 from mia.agents.shift_supervisor import replies as shift_replies
 from mia.agents.shift_supervisor import tools as shift_tools
 from mia.agents.shift_supervisor.rules import fmt_date
 from mia.agents.shift_supervisor.tools import AssignCoverInput, CheckInInput, RespondToCoverInput
 from mia.chat.blocks import TextBlock
-from mia.core import events, orgconfig, sales
+from mia.core import approvals, db, events, orgconfig, sales
+from mia.core.approvals import ApprovalError
 from mia.core.models import (
     TENDERS,
     Actor,
+    Approval,
     Person,
     SalesCount,
     SalesPayment,
     SalesReceipt,
+    SalesReceiptLine,
     SalesSession,
 )
 from mia.core.money import format_money
@@ -45,8 +53,9 @@ from mia.templates.retail.items import price_on
 from tests.conftest import BK_TODAY, RS_TODAY, Pin
 from tests.test_bookkeeper_chat import _answers, _turn, jev_on  # noqa: F401 (a fixture)
 from tests.test_bookkeeper_tools import deps_for as bk_deps
+from tests.test_bookkeeper_tools import told
 from tests.test_data_standard_1_7 import MONDAY, TUESDAY, Ferinos, at, visit_of
-from tests.test_data_standard_1_9 import MNL, item
+from tests.test_data_standard_1_9 import MNL, approve, item
 from tests.test_sales_chat import _answers as ss_answers
 from tests.test_sales_chat import _buttons
 from tests.test_sales_tools import deps_for as _ss_deps
@@ -845,3 +854,348 @@ def test_an_unknown_item_after_a_tender_asks_which_item(
     asked = _turn(session, rs[1]["Ana"], text)
     assert t("sales.which_item", "fil", words=words) in asked.text()
     assert len(session.exec(select(SalesCount)).all()) == before
+
+
+# ---- Task 3: void and refund through the approval card ---------------------------------------
+
+
+def ss_binding(name: str) -> ToolBinding:
+    return next(b for b in ss_tools.BINDINGS if b.tool_id == f"{SS.id}.{name}")
+
+
+def _scenario(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> tuple[SalesSession, list[SalesReceipt]]:
+    """Ana's drawer at 9:00 on a receipts kiosk with #1 = 2 Classic 1 Ube cash 12_500,
+    #2 = 2 Classic 1 Special gcash 12_950, #3 = 3 Ube cash 13_500 (committed)."""
+    receipts_kiosk(monkeypatch)
+    s = drawer(session, rs)
+    rows = [
+        ring(session, rs, s, "1", [("Classic", 2), ("Ube", 1)], "cash"),
+        ring(session, rs, s, "2", [("Classic", 2), ("Special", 1)], "gcash"),
+        ring(session, rs, s, "3", [("Ube", 3)], "cash"),
+    ]
+    session.commit()
+    return s, rows
+
+
+def _cards(session: Session, kind: str) -> list[Approval]:
+    return list(session.exec(select(Approval).where(Approval.type == kind)).all())
+
+
+def _void(session: Session, who: Person, no: str, reason: str = "") -> dict[str, Any]:
+    args = VoidReceiptInput(receipt_no=no, reason=reason)
+    return call_tool(ss_deps(session, who), ss_binding("void_receipt"), args, "c")
+
+
+def _refund(
+    session: Session, who: Person, no: str, items: list[tuple[str, int]], reason: str = ""
+) -> dict[str, Any]:
+    counts = [CountIn(item_id=item(session, n).id, quantity=q) for n, q in items]
+    args = RefundReceiptInput(receipt_no=no, items=counts, reason=reason)
+    return call_tool(ss_deps(session, who), ss_binding("refund_receipt"), args, "c")
+
+
+def _decide(session: Session, approval_id: str, who: Person) -> None:
+    approvals.decide(session, approval_id, Actor.person(who), "approved", stepped_up_at=db.utcnow())
+
+
+def test_a_void_of_an_unknown_receipt_raises_no_card(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    out = _void(session, rs[1]["Ana"], "99")
+    assert (out["status"], out["message"]) == ("invalid", "receipt")
+    assert _cards(session, sales.VOID) == []
+
+
+def test_a_clerk_cannot_void_another_clerks_receipt(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    ring(session, rs, drawer(session, rs, "Liza", 13), "4", [("Ube", 1)], "cash", 14)
+    out = _void(session, rs[1]["Ana"], "4")
+    assert (out["status"], out["message"]) == ("invalid", "receipt")
+    assert _cards(session, sales.VOID) == []
+
+
+def test_head_staff_may_void_any_receipt_of_the_branch(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    out = _void(session, rs[1]["Marites"], "3")
+    assert out["status"] == "approval_required"
+
+
+def test_a_void_on_a_counts_kiosk_raises_no_card(session: Session, rs: Ferinos) -> None:
+    out = _void(session, rs[1]["Ana"], "1")
+    assert (out["status"], out["message"]) == ("invalid", "counts_kiosk")
+    assert _cards(session, sales.VOID) == []
+
+
+def test_a_void_of_a_refunded_sale_raises_no_card(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s, (r1, _, _) = _scenario(session, rs, monkeypatch)
+    ok = approve(session, rs, sales.REFUND, r1.id, "admin", "Rosa")
+    ube_line = session.exec(
+        select(SalesReceiptLine).where(
+            SalesReceiptLine.receipt_id == r1.id,
+            SalesReceiptLine.item_id == item(session, "Ube").id,
+        )
+    ).one()
+    sales.record_receipt(
+        session, Actor.person(rs[1]["Ana"]), s, "R-1", at(RS_TODAY, 11),
+        [LineIn(item_id=ube_line.item_id, quantity=-1, refunded_line_id=ube_line.id)],
+        [PaymentIn(tender="cash", amount=-4500)], refund_of=r1.id, approval_id=ok,
+    )  # fmt: skip
+    out = _void(session, rs[1]["Ana"], "1")
+    assert (out["status"], out["message"]) == ("invalid", "refunded")
+    assert _cards(session, sales.VOID) == []
+
+
+def test_a_refund_over_the_sale_raises_no_card(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    out = _refund(session, rs[1]["Ana"], "1", [("Ube", 2)])
+    assert (out["status"], out["message"]) == ("invalid", "quantity")
+    assert _cards(session, sales.REFUND) == []
+
+
+def test_a_refund_of_an_item_not_on_the_sale_raises_no_card(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    out = _refund(session, rs[1]["Ana"], "3", [("Classic", 1)])
+    assert (out["status"], out["message"]) == ("invalid", "refunded_line")
+    assert _cards(session, sales.REFUND) == []
+
+
+def test_a_binding_request_replaces_the_generic_approval(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, (_, _, r3) = _scenario(session, rs, monkeypatch)
+    _void(session, rs[1]["Ana"], "3")
+    (a,) = _cards(session, sales.VOID)
+    assert (a.subject_type, a.subject_id) == ("sales_receipts", r3.id)
+    assert _cards(session, f"{SS.id}.void_receipt") == []
+
+
+def test_a_void_raises_head_staffs_card_with_the_summary(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, (_, _, r3) = _scenario(session, rs, monkeypatch)
+    out = _void(session, rs[1]["Ana"], "3", "mali")
+    a = session.get(Approval, out["approval_id"])
+    assert a is not None
+    assert (out["status"], a.type, a.subject_id, a.channel, a.evidence["risk"],
+            a.evidence["amount"], a.approver_roles) == (
+        "approval_required", "sales.void", r3.id, "app_only", "money", 13_500,
+        ["supervisor", "admin", "owner"],
+    )  # fmt: skip
+    card = t(
+        "sales.void.card", "fil", who="Ana", no="3", lines="3 Ube", total=money(13_500),
+        tender=t("bk.tender.cash", "fil"), reason="mali",
+    )  # fmt: skip
+    assert told(session, rs[1]["Marites"]) == [card]
+    assert told(session, rs[1]["Ana"]) == []  # nothing written to her receipt yet
+    assert session.get(SalesReceipt, r3.id).status == "paid"  # type: ignore[union-attr]
+
+
+def test_the_clerk_cannot_decide_her_own_void(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, (_, _, r3) = _scenario(session, rs, monkeypatch)
+    out = _void(session, rs[1]["Ana"], "3", "mali")
+    with pytest.raises(ApprovalError):
+        _decide(session, out["approval_id"], rs[1]["Ana"])
+    assert session.get(SalesReceipt, r3.id).status == "paid"  # type: ignore[union-attr]
+
+
+def test_an_approved_void_voids_the_receipt(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s, (_, _, r3) = _scenario(session, rs, monkeypatch)
+    out = _void(session, rs[1]["Ana"], "3", "mali")
+    marites = rs[1]["Marites"]
+    _decide(session, out["approval_id"], marites)
+    session.refresh(r3)
+    assert (r3.status, r3.voided_by, r3.approval_id, r3.void_reason) == (
+        "voided", marites.id, out["approval_id"], "mali",
+    )  # fmt: skip
+    assert told(session, rs[1]["Ana"])[-1] == t("sales.void.done", "fil", no="3")
+    assert sales.expected_cash(session, s) == 112_500
+
+
+def test_a_void_approval_runs_once(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    out = _void(session, rs[1]["Ana"], "3", "mali")
+    _decide(session, out["approval_id"], rs[1]["Marites"])
+    a = session.get(Approval, out["approval_id"])
+    with pytest.raises(LookupError, match="status"):
+        ss_tools.apply_void_approval(session, a, Actor.person(rs[1]["Marites"]))  # type: ignore[arg-type]
+
+
+def test_a_void_approved_after_the_close_is_refused(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s, (_, _, r3) = _scenario(session, rs, monkeypatch)
+    out = _void(session, rs[1]["Ana"], "3", "mali")
+    marites = rs[1]["Marites"]
+    sales.close_session(session, Actor.person(marites), s, 126_000, marites.id, at(RS_TODAY, 18))
+    session.commit()
+    with pytest.raises(LookupError, match="session_closed"):
+        _decide(session, out["approval_id"], marites)
+    session.rollback()
+    approvals.close_refused(session, out["approval_id"], Actor.person(marites), "session_closed")
+    session.commit()
+    session.refresh(r3)
+    assert r3.status == "paid"
+    assert told(session, rs[1]["Ana"])[-1] == t("sales.void.closed", "fil", no="3")
+
+
+def test_a_rejected_void_tells_the_clerk(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, (_, _, r3) = _scenario(session, rs, monkeypatch)
+    out = _void(session, rs[1]["Ana"], "3", "mali")
+    approvals.decide(
+        session, out["approval_id"], Actor.person(rs[1]["Marites"]), "rejected",
+        stepped_up_at=db.utcnow(),
+    )  # fmt: skip
+    assert told(session, rs[1]["Ana"])[-1] == t("sales.void.rejected", "fil", no="3")
+    assert session.get(SalesReceipt, r3.id).status == "paid"  # type: ignore[union-attr]
+
+
+def test_a_refund_card_carries_the_amount_of_the_requested_lines(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, (r1, _, _) = _scenario(session, rs, monkeypatch)
+    out = _refund(session, rs[1]["Ana"], "1", [("Ube", 1)], "sira")
+    a = session.get(Approval, out["approval_id"])
+    assert a is not None
+    assert (a.type, a.subject_id, a.evidence["amount"], a.approver_roles) == (
+        "sales.refund", r1.id, 4_500, ["admin", "owner"],
+    )  # fmt: skip
+    card = t(
+        "sales.refund.card", "fil", who="Ana", amount=money(4_500), no="1", lines="1 Ube",
+        reason="sira",
+    )  # fmt: skip
+    assert told(session, rs[1]["Rosa"]) == [card]
+    assert len(_receipts(session)) == 3
+
+
+def test_a_supervisor_cannot_decide_a_refund(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    out = _refund(session, rs[1]["Ana"], "1", [("Ube", 1)])
+    with pytest.raises(ApprovalError):
+        _decide(session, out["approval_id"], rs[1]["Marites"])
+    assert len(_receipts(session)) == 3
+
+
+def test_an_approved_refund_pays_back_in_the_sales_tender(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s, (r1, _, _) = _scenario(session, rs, monkeypatch)
+    out = _refund(session, rs[1]["Ana"], "1", [("Ube", 1)])
+    _decide(session, out["approval_id"], rs[1]["Rosa"])
+    r4 = session.exec(select(SalesReceipt).where(SalesReceipt.receipt_no == "4")).one()
+    assert (r4.kind, r4.refund_of, r4.total, r4.session_id, r4.approval_id) == (
+        "refund", r1.id, -4_500, s.id, out["approval_id"],
+    )  # fmt: skip
+    assert _paid(session, r4) == [("cash", -4_500)]
+    assert sales.expected_cash(session, s) == 100_000 + 12_500 + 13_500 - 4_500 == 121_500
+    done = t(
+        "sales.refund.done", "fil", refund_no="4", amount=money(4_500), no="1",
+        tender=t("bk.tender.cash", "fil"),
+    )  # fmt: skip
+    assert told(session, rs[1]["Ana"])[-1] == done
+
+
+def test_a_refund_of_no_items_returns_the_whole_sale(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    out = _refund(session, rs[1]["Ana"], "2", [])
+    a = session.get(Approval, out["approval_id"])
+    assert a is not None and a.evidence["amount"] == 12_950
+    _decide(session, a.id, rs[1]["Rosa"])
+    r4 = session.exec(select(SalesReceipt).where(SalesReceipt.receipt_no == "4")).one()
+    assert (r4.total, _paid(session, r4)) == (-12_950, [("gcash", -12_950)])
+
+
+def test_a_refund_approval_is_used_once(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    out = _refund(session, rs[1]["Ana"], "1", [("Ube", 1)])
+    _decide(session, out["approval_id"], rs[1]["Rosa"])
+    a = session.get(Approval, out["approval_id"])
+    with pytest.raises(LookupError):
+        ss_tools.apply_refund_approval(session, a, Actor.person(rs[1]["Rosa"]))  # type: ignore[arg-type]
+    refunds = session.exec(select(SalesReceipt).where(SalesReceipt.kind == "refund")).all()
+    assert len(refunds) == 1
+
+
+def test_a_refund_with_no_open_drawer_is_not_done(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s, _ = _scenario(session, rs, monkeypatch)
+    out = _refund(session, rs[1]["Ana"], "1", [("Ube", 1)])
+    marites, rosa = rs[1]["Marites"], rs[1]["Rosa"]
+    sales.close_session(session, Actor.person(marites), s, 126_000, marites.id, at(RS_TODAY, 18))
+    session.commit()
+    with pytest.raises(LookupError, match="no_session"):
+        _decide(session, out["approval_id"], rosa)
+    session.rollback()
+    approvals.close_refused(session, out["approval_id"], Actor.person(rosa), "no_session")
+    assert told(session, rs[1]["Ana"])[-1] == t("sales.refund.not_done", "fil", no="1")
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_a_void_in_the_chat_says_it_was_sent_for_approval(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    ss_answers(monkeypatch, "void_receipt", conversation="other")
+    reply = _turn(session, rs[1]["Ana"], "void 3 mali")
+    asked = t("sales.void.asked", "fil", no="3", lines="3 Ube", total=money(13_500))
+    assert reply.text() == asked
+    (a,) = _cards(session, sales.VOID)
+    assert a.evidence["reason"] == "void 3 mali"
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_a_void_without_a_number_asks_which_receipt(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    ss_answers(monkeypatch, "void_receipt", conversation="other")
+    assert _turn(session, rs[1]["Ana"], "void").text() == t("sales.receipt.which_no", "fil")
+    assert _cards(session, sales.VOID) == []
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_a_refund_in_the_chat_says_it_was_sent_to_the_owner(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    ss_answers(monkeypatch, "refund_receipt", item_0=item(session, "Ube").id, conversation="other")
+    reply = _turn(session, rs[1]["Ana"], "refund 1 ube resibo 1")
+    assert reply.text() == t("sales.refund.asked", "fil", amount=money(4_500), no="1")
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_a_void_of_an_unknown_number_in_the_chat_says_so(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    ss_answers(monkeypatch, "void_receipt", conversation="other")
+    assert _turn(session, rs[1]["Ana"], "void 99").text() == t(
+        "sales.void.no_receipt", "fil", no="99"
+    )

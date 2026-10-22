@@ -11,6 +11,7 @@ from mia.agents.sales_supervisor.tools import (
     BranchToday,
     CorrectCountOutput,
     PeriodReportOutput,
+    ReceiptOut,
     RecordCountsOutput,
     RecordReceiptOutput,
     SetTargetOutput,
@@ -198,3 +199,20 @@ def ask_total(
         QuickRepliesBlock(options=list(options)),
     ]
     return blocks, options
+
+
+def void_asked(out: ReceiptOut, lang: str) -> list[Block]:
+    """The void was sent to head staff: the receipt's number, lines and total, so a wrong
+    number is seen."""
+    return _text(
+        "sales.void.asked",
+        lang,
+        no=out.receipt_no,
+        lines=_lines([(x.quantity, x.item) for x in out.lines], lang),
+        total=format_money(out.total, out.currency, lang),
+    )
+
+
+def refund_asked(no: str, amount: int, currency: str, lang: str) -> list[Block]:
+    """The refund was sent to the owner: the computed amount and the sale's number."""
+    return _text("sales.refund.asked", lang, amount=format_money(amount, currency, lang), no=no)

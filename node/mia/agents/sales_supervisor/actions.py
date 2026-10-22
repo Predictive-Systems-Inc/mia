@@ -84,6 +84,20 @@ ACTIONS: dict[str, Action] = {
         (),
         f"intent.{MANIFEST.id}.record_receipt",
     ),
+    "void_receipt": Action(
+        "The sender asks to void or cancel a receipt just rung up, usually with its number:"
+        " void, cancel, kansel, mali, wrong.",
+        "void_receipt",
+        (),
+        f"intent.{MANIFEST.id}.void_receipt",
+    ),
+    "refund_receipt": Action(
+        "The sender asks to refund or return a paid sale, with its receipt number and maybe"
+        " the items: refund, ibalik, isauli, return.",
+        "refund_receipt",
+        (),
+        f"intent.{MANIFEST.id}.refund_receipt",
+    ),
     "correct_sales": Action(
         "The sender fixes a count already sent: a number with a correction cue (not, hindi,"
         " wrong, mali, sorry, should be, dapat, make it, gawin, change, palitan, fix, ayusin)."
@@ -143,6 +157,8 @@ ACTIONS: dict[str, Action] = {
 NOULS = {
     "report_sales": "Does {who} report how many were sold?",
     "record_receipt": "Does {who} ring up one customer's sale (a receipt)?",
+    "void_receipt": "Does {who} ask to void or cancel a receipt?",
+    "refund_receipt": "Does {who} ask to refund or return a paid sale?",
     "correct_sales": "Does {who} correct a count already reported?",
     "sales_today": "Does {who} ask how today's sales are going?",
     "sales_period": "Does {who} ask about sales on a past day or over a period?",

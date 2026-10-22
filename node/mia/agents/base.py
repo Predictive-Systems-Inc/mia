@@ -224,12 +224,14 @@ def guard(
     summary: str = "",
     args: BaseModel | None = None,
     precheck: "Precheck | None" = None,
+    request: "Requester | None" = None,
 ) -> None:
     """Permission check, the binding's precheck, then the approval rule: a risky tool or one
     with `approval: always` asks for an approval first. Raises before the tool body can run;
     a precheck refusal (LookupError) comes before any approval is requested. The approval
     carries the validated input in its evidence (`input`), so what runs on approve is exactly
-    what the approver saw."""
+    what the approver saw. `request` (the binding's) replaces the generic request when given:
+    a core approval type and subject, its own handler."""
     get_rbac().require(
         deps.actor,
         Resource(kind="tool", name=spec.id),
@@ -241,6 +243,8 @@ def guard(
         precheck(deps, args, tool_call_id)
     needs_approval = spec.risk in RISKY or spec.approval == "always"
     if needs_approval and not _approved_for(deps, spec):
+        if request is not None and args is not None:
+            raise ApprovalRequired(request(deps, args, tool_call_id).id)
         approval = approvals.request(
             deps.session,
             spec.id,
@@ -258,6 +262,9 @@ def guard(
 
 ToolImpl = Callable[[Any, Any, str], BaseModel]  # (AgentDeps or another ToolDeps, input, id)
 Precheck = Callable[[Any, Any, str], None]  # raises LookupError to refuse a request
+# The binding's own approvals.request, for a core approval type and subject; it must call
+# approvals.request and return its row.
+Requester = Callable[[Any, Any, str], Approval]
 SENSITIVE_KEEP = frozenset({"person_id", "status", "approval_id", "message"})
 REDACTED = "<redacted>"
 
@@ -272,6 +279,7 @@ class ToolBinding:
     input_type: type[BaseModel]
     description: str
     precheck: Precheck | None = None
+    request: Requester | None = None  # None: the guard's generic request (type the tool id)
 
 
 def _redacted(values: dict[str, Any]) -> dict[str, Any]:
@@ -287,7 +295,7 @@ def call_tool(
     spec = deps.manifest.tool(binding.tool_id)
     out: dict[str, Any]
     try:
-        guard(deps, spec, tool_call_id, summary, args, binding.precheck)
+        guard(deps, spec, tool_call_id, summary, args, binding.precheck, binding.request)
         out = binding.impl(deps, args, tool_call_id).model_dump(mode="json")
     except PermissionDenied as exc:
         out = ToolRefusal(status="denied", message=str(exc)).model_dump(mode="json")

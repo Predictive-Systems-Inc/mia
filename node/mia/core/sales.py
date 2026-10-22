@@ -447,15 +447,10 @@ def record_receipt(
     return receipt
 
 
-def void_receipt(
-    session: Session, actor: Actor, receipt: SalesReceipt, approval_id: str, reason: str
-) -> SalesReceipt:
-    """Void a paid sale of an open session with head staff's VOID approval of it (event
-    sales.receipt_voided; voided_by is the approver), under the write lock so the approval is
-    used once. A refund, or a sale with a paid refund against it, is never voided; after the
-    close only a refund is possible. SalesError and nothing written otherwise."""
-    events.write_lock(session)
-    session.refresh(receipt)  # re-read under the lock: a void committed meanwhile counts
+def check_void(session: Session, receipt: SalesReceipt) -> None:
+    """The checks a void needs besides its approval: an open session (session_closed), a paid
+    receipt (status), a sale (kind) and no paid refund against it (refunded). Reads only;
+    SalesError otherwise."""
     s = session.get(SalesSession, receipt.session_id, populate_existing=True)
     if s is None or s.state != "open":
         raise SalesError("session_closed")
@@ -468,6 +463,33 @@ def void_receipt(
     )
     if session.exec(refunded).first():
         raise SalesError("refunded")  # the money would be reversed twice
+
+
+def refund_total(session: Session, sale: SalesReceipt, lines: Sequence[LineIn]) -> int:
+    """What a refund of the lines pays back (positive), by the same rules record_receipt
+    applies: a paid sale (refund_of), lines given (lines), each sale line once (refunded_line),
+    the quantities within what is left (quantity). SalesError as record_receipt would raise;
+    nothing written."""
+    if (sale.kind, sale.status) != ("sale", "paid"):
+        raise SalesError("refund_of")
+    if not lines:
+        raise SalesError("lines")
+    returned = [line.refunded_line_id for line in lines]
+    if len(set(returned)) != len(returned):
+        raise SalesError("refunded_line")
+    return -sum(_refund_line(session, line, sale).line_total for line in lines)
+
+
+def void_receipt(
+    session: Session, actor: Actor, receipt: SalesReceipt, approval_id: str, reason: str
+) -> SalesReceipt:
+    """Void a paid sale of an open session with head staff's VOID approval of it (event
+    sales.receipt_voided; voided_by is the approver), under the write lock so the approval is
+    used once. A refund, or a sale with a paid refund against it, is never voided; after the
+    close only a refund is possible. SalesError and nothing written otherwise."""
+    events.write_lock(session)
+    session.refresh(receipt)  # re-read under the lock: a void committed meanwhile counts
+    check_void(session, receipt)
     a = _approved(session, approval_id, VOID, VOID_ROLE, receipt.id, receipt.branch_id)
     _within_approved(a, receipt.total, receipt.total)
     changes = {

@@ -11,7 +11,7 @@ only just after a late closing, before the next opening; it is never asked.
 """
 
 import datetime as dt
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -20,9 +20,15 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.sales_supervisor import MANIFEST, calc
-from mia.core import events, sales, store
+from mia.agents.shift_supervisor import alerts
+from mia.chat.blocks import TextBlock
+from mia.chat.channels import notify
+from mia.core import approvals, events, sales, store
 from mia.core.db import utcnow
 from mia.core.models import (
+    TENDERS,
+    Actor,
+    Approval,
     Branch,
     Event,
     Message,
@@ -36,8 +42,10 @@ from mia.core.models import (
     SalesTarget,
     Tender,
 )
+from mia.core.money import format_int, format_money
 from mia.core.rbac import Resource, get_rbac
 from mia.core.sales import live_counts
+from mia.i18n import t
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail import items as retail_items
 from mia.templates.retail.models import RetailBranchHours, RetailItem
@@ -723,6 +731,404 @@ def record_receipt(
     return out("recorded", no)
 
 
+# ---- void_receipt and refund_receipt (risk money, approval always) --------------------------
+
+VOID_TOOL = f"{MANIFEST.id}.void_receipt"
+REFUND_TOOL = f"{MANIFEST.id}.refund_receipt"
+RECEIPTS = RECEIPT_TABLES[0]
+
+
+class VoidReceiptInput(BaseModel):
+    receipt_no: str = Field(min_length=1, max_length=32)
+    reason: str = Field("", max_length=200, description="The sender's words, stored as data")
+
+
+class RefundReceiptInput(BaseModel):
+    receipt_no: str = Field(min_length=1, max_length=32)
+    items: list[CountIn] = Field(
+        default_factory=list, description="What comes back; empty is every line in full"
+    )
+    reason: str = Field("", max_length=200, description="The sender's words, stored as data")
+
+
+class ReceiptOut(BaseModel):
+    receipt_no: str
+    kind: str
+    status: str
+    time: str  # HH:MM at the branch
+    lines: list[ReceiptLineOut]
+    total: int
+    tender: str  # the one payment's tender, else "split"
+    currency: str
+
+
+def receipt_out(session: Session, branch: Branch, r: SalesReceipt) -> ReceiptOut:
+    """The receipt with its lines (item names), its local time and its tender. Reads only."""
+    names = _names(session)
+    rows = session.exec(
+        select(SalesReceiptLine)
+        .where(SalesReceiptLine.receipt_id == r.id)
+        .order_by(col(SalesReceiptLine.id))
+    )
+    lines = [
+        ReceiptLineOut(
+            item_id=x.item_id,
+            item=names[x.item_id].name,
+            quantity=x.quantity,
+            unit_price=x.unit_price,
+            line_total=x.line_total,
+        )
+        for x in rows
+    ]
+    tenders = {
+        p.tender for p in session.exec(select(SalesPayment).where(SalesPayment.receipt_id == r.id))
+    }
+    return ReceiptOut(
+        receipt_no=r.receipt_no,
+        kind=r.kind,
+        status=r.status,
+        time=r.sold_at.astimezone(ZoneInfo(branch.timezone)).strftime("%H:%M"),
+        lines=lines,
+        total=r.total,
+        tender=tenders.pop() if len(tenders) == 1 else "split",
+        currency=r.currency,
+    )
+
+
+def _find_receipt(deps: AgentDeps, receipt_no: str, tool_call_id: str) -> SalesReceipt:
+    """The branch's receipt by number: the person's own, or another clerk's only with the
+    data:sales_receipts read right (head staff). LookupError("receipt") otherwise, the same
+    answer as an unknown number."""
+    _check(deps, _as_reporter(RECEIPTS, deps), "read", tool_call_id)
+    r = deps.session.exec(
+        select(SalesReceipt).where(
+            SalesReceipt.branch_id == deps.branch.id, SalesReceipt.receipt_no == receipt_no
+        )
+    ).first()
+    mine = r is not None and r.clerk_id == deps.person.id
+    if r is None or not (mine or get_rbac().check(deps.actor, RECEIPTS, "read")):
+        raise LookupError("receipt")
+    return r
+
+
+def _on_receipts(deps: AgentDeps, tool_call_id: str) -> None:
+    if sales.source_of(deps.branch, _business_day(deps, deps.branch, tool_call_id)) == "counts":
+        raise LookupError("counts_kiosk")
+
+
+def _refund_lines(
+    session: Session, sale: SalesReceipt, items: Sequence[CountIn]
+) -> list[sales.LineIn]:
+    """Each item to the first sale line of that item, its quantity negative; no items is every
+    line in full. LookupError("refunded_line") for an item not on the sale."""
+    rows = list(
+        session.exec(
+            select(SalesReceiptLine)
+            .where(SalesReceiptLine.receipt_id == sale.id)
+            .order_by(col(SalesReceiptLine.id))
+        )
+    )
+    if not items:
+        pairs = [(x, x.quantity) for x in rows]
+    else:
+        pairs = []
+        for c in items:
+            line = next((x for x in rows if x.item_id == c.item_id), None)
+            if line is None:
+                raise LookupError("refunded_line")
+            pairs.append((line, c.quantity))
+    return [sales.LineIn(item_id=x.item_id, quantity=-q, refunded_line_id=x.id) for x, q in pairs]
+
+
+def _refund_amount(deps: AgentDeps, sale: SalesReceipt, lines: Sequence[sales.LineIn]) -> int:
+    try:
+        return sales.refund_total(deps.session, sale, lines)
+    except sales.SalesError as exc:
+        raise LookupError(str(exc)) from exc
+
+
+def check_void(deps: AgentDeps, args: VoidReceiptInput, tool_call_id: str) -> None:
+    """The precheck of void_receipt (before any card): a receipts kiosk (counts_kiosk), a
+    receipt the person may void (receipt) and core's void checks (session_closed, status,
+    kind, refunded)."""
+    _on_receipts(deps, tool_call_id)
+    r = _find_receipt(deps, args.receipt_no, tool_call_id)
+    try:
+        sales.check_void(deps.session, r)
+    except sales.SalesError as exc:
+        raise LookupError(str(exc)) from exc
+
+
+def check_refund(deps: AgentDeps, args: RefundReceiptInput, tool_call_id: str) -> None:
+    """The precheck of refund_receipt (before any card): a receipts kiosk, a receipt the
+    person may refund, and lines core would accept (refund_of, refunded_line, quantity)."""
+    _on_receipts(deps, tool_call_id)
+    sale = _find_receipt(deps, args.receipt_no, tool_call_id)
+    _refund_amount(deps, sale, _refund_lines(deps.session, sale, args.items))
+
+
+def _first(person: Person) -> str:
+    return person.name.split()[0]
+
+
+def _lang(person: Person) -> str:
+    return person.language or "en"
+
+
+def _line_words(rows: Sequence[tuple[int, str]], lang: str) -> str:
+    """ "3 Ube, 1 Classic": each (quantity, item name), the quantity without its sign."""
+    return ", ".join(
+        t("sales.recorded.line", lang, quantity=format_int(abs(q), lang), item=item)
+        for q, item in rows
+    )
+
+
+def _tender_words(tender: str, lang: str) -> str:
+    return t(f"bk.tender.{tender}", lang) if tender in TENDERS else tender
+
+
+def _tell(session: Session, person: Person, key: str, **params: object) -> None:
+    text = t(key, _lang(person), **params)
+    notify(session, person, [TextBlock(text=text)], Actor.system(person.branch_id), MANIFEST.id)
+
+
+def _others(deps: AgentDeps, people: list[Person]) -> list[Person]:
+    return [p for p in people if p.id != deps.person.id]
+
+
+def _request_void(deps: AgentDeps, args: VoidReceiptInput, tool_call_id: str) -> Approval:
+    """The void's approval (type sales.void, subject the receipt, its total as the amount) and
+    its card to the branch's head staff other than the requester (none: the owners and
+    admins). It writes nothing to the receipt."""
+    r = _find_receipt(deps, args.receipt_no, tool_call_id)
+    out = receipt_out(deps.session, deps.branch, r)
+
+    def card(lang: str) -> str:
+        return t(
+            "sales.void.card",
+            lang,
+            who=_first(deps.person),
+            no=r.receipt_no,
+            lines=_line_words([(x.quantity, x.item) for x in out.lines], lang),
+            total=format_money(r.total, r.currency, lang),
+            tender=_tender_words(out.tender, lang),
+            reason=args.reason,
+        )
+
+    approval = approvals.request(
+        deps.session,
+        sales.VOID,
+        ("sales_receipts", r.id),
+        card("en"),
+        deps.actor,
+        MANIFEST.roles.approvers[VOID_TOOL],
+        risk="money",
+        evidence={
+            "input": args.model_dump(mode="json"),
+            "tool_call_id": tool_call_id,
+            "receipt_no": r.receipt_no,
+            "amount": r.total,
+            "reason": args.reason,
+        },
+        tool_call_id=tool_call_id,
+    )
+    heads = _others(deps, alerts.supervisors(deps.session, deps.branch.id))
+    for p in heads or _others(deps, alerts.leads(deps.session, deps.organisation_id)):
+        notify(deps.session, p, [TextBlock(text=card(_lang(p)))], deps.actor, MANIFEST.id)
+    return approval
+
+
+def _request_refund(deps: AgentDeps, args: RefundReceiptInput, tool_call_id: str) -> Approval:
+    """The refund's approval (type sales.refund, subject the sale, the computed refund as the
+    amount) and its card to the owners and admins other than the requester."""
+    sale = _find_receipt(deps, args.receipt_no, tool_call_id)
+    lines = _refund_lines(deps.session, sale, args.items)
+    amount = _refund_amount(deps, sale, lines)
+    names = _names(deps.session)
+    shown = [(x.quantity, names[x.item_id].name) for x in lines]
+
+    def card(lang: str) -> str:
+        return t(
+            "sales.refund.card",
+            lang,
+            who=_first(deps.person),
+            amount=format_money(amount, sale.currency, lang),
+            no=sale.receipt_no,
+            lines=_line_words(shown, lang),
+            reason=args.reason,
+        )
+
+    approval = approvals.request(
+        deps.session,
+        sales.REFUND,
+        ("sales_receipts", sale.id),
+        card("en"),
+        deps.actor,
+        MANIFEST.roles.approvers[REFUND_TOOL],
+        risk="money",
+        evidence={
+            "input": args.model_dump(mode="json"),
+            "tool_call_id": tool_call_id,
+            "receipt_no": sale.receipt_no,
+            "amount": amount,
+            "reason": args.reason,
+        },
+        tool_call_id=tool_call_id,
+    )
+    for p in _others(deps, alerts.leads(deps.session, deps.organisation_id)):
+        notify(deps.session, p, [TextBlock(text=card(_lang(p)))], deps.actor, MANIFEST.id)
+    return approval
+
+
+def _approval_of(deps: AgentDeps, kind: str, subject_id: str) -> Approval:
+    """The approved approval of this kind and receipt among deps.approved that this person
+    asked for; LookupError("approval") without one (the guard asks first)."""
+    for approval_id in sorted(deps.approved):
+        row = deps.session.get(Approval, approval_id)
+        if (
+            row is not None
+            and (row.type, row.subject_id, row.status) == (kind, subject_id, "approved")
+            and row.requester_on_behalf_of == deps.person.id
+        ):
+            return row
+    raise LookupError("approval")
+
+
+def void_receipt(deps: AgentDeps, args: VoidReceiptInput, tool_call_id: str) -> ReceiptOut:
+    """Void the receipt with its approved sales.void approval in deps.approved (run by the
+    approval handler; the guard asks first). core.sales.void_receipt refuses a second use, a
+    closed drawer and a refunded sale; each SalesError becomes LookupError."""
+    _check(deps, _as_reporter(RECEIPTS, deps), "write", tool_call_id)
+    r = _find_receipt(deps, args.receipt_no, tool_call_id)
+    approval = _approval_of(deps, sales.VOID, r.id)
+    try:
+        sales.void_receipt(deps.session, deps.actor, r, approval.id, args.reason)
+    except sales.SalesError as exc:
+        raise LookupError(str(exc)) from exc
+    return receipt_out(deps.session, deps.branch, r)
+
+
+def refund_receipt(deps: AgentDeps, args: RefundReceiptInput, tool_call_id: str) -> ReceiptOut:
+    """Record the refund with its approved sales.refund approval in deps.approved (run by the
+    approval handler): a new receipt in the requester's open drawer, else the branch's earliest
+    open one (none: LookupError("no_session")), paid back in the sale's one tender (else cash).
+    core.sales refuses a second use and more than the approved amount."""
+    for table in RECEIPT_TABLES:
+        _check(deps, _as_reporter(table, deps), "write", tool_call_id)
+    _check(deps, _as_reporter(SESSIONS, deps), "read", tool_call_id)
+    sale = _find_receipt(deps, args.receipt_no, tool_call_id)
+    approval = _approval_of(deps, sales.REFUND, sale.id)
+    lines = _refund_lines(deps.session, sale, args.items)
+    amount = _refund_amount(deps, sale, lines)
+    events.write_lock(deps.session)  # the drawer and the next number decide the write
+    drawers = sales.open_sessions(deps.session, deps.branch.id)
+    s = next((d for d in drawers if d.person_id == deps.person.id), None) or next(
+        iter(drawers), None
+    )
+    if s is None:
+        raise LookupError("no_session")
+    tenders = {
+        p.tender
+        for p in deps.session.exec(select(SalesPayment).where(SalesPayment.receipt_id == sale.id))
+    }
+    tender = tenders.pop() if len(tenders) == 1 else "cash"  # a split sale pays back in cash
+    try:
+        refund = sales.record_receipt(
+            deps.session,
+            deps.actor,
+            s,
+            _next_receipt_no(deps.session, deps.branch.id),
+            utcnow(),
+            lines,
+            [sales.PaymentIn.model_validate({"tender": tender, "amount": -amount})],
+            refund_of=sale.id,
+            approval_id=approval.id,
+            source="chat",
+        )
+    except sales.SalesError as exc:
+        raise LookupError(str(exc)) from exc
+    return receipt_out(deps.session, deps.branch, refund)
+
+
+def _requester_deps(session: Session, approval: Approval) -> AgentDeps:
+    """The requester's deps on their branch's business date now, with the approval approved
+    (bookkeeper.tools._requester_deps, which this module cannot import)."""
+    person = session.get(Person, approval.requester_on_behalf_of or "")
+    branch = session.get(Branch, person.branch_id) if person is not None else None
+    if person is None or branch is None:
+        raise LookupError("the requester")
+    today = retail_hours.business_date_at(branch, retail_hours.load(session, branch.id), utcnow())
+    return AgentDeps(
+        session=session,
+        actor=Actor.person(person).as_agent(MANIFEST.roles.agent_role),
+        person=person,
+        branch=branch,
+        organisation_id=branch.organisation_id,
+        today=today,
+        lang=_lang(person),
+        manifest=MANIFEST,
+        approved={approval.id},
+    )
+
+
+def apply_void_approval(session: Session, approval: Approval, decider: Actor) -> None:
+    """Approval handler: void the receipt as the requester (the evidence input revalidated)
+    and tell them sales.void.done. An approval without a chat input (a till's) runs nothing.
+    Raises LookupError (nothing written; the decide route closes the request)."""
+    if "input" not in approval.evidence:
+        return  # ponytail: a till's approval; the till voids with it itself
+    deps = _requester_deps(session, approval)
+    args = VoidReceiptInput.model_validate(approval.evidence["input"])
+    out = void_receipt(deps, args, str(approval.evidence.get("tool_call_id") or approval.id))
+    _tell(session, deps.person, "sales.void.done", no=out.receipt_no)
+
+
+def apply_refund_approval(session: Session, approval: Approval, decider: Actor) -> None:
+    """Approval handler: record the refund as the requester (the evidence input revalidated)
+    and tell them sales.refund.done. An approval without a chat input (a till's) runs
+    nothing. Raises LookupError (nothing written; the decide route closes the request)."""
+    if "input" not in approval.evidence:
+        return  # ponytail: a till's approval; the till records the refund with it itself
+    deps = _requester_deps(session, approval)
+    args = RefundReceiptInput.model_validate(approval.evidence["input"])
+    out = refund_receipt(deps, args, str(approval.evidence.get("tool_call_id") or approval.id))
+    _tell(
+        session,
+        deps.person,
+        "sales.refund.done",
+        refund_no=out.receipt_no,
+        amount=format_money(-out.total, out.currency, deps.lang),
+        no=args.receipt_no,
+        tender=_tender_words(out.tender, deps.lang),
+    )
+
+
+def _rejected(kind: str, refused: str) -> Callable[[Session, Approval, Actor], None]:
+    """The reject handler of a void or refund: the requester is told sales.<kind>.rejected,
+    or for a request closed as expired sales.<kind>.<refused key> when close_refused gave the
+    reason in REFUSED, else sales.<kind>.expired."""
+
+    def handler(session: Session, approval: Approval, decider: Actor) -> None:
+        if "input" not in approval.evidence:
+            return
+        person = session.get(Person, approval.requester_on_behalf_of or "")
+        if person is None:
+            return
+        key = "rejected"
+        if approval.status == "expired":
+            key = refused if approval.reason == REFUSED[kind] else "expired"
+        _tell(session, person, f"sales.{kind}.{key}", no=approval.evidence.get("receipt_no", ""))
+
+    return handler
+
+
+REFUSED = {"void": "session_closed", "refund": "no_session"}  # close_refused reason -> key
+approvals.register_handler(sales.VOID, apply_void_approval)
+approvals.register_handler(sales.REFUND, apply_refund_approval)
+approvals.register_reject_handler(sales.VOID, _rejected("void", "closed"), on_refused=True)
+approvals.register_reject_handler(sales.REFUND, _rejected("refund", "not_done"), on_refused=True)
+
+
 BINDINGS = [
     ToolBinding(
         f"{MANIFEST.id}.record_counts",
@@ -766,5 +1172,21 @@ BINDINGS = [
         record_receipt,
         RecordReceiptInput,
         "Ring up one customer's sale on the clerk's open drawer.",
+    ),
+    ToolBinding(
+        VOID_TOOL,
+        void_receipt,
+        VoidReceiptInput,
+        "Void a receipt just rung up; head staff decide.",
+        precheck=check_void,
+        request=_request_void,
+    ),
+    ToolBinding(
+        REFUND_TOOL,
+        refund_receipt,
+        RefundReceiptInput,
+        "Refund a paid sale, all of it or some items; the owner decides.",
+        precheck=check_refund,
+        request=_request_refund,
     ),
 ]
