@@ -10,7 +10,7 @@ receipts() checks data rights itself (the read the tables' rights are probed by)
 import datetime as dt
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, or_, select
@@ -63,13 +63,15 @@ class PaymentIn(BaseModel):
 
 
 class DaySales(BaseModel):
-    """A branch's business date: the source read, (quantity, amount) by item id and amount by
-    tender. On a receipts day item amounts are line totals (before a receipt-level discount)
-    and tender amounts are payments (after it)."""
+    """A branch's business date: the source read, (quantity, amount) by item id, the same by
+    clerk (the count's reporter, the receipt's clerk) and item, and amount by tender. On a
+    receipts day item amounts are line totals (before a receipt-level discount) and tender
+    amounts are payments (after it)."""
 
     source: Literal["counts", "receipts"]
     by_item: dict[str, tuple[int, int]]
     by_tender: dict[str, int]
+    by_clerk: dict[str, dict[str, tuple[int, int]]]
 
 
 def _business_date(session: Session, branch_id: str, at: dt.datetime) -> dt.date:
@@ -553,25 +555,27 @@ def day_sales(session: Session, branch_id: str, business_date: dt.date) -> DaySa
         raise SalesError("branch")
     source = source_of(branch, business_date)
     items: dict[str, tuple[int, int]] = {}
+    clerks: dict[str, dict[str, tuple[int, int]]] = defaultdict(dict)
     tenders: dict[str, int] = defaultdict(int)
 
-    def add(item_id: str, quantity: int, amount: int) -> None:
-        q, a = items.get(item_id, (0, 0))
-        items[item_id] = (q + quantity, a + amount)
+    def add(clerk_id: str, item_id: str, quantity: int, amount: int) -> None:
+        for sums in (items, clerks[clerk_id]):
+            q, a = sums.get(item_id, (0, 0))
+            sums[item_id] = (q + quantity, a + amount)
 
     if source == "counts":
         for c in live_counts(session, [branch_id], business_date, business_date):
-            add(c.item_id, c.quantity, c.amount)
+            add(c.reported_by, c.item_id, c.quantity, c.amount)
             tenders[c.tender] += c.amount
     else:
         paid = (SalesReceipt.branch_id == branch_id, SalesReceipt.business_date == business_date)
         lines = session.exec(
-            select(SalesReceiptLine)
+            select(SalesReceiptLine, SalesReceipt.clerk_id)
             .join(SalesReceipt, col(SalesReceipt.id) == col(SalesReceiptLine.receipt_id))
             .where(*paid, SalesReceipt.status == "paid")
         )
-        for line in lines:
-            add(line.item_id, line.quantity, line.line_total)
+        for line, clerk_id in lines:
+            add(clerk_id, line.item_id, line.quantity, line.line_total)
         pays = session.exec(
             select(SalesPayment)
             .join(SalesReceipt, col(SalesReceipt.id) == col(SalesPayment.receipt_id))
@@ -579,4 +583,42 @@ def day_sales(session: Session, branch_id: str, business_date: dt.date) -> DaySa
         )
         for p in pays:
             tenders[p.tender] += p.amount
-    return DaySales(source=source, by_item=items, by_tender=dict(tenders))
+    return DaySales(source=source, by_item=items, by_tender=dict(tenders), by_clerk=dict(clerks))
+
+
+class SaleRow(NamedTuple):
+    """One clerk's sales of one item on one business date at a branch (DaySales.by_clerk), in
+    the field names of a sales_counts row."""
+
+    branch_id: str
+    business_date: dt.date
+    reported_by: str
+    item_id: str
+    quantity: int
+    amount: int
+
+
+def sale_rows(
+    session: Session,
+    branch_ids: Sequence[str],
+    start: dt.date,
+    end: dt.date,
+    item_id: str | None = None,
+) -> list[SaleRow]:
+    """live_counts from each date's one source (day_sales): per branch, business date from
+    start to end inclusive (in order), clerk and item, optionally of one item. A counts day
+    sums a clerk's live rows of an item into one row. Unchecked: callers check the read on
+    sales_counts and the receipt tables."""
+    # ponytail: one day_sales per branch and day (a counts query, or a receipts query pair); a
+    # year (the branch manager's last_year) is 365 of them. A range query per source when it shows.
+    out: list[SaleRow] = []
+    for branch_id in branch_ids:
+        for k in range((end - start).days + 1):
+            day = start + dt.timedelta(days=k)
+            for clerk, by_item in day_sales(session, branch_id, day).by_clerk.items():
+                out += [
+                    SaleRow(branch_id, day, clerk, i, q, a)
+                    for i, (q, a) in by_item.items()
+                    if item_id in (None, i)
+                ]
+    return out

@@ -28,7 +28,6 @@ from mia.chat.channels import notify
 from mia.core import orgconfig, sales
 from mia.core.models import Actor, Branch, Message, Person, Visit
 from mia.core.money import format_int, format_money
-from mia.core.sales import live_counts
 from mia.i18n import t
 from mia.templates.retail import hours as retail_hours
 
@@ -92,8 +91,9 @@ def good_day(total: int, share: int | None, average: int | None) -> bool:
 
 
 def _reporters(session: Session, branch_id: str, day: dt.date) -> set[str]:
-    """The ids of the people with a live count for the branch and business date."""
-    return {r.reported_by for r in live_counts(session, [branch_id], day, day)}
+    """The ids of the people with a sale for the branch and business date from its one source
+    (sales.day_sales: a live count's reporter, or a paid receipt's clerk)."""
+    return set(sales.day_sales(session, branch_id, day).by_clerk)
 
 
 def _clerks(session: Session, branch_id: str, day: dt.date) -> list[Person]:

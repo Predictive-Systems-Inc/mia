@@ -55,15 +55,15 @@ roles:
     branch_manager.propose_experiment: [owner, admin]
     branch_manager.change_price: [owner, admin]
 tools:
-  - {id: branch_manager.coaching, kind: agent, risk: read, approval: never, reads: [sales_counts, person, branch_manager_coaching]}
-  - {id: branch_manager.how_to_sell, kind: agent, risk: write_internal, approval: never, reads: [sales_notes, sales_counts, branch_manager_tips], writes: [branch_manager_coaching]}
-  - {id: branch_manager.propose_experiment, kind: agent, risk: money, approval: always, reads: [sales_counts, stock_events, retail_items, branch_manager_strategies, branch_manager_experiments], writes: [branch_manager_experiments, retail_item_prices, retail_items, approval]}
-  - {id: branch_manager.score_experiment, kind: agent, risk: read, approval: never, reads: [branch_manager_experiments, sales_counts]}
+  - {id: branch_manager.coaching, kind: agent, risk: read, approval: never, reads: [sales_counts, sales_receipts, sales_receipt_lines, sales_payments, person, branch_manager_coaching]}
+  - {id: branch_manager.how_to_sell, kind: agent, risk: write_internal, approval: never, reads: [sales_notes, sales_counts, sales_receipts, sales_receipt_lines, sales_payments, branch_manager_tips], writes: [branch_manager_coaching]}
+  - {id: branch_manager.propose_experiment, kind: agent, risk: money, approval: always, reads: [sales_counts, sales_receipts, sales_receipt_lines, sales_payments, stock_events, retail_items, branch_manager_strategies, branch_manager_experiments], writes: [branch_manager_experiments, retail_item_prices, retail_items, approval]}
+  - {id: branch_manager.score_experiment, kind: agent, risk: read, approval: never, reads: [branch_manager_experiments, sales_counts, sales_receipts, sales_receipt_lines, sales_payments]}
   - {id: branch_manager.decide_experiment, kind: agent, risk: write_internal, approval: never, reads: [branch_manager_experiments], writes: [branch_manager_experiments, retail_item_prices, retail_items]}
   - {id: branch_manager.change_price, kind: agent, risk: money, approval: always, reads: [retail_items], writes: [retail_item_prices, approval]}
   - {id: branch_manager.set_short_code, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_ingredients], writes: [retail_items]}
-  - {id: branch_manager.weekly_summary, kind: agent, risk: read, approval: never, reads: [sales_counts, sales_targets, stock_events, branch_manager_experiments]}
-  - {id: branch_manager.monthly_letter, kind: agent, risk: read, approval: never, reads: [sales_counts, sales_targets, branch_manager_experiments]}
+  - {id: branch_manager.weekly_summary, kind: agent, risk: read, approval: never, reads: [sales_counts, sales_receipts, sales_receipt_lines, sales_payments, sales_targets, stock_events, branch_manager_experiments]}
+  - {id: branch_manager.monthly_letter, kind: agent, risk: read, approval: never, reads: [sales_counts, sales_receipts, sales_receipt_lines, sales_payments, sales_targets, branch_manager_experiments]}
   # Creates an identity (Q117): admin only by policy; sensitive, so tool.called keeps the ids.
   - {id: branch_manager.add_person, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [core.person, core.branch], writes: [core.person, core.channel_identity, auth_codes]}
   - {id: branch_manager.set_phone, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [core.person, core.channel_identity], writes: [core.channel_identity]}

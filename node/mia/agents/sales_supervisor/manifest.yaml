@@ -49,7 +49,7 @@ tools:
   - {id: sales_supervisor.record_counts, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_counts, sales_targets], writes: [sales_counts]}
   - {id: sales_supervisor.correct_count, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_counts], writes: [sales_counts]}
   - {id: sales_supervisor.today, kind: agent, risk: read, approval: never, reads: [retail_items, retail_branch_hours, sales_counts, sales_targets, sales_receipts, sales_receipt_lines, sales_payments, person, branch]}
-  - {id: sales_supervisor.period_report, kind: agent, risk: read, approval: never, reads: [retail_items, sales_counts, branch]}
+  - {id: sales_supervisor.period_report, kind: agent, risk: read, approval: never, reads: [retail_items, sales_counts, sales_receipts, sales_receipt_lines, sales_payments, branch]}
   - {id: sales_supervisor.set_target, kind: agent, risk: write_internal, approval: never, reads: [branch], writes: [sales_targets]}
   - {id: sales_supervisor.record_note, kind: agent, risk: write_internal, approval: never, writes: [sales_notes]}
   - {id: sales_supervisor.record_receipt, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_sessions, sales_receipts], writes: [sales_receipts, sales_receipt_lines, sales_payments]}

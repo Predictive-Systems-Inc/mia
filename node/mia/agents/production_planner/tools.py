@@ -32,6 +32,7 @@ from mia.agents.production_planner import capacity as oven
 from mia.agents.production_planner.models import Batch, Dispatch, Plan, Recipe
 from mia.agents.sales_supervisor.tools import (
     ITEMS,
+    SALES,
     _as_reporter,
     _check,
     _currency,
@@ -54,7 +55,7 @@ from mia.core.models import (
 from mia.core.orgconfig import ProductionPlannerSettings
 from mia.core.orgconfig import load as load_settings
 from mia.core.rbac import PermissionDenied, Resource, get_rbac
-from mia.core.sales import live_counts
+from mia.core.sales import sale_rows
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailIngredient, RetailItem
 
@@ -144,18 +145,18 @@ class KioskData:
 
 def kiosk_data(session: Session, commissary: Branch, kiosk: Branch, day: dt.date) -> KioskData:
     """The kiosk's numbers for production date day, read by the agent alone with read_all on
-    counts, stock and orders and read on items, recipes and hours (each check logged). Raises
+    counts, receipts, stock and orders and read on items, recipes and hours (each check logged). Raises
     LookupError("not_served") for a branch the commissary does not bake for, PermissionDenied
     without the agent role's rights."""
     if kiosk.id not in {b.id for b in served(session, commissary)}:
         raise LookupError("not_served")
     actor, rbac = agent_actor(kiosk.id), get_rbac()
-    for resource in (COUNTS, STOCK, ORDERS):
+    for resource in (*SALES, STOCK, ORDERS):
         rbac.require(actor, resource, "read_all", session=session)
     for resource in (ITEMS, RECIPES, inventory_tools.HOURS):
         rbac.require(actor, resource, "read", session=session)
     components = _components(session)
-    counts = live_counts(
+    counts = sale_rows(
         session, [kiosk.id], day - dt.timedelta(days=forecast.FORECAST_DAYS), day - ONE_DAY
     )
     daily = forecast.units(((c.business_date, c.item_id, c.quantity) for c in counts), components)

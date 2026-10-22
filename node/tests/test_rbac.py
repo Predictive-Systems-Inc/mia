@@ -171,7 +171,11 @@ SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
         "agent.production_planner": {"read", "read_all"},
     },
     **{
-        table: {**SALES_RIGHTS, "agent.sales_supervisor": {"read", "read_all", "write"}}
+        table: {
+            **SALES_RIGHTS,
+            "agent.sales_supervisor": {"read", "read_all", "write"},
+            "agent.production_planner": {"read", "read_all"},  # the forecast (day_sales)
+        }
         for table in ("sales_receipts", "sales_receipt_lines", "sales_payments")
     },  # 1.9 (ADR 022): new core tables; the sales supervisor rings up a receipt
     "sales_sessions": {  # 1.9 writers (spec section 6): check-in opens, the count closes

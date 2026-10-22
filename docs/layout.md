@@ -112,7 +112,8 @@ mia/
                             ollama/ (Modelfiles for local models, ADR 004)
     tests/                  unit tests (test_data_standard_<n>.py pins each data standard change,
                             test_data_standard_1_9.py the sales operations tables;
-                            test_sales_receipts.py the chat till); auth/ (login flows); evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
+                            test_sales_receipts.py the chat till, test_day_sales_reads.py the
+                            other agents' receipts-day reads); auth/ (login flows); evals/ (marker `evals`; intents.jsonl, intents_catalogue.yaml
                             and intents.py for intent classification; cases/ (one CSV of test
                             messages per agent, <agent_id>.csv, and router.csv, with the shared
                             loader the <id>_cases.py modules build their cases with, and a

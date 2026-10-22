@@ -11,6 +11,12 @@ roles:
   grants:
     - data:sales_counts:read
     - data:sales_counts:read_all
+    - data:sales_receipts:read
+    - data:sales_receipts:read_all
+    - data:sales_receipt_lines:read
+    - data:sales_receipt_lines:read_all
+    - data:sales_payments:read
+    - data:sales_payments:read_all
     - data:stock_events:read
     - data:stock_events:read_all
     - data:customer_orders:read

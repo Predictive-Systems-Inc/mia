@@ -42,7 +42,7 @@ from mia.core.ids import new_id
 from mia.core.models import Actor, Branch, Message, Person
 from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied, Resource, get_rbac
-from mia.core.sales import live_counts
+from mia.core.sales import sale_rows
 from mia.i18n import t
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailItem
@@ -243,9 +243,9 @@ def _morning(session: Session, branch: Branch, hours: Hours, day: dt.date) -> li
 
 
 def _amounts(session: Session, branch_id: str, person_id: str, day: dt.date) -> dict[dt.date, int]:
-    """The person's own live amounts per business date in the calc.BEST_DAYS before day and
-    on it."""
-    rows = live_counts(session, [branch_id], day - dt.timedelta(days=calc.BEST_DAYS), day)
+    """The person's own sale amounts (sales.sale_rows) per business date in the
+    calc.BEST_DAYS before day and on it."""
+    rows = sale_rows(session, [branch_id], day - dt.timedelta(days=calc.BEST_DAYS), day)
     out: dict[dt.date, int] = {}
     for r in rows:
         if r.reported_by == person_id:

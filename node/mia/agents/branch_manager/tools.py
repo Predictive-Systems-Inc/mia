@@ -40,6 +40,8 @@ from mia.agents.sales_supervisor.tools import (
     COUNTS,
     ITEMS,
     NOTES,
+    RECEIPT_TABLES,
+    SALES,
     TARGETS,
     _as_reporter,
     _branches,
@@ -62,13 +64,12 @@ from mia.core.models import (
     Branch,
     ChannelIdentity,
     Person,
-    SalesCount,
     SalesNote,
     StockEvent,
 )
 from mia.core.money import format_money
 from mia.core.rbac import Resource
-from mia.core.sales import live_counts
+from mia.core.sales import SaleRow, sale_rows
 from mia.i18n import t
 from mia.i18n.strings import STRINGS
 from mia.settings import get_settings
@@ -127,11 +128,12 @@ def _days(start: dt.date, end: dt.date) -> list[dt.date]:
 def daily(
     session: Session, branch_id: str, item_id: str, start: dt.date, end: dt.date
 ) -> dict[dt.date, Day]:
-    """The item's live counts at the branch summed per business date from start to end
-    (inclusive), as (units, amount); a date without counts is absent. Reads only, unchecked:
+    """The item's sales at the branch (sales.sale_rows: counts, or receipts on a receipts day)
+    summed per business date from start to end (inclusive), as (units, amount); a date without
+    any is absent. Reads only, unchecked:
     callers check (or are the system tick)."""
     out: dict[dt.date, Day] = {}
-    for row in live_counts(session, [branch_id], start, end, item_id):
+    for row in sale_rows(session, [branch_id], start, end, item_id):
         units, amount = out.get(row.business_date, (0, 0))
         out[row.business_date] = (units + row.quantity, amount + row.amount)
     return out
@@ -228,13 +230,13 @@ def _past_experiments(session: Session, branch_id: str) -> list[Experiment]:
 
 def branch_numbers(session: Session, branch: Branch, today: dt.date) -> experiments.BranchNumbers:
     """What experiments.propose reads for the branch on today, over the NUMBERS_DAYS before it:
-    live counts (units, open days, baskets of one reporter on one date), the stock rows
+    sales (sales.sale_rows: units, open days, baskets of one clerk on one date), the stock rows
     (sold-out days, leftovers), the prices in force today and in the last PRICE_DAYS, last
     year's units by month and the days since each item's last experiment ended. Reads only,
     unchecked: callers check."""
     start, end = today - dt.timedelta(days=NUMBERS_DAYS), today - dt.timedelta(days=1)
     catalog = _catalog(session, branch.id)
-    counts = live_counts(session, [branch.id], start, end)
+    counts = sale_rows(session, [branch.id], start, end)
     units: Counter[str] = Counter()
     baskets: dict[tuple[str, dt.date], set[str]] = {}
     for c in counts:
@@ -259,7 +261,7 @@ def branch_numbers(session: Session, branch: Branch, today: dt.date) -> experime
             day[s.business_date] = day.get(s.business_date, 0) + (s.quantity or 0)
     year = today.year - 1
     last_year: dict[int, Counter[str]] = {}
-    for c in live_counts(session, [branch.id], dt.date(year, 1, 1), dt.date(year, 12, 31)):
+    for c in sale_rows(session, [branch.id], dt.date(year, 1, 1), dt.date(year, 12, 31)):
         last_year.setdefault(c.business_date.month, Counter())[c.item_id] += c.quantity
     ended: dict[str, dt.date] = {}
     for e in _past_experiments(session, branch.id):
@@ -284,7 +286,8 @@ def branch_numbers(session: Session, branch: Branch, today: dt.date) -> experime
 def _engine_reads(deps: AgentDeps, tool_call_id: str) -> None:
     for resource in (EXPERIMENTS, STRATEGIES, ITEMS, STOCK):
         _check(deps, resource, "read", tool_call_id)
-    _check(deps, _as_reporter(COUNTS, deps), "read", tool_call_id)
+    for table in SALES:
+        _check(deps, _as_reporter(table, deps), "read", tool_call_id)
 
 
 def proposals(deps: AgentDeps, starts_on: dt.date, tool_call_id: str) -> list[experiments.Proposal]:
@@ -332,9 +335,10 @@ def _coached(deps: AgentDeps, person_id: str | None, tool_call_id: str) -> Perso
     if own and (person_id is not None or not may_read):
         for resource in (COACHING, PEOPLE):
             _check(deps, _owned(resource, deps.person.id), "read", tool_call_id)
-        _check(deps, _as_reporter(COUNTS, deps), "read", tool_call_id)
+        for table in SALES:
+            _check(deps, _as_reporter(table, deps), "read", tool_call_id)
         return deps.person
-    for resource in (COACHING, PEOPLE, COUNTS):
+    for resource in (COACHING, PEOPLE, *SALES):
         _check(deps, resource, "read", tool_call_id)
     if person_id is None:
         return None
@@ -353,7 +357,7 @@ def coaching(deps: AgentDeps, args: CoachingInput, tool_call_id: str) -> Coachin
     day = _business_day(deps, deps.branch, tool_call_id)
     end, start = day - dt.timedelta(days=1), day - dt.timedelta(days=COACHING_DAYS)
     before = start - dt.timedelta(days=COACHING_DAYS)
-    rows = live_counts(deps.session, [deps.branch.id], before, end)
+    rows = sale_rows(deps.session, [deps.branch.id], before, end)
     if who is not None:
         rows = [r for r in rows if r.reported_by == who.id]
     now: dict[str, list[int]] = {}
@@ -440,7 +444,8 @@ def how_to_sell(deps: AgentDeps, args: HowToSellInput, tool_call_id: str) -> How
     within 30 days. One Coaching row of kind tip per tip given (event branch_manager.tip_given).
     Tip texts come only from branch_manager_tips rows. Raises LookupError("no_item")."""
     _check(deps, _as_reporter(NOTES, deps), "read", tool_call_id)
-    _check(deps, _as_reporter(COUNTS, deps), "read", tool_call_id)
+    for table in SALES:
+        _check(deps, _as_reporter(table, deps), "read", tool_call_id)
     _check(deps, TIPS, "read", tool_call_id)
     _check(deps, _owned(COACHING, deps.person.id), "read", tool_call_id)
     _check(deps, _owned(COACHING, deps.person.id), "write", tool_call_id)
@@ -908,7 +913,8 @@ def score_experiment(deps: AgentDeps, args: ScoreInput, tool_call_id: str) -> Sc
     (approved, rejected and later ones aside), scored up to yesterday. Raises
     LookupError("no_experiment")."""
     _check(deps, EXPERIMENTS, "read", tool_call_id)
-    _check(deps, _as_reporter(COUNTS, deps), "read", tool_call_id)
+    for table in SALES:
+        _check(deps, _as_reporter(table, deps), "read", tool_call_id)
     day = _business_day(deps, deps.branch, tool_call_id)
     stmt = select(Experiment).where(Experiment.branch_id == deps.branch.id)
     if args.experiment_id is not None:
@@ -1260,7 +1266,7 @@ def _branch_week(
     deps: AgentDeps, branch: Branch, start: dt.date, end: dt.date, tool_call_id: str
 ) -> BranchWeek:
     session = deps.session
-    counts = live_counts(session, [branch.id], start, end)
+    counts = sale_rows(session, [branch.id], start, end)
     amounts: Counter[str] = Counter()
     for c in counts:
         amounts[c.item_id] += c.amount
@@ -1299,15 +1305,15 @@ def weekly_summary(deps: AgentDeps, args: WeeklyInput, tool_call_id: str) -> Wee
     business date): the live amount, the summed day targets, the best and worst item by amount
     (menu order on a tie), waste pieces by item from stock_events and the running experiment's
     score up to the week's end. The person's branch, or another branch or "all" (the default
-    for an owner or admin) after read_all on counts, targets, stock and experiments."""
+    for an owner or admin) after read_all on counts, receipts, targets, stock and experiments."""
     branch_id = args.branch_id
     if branch_id is None and _is_lead(deps.person):
         branch_id = "all"
     branches = _branches(deps, branch_id, COUNTS, "read", tool_call_id)
     if branches != [deps.branch]:
-        for resource in (TARGETS, STOCK, EXPERIMENTS):
+        for resource in (*RECEIPT_TABLES, TARGETS, STOCK, EXPERIMENTS):
             _check(deps, resource, "read_all", tool_call_id)
-    for resource in (COUNTS, TARGETS, STOCK, EXPERIMENTS):
+    for resource in (*SALES, TARGETS, STOCK, EXPERIMENTS):
         _check(deps, resource, "read", tool_call_id)  # the plain read: every reporter's rows
     day = _business_day(deps, deps.branch, tool_call_id)
     start = args.week_start or day - dt.timedelta(days=day.weekday() + 7)
@@ -1342,13 +1348,13 @@ def monthly_letter(deps: AgentDeps, args: MonthlyInput, tool_call_id: str) -> Mo
     the summed day targets, the BEST_DAYS_SHOWN best days by amount (earlier on a tie), the
     amount per reporter and the experiments that ended in the month (done, kept or rejected).
     Default month: the one before the business date's."""
-    for resource in (COUNTS, TARGETS, EXPERIMENTS, PEOPLE):
+    for resource in (*SALES, TARGETS, EXPERIMENTS, PEOPLE):
         _check(deps, resource, "read", tool_call_id)  # the plain read: every reporter's rows
     day = _business_day(deps, deps.branch, tool_call_id)
     month = args.month or (day.replace(day=1) - dt.timedelta(days=1))
     start = month.replace(day=1)
     end = (start + dt.timedelta(days=32)).replace(day=1) - dt.timedelta(days=1)
-    counts: list[SalesCount] = live_counts(deps.session, [deps.branch.id], start, end)
+    counts: list[SaleRow] = sale_rows(deps.session, [deps.branch.id], start, end)
     by_day: Counter[dt.date] = Counter()
     clerks: Counter[str] = Counter()
     for c in counts:

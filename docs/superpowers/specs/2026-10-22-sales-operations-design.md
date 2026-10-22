@@ -357,32 +357,45 @@ kiosk's request is the one before the plan, and a counts kiosk reads a typed tot
 receipt word. The end to end day is `test_a_receipts_day_at_the_mall_kiosk` in
 tests/test_day_sales_clerk.py.
 
-**Do not switch a kiosk to receipts yet** (`sales.receipts_from`): the branch manager's reads
-and the production planner's forecast below still read counts only, so on a receipts day they
-see no sales. Switch a kiosk only after they move onto `day_sales` (their own plan), and after
-a Jev run on the counts kiosks' corrections.
+**The reads moved onto `day_sales` (22 Oct 2026).** `sales.sale_rows` gives `live_counts`'
+shape (branch, business date, clerk, item, quantity, amount) from each date's one source, one
+`day_sales` per branch and day (a ponytail: a year is 365 of them; a range query per source when
+it shows), and `DaySales.by_clerk` carries the clerk (a count's reporter, a receipt's clerk).
+On it now: the branch manager's `daily` (experiment baselines and scores, `_themes`),
+`branch_numbers` (both reads), `coaching`, `_branch_week`, `monthly_letter` and due.py
+`_amounts`; the production planner's `kiosk_data` forecast; `period_report`; and the sales
+supervisor's `_reporters` (its morning and why question, the branch manager's morning, nudges
+and cheers). Each checks the read on the three receipt tables beside the counts (`SALES` in
+sales_supervisor/tools.py, read_all on them for another branch), the manifests declare the
+reads, and the planner's agent role holds read and read_all on them. A counts day reads as
+before (a clerk's live rows of an item on a date are summed into one row); the receipts days
+are tests/test_day_sales_reads.py.
+
+**What still blocks switching a kiosk to receipts** (`sales.receipts_from`):
+
+- Jev on a receipts kiosk: the second short run (docs/research/2026-10-22-short-messages.md)
+  read the counts kiosk's twelve rows per language as before (18 of 24 right, no wrong write),
+  but the eight receipt rows got three right and five asks; the receipt phrasings need a tune
+  half before clerks rely on them.
+- A cover's void or refund card goes to her home branch's deciders (below).
+- The owner's go-ahead (Q118) and a day end to end on the real phones.
 
 Still carried over:
 
 - Split tender and discounts (senior, PWD) in the chat; a receipt has one tender and no discount.
 - The app's check-in route (`mia/api/schedule.py`) opens no session; the chat is a receipts
   kiosk's check-in path (Q125).
-- `period_report` on receipts (it reads the counts; sales_supervisor/tools.py `period_report`).
-- The branch manager's reads onto `day_sales` (each reads `live_counts`, counts only):
-  branch_manager/tools.py `daily` (experiment results), `branch_numbers` (two reads, best days
-  and the year), `coaching`, `_branch_week` and `monthly_letter`; branch_manager/due.py
-  `_amounts`.
-- The production planner's demand forecast onto `day_sales`: production_planner/tools.py
-  `kiosk_data` (a receipts kiosk's forecast falls toward zero).
 - `drawer_out` in the session's own expected cash (the count's expected holds it, Q122).
 - A session's handover float (each session opens with the branch's float).
 - Voiding a sale together with its refunds (refused in v1).
 - A running experiment's `to_price` at the till (the unit price is the dated price).
 - The owner's report total from `by_tender` once receipt discounts exist (it sums `by_item`,
   before the discount, today).
-- `_morning` and `_why` read counts only on a receipts day.
 - A clerk's `today` totals are branch-wide while her receipts list is her own.
 - `tender_sales` over a month or quarter is one `day_sales` query pair per day.
+- A basket on a receipts day is a clerk's day, as on counts, not one receipt (`branch_numbers`
+  and `coaching` pairing read `by_clerk`); a receipt-level basket needs the receipt in
+  `sale_rows`.
 - A refund is paid only from the requester's own drawer (Q127).
 - Head staff cannot request a refund in the chat.
 - A stale drawer is closed by the next count, the CashCount dated by the closing date.

@@ -65,6 +65,8 @@ RECEIPT_TABLES = [
     Resource(kind="data", name=t.__tablename__)
     for t in (SalesReceipt, SalesReceiptLine, SalesPayment)
 ]
+# What sales.sale_rows reads (sales.day_sales): the counts, or the receipt tables on a receipts day.
+SALES = [COUNTS, *RECEIPT_TABLES]
 
 
 # ---- shared helpers -----------------------------------------------------------------------
@@ -515,17 +517,25 @@ class PeriodReportOutput(BaseModel):
 def period_report(
     deps: AgentDeps, args: PeriodReportInput, tool_call_id: str
 ) -> PeriodReportOutput:
-    """Live totals per (branch, item) from start to end inclusive, the day with the highest
-    amount and the grand total. Raises LookupError when end is before start."""
+    """Totals per (branch, item) from start to end inclusive, each date from its one source
+    (sales.sale_rows: counts, or receipts on a receipts day), the day with the highest amount
+    and the grand total. Raises LookupError when end is before start."""
     branches = _branches(deps, args.branch_id, COUNTS, "read", tool_call_id)
-    _check(deps, _as_reporter(COUNTS, deps), "read", tool_call_id)
+    if branches != [deps.branch]:
+        for table in RECEIPT_TABLES:
+            _check(deps, table, "read_all", tool_call_id)
+    for table in SALES:
+        _check(deps, _as_reporter(table, deps), "read", tool_call_id)
     if args.end < args.start:
         raise LookupError("end is before start")
     names = _names(deps.session)
-    rows = live_counts(deps.session, [b.id for b in branches], args.start, args.end, args.item_id)
+    rows = sales.sale_rows(
+        deps.session, [b.id for b in branches], args.start, args.end, args.item_id
+    )
     out: list[PeriodRow] = []
     for branch in branches:
-        sums = calc.totals(_plain([r for r in rows if r.branch_id == branch.id]))
+        mine = [r for r in rows if r.branch_id == branch.id]
+        sums = calc.totals([calc.Count(r.item_id, r.quantity, r.amount, None) for r in mine])
         for item_id, (quantity, amount) in sorted(
             sums.items(), key=lambda kv: names[kv[0]].sort_order
         ):
