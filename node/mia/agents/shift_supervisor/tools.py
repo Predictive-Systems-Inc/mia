@@ -34,6 +34,7 @@ from mia.templates.retail.models import RetailBranchHours, RetailClosure
 
 MORNING_ENDS = dt.time(12, 0)
 LATE_NOTICE = "visit.late_notice"  # alerts.LATE reads it
+LATE_HOLD_MAX = dt.timedelta(minutes=120)  # a late notice never holds the alert past this
 
 
 # ---- shared read models -------------------------------------------------------------------
@@ -226,17 +227,23 @@ def _arrival(at: dt.time, visit: Visit, tz: str) -> str:
 
 
 def _tell_late(
-    deps: AgentDeps, person: Person, info: VisitInfo, branch_id: str, arrive: str | None
+    deps: AgentDeps,
+    person: Person,
+    info: VisitInfo,
+    branch_id: str,
+    arrive: str | None,
+    far: bool,
 ) -> None:
     """Tell the kiosk's head staff (alerts.supervisors) of a late clerk once per notice, not
-    urgent: the clerk, the shift and the expected arrival when given. The reporter is never
-    told of their own notice."""
+    urgent: the clerk, the shift and the expected arrival when given, said to be more than
+    LATE_HOLD_MAX late when `far`. The reporter is never told of their own notice."""
     from mia.agents.shift_supervisor.alerts import supervisors
     from mia.chat.blocks import TextBlock
     from mia.chat.channels import notify
     from mia.i18n import t
 
-    key = "retail.alert.late" if arrive else "retail.alert.late_unknown"
+    key = "retail.alert.late_far" if far else "retail.alert.late"
+    key = key if arrive else "retail.alert.late_unknown"
     for sup in supervisors(deps.session, branch_id):
         if sup.id == deps.person.id:
             continue
@@ -296,13 +303,15 @@ def record_absence(
     if late is not None:
         info = visit_info(deps.session, late, tz)
         arrive = _arrival(args.arrive_at, late, tz) if args.arrive_at else None
-        _tell_late(deps, person, info, late.branch_id, arrive)
         when = None
         if arrive:
             local = late.planned_start.astimezone(ZoneInfo(tz))
             hour, minute = map(int, arrive.split(":"))
-            when = local.replace(hour=hour, minute=minute, second=0, microsecond=0).isoformat()
-        after = {"person_id": person.id, "absence_id": absence.id, "arrive_at": when}
+            when = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        far = when is not None and when > late.planned_start + LATE_HOLD_MAX
+        _tell_late(deps, person, info, late.branch_id, arrive, far)
+        stated = when.isoformat() if when else None
+        after = {"person_id": person.id, "absence_id": absence.id, "arrive_at": stated}
         events.emit(  # the hold on this shift's missed check-in alert (alerts.LATE)
             deps.session,
             LATE_NOTICE,

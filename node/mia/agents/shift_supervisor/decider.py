@@ -106,6 +106,9 @@ def _next_year(d: dt.date) -> dt.date:
         return dt.date(d.year + 1, 3, 1)
 
 
+# A bare "may" is "there is" in the Philippine languages ("may 5 minuto", "may 2 na tao"): the
+# English pass of a non-en sender reads it as the month only after "sa" or "ng" ("sa May 3").
+_BARE_MAY = re.compile(r"(?<!\bsa )(?<!\bng )\bmay\b", re.IGNORECASE)
 _MONTH_DAY = re.compile(
     rf"\b(?:{'|'.join(MONTHS)})\.?\s*\d|\d\s*(?:of\s+)?(?:{'|'.join(MONTHS)})\b"
 )
@@ -114,13 +117,13 @@ _MONTH_DAY = re.compile(
 def _named_days(q: Query) -> set[str]:
     """The ISO days the message names: parsing.find_dates in the sender's language, plus an
     English pass for the month names (an English "May 5" from a fil sender) on the text without
-    its clock times, so fil "may 3 pm" ("there is", 3 pm) is never May 3. A past month-day
-    rolls to next year (fil "sarado sa June 5" in October means the coming 5 June, and the
-    sender pass's past 5 June is dropped); the sender's own pass otherwise keeps past days
-    ("kasuhapon" is yesterday, asked as an off day)."""
+    its clock times and its bare "may" (_BARE_MAY), so fil "may 3 pm" or "may 5 minuto" is
+    never May. A past month-day rolls to next year (fil "sarado sa June 5" in October means
+    the coming 5 June, and the sender pass's past 5 June is dropped); the sender's own pass
+    otherwise keeps past days ("kasuhapon" is yesterday, asked as an off day)."""
     days = find_dates(q.message, q.today, q.lang)
     if q.lang != "en":
-        text = strip_times(q.message)
+        text = _BARE_MAY.sub(" ", strip_times(q.message))
         english = find_dates(text, q.today, "en")
         if _MONTH_DAY.search(text.casefold()):
             past = {d for _, d in english if d < q.today}

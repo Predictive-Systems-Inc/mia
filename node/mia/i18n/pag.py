@@ -501,6 +501,7 @@ STRINGS: dict[str, str | list[str]] = {
     "retail.absence.late_unknown": "Naitala: naantala ka ed shift mo ed {location} ed {start} ed {date}. Imbaga ko la ed head staff.",
     "retail.alert.late": "Naantala si {name} ed shift ya {start} ed {location} ed {date}; sabi to ed {time}.",
     "retail.alert.late_unknown": "Naantala si {name} ed shift ya {start} ed {location} ed {date}.",
+    "retail.alert.late_far": "Naantala si {name} ed shift ya {start} ed {location} ed {date}: sabi to ed {time}, mas ya duaran oras ya antala.",
     "retail.alert.late_no_show": "Imbaga mon naantala ka balet ag ka ni nan-check in ed {location} parad shift ya {time}. Ebatan mo na 'Wadia lak la' no sabi ka.",
     "retail.alert.late_no_show_supervisor": "Agsinmabi si {name} ed {location} kayari na imbaga ton naantala (say shift ya {time}) tan ag ni nan-check in.",
     "retail.denied.visits": "Pasensya, saray dilin shift mo labat so nanengneng mo. Intala ko so kerew.",

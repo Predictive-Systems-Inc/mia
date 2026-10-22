@@ -168,6 +168,58 @@ def test_a_late_notice_with_no_time_holds_the_alert_an_hour(
     assert (texts(session, marites).count(head), texts(session, liza)) == (1, [clerk])
 
 
+def test_a_far_arrival_holds_the_alert_two_hours_at_most(
+    session: Session, rs: Ferinos, rs_pin: Pin
+) -> None:
+    """ "8pm" for a 13:00 shift: head staff hear it is more than two hours late, and the hold
+    ends at 15:00 (LATE_HOLD_MAX), never at 20:15."""
+    liza, marites = rs[1]["Liza"], rs[1]["Marites"]
+    rs_pin(at(RS_TODAY, 12, 50))
+    _late(session, liza, dt.time(20, 0))
+    date = rules.fmt_date(RS_TODAY.isoformat(), "fil")
+    far = t(
+        "retail.alert.late_far",
+        "fil",
+        name=liza.name,
+        start="13:00",
+        location="Mall kiosk",
+        date=date,
+        time="20:00",
+    )
+    assert far in texts(session, marites)
+    head, clerk = _no_show(liza.name, "13:00")
+    _tick(session, rs_pin, at(RS_TODAY, 14, 59))
+    assert head not in texts(session, marites)
+    _tick(session, rs_pin, at(RS_TODAY, 15, 0))
+    _tick(session, rs_pin, at(RS_TODAY, 15, 30))
+    assert (texts(session, marites).count(head), texts(session, liza)) == (1, [clerk])
+
+
+def test_one_clerks_late_notice_holds_only_her_own_alert(
+    session: Session, rs: Ferinos, rs_pin: Pin
+) -> None:
+    """Liza and Pao on one 13:00 shift, only Liza sent a late notice ("1:30"): Pao gets the
+    plain alert at 13:16 (head staff hear his name only), Liza the late one at 13:50."""
+    liza, pao, marites = (rs[1][n] for n in ("Liza", "Pao", "Marites"))
+    visit = visit_of(session, liza, RS_TODAY)
+    store.update(session, visit, {"assigned_person_ids": [liza.id, pao.id]}, Actor.system(rs[0].id))
+    session.commit()
+    rs_pin(at(RS_TODAY, 12, 50))
+    _late(session, liza, dt.time(1, 30))
+    key = replies.word_key("alert.missed_check_in")
+    head_key = replies.word_key("alert.missed_check_in_supervisor")
+    plain = t(head_key, "fil", name=pao.name, location="Mall kiosk", time="13:00")
+    _tick(session, rs_pin, at(RS_TODAY, 13, 16))
+    assert plain in texts(session, marites) and texts(session, liza) == []
+    his = t(key, pao.language, location="Mall kiosk", time="13:00")
+    assert texts(session, pao).count(his) == 1  # (his own 06:00 at the stall is alerted too)
+    head, clerk = _no_show(liza.name, "13:00")
+    _tick(session, rs_pin, at(RS_TODAY, 13, 50))
+    _tick(session, rs_pin, at(RS_TODAY, 14, 0))
+    assert (texts(session, marites).count(head), texts(session, liza)) == (1, [clerk])
+    assert texts(session, marites).count(plain) == 1 and texts(session, pao).count(his) == 1
+
+
 def test_a_late_notice_for_the_morning_never_holds_the_afternoon(
     session: Session, rs: Ferinos, rs_pin: Pin
 ) -> None:

@@ -23,7 +23,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.shift_supervisor import MANIFEST, cover, replies, timesheets
 from mia.agents.shift_supervisor.rules import _visit_card, is_retail, word_key
-from mia.agents.shift_supervisor.tools import LATE_NOTICE, VisitInfo, visit_info
+from mia.agents.shift_supervisor.tools import LATE_HOLD_MAX, LATE_NOTICE, VisitInfo, visit_info
 from mia.chat.blocks import Block, TextBlock
 from mia.chat.channels import notify
 from mia.core import approvals, events, scheduling
@@ -36,6 +36,7 @@ log = logging.getLogger(__name__)
 MISSED = "visit.missed_check_in"
 MISSED_OUT = "visit.missed_check_out"
 LATE = LATE_NOTICE  # retail: a clerk's late notice for one shift (tools.record_absence)
+NO_SHOW = "visit.late_no_show"  # retail: one clerk's missed check-in after her late notice
 LATE_HOLD = dt.timedelta(minutes=60)  # a late notice with no time holds the alert this long
 OVERTIME = "timesheet.overtime"
 UNSTAFFED = "alert.unstaffed_visits"
@@ -110,17 +111,62 @@ def _each_branch(session: Session, now: dt.datetime, fn: BranchAlert) -> int:
     return count
 
 
-def _late_until(session: Session, visit: Visit, grace: dt.timedelta) -> dt.datetime | None:
-    """The end of the hold a late notice for this shift puts on its missed check-in alert: the
-    stated arrival plus the check-in window, else LATE_HOLD after the start; None without a
-    notice. The latest notice for the shift counts."""
+def _late_holds(session: Session, visit: Visit, grace: dt.timedelta) -> dict[str, dt.datetime]:
+    """Each clerk's hold on this shift's missed check-in alert after their own late notice,
+    by person id: the stated arrival plus the check-in window, else LATE_HOLD after the start,
+    never past LATE_HOLD_MAX after the start. A clerk's newest notice (by event id) counts."""
     rows = session.exec(
-        select(Event).where(Event.action == LATE).where(Event.entity_id == visit.id)
+        select(Event)
+        .where(Event.action == LATE)
+        .where(Event.entity_id == visit.id)
+        .order_by(col(Event.id))
     ).all()
-    if not rows:
-        return None
-    arrive = (max(rows, key=lambda e: e.timestamp).after or {}).get("arrive_at")
-    return dt.datetime.fromisoformat(arrive) + grace if arrive else visit.planned_start + LATE_HOLD
+    newest = {(e.after or {}).get("person_id"): e for e in rows}  # later ids overwrite
+    holds = {}
+    for pid, e in newest.items():
+        arrive = (e.after or {}).get("arrive_at")
+        start = visit.planned_start
+        until = dt.datetime.fromisoformat(arrive) + grace if arrive else start + LATE_HOLD
+        if isinstance(pid, str):
+            holds[pid] = min(until, start + LATE_HOLD_MAX)
+    return holds
+
+
+def _no_show_marked(session: Session, visit: Visit, person_id: str) -> bool:
+    rows = session.exec(
+        select(Event).where(Event.action == NO_SHOW).where(Event.entity_id == visit.id)
+    ).all()
+    return any((r.after or {}).get("person_id") == person_id for r in rows)
+
+
+def _tell_missed(
+    session: Session, branch: Branch, visit: Visit, people: list[str], *, late: bool
+) -> None:
+    """The missed check-in words to the clerks in `people` and the supervisors (the names
+    listed): the plain alert, or after a late notice the "did not arrive" one."""
+    info = visit_info(session, visit, branch.timezone)
+    names = []
+    for pid in people:
+        person = session.get(Person, pid)
+        if person is None:
+            continue
+        names.append(person.name)
+        if person.status != "active":
+            continue  # nothing to a person who left; the supervisors still hear
+        key = "retail.alert.late_no_show" if late else word_key("alert.missed_check_in")
+        text = t(key, person.language, location=info.location, time=info.start)
+        _send(session, person, [TextBlock(text=text)], urgent=True)
+    for sup in supervisors(session, branch.id):
+        text = t(
+            "retail.alert.late_no_show_supervisor"
+            if late
+            else word_key("alert.missed_check_in_supervisor"),
+            sup.language,
+            name=", ".join(names) or "?",
+            location=info.location,
+            time=info.start,
+        )
+        _send(session, sup, [TextBlock(text=text)], urgent=True)
 
 
 def _missed_in(session: Session, branch: Branch, now: dt.datetime) -> int:
@@ -138,37 +184,25 @@ def _missed_in(session: Session, branch: Branch, now: dt.datetime) -> int:
     for visit in rows:
         if not visit.assigned_person_ids or visit.planned_start > now - grace:
             continue
-        if visit.planned_start < now - dt.timedelta(days=1) or _marked(session, MISSED, visit.id):
+        if visit.planned_start < now - dt.timedelta(days=1):
             continue
-        until = _late_until(session, visit, grace) if is_retail() else None
-        if until is not None and now < until:
-            continue  # held after a late notice, until the stated arrival plus the window
-        late = until is not None
-        info = visit_info(session, visit, branch.timezone)
-        _mark(session, branch.id, MISSED, ("visit", visit.id), {"planned_start": info.start})
-        names = []
-        for pid in visit.assigned_person_ids:
-            person = session.get(Person, pid)
-            if person is None:
+        holds = _late_holds(session, visit, grace) if is_retail() else {}
+        plain = [p for p in visit.assigned_person_ids if p not in holds]
+        sent = False
+        if plain and not _marked(session, MISSED, visit.id):
+            start = visit_info(session, visit, branch.timezone).start
+            _mark(session, branch.id, MISSED, ("visit", visit.id), {"planned_start": start})
+            _tell_missed(session, branch, visit, plain, late=False)
+            sent = True
+        for pid, until in holds.items():  # held per clerk, until the arrival plus the window
+            if pid not in visit.assigned_person_ids or now < until:
                 continue
-            names.append(person.name)
-            if person.status != "active":
-                continue  # nothing to a person who left; the supervisors still hear
-            key = "retail.alert.late_no_show" if late else word_key("alert.missed_check_in")
-            text = t(key, person.language, location=info.location, time=info.start)
-            _send(session, person, [TextBlock(text=text)], urgent=True)
-        for sup in supervisors(session, branch.id):
-            text = t(
-                "retail.alert.late_no_show_supervisor"
-                if late
-                else word_key("alert.missed_check_in_supervisor"),
-                sup.language,
-                name=", ".join(names) or "?",
-                location=info.location,
-                time=info.start,
-            )
-            _send(session, sup, [TextBlock(text=text)], urgent=True)
-        count += 1
+            if _no_show_marked(session, visit, pid):
+                continue
+            _mark(session, branch.id, NO_SHOW, ("visit", visit.id), {"person_id": pid})
+            _tell_missed(session, branch, visit, [pid], late=True)
+            sent = True
+        count += sent
     return count
 
 

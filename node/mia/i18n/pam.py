@@ -501,6 +501,7 @@ STRINGS: dict[str, str | list[str]] = {
     "retail.absence.late_unknown": "Metala: maleldo ka king shift mu king {location} king {start} king {date}. Pepabalu ku na ing head staff.",
     "retail.alert.late": "Maleldo ya i {name} king shift a {start} king {location} king {date}; datang ya king {time}.",
     "retail.alert.late_unknown": "Maleldo ya i {name} king shift a {start} king {location} king {date}.",
+    "retail.alert.late_far": "Maleldo ya i {name} king shift a {start} king {location} king {date}: datang ya king {time}, mangalabis adwang oras a leldo.",
     "retail.alert.late_no_show": "Mewa kang maleldo ka pero e ka pa mig-check in king {location} para king shift a {time}. Sumagut kang 'Atiu na ku' potang datang ka.",
     "retail.alert.late_no_show_supervisor": "E ya dinatang i {name} king {location} kaibat ning pamabalu nang maleldo ya (ing shift a {time}) at e ya pa mig-check in.",
     "retail.denied.visits": "Pasensya, deng sarili mung shift mu ing akakit mu. Metala ku ing pakisabi.",

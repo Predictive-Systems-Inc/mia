@@ -501,6 +501,7 @@ STRINGS: dict[str, str | list[str]] = {
     "retail.absence.late_unknown": "Naitala: mahuhuli ka sa shift mo sa {location} nang {start} sa {date}. Sinabihan ko na ang head staff.",
     "retail.alert.late": "Mahuhuli si {name} sa shift na {start} sa {location} sa {date}; darating siya nang {time}.",
     "retail.alert.late_unknown": "Mahuhuli si {name} sa shift na {start} sa {location} sa {date}.",
+    "retail.alert.late_far": "Mahuhuli si {name} sa shift na {start} sa {location} sa {date}: darating siya nang {time}, higit dalawang oras na huli.",
     "retail.alert.late_no_show": "Nagsabi kang mahuhuli ka pero hindi ka pa naka-check in sa {location} para sa shift na {time}. Sumagot ng 'Nandito na ako' pagdating mo.",
     "retail.alert.late_no_show_supervisor": "Hindi dumating si {name} sa {location} pagkatapos ng pasabi niyang mahuhuli (ang shift na {time}) at hindi pa siya naka-check in.",
     "retail.denied.visits": "Pasensya, ang sarili mong mga shift lang ang makikita mo. Naitala ko ang hiling.",
