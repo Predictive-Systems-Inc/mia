@@ -6,6 +6,7 @@ steps; the agent's handle_turn answers the rest; the caller commits the reply.
 """
 
 import asyncio
+import datetime as dt
 import html
 import time
 from collections.abc import Sequence
@@ -215,12 +216,31 @@ def active_agent(session: Session, thread: Thread) -> str | None:
     return row.agent_id if row is not None else None
 
 
-def _pending(session: Session, thread: Thread) -> Message | None:
-    """Mia's latest message when it is a question (it has buttons): its agent keeps the turn."""
+# A typed answer to a question (such as "Which item?") comes within minutes; later text is a
+# new message for the router.
+PENDING_WINDOW = dt.timedelta(minutes=30)
+
+
+def _pending(session: Session, thread: Thread, text: str, lang: str) -> Message | None:
+    """Mia's latest message when it is a question (it has buttons) that `text` answers, so its
+    agent keeps the turn without the router: a tap (the exact text of one of its buttons, at
+    any age, as a cover request's Accept), or typed text within PENDING_WINDOW of a question
+    that is not "Did you mean" (a slot question such as "Which item?" takes a typed answer).
+    Typed text after "Did you mean" (the agent already did not understand; another try would
+    ask to rephrase again) or after the window goes to the router, with the asking agent as
+    the active one, so the router may keep it or switch (Rosa's "sales today?" eight hours
+    after the inventory manager's "Did you mean" was asked to rephrase)."""
     row = _last_mia(session, thread)
-    if row is None or not any(b.get("type") == "quick_replies" for b in row.blocks):
+    if row is None:
         return None
-    return row
+    buttons = [o for b in row.blocks if b.get("type") == "quick_replies" for o in b["options"]]
+    if not buttons:
+        return None
+    if text.strip() in buttons:
+        return row
+    did_you_mean = t("clarify.something_else", lang) in buttons
+    fresh = utcnow() - row.created_at <= PENDING_WINDOW
+    return row if fresh and not did_you_mean else None
 
 
 def _route_tapped(
@@ -335,8 +355,8 @@ Chosen = tuple[AgentSpec | None, list[AgentSpec], str | None, str, bool]
 
 
 def _choose(session: Session, deps: AgentDeps, thread: Thread, text: str) -> ChatReply | Chosen:
-    """The steps before the router: no agent (a stored reply), a tap on "Is this about", a
-    pending question, one agent, an injection. Returns Chosen; spec None means the router
+    """The steps before the router: no agent (a stored reply), a tap on "Is this about", an
+    answer to a pending question (_pending), one agent, an injection. Returns Chosen; spec None means the router
     decides. A tap on another agent than the active one is a switch (chat.agent_switched);
     every tap is remembered (chat.route_chosen). Commits nothing."""
     agents = agents_for(session, deps.person)
@@ -359,7 +379,7 @@ def _choose(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Cha
         asked_pick, asked_p = tap[2].get("picked"), tap[2].get("confidence")
         route_memory.remember(session, deps, thread, tap[1], tap[0], asked_pick, asked_p, options)
         return ids[tap[0]], agents, active, original or text, True
-    pending = _pending(session, thread)
+    pending = _pending(session, thread, text, deps.lang)
     if pending is not None and pending.agent_id in ids:
         return ids[pending.agent_id], agents, active, text, False
     if len(agents) == 1:

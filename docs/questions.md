@@ -921,6 +921,7 @@ Format for each entry:
 - Question: After a clerk's check-in attempt (the shift supervisor active), "3 ube 2 classic cash" stayed with the shift supervisor and got its capabilities reply instead of reaching the sales supervisor. Should a confident route to another agent switch the active agent mid-conversation, or does the "one undo rule, first switch away within the hour" ruling hold?
 - Assumed answer: hold the ruling for now; the clerk's next message after a capabilities reply is routed again, and a staff test will show how often this happens. Revisit with the first real staff transcripts (Q116).
 - Blocking: no.
+- Note (23 Oct 2026): not the pending-question capture fixed for Rosa's "sales today?" (chat.service._pending). The check-in replies carry no buttons (shift_supervisor/replies.py tool_reply), so no question held the turn: the message reached the router, which kept the active shift supervisor (the hand-over rule; without Jev, agent_router.fallback keeps the active agent). The question above stands.
 
 ## Q129: Who approves a taught phrase in production, and which model proposes them
 - Where: docs/superpowers/specs/2026-10-22-teach-mia-design.md section 5 (phase 2)

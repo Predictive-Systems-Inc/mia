@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import json
 from typing import Any
 
@@ -12,6 +13,7 @@ from mia.chat.service import run_turn
 from mia.core import jev, orgconfig
 from mia.core.jev import JevError
 from mia.core.models import Actor, Event, Message, Person
+from mia.i18n import t
 from mia.settings import get_settings
 from tests.jev_fake import answers_for, choice, fake_jev
 
@@ -625,3 +627,108 @@ def test_a_mobile_number_leaves_for_the_router_with_no_digit(
     sent = json.dumps(two_agents[0])
     assert "<number>" in two_agents[0]["state"]["message"]
     assert not any(d in sent for d in ("0917", "917", "123", "4567"))
+
+
+# A pending question keeps the turn only for an answer to it (Rosa, 22 Oct)
+STOCK_SALES = ["inventory_manager", "sales_supervisor"]
+
+
+@pytest.fixture
+def stock_and_sales(
+    monkeypatch: pytest.MonkeyPatch, ferinos: tuple[Any, dict[str, Person]]
+) -> list[dict[str, Any]]:
+    """Ferino's with the inventory manager and the sales supervisor, Jev on; the router's
+    requests are recorded and answered sales_supervisor, a decider's sales_today."""
+    only = orgconfig.OrgSettings(agents=STOCK_SALES)
+    monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: only))
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")
+    get_settings.cache_clear()
+    routed: list[dict[str, Any]] = []
+
+    def answer(body: dict[str, Any]) -> dict[str, Any]:
+        if "agent" in body["questions"]:
+            routed.append(body)
+            return {"agent": choice("sales_supervisor")}
+        return answers_for(body, "sales_today")
+
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(answer))
+    return routed
+
+
+def _asked(person: Person, session: Session, agent: str, options: list[str]) -> str:
+    """A question with buttons from `agent` as the thread's last Mia message; its thread id."""
+    from mia.chat.blocks import TextBlock
+    from mia.chat.channels import notify
+
+    blocks = [TextBlock(text="?"), QuickRepliesBlock(options=options)]
+    note = notify(session, person, blocks, Actor.system(person.branch_id), agent)
+    session.commit()
+    return note.thread_id
+
+
+def test_an_old_did_you_mean_does_not_capture_a_new_question(
+    session: Session,
+    ferinos: tuple[Any, dict[str, Person]],
+    stock_and_sales: list[dict[str, Any]],
+    manila_at: Any,
+) -> None:
+    """Rosa's thread: the inventory manager's "Did you mean" eight hours old, then "sales
+    today?" got "say it in other words". It reaches the router and the sales supervisor."""
+    rosa = ferinos[1]["Rosa"]
+    lang = rosa.language or "en"
+    manila_at(7, 0)
+    options = [t("intent.inventory_manager.report_stock", lang), t("clarify.something_else", lang)]
+    thread = _asked(rosa, session, "inventory_manager", options)
+    manila_at(15, 30)
+    reply = _turn(session, rosa, "sales today?", thread)
+    assert len(stock_and_sales) == 1 and reply.agent_id == "sales_supervisor"
+    assert "Mall kiosk" in reply.text()
+
+
+def test_a_fresh_did_you_mean_sends_typed_text_to_the_router(
+    session: Session,
+    ferinos: tuple[Any, dict[str, Person]],
+    stock_and_sales: list[dict[str, Any]],
+) -> None:
+    """Typed text after "Did you mean" is not an answer to it: asking again would loop."""
+    rosa = ferinos[1]["Rosa"]
+    lang = rosa.language or "en"
+    options = [t("intent.inventory_manager.report_stock", lang), t("clarify.something_else", lang)]
+    thread = _asked(rosa, session, "inventory_manager", options)
+    reply = _turn(session, rosa, "sales today?", thread)
+    assert len(stock_and_sales) == 1 and reply.agent_id == "sales_supervisor"
+
+
+def test_a_fresh_slot_question_takes_typed_text_without_routing(
+    session: Session,
+    ferinos: tuple[Any, dict[str, Person]],
+    stock_and_sales: list[dict[str, Any]],
+    manila_at: Any,
+) -> None:
+    """ "Which item?" answered by typing within PENDING_WINDOW stays with the asking agent;
+    the same text after the window is routed."""
+    rosa = ferinos[1]["Rosa"]
+    manila_at(10, 0)
+    thread = _asked(rosa, session, "inventory_manager", ["Ube", "Special", "Classic"])
+    manila_at(10, 5)
+    reply = _turn(session, rosa, "the purple one", thread)
+    assert stock_and_sales == [] and reply.agent_id == "inventory_manager"
+    thread = _asked(rosa, session, "inventory_manager", ["Ube", "Special", "Classic"])
+    manila_at(11, 0)
+    _turn(session, rosa, "the purple one", thread)
+    assert len(stock_and_sales) == 1
+
+
+def test_a_tap_on_an_old_question_keeps_its_agent(
+    session: Session,
+    ferinos: tuple[Any, dict[str, Person]],
+    stock_and_sales: list[dict[str, Any]],
+    manila_at: Any,
+) -> None:
+    rosa = ferinos[1]["Rosa"]
+    manila_at(7, 0)
+    thread = _asked(rosa, session, "inventory_manager", ["Ube", "Special", "Classic"])
+    manila_at(15, 30)
+    reply = _turn(session, rosa, "Special", thread)
+    assert stock_and_sales == [] and reply.agent_id == "inventory_manager"
