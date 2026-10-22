@@ -75,6 +75,34 @@ uv run mia channels sim "ready na ba order ko?" --from 639171234567
 The order waits for the kiosk: Marites, Ana and Liza each get "Bagong order" to confirm or reject.
 A pickup outside the kiosk's hours is refused with a request for another time.
 
+## Phones on screen
+
+`http://localhost:8000/sim` shows the sim channel as a row of phones, one per person, so a whole
+exchange (a clerk asks, head staff approves, a customer orders) runs on one screen. It answers
+only in dev mode from loopback, like the sim channel itself (ADR 021); anywhere else it is 404.
+
+- The top bar has one chip per person, grouped by role (owner, admin, supervisor, clerk, staff).
+  Clicking a chip switches that phone on or off; the first time, the person gets a sim number
+  (`63900` followed by their position among all people by id, seven digits: `639000000001`,
+  `639000000002`, ...; the 0900 prefix is not a real mobile range), linked on the sim channel
+  as a dev link (event `channel.linked`). Which phones are on, and each phone's thread, survive
+  a reload (browser storage).
+- `+ customer` adds an unlinked phone with a name and number you type: the customer service
+  agent answers it.
+- Mia's buttons and list rows are chips: tapping one sends it as a button tap. Each phone fetches
+  what waits for it every 2 seconds (alerts, cards, tick messages). `Tick now` runs one round of
+  due work, as `uv run mia tick`.
+- `App` on a staff phone opens the person's approval cards (`/notifications`) with Approve and
+  Reject, as on the dev chat page.
+
+Two phones: switch on Ana and Marites. On Ana's phone send `sp 5 cl 8 ube 3` (or `15 classic pa`
+for a count); her phone gets the reply. On a receipts kiosk Ana can ask `void resibo 3`: the
+request reaches Marites (a notice on her phone, the card in her App drawer); she approves it
+there and Ana's phone shows the outcome on its next poll.
+For a customer, add `+ customer` (say Lorna, `639171234501`), send `pa-order po 10 classic,
+pickup 6pm`; Marites, Ana and Liza get "Bagong order", one of them approves, and after `Tick now`
+the customer's phone shows the confirmation.
+
 ## A clerk's day
 
 One normal day at the Mall kiosk, from the first check-in to the closing cash count, in the order

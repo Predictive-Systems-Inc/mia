@@ -19,6 +19,7 @@ from mia.agents.registry import AGENTS, load_roles
 from mia.api.auth import router as auth_router
 from mia.api.deps import DbSession, PersonAuth, check_mode
 from mia.api.schedule import router as schedule_router
+from mia.api.sim import router as sim_router
 from mia.api.supervisor import router as supervisor_router
 from mia.api.timesheets import router as timesheets_router
 from mia.channels import inbound as channel_service
@@ -110,6 +111,7 @@ app.include_router(schedule_router)
 app.include_router(supervisor_router)
 app.include_router(timesheets_router)
 app.include_router(channels_router)
+app.include_router(sim_router)  # dev and loopback only
 
 
 @app.get("/health")

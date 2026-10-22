@@ -17,6 +17,7 @@ uv run mia migrate          # creates data/mia.db
 uv run mia seed             # demo cleaning company in Helsinki
                             # (or MIA_ORG=ferinos uv run mia seed: the retail bibingka demo)
 uv run mia serve            # chat page at http://localhost:8000/
+                            # phones on screen at http://localhost:8000/sim (dev mode)
 uv run pytest               # unit tests, no network, 80% coverage floor on mia/core
 ```
 

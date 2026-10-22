@@ -102,10 +102,11 @@ mia/
       api/                  main.py, deps.py (session and auth dependencies), auth.py (login routes),
                             schedule.py (week view, assignment, check-in, inbox), supervisor.py
                             (the summary, resolving site problems), timesheets.py (list, correct,
-                            approve)
+                            approve), sim.py (the phones page routes, dev and loopback only)
       i18n/                 strings.py (Finnish and English), <code>.py (one module per further
                             language: fil, ceb, ilo, hil, war, bcl, pam, pag)
       static/index.html     dev chat page
+      static/sim.html       phones on screen: one simulated phone per person (/sim, dev only)
     migrations/             alembic.ini, env.py, versions/
     config/                 policies/ (Casbin model.conf, policy.csv), org/demo/ and org/ferinos/ (instructions, settings.yaml),
                             ollama/ (Modelfiles for local models, ADR 004)

@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mia phones (dev)</title>
+<style>
+  :root { --bg:#f6f7f9; --panel:#fff; --ink:#1b1f24; --muted:#667085; --line:#e4e7ec;
+          --accent:#2f6fed; --mine:#e8f0fe; --ok:#1f8a4c; --bad:#c0362c; --frame:#1b1f24; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; padding:10px 16px;
+           background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:2; }
+  header h1 { font-size:16px; margin:0; }
+  header .note { color:var(--muted); font-size:12px; margin-left:auto; }
+  button, input { font:inherit; }
+  .group { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
+  .group b { font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; margin-right:2px; }
+  .toggle { border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:16px;
+            padding:2px 10px; cursor:pointer; font-size:13px; }
+  .toggle.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .tick { border:0; border-radius:10px; background:var(--accent); color:#fff; padding:4px 12px; cursor:pointer; }
+  main { display:flex; gap:20px; padding:20px 16px; overflow-x:auto; align-items:flex-start; }
+  .empty { color:var(--muted); padding:40px 16px; text-align:center; }
+  .phone { flex:0 0 360px; height:720px; border:10px solid var(--frame); border-radius:36px; background:var(--bg);
+           display:flex; flex-direction:column; overflow:hidden; position:relative; }
+  .bar { background:var(--panel); border-bottom:1px solid var(--line); padding:8px 14px; }
+  .bar .name { font-weight:600; display:flex; justify-content:space-between; gap:8px; }
+  .bar .meta { font-size:12px; color:var(--muted); }
+  .bar button { border:1px solid var(--accent); color:var(--accent); background:#fff; border-radius:12px;
+                padding:0 10px; font-size:12px; cursor:pointer; }
+  .thread { flex:1; overflow-y:auto; padding:10px; }
+  .msg { margin:8px 0; display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
+  .msg.me { align-items:flex-end; }
+  .bubble { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:6px 10px;
+            max-width:85%; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .me .bubble { background:var(--mine); }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; max-width:85%; }
+  .chips button, .actions button { border:1px solid var(--accent); color:var(--accent); background:#fff;
+            border-radius:16px; padding:2px 10px; cursor:pointer; font-size:13px; }
+  .card { background:var(--panel); border:1px solid var(--accent); border-radius:12px; padding:8px 10px; max-width:85%; }
+  .card h3 { margin:0 0 4px; font-size:13px; }
+  .card dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:13px; }
+  .card dt { color:var(--muted); }
+  .card dd { margin:0; }
+  .status { font-size:12px; color:var(--muted); margin:4px 0; }
+  .actions { display:flex; gap:8px; margin-top:6px; }
+  .actions .approve { background:var(--ok); border-color:var(--ok); color:#fff; }
+  .actions .reject { border-color:var(--bad); color:var(--bad); }
+  .sys { color:var(--muted); font-size:12px; text-align:center; margin:6px 0; }
+  form { display:flex; gap:6px; padding:8px; background:var(--panel); border-top:1px solid var(--line); }
+  form input { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--line); border-radius:10px; }
+  form button { padding:8px 12px; border:0; border-radius:10px; background:var(--accent); color:#fff; }
+  .drawer { position:absolute; inset:0; background:var(--bg); display:flex; flex-direction:column; z-index:1; }
+  .drawer[hidden] { display:none; }
+  .drawer .list { flex:1; overflow-y:auto; padding:10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mia phones</h1>
+  <div id="chips" class="group"></div>
+  <button class="tick" id="tick">Tick now</button>
+  <span class="note" id="note">Loading...</span>
+</header>
+<main id="phones"></main>
+<script>
+const ORDER = ["owner", "admin", "supervisor", "clerk", "staff"];
+const CAP = 200;  // messages kept per address in localStorage
+const store = {
+  get(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } },
+  set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private window */ } },
+};
+let people = [];                                   // /sim/phones plus the customer phones
+let on = new Set(store.get("mia.sim.on", []));     // phone ids switched on
+const customers = store.get("mia.sim.customers", []);
+const threads = {};                                // address -> [{me, body}]
+const views = {};                                  // phone id -> {box, thread, busy}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function thread(address) { return threads[address] ??= store.get(`mia.sim.thread.${address}`, []); }
+function keep(address, entry) {
+  const t = thread(address);
+  t.push(entry);
+  if (t.length > CAP) t.splice(0, t.length - CAP);
+  store.set(`mia.sim.thread.${address}`, t);
+}
+function groupOf(p) { return p.customer ? "customer" : ORDER.find(r => p.roles.includes(r)) || p.roles[0] || "staff"; }
+
+function drawChips() {
+  const box = document.getElementById("chips");
+  box.replaceChildren();
+  for (const g of [...ORDER, ...new Set(people.map(groupOf).filter(g => !ORDER.includes(g) && g !== "customer")), "customer"]) {
+    const members = people.filter(p => groupOf(p) === g);
+    if (!members.length && g !== "customer") continue;
+    const span = el("span", "group");
+    span.append(el("b", null, g));
+    for (const p of members) {
+      const b = el("button", "toggle" + (on.has(p.person_id) ? " on" : ""), p.name);
+      b.title = p.address ? `${p.roles.join(", ")} ${p.address}` : `${p.roles.join(", ")} (no phone yet)`;
+      b.onclick = () => toggle(p);
+      span.append(b);
+    }
+    if (g === "customer") {
+      const add = el("button", "toggle", "+ customer");
+      add.onclick = addCustomer;
+      span.append(add);
+    }
+    box.append(span);
+  }
+}
+
+async function toggle(p) {
+  if (on.has(p.person_id)) { on.delete(p.person_id); }
+  else {
+    if (!p.address) {
+      const res = await fetch("/sim/phones", {
+        method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({person_id: p.person_id}),
+      });
+      if (!res.ok) { alert(`No phone for ${p.name}: ${res.status} ${await res.text()}`); return; }
+      p.address = (await res.json()).address;
+    }
+    on.add(p.person_id);
+  }
+  store.set("mia.sim.on", [...on]);
+  drawChips();
+  drawPhones();
+}
+
+function addCustomer() {
+  const name = prompt("Customer name", "Customer");
+  if (!name) return;
+  const n = String(customers.length + 1).padStart(2, "0");
+  const address = (prompt("Number (digits, as WhatsApp sends it)", `6391712345${n}`) || "").replace(/\D/g, "");
+  if (!address) return;
+  const c = {person_id: `customer:${address}`, name, roles: ["customer"], branch: "", address, customer: true};
+  customers.push(c);
+  store.set("mia.sim.customers", customers);
+  people.push(c);
+  toggle(c);
+}
+
+function drawPhones() {
+  const main = document.getElementById("phones");
+  const shown = people.filter(p => on.has(p.person_id) && p.address);
+  for (const id of Object.keys(views)) {
+    if (!shown.some(p => p.person_id === id)) { views[id].box.remove(); delete views[id]; }
+  }
+  for (const p of shown) if (!views[p.person_id]) main.append(makePhone(p));
+  for (const p of shown) main.append(views[p.person_id].box);  // keep the chip order
+  if (!shown.length) main.replaceChildren(el("div", "empty", "Switch a phone on with a chip above."));
+  else main.querySelector(".empty")?.remove();
+}
+
+function makePhone(p) {
+  const box = el("div", "phone");
+  const bar = el("div", "bar");
+  const name = el("div", "name");
+  name.append(el("span", null, p.name));
+  const v = {box, busy: false, p};
+  if (!p.customer) {
+    const app = el("button", null, "App");
+    app.onclick = () => openDrawer(v);
+    name.append(app);
+  }
+  bar.append(name, el("div", "meta", `${p.roles.join(", ")}${p.branch ? " . " + p.branch : ""} . ${p.address}`));
+  const list = el("div", "thread");
+  v.thread = list;
+  const form = el("form");
+  const input = el("input");
+  input.placeholder = "Message Mia";
+  input.autocomplete = "off";
+  form.append(input, el("button", null, "Send"));
+  form.onsubmit = e => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (text) { input.value = ""; send(v, text, null); }
+  };
+  v.drawer = el("div", "drawer");
+  v.drawer.hidden = true;
+  box.append(bar, list, form, v.drawer);
+  views[p.person_id] = v;
+  for (const entry of thread(p.address)) list.append(render(v, entry));
+  list.scrollTop = list.scrollHeight;
+  return box;
+}
+
+function render(v, entry) {
+  const b = entry.body;
+  const box = el("div", "msg" + (entry.me ? " me" : ""));
+  if (entry.me) { box.append(el("div", "bubble", b.text)); return box; }
+  if (b.kind === "template") {
+    const card = el("div", "card");
+    card.append(el("h3", null, `Template ${b.name} (${b.lang})`));
+    if (b.params?.length) card.append(el("div", null, b.params.join("\n")));
+    box.append(card);
+  } else if (b.text) {
+    box.append(el("div", "bubble", b.text));
+  }
+  const options = b.kind === "list" ? b.rows : b.buttons;
+  if (options?.length) {
+    const chips = el("div", "chips");
+    if (b.kind === "list" && b.button) chips.append(el("span", "status", b.button));
+    for (const opt of options) {
+      const c = el("button", null, opt);
+      c.onclick = () => send(v, opt, opt);
+      chips.append(c);
+    }
+    box.append(chips);
+  }
+  return box;
+}
+
+function show(v, entry) {
+  keep(v.p.address, entry);
+  v.thread.append(render(v, entry));
+  v.thread.scrollTop = v.thread.scrollHeight;
+}
+
+async function send(v, text, button) {
+  show(v, {me: true, body: {text}});
+  const wait = el("div", "sys", "Mia is typing...");
+  v.thread.append(wait);
+  v.busy = true;
+  try {
+    const res = await fetch("/sim/messages", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({address: v.p.address, text: button ? "" : text, button, name: v.p.customer ? v.p.name : null}),
+    });
+    if (!res.ok) { wait.textContent = `Error ${res.status}: ${(await res.text()).slice(0, 160)}`; return; }
+    wait.remove();
+    for (const body of await res.json()) show(v, {me: false, body});
+  } finally { v.busy = false; }
+}
+
+async function poll(v) {
+  if (v.busy) return;
+  v.busy = true;
+  try {
+    const res = await fetch(`/sim/messages?address=${encodeURIComponent(v.p.address)}`);
+    if (res.ok) for (const body of await res.json()) show(v, {me: false, body});
+  } catch { /* the node restarted; the next poll tries again */ }
+  finally { v.busy = false; }
+}
+setInterval(() => { for (const v of Object.values(views)) poll(v); }, 2000);
+
+// The App drawer: the person's approval cards from /notifications, decided as in index.html.
+async function openDrawer(v) {
+  const d = v.drawer;
+  d.replaceChildren();
+  d.hidden = false;
+  const bar = el("div", "bar");
+  const name = el("div", "name");
+  const close = el("button", null, "Close");
+  close.onclick = () => { d.hidden = true; };
+  name.append(el("span", null, `${v.p.name}: approvals`), close);
+  bar.append(name);
+  const list = el("div", "list");
+  d.append(bar, list);
+  const res = await fetch("/notifications", {headers: {"X-Mia-Actor": v.p.person_id}});
+  if (!res.ok) { list.append(el("div", "sys", `No app for this person (${res.status}).`)); return; }
+  const cards = (await res.json()).flatMap(n => n.blocks).filter(b => b.type === "approval_card").reverse();
+  if (!cards.length) list.append(el("div", "sys", "No approvals waiting."));
+  for (const block of cards) list.append(renderCard(v, block, list));
+}
+
+function renderCard(v, block, list) {
+  const card = el("div", "card");
+  card.style.marginBottom = "8px";
+  card.append(el("h3", null, block.title));
+  if (block.subtitle) card.append(el("div", "status", block.subtitle));
+  if (block.summary) card.append(el("div", null, block.summary));
+  const dl = el("dl");
+  for (const f of block.fields || []) dl.append(el("dt", null, f.label), el("dd", null, f.value));
+  card.append(dl);
+  const status = el("div", "status", `Status: ${block.status}`);
+  const actions = el("div", "actions");
+  for (const [label, outcome, cls] of [["Approve", "approved", "approve"], ["Reject", "rejected", "reject"]]) {
+    const b = el("button", cls, label);
+    b.onclick = () => decide(v, block.approval_id, outcome, status);
+    actions.append(b);
+  }
+  card.append(status, actions);
+  return card;
+}
+
+async function decide(v, id, outcome, statusEl) {
+  const headers = {"Content-Type": "application/json", "X-Mia-Actor": v.p.person_id};
+  let res = await fetch(`/approvals/${id}/decide`, {method: "POST", headers, body: JSON.stringify({outcome})});
+  let body = await res.json();
+  if (res.status === 403 && body.detail === "step_up_required") {
+    const pin = window.prompt("Enter your PIN to decide this approval");
+    if (!pin) { statusEl.textContent = "Cancelled."; return; }
+    const up = await fetch("/auth/stepup", {method: "POST", headers, body: JSON.stringify({pin})});
+    if (!up.ok) { statusEl.textContent = "Wrong PIN."; return; }
+    res = await fetch(`/approvals/${id}/decide`, {method: "POST", headers, body: JSON.stringify({outcome})});
+    body = await res.json();
+  }
+  statusEl.textContent = res.ok ? `Status: ${body.status} (by ${v.p.name})` : `Not allowed: ${body.detail}`;
+}
+
+document.getElementById("tick").onclick = async () => {
+  const note = document.getElementById("note");
+  const res = await fetch("/sim/tick", {method: "POST"});
+  const out = res.ok ? await res.json() : null;
+  note.textContent = out ? `Tick: ${out.advanced} advanced, ${out.queued} queued for phones, ${out.sent} sent.` : `Tick failed (${res.status}).`;
+};
+
+async function init() {
+  const note = document.getElementById("note");
+  const health = await (await fetch("/health")).json();
+  note.textContent = `Auth mode: ${health.auth_mode}. Sim channel, dev and loopback only.`;
+  const res = await fetch("/sim/phones");
+  if (!res.ok) { note.textContent = `No phones (${res.status}): dev mode on loopback only.`; return; }
+  people = [...await res.json(), ...customers];
+  const known = new Set(people.map(p => p.person_id));
+  on = new Set([...on].filter(id => known.has(id)));
+  drawChips();
+  drawPhones();
+}
+init();
+</script>
+</body>
+</html>

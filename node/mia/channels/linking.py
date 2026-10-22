@@ -116,6 +116,36 @@ def link_phone(session: Session, actor: Actor, person: Person, address: str) -> 
         store.update(session, code, revoked, actor, action="auth.code_revoked")
 
 
+def link_sim(session: Session, actor: Actor, person: Person, address: str) -> ChannelIdentity:
+    """Dev mode only (the sim page, ADR 021): link the address to the person on the sim channel
+    without a code (event channel.linked, the address redacted). The person's active sim
+    identity is returned as it is when they already hold one, so a second call writes nothing.
+    Raises PermissionError outside dev mode and LookupError("phone_taken") when another person
+    holds the address on the sim channel, before anything is written."""
+    if get_settings().MIA_AUTH_MODE != "dev":
+        raise PermissionError("the sim channel links only in dev mode")
+    held = session.exec(
+        select(ChannelIdentity)
+        .where(ChannelIdentity.person_id == person.id)
+        .where(ChannelIdentity.channel == "sim")
+        .where(ChannelIdentity.status == "active")
+    ).first()
+    if held is not None:
+        return held
+    if identity_for(session, "sim", address) is not None:
+        raise LookupError("phone_taken")
+    now = utcnow()
+    identity = ChannelIdentity(
+        branch_id=person.branch_id,
+        person_id=person.id,
+        channel="sim",
+        address=address,
+        verified_at=now,
+        consent_at=now,
+    )
+    return store.insert(session, identity, actor, action="channel.linked", redact=("address",))
+
+
 def _channel_actor(channel: str) -> Actor:
     # Attempts from unknown addresses belong to no branch yet.
     return Actor(principal=Principal(type="system", id=f"channel:{channel}"), branch_id="")
