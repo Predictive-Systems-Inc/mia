@@ -493,6 +493,7 @@ STRINGS: dict[str, str | list[str]] = {
     "retail.check_in.too_late": "Sirado na ang check-in niana nga shift. Sultihi ang imong head staff kung didto ka.",
     "retail.check_in.already": "Naka-check in na ka.",
     "retail.check_in.drawer": "Abli na ang imong drawer nga adunay float nga {float}.",
+    "retail.check_in.drawer_stale": "Abli pa ug wala pa maihap ang imong drawer gikan sa {date}, busa walay bag-ong drawer nga giabli. Kinahanglan kini ihapon una sa head staff.",
     "retail.check_out.done": "Naka-check out ka na sa {location} sa {time}. Salamat sa imong shift!",
     "retail.check_out.not_checked_in": "Wala ka naka-check in sa bisan unsang shift karon.",
     "retail.check_out.already": "Nahuman na kana nga shift.",

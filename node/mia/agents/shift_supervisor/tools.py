@@ -578,6 +578,7 @@ class AttendanceOutput(BaseModel):
     time: str = ""
     opening_float: int | None = None  # check-in on a receipts kiosk: the drawer's float
     currency: str = ""
+    drawer_stale: dt.date | None = None  # her drawer of this date is still open, uncounted
 
 
 class VisitDetailsOutput(BaseModel):
@@ -625,21 +626,15 @@ def _local_time(when: dt.datetime, tz: str) -> str:
 def check_in(deps: AgentDeps, args: CheckInInput, tool_call_id: str) -> AttendanceOutput:
     """Check the acting person in to their planned visit whose window holds now. A retail
     clerk (never head staff) on a receipts kiosk also gets her open sales session (the drawer,
-    sales.open_for_shift), its write checked before the visit's so a denial writes nothing."""
+    sales.open_for_shift) at the visit's kiosk (a D39 cover's too), its write checked before
+    the visit's so a denial writes nothing. A drawer of hers still open from an earlier date is
+    never reused: the check-in stands and drawer_stale names that date."""
     _check(
         deps,
         Resource(kind="data", name="core.visit", owner_id=deps.person.id),
         "write",
         tool_call_id,
     )
-    drawer_due = (
-        is_retail()
-        and scheduling.is_staff(deps.person)
-        and sales.source_of(deps.branch, deps.today) == "receipts"
-    )
-    if drawer_due:
-        resource = Resource(kind="data", name=SalesSession.__tablename__, owner_id=deps.person.id)
-        _check(deps, resource, "write", tool_call_id)
     now = utcnow()
     rows = _own_visits_today(deps, args.location_name)
     if any(v.status == "in_progress" for v in rows):
@@ -659,6 +654,15 @@ def check_in(deps: AgentDeps, args: CheckInInput, tool_call_id: str) -> Attendan
         reason = "too_early" if now < nearest.planned_start else "too_late"
         return AttendanceOutput(status="invalid", reason=reason)
     visit = min(open_now, key=lambda v: abs((v.planned_start - now).total_seconds()))
+    kiosk = deps.session.get(Branch, visit.branch_id) or deps.branch
+    drawer_due = (
+        is_retail()
+        and scheduling.is_staff(deps.person)
+        and sales.source_of(kiosk, deps.today) == "receipts"
+    )
+    if drawer_due:
+        resource = Resource(kind="data", name=SalesSession.__tablename__, owner_id=deps.person.id)
+        _check(deps, resource, "write", tool_call_id)
     try:
         scheduling.check_in(deps.session, deps.actor, visit, deps.person, now)
     except scheduling.ScheduleError as exc:
@@ -669,11 +673,13 @@ def check_in(deps: AgentDeps, args: CheckInInput, tool_call_id: str) -> Attendan
     )
     if drawer_due:
         try:
-            s = sales.open_for_shift(
-                deps.session, deps.actor, deps.branch, deps.person.id, visit.id, now
-            )
-        except sales.SalesError as exc:  # ponytail: only "item" (a kiosk with no menu) is
-            raise LookupError(str(exc)) from exc  # reachable; the visit stays checked in
+            s = sales.open_for_shift(deps.session, deps.actor, kiosk, deps.person.id, visit.id, now)
+        except sales.SalesError as exc:
+            if str(exc) != "session_stale":  # ponytail: only "item" (a kiosk with no menu)
+                raise LookupError(str(exc)) from exc  # is left; the visit stays checked in
+            stale = sales.open_sessions(deps.session, kiosk.id)
+            out.drawer_stale = next(x.business_date for x in stale if x.person_id == deps.person.id)
+            return out
         out.opening_float, out.currency = s.opening_float, s.currency
     return out
 

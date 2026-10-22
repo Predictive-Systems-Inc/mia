@@ -256,8 +256,8 @@ def _todays_count(session: Session, deps: AgentDeps, args: dict[str, Any]) -> Ca
 
 def _correct(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) -> ChatReply:
     """A correction of a write: a cash count replaces the day's count it names (a new row; the
-    latest count of a date wins) and says so; anything else, or a count with none to replace,
-    is asked again, never written as a second entry."""
+    latest count of a date wins) and says so; anything else, a count with none to replace, or
+    a count on a receipts date (its drawer is closed), is asked again, never written."""
     _log(session, deps, thread, decision)
     previous = (
         _todays_count(session, deps, decision.args) if decision.action == "cash_count" else None
@@ -265,7 +265,8 @@ def _correct(session: Session, deps: AgentDeps, thread: Thread, decision: Decisi
     if previous is None:
         return reply_text(session, deps, thread, t("bk.correction.ask", deps.lang))
     if sales.source_of(deps.branch, previous.business_date) == "receipts":
-        return _run(session, deps, thread, decision.action, decision.args)  # its own drawer
+        # a closed drawer never reopens; a new count would close the next clerk's
+        return reply_text(session, deps, thread, t("bk.correction.ask", deps.lang))
     old = replies.money(previous.counted, previous.currency, deps.lang)
     lead = t("bk.count.replaced", deps.lang, old=old)
     return _run(session, deps, thread, decision.action, decision.args, lead)

@@ -48,6 +48,10 @@ def tool_reply(tool: str, out: dict[str, Any], lang: str) -> list[Block]:
             return _late(out, lang)
         if tool == "find_replacements" and out.get("candidates"):
             return _cover_card(out, lang)
+        if tool == "check_in" and out.get("drawer_stale"):
+            done = compose(ToolReturnPart(tool_name=tool, content=out, tool_call_id="jev"), lang)
+            stale = _date(out["drawer_stale"], lang)
+            return [*done, *_text("retail.check_in.drawer_stale", lang, date=stale)]
         if tool == "check_in" and out.get("opening_float") is not None:
             drawer = format_money(out["opening_float"], out["currency"], lang)
             done = compose(ToolReturnPart(tool_name=tool, content=out, tool_call_id="jev"), lang)

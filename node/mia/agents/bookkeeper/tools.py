@@ -290,7 +290,8 @@ def record_cash_count(deps: AgentDeps, args: CashCountInput, tool_call_id: str) 
     LookupError("business_date") for another stated day.
 
     On a receipts day (sales.source_of) the count closes the branch's earliest open drawer
-    (sales.close_session) and is held against that session's expected cash less drawer_out;
+    (sales.close_session) and is held against that session's expected cash less drawer_out
+    (the first count of the date only);
     each count is its own drawer, so no earlier alert is withdrawn. LookupError("no_session")
     before any write when no drawer is open."""
     _check(deps, CASH, "write", tool_call_id)
@@ -383,7 +384,15 @@ def _close_drawer(
     except sales.SalesError as exc:
         raise LookupError(str(exc)) from exc
     assert closed.expected is not None
-    expected = closed.expected - drawer_out(deps.session, deps.branch.id).get(day, 0)
+    # ponytail (Q126): which drawer a cash spend left is unknown, so the day's drawer_out is
+    # taken once, from the first drawer counted; a session on the spend would place it
+    counted_before = deps.session.exec(
+        select(CashCount.id).where(
+            CashCount.branch_id == deps.branch.id, CashCount.business_date == day
+        )
+    ).first()
+    taken = 0 if counted_before else drawer_out(deps.session, deps.branch.id).get(day, 0)
+    expected = closed.expected - taken
     m = calc.match(args.counted, expected, 0, _settings().threshold)
     currency, clerk = closed.currency, _first_name(deps.session, closed.person_id)
     row = store.insert(

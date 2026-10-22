@@ -221,10 +221,11 @@ def open_for_shift(
     visit_id: str | None,
     at: dt.datetime,
 ) -> SalesSession:
-    """The person's open session at the branch, else a new one (open_session) with the branch's
-    float (SalesSettings.opening_float, 0 when absent) in the currency of the branch's first
-    active item in menu order (SalesError("item") with none). Callers check source_of first:
-    a counts day never gets a session."""
+    """The person's open session at the branch of at's business date, else a new one
+    (open_session) with the branch's float (SalesSettings.opening_float, 0 when absent) in the
+    currency of the branch's first active item in menu order (SalesError("item") with none).
+    An open session of an earlier date is never reused: SalesError("session_stale"), head staff
+    count it first. Callers check source_of first: a counts day never gets a session."""
     found = session.exec(
         select(SalesSession).where(
             SalesSession.branch_id == branch.id,
@@ -233,6 +234,8 @@ def open_for_shift(
         )
     ).first()
     if found is not None:
+        if found.business_date != _business_date(session, branch.id, at):
+            raise SalesError("session_stale")
         return found
     menu = session.exec(
         select(RetailItem)
