@@ -65,6 +65,15 @@
   .drawer { position:absolute; inset:0; background:var(--bg); display:flex; flex-direction:column; z-index:1; }
   .drawer[hidden] { display:none; }
   .drawer .list { flex:1; overflow-y:auto; padding:10px; }
+  .teach { border:1px dashed var(--muted) !important; color:var(--muted) !important; font-size:12px !important; }
+  .panel { position:fixed; top:0; right:0; bottom:0; width:min(520px, 100%); background:var(--panel);
+           border-left:1px solid var(--line); box-shadow:-4px 0 16px rgba(0,0,0,.08); z-index:2;
+           display:flex; flex-direction:column; }
+  .panel[hidden] { display:none; }
+  .panel .list { flex:1; overflow-y:auto; padding:10px 16px; }
+  .panel table { width:100%; border-collapse:collapse; font-size:13px; }
+  .panel td, .panel th { text-align:left; border-bottom:1px solid var(--line); padding:4px; vertical-align:top; }
+  .picker h3 { font-size:13px; margin:10px 0 4px; }
 </style>
 </head>
 <body>
@@ -80,9 +89,12 @@
     <small style="color:var(--muted)">Set runs nothing (Tick now does). Back in time = events out of order.</small>
   </span>
   <button class="tick" id="tick">Tick now</button>
+  <button class="toggle" id="phrases">Phrases</button>
+  <button class="toggle" id="requests">Requests</button>
   <span class="note" id="note">Loading...</span>
 </header>
 <main id="phones"></main>
+<aside class="panel" id="panel" hidden></aside>
 <script>
 const ORDER = ["owner", "admin", "supervisor", "clerk", "staff"];
 const CAP = 200;  // messages kept per address in localStorage
@@ -222,7 +234,9 @@ function makePhone(p) {
   if (!p.customer) {
     const app = el("button", null, "App");
     app.onclick = () => openDrawer(v);
-    name.append(app);
+    const ask = el("button", null, "Request a feature");
+    ask.onclick = () => requestFeature(v, null);
+    name.append(ask, app);
   }
   bar.append(name, el("div", "meta", `${p.roles.join(", ")}${p.branch ? " . " + p.branch : ""} . ${p.address}`));
   if (!p.customer) { v.langs = el("div", "langs"); bar.append(v.langs); drawLangs(v); }
@@ -280,16 +294,26 @@ function render(v, entry) {
     }
     box.append(chips);
   }
+  if (!v.p.customer && entry.asked) {
+    const chips = el("div", "chips");
+    const c = el("button", "teach", "Teach");
+    c.title = `Teach what "${entry.asked}" means`;
+    c.onclick = () => openTeach(v, entry.asked);
+    chips.append(c);
+    box.append(chips);
+  }
   return box;
 }
 
 function show(v, entry) {
+  if (!entry.me && v.asked) entry.asked = v.asked;  // the typed message this reply answers
   keep(v.p.address, entry);
   v.thread.append(render(v, entry));
   v.thread.scrollTop = v.thread.scrollHeight;
 }
 
 async function send(v, text, button) {
+  if (!button) v.asked = text;
   show(v, {me: true, body: {text}});
   const wait = el("div", "sys", "Mia is typing...");
   v.thread.append(wait);
@@ -401,6 +425,126 @@ async function decide(v, id, outcome, statusEl) {
   }
   statusEl.textContent = res.ok ? `Status: ${body.status} (by ${v.p.name})` : `Not allowed: ${body.detail}`;
 }
+
+// Teach Mia (dev only): the phone owner's teachable actions for a message, or a feature request.
+function drawerShell(v, title) {
+  const d = v.drawer;
+  d.replaceChildren();
+  d.hidden = false;
+  const bar = el("div", "bar");
+  const name = el("div", "name");
+  const close = el("button", null, "Close");
+  close.onclick = () => { d.hidden = true; };
+  name.append(el("span", null, title), close);
+  bar.append(name);
+  const list = el("div", "list picker");
+  d.append(bar, list);
+  return list;
+}
+
+async function openTeach(v, asked) {
+  const list = drawerShell(v, `Teach: "${asked}"`);
+  const res = await fetch(`/sim/phones/${v.p.person_id}/teach`);
+  if (!res.ok) { list.append(el("div", "sys", `No agents (${res.status}).`)); return; }
+  for (const agent of await res.json()) {
+    list.append(el("h3", null, agent.label));
+    const chips = el("div", "chips");
+    for (const a of agent.actions) {
+      const b = el("button", null, a.label);
+      b.onclick = () => teach(v, asked, agent.agent_id, a.action);
+      chips.append(b);
+    }
+    if (!agent.actions.length) chips.append(el("span", "status", "Nothing teachable."));
+    list.append(chips);
+  }
+  list.append(el("h3", null, "None of these"));
+  const cant = el("button", null, "Mia can't do this yet");
+  cant.onclick = () => requestFeature(v, asked);
+  const chips = el("div", "chips");
+  chips.append(cant);
+  list.append(chips);
+}
+
+async function teach(v, asked, agent_id, action) {
+  const res = await fetch("/sim/teach", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({person_id: v.p.person_id, text: asked, agent_id, action}),
+  });
+  if (!res.ok) { alert(`Not taught: ${res.status} ${await res.text()}`); return; }
+  const out = await res.json();
+  v.drawer.hidden = true;
+  document.getElementById("note").textContent = `Taught "${out.key}" (phrasebook v${out.version}).`;
+  send(v, asked, null);  // the taught answer, at once
+}
+
+async function requestFeature(v, failed) {
+  const text = prompt(failed ? `What should Mia do with "${failed}"? (one line)` : "What should Mia be able to do?", failed || "");
+  if (!text) return;
+  const res = await fetch("/sim/requests", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({person_id: v.p.person_id, text, failed_text: failed}),
+  });
+  v.drawer.hidden = true;
+  document.getElementById("note").textContent = res.ok ? `Feature request recorded for ${v.p.name}.` : `Request failed (${res.status}).`;
+}
+
+function panelShell(title) {
+  const panel = document.getElementById("panel");
+  panel.replaceChildren();
+  panel.hidden = false;
+  const bar = el("div", "bar");
+  const name = el("div", "name");
+  const close = el("button", null, "Close");
+  close.onclick = () => { panel.hidden = true; };
+  name.append(el("span", null, title), close);
+  bar.append(name);
+  const list = el("div", "list");
+  panel.append(bar, list);
+  return list;
+}
+
+function table(heads, rows) {
+  const t = el("table");
+  const tr = el("tr");
+  for (const h of heads) tr.append(el("th", null, h));
+  t.append(tr);
+  for (const cells of rows) {
+    const r = el("tr");
+    for (const c of cells) { const td = el("td"); td.append(c instanceof Node ? c : document.createTextNode(String(c))); r.append(td); }
+    t.append(r);
+  }
+  return t;
+}
+
+async function openPhrases() {
+  const list = panelShell("Phrases");
+  const res = await fetch("/sim/phrases");
+  if (!res.ok) { list.append(el("div", "sys", `No phrases (${res.status}).`)); return; }
+  const book = await res.json();
+  list.append(el("div", "status", `Phrasebook version ${book.version}. Taught phrases outrank Did you mean taps.`));
+  if (!book.phrases.length) { list.append(el("div", "sys", "No phrases yet: use Teach under a reply.")); return; }
+  list.append(table(["Text", "Agent", "Action", "Source", "Branch", ""], book.phrases.map(p => {
+    const b = el("button", null, "Retire");
+    b.onclick = async () => {
+      await fetch("/sim/phrases/retire", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({key: p.key, branch_id: p.branch_id})});
+      openPhrases();
+    };
+    const source = p.taught ? "taught" : `${p.taps} taps, confidence ${p.confidence}`;
+    return [p.text, p.agent_id, p.action, source, p.branch, b];
+  })));
+}
+
+async function openRequests() {
+  const list = panelShell("Feature requests");
+  const res = await fetch("/sim/requests");
+  if (!res.ok) { list.append(el("div", "sys", `No requests (${res.status}).`)); return; }
+  const rows = await res.json();
+  list.append(el("div", "status", "Mark a status with: uv run mia requests status ID planned|built|declined"));
+  if (!rows.length) { list.append(el("div", "sys", "No requests yet.")); return; }
+  list.append(table(["Request", "Asked", "Status", "Failed messages", "Id"], rows.map(r => [r.text, r.count, r.status, r.failed.join(" | "), r.id])));
+}
+document.getElementById("phrases").onclick = openPhrases;
+document.getElementById("requests").onclick = openRequests;
 
 document.getElementById("tick").onclick = async () => {
   const note = document.getElementById("note");

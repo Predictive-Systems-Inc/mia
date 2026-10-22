@@ -56,6 +56,7 @@
   <h1>Mia</h1>
   <label id="actor-label">Acting as <select id="actor"></select></label>
   <span class="note" id="note">Dev page. Actor is sent as X-Mia-Actor. <a href="/sim">Phones on screen</a></span>
+  <button id="feature" type="button">Request a feature</button>
   <a href="#" id="logout" hidden>Sign out</a>
 </header>
 <form id="login" hidden>
@@ -403,6 +404,16 @@ async function init() {
   showMe();
 }
 init();
+// Request a feature (spec teach-mia 4b): for every signed-in person, kept on the node.
+document.getElementById("feature").onclick = async () => {
+  const text = prompt("What should Mia be able to do?");
+  if (!text) return;
+  const res = await fetch("/feature-requests", {
+    method: "POST", headers: {"Content-Type": "application/json", ...authHeaders()},
+    body: JSON.stringify({text}),
+  });
+  alert(res.ok ? "Thanks, your request was recorded." : `Not sent (${res.status}).`);
+};
 </script>
 </body>
 </html>

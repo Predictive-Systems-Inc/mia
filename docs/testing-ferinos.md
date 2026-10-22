@@ -107,6 +107,21 @@ only in dev mode from loopback, like the sim channel itself (ADR 021); anywhere 
   agents' fallback apology instead of real answers.
 - A customer's reply that waits for staff (an order confirmed in an App drawer) reaches the
   customer's phone on its next poll; no tick is needed.
+- **Teach**: under every Mia reply on a staff phone, the dashed `Teach` chip opens a picker of
+  that person's agents and their teachable actions (never a money, external or delete one).
+  Picking one teaches the message you typed (`phrase.taught`, at the phone's branch, the person
+  on behalf of the tester) and sends it again, so the taught answer shows at once. `Mia can't do
+  this yet` asks for a one-line note and records a feature request instead. Tapping an option of
+  an agent's "Did you mean" also teaches (`phrase.confirmed`): the next same message (numbers
+  aside) skips the question until a tap on another action for it.
+- **Phrases** in the top bar lists the phrases (text, agent, action, taught or how many taps,
+  the phrasebook version) with Retire. `uv run mia phrases export` turns taught ones into eval
+  rows for a pull request.
+- **Requests** in the top bar lists the node's feature requests grouped, with how many asked and
+  the status; each staff phone has a `Request a feature` button, chat takes `request: <what>`, and
+  the ask to rephrase offers "Ask for this feature". `uv run mia requests status ID planned`
+  tells every asker.
+- `help`, `commands?` or `ano kaya mo gawin?` lists what each of the person's agents understands.
 
 Two phones: switch on Ana and Marites. On Ana's phone send `sp 5 cl 8 ube 3` (or `15 classic pa`
 for a count); her phone gets the reply. On a receipts kiosk Ana can ask `void resibo 3`: the

@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, col, func, select
 
 from mia import i18n
@@ -26,6 +26,8 @@ from mia.channels import linking, outbox, registry
 from mia.channels.base import InboundMessage
 from mia.channels.inbound import handle_inbound
 from mia.channels.simulator import SimAdapter
+from mia.chat import features, phrases
+from mia.chat.access import agents_for
 from mia.core import db, people, store  # db.utcnow: the clock tests pin
 from mia.core.ids import new_id
 from mia.core.models import (
@@ -295,3 +297,144 @@ def set_clock(session: DbSession, body: SetClock) -> ClockOut:
         at = at.replace(tzinfo=ZoneInfo(_zone(session)))
     db.set_dev_clock(at)
     return _clock(session)
+
+
+# ---- teach Mia as you go (spec 2026-10-22-teach-mia-design, 4 and 4b) --------------------
+
+
+def _active(session: Session, person_id: str) -> Person:
+    person = session.get(Person, person_id)
+    if person is None or person.status != "active":
+        raise HTTPException(404, "no such person")
+    return person
+
+
+def _tester(person: Person) -> Actor:
+    """The person on that phone, on behalf of the tester at the page (dev mode: the tester
+    is the approver)."""
+    tester = Principal(type="system", id="sim:tester")
+    return Actor(
+        principal=Actor.person(person).principal, on_behalf_of=tester, branch_id=person.branch_id
+    )
+
+
+class TeachAction(BaseModel):
+    action: str
+    label: str
+
+
+class TeachAgent(BaseModel):
+    agent_id: str
+    label: str
+    actions: list[TeachAction]
+
+
+@router.get("/phones/{person_id}/teach", response_model=list[TeachAgent])
+def teach_options(session: DbSession, person_id: str) -> list[TeachAgent]:
+    """The person's agents and their teachable actions, labelled in the person's language."""
+    person = _active(session, person_id)
+    lang = person.language
+    return [
+        TeachAgent(
+            agent_id=spec.id,
+            label=i18n.t(spec.label_key, lang),
+            actions=[
+                TeachAction(action=name, label=i18n.t(str(a.label_key), lang))
+                for name, a in phrases.teachable(spec.id).items()
+            ],
+        )
+        for spec in agents_for(session, person)
+    ]
+
+
+class TeachIn(BaseModel):
+    person_id: str
+    text: str
+    agent_id: str
+    action: str
+
+
+@router.post("/teach")
+def teach(session: DbSession, body: TeachIn) -> dict[str, Any]:
+    """Teach the message's key to one of the person's agents' actions at the phone's branch
+    (phrase.taught). 422 for an agent that is not the person's or an action not teachable."""
+    person = _active(session, body.person_id)
+    if body.agent_id not in {a.id for a in agents_for(session, person)}:
+        raise HTTPException(422, "not one of this person's agents")
+    role = person.roles[0] if person.roles else ""
+    try:
+        ev = phrases.teach(
+            session, _tester(person), person.branch_id, body.text, body.agent_id, body.action,
+            lang=person.language, role=role,
+        )  # fmt: skip
+    except phrases.TeachError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"key": (ev.after or {})["key"], "version": phrases.version(session)}
+
+
+class PhraseOut(BaseModel):
+    branch: str
+    branch_id: str | None
+    key: str
+    text: str
+    agent_id: str
+    action: str
+    taught: bool
+    confidence: int
+    taps: int
+
+
+@router.get("/phrases")
+def phrase_list(session: DbSession) -> dict[str, Any]:
+    """Every branch's live phrases (taught ones for every branch once) and the version."""
+    names = {b.id: b.name for b in session.exec(select(Branch).order_by(col(Branch.id)))}
+    seen: set[tuple[str | None, str]] = set()
+    rows: list[PhraseOut] = []
+    for branch_id in names:
+        for p in phrases.entries(session, branch_id):
+            if (p.branch_id, p.key) in seen:
+                continue
+            seen.add((p.branch_id, p.key))
+            name = names.get(p.branch_id, "") if p.branch_id else "every branch"
+            rows.append(PhraseOut(branch=name, **{k: getattr(p, k) for k in PHRASE_FIELDS}))
+    return {"version": phrases.version(session), "phrases": rows}
+
+
+PHRASE_FIELDS = ("branch_id", "key", "text", "agent_id", "action", "taught", "confidence", "taps")
+
+
+class RetireIn(BaseModel):
+    key: str
+    branch_id: str | None = None
+
+
+@router.post("/phrases/retire")
+def retire(session: DbSession, body: RetireIn) -> dict[str, int]:
+    """Retire a phrase at its branch (None: every branch) by the sim's actor."""
+    branch_id = body.branch_id or session.exec(select(Branch.id).order_by(col(Branch.id))).first()
+    phrases.retire(session, _actor(branch_id or ""), body.branch_id, body.key)
+    return {"version": phrases.version(session)}
+
+
+class RequestIn(BaseModel):
+    person_id: str
+    text: str = Field(min_length=1, max_length=features.MAX_TEXT)
+    failed_text: str | None = None  # the message Mia could not do ("Mia can't do this yet")
+
+
+@router.post("/requests")
+def add_request(session: DbSession, body: RequestIn) -> dict[str, str]:
+    """A feature request from the person on that phone (feature.requested)."""
+    person = _active(session, body.person_id)
+    ev = features.request(session, person, body.text, _tester(person), failed_text=body.failed_text)
+    session.commit()
+    return {"id": ev.id}
+
+
+@router.get("/requests")
+def request_list(session: DbSession) -> list[dict[str, Any]]:
+    """The node's feature requests grouped by key, with counts and status."""
+    return [
+        {"id": g.id, "text": g.text, "count": g.count, "status": g.status, "failed": g.failed}
+        for g in features.groups(session)
+    ]
