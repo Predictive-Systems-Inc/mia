@@ -35,6 +35,7 @@ from mia.agents.decider import Decision
 from mia.agents.shift_supervisor import alerts
 from mia.channels import outbox
 from mia.channels.base import DeliveryResult, InboundMessage
+from mia.chat import language
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.chat.channels import notify
 from mia.core import auth, events, keys, orgconfig, store
@@ -170,6 +171,13 @@ def _find(session: Session, msg: InboundMessage) -> Customer | None:
     ).first()
 
 
+def _chose_language(session: Session, customer: Customer) -> bool:
+    """True once the customer asked for a language (set_language, event LANGUAGE): detection
+    never overrides an asked-for language."""
+    asked = select(Event).where(Event.action == LANGUAGE).where(Event.entity_id == customer.id)
+    return session.exec(asked).first() is not None
+
+
 def _upsert(
     session: Session, row: Customer | None, msg: InboundMessage, now: dt.datetime
 ) -> Customer:
@@ -181,12 +189,15 @@ def _upsert(
             channel=msg.channel,
             address=msg.address,
             name=msg.name,
-            language=org.default_language if org else "en",
+            language=language.detect(msg.text) or (org.default_language if org else "en"),
             first_seen_at=now,
             last_inbound_at=now,
         )
         return store.insert(session, row, customer_actor(row), action=SEEN)
     changes: dict[str, object] = {"last_inbound_at": now}
+    detected = language.detect(msg.text)
+    if detected not in (None, row.language) and not _chose_language(session, row):
+        changes["language"] = detected  # the customer phone follows what they write (D44)
     if msg.name and msg.name != row.name:
         changes["name"] = msg.name
     return store.update(session, row, changes, customer_actor(row), action=SEEN)

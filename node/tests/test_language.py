@@ -196,3 +196,19 @@ def test_an_unsupported_organisation_language_fails_at_load() -> None:
     with pytest.raises(ValidationError, match="tl"):
         orgconfig.OrgSettings(languages=["fil", "tl"])
     assert orgconfig.OrgSettings(languages=["fil", "en"]).languages == ["fil", "en"]
+
+
+@pytest.mark.parametrize(
+    ("text", "code"),
+    [
+        ("can I order 10 classic, pickup 6pm", "en"),
+        ("pa-order 10 bibingka, pickup bukas 10am", "fil"),
+        ("haluan tilata 10 kpl huomenna", "fi"),
+        ("hello po", None),
+        ("10:00", None),
+    ],
+)
+def test_detect_reads_the_language_of_a_message(text: str, code: str | None) -> None:
+    from mia.chat.language import detect
+
+    assert detect(text) == code
