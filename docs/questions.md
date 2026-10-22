@@ -927,3 +927,9 @@ Format for each entry:
 - Question: In production, who approves a phrase Mia proposes from an unrecognised message (the owner only, or admins too), and which model reviews the unrecognised messages each night (a new external service: pseudonymised staff messages leave the node)?
 - Assumed answer: none yet; phase 1 is the dev teach path on the phones page, where the tester picks the action and no model is called. Phase 2 waits for the owner's answer.
 - Blocking: phase 2 only.
+
+## Q130: Where the global feature-request list lives
+- Where: docs/superpowers/specs/2026-10-22-teach-mia-design.md section 4b
+- Question: The owner asked for a global database of feature requests. Where does it live: GitHub Issues, a shared table, or on each node?
+- Answer (22 Oct 2026, the owner): keep it on the node for now. Each node keeps its own list; `mia requests export` writes it for the developer; nothing leaves the node; a shared place is chosen later.
+- Blocking: no (answered).

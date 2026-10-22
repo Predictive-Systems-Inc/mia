@@ -58,6 +58,29 @@ tester did not want, the phone shows a **Teach** chip under that reply:
 
 No model is called on the teach path: the tester picks. Nothing here runs in required mode.
 
+## 4b. Request a feature (every user, every mode)
+
+The owner, 22 Oct: "add a button for users to request to support certain action. this is a
+global database of feature request".
+
+- Every person can ask for something Mia cannot do: a **Request a feature** button in the app's
+  menu and on each phone of the phones page, and in chat the reply to a capability gap offers it
+  as a button ("Ask for this feature"). Staff on WhatsApp can also type "request: <what>".
+- The request holds: what the person wants in their own words (data, rule 8), the message that
+  failed if there was one, the person's role, branch and language, and the time. It is written as
+  `feature.requested` on the node's hash chain (no new table, no data standard change) and the
+  person is told it was sent.
+- The same request from several people is grouped by code (the key of the text, as phrases);
+  each person's request still counts.
+- **Global**: the node's requests go to one shared list across every Mia node, where the
+  developer sees them and marks them planned, built or declined; the node shows each request's
+  status back to whoever asked. Where that list lives is the owner's decision (Q130): it is a new
+  external service, and the request text leaves the node (pseudonymised: names and numbers
+  masked as for Jev). The owner's answer (22 Oct, Q130): keep it on the node for now. Each node
+  keeps its own list, `mia requests export` writes it for the developer, nothing leaves the node,
+  and the developer marks a request's status with `mia requests status <id> planned|built|declined`
+  so the asker sees it. A shared place is chosen later (for example when Mia Cloud exists).
+
 ## 5. Production: the nightly proposal (phase 2)
 
 When a rephrase or a "Something else" tap happens, Mia writes `intent.unrecognised`. Once a night
