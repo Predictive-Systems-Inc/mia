@@ -52,7 +52,7 @@ from mia.agents.sales_supervisor.tools import (
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
-from mia.core import approvals, orgconfig, sales, store
+from mia.core import approvals, events, orgconfig, sales, store
 from mia.core.db import utcnow
 from mia.core.models import (
     Actor,
@@ -392,6 +392,7 @@ def _close_drawer(
     or a second drawer never closes a drawer nobody named (LookupError("which_drawer"))."""
     _check(deps, SESSIONS, "read", tool_call_id)
     _check(deps, SESSIONS, "write", tool_call_id)
+    events.write_lock(deps.session)  # the open drawers and the date's count decide the close
     open_ = sales.open_sessions(deps.session, deps.branch.id)
     if not open_:
         raise LookupError("no_session")

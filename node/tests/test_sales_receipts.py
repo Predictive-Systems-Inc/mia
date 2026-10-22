@@ -5,6 +5,7 @@ helpers here (receipts_kiosk, drawer, ring, money) are imported by the later tas
 import dataclasses
 import datetime as dt
 import functools
+import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -49,6 +50,7 @@ from mia.core.models import (
     Visit,
 )
 from mia.core.money import format_money
+from mia.core.people import add_person
 from mia.core.rbac import PermissionDenied, Rbac, Resource, get_rbac
 from mia.core.sales import LineIn, PaymentIn
 from mia.i18n import t
@@ -1795,3 +1797,60 @@ def test_today_counts_the_sales_not_the_refunds() -> None:
             tenders=tenders,
         )
     ]
+
+
+# ---- the final wave, round 2 ------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("jev_on")
+def test_two_clerks_with_one_first_name_get_a_button_each(
+    session: Session, bk_en: Ferinos, monkeypatch: pytest.MonkeyPatch, bk_pin: Pin
+) -> None:
+    """Ana (9:00) and a second Ana (13:00) each get a button with the drawer's open time; the
+    first closes the earlier drawer only."""
+    settings = orgconfig.load().model_copy(deep=True)
+    settings.sales.receipts_from = {"Mall kiosk": BK_TODAY}
+    monkeypatch.setattr(orgconfig, "load", lambda org=None: settings)
+    kiosk, people = bk_en
+    rosa = Actor.person(people["Rosa"])
+    other_ana = add_person(
+        session, rosa, branch_id=kiosk.id, name="Ana Reyes", roles=["clerk"], language="en"
+    )
+    for p, hh in ((people["Ana"], 9), (other_ana, 13)):
+        when = dt.datetime.combine(BK_TODAY, dt.time(hh), MNL)
+        sales.open_for_shift(session, Actor.person(p), kiosk, p.id, None, when)
+    session.commit()
+    bk_pin(at(BK_TODAY, 21, 20))
+    _answers(monkeypatch, "cash_count", amount="p0")
+    asked = _turn(session, people["Marites"], "cash count 1000")
+    assert _buttons(asked) == ["Ana 09:00", "Ana 13:00", t("clarify.something_else", "en")]
+    _turn(session, people["Marites"], "Ana 09:00", asked.thread_id)
+    assert (_state(session, people["Ana"]), _state(session, other_ana)) == ("closed", "open")
+
+
+def test_the_drawer_reads_run_under_the_write_lock(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    """Rule 11: which drawers are open and whether the date has a count decide the close and
+    the drawer_out taken, so both are read after events.write_lock."""
+    receipts_kiosk(monkeypatch)
+    drawer(session, rs)
+    rs_pin(at(RS_TODAY, 17, 5))
+    locked: list[bool] = []
+    real_lock, real_open = events.write_lock, sales.open_sessions
+
+    def lock(db: Session) -> None:
+        # taken by _close_drawer itself (an audit row's emit locks too, but only by chance)
+        locked.append(sys._getframe(1).f_code.co_name == "_close_drawer")
+        real_lock(db)
+
+    def open_sessions(db: Session, branch_id: str) -> list[SalesSession]:
+        assert any(locked) and db.in_transaction()  # read under the write lock
+        return real_open(db, branch_id)
+
+    monkeypatch.setattr(events, "write_lock", lock)
+    monkeypatch.setattr(sales, "open_sessions", open_sessions)
+    out = bk_tools.record_cash_count(
+        bk_deps(session, rs[1]["Marites"]), CashCountInput(counted=100_000), "c"
+    )
+    assert out.clerk == "Ana"

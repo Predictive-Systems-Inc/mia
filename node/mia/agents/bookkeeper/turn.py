@@ -222,13 +222,18 @@ def _ask_drawer(
     inp: tools.CashCountInput,
     currency: str,
 ) -> ChatReply:
-    """Whose drawer a receipts day's count closes: one button per open drawer's clerk (the
-    count with that drawer), plus Something else. Nothing is closed until one is tapped."""
+    """Whose drawer a receipts day's count closes: one button per open drawer (its decision
+    carries the drawer's session id), labelled with the clerk's first name, plus the drawer's
+    local open time when two open drawers share a first name; plus Something else. Nothing is
+    closed until one is tapped."""
+    open_ = sales.open_sessions(session, deps.branch.id)  # the tool checked the sessions read
+    names = [tools.first_name(session, s.person_id) for s in open_]
+    tz = ZoneInfo(deps.branch.timezone)
     options: replies.Options = {}
-    for s in sales.open_sessions(session, deps.branch.id):  # the tool checked the sessions read
+    for s, name in zip(open_, names, strict=True):
+        label = name if names.count(name) == 1 else f"{name} {s.opened_at.astimezone(tz):%H:%M}"
         args = {**inp.model_dump(mode="json"), "drawer": s.id}
-        chosen = Decision(action=action, args=args, confidence=1.0)
-        options[tools.first_name(session, s.person_id)] = chosen.model_dump(mode="json")
+        options[label] = Decision(action=action, args=args, confidence=1.0).model_dump(mode="json")
     other = t("clarify.something_else", deps.lang)
     options[other] = Decision(action="clarify", confidence=1.0).model_dump(mode="json")
     counted = replies.money(inp.counted, currency, deps.lang)

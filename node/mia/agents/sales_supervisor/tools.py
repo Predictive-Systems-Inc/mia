@@ -76,9 +76,13 @@ def at_visit(deps: AgentDeps) -> AgentDeps:
     """deps at the shop of the person's checked-in visit of the business date (a D39 cover's
     kiosk, the latest check-in), with that shop's local date; deps unchanged without one or
     when the visits read is not allowed. Every sales read and write of a turn then uses the
-    shop she sells at: her drawer, her receipts and her counts agree."""
+    shop she sells at: her drawer, her receipts and her counts agree. It applies to anyone
+    with a checked-in visit elsewhere (D39), head staff's today and set_target included."""
     if not get_rbac().check(
-        deps.actor, VISITS.model_copy(update={"owner_id": deps.person.id}), "read"
+        deps.actor,
+        VISITS.model_copy(update={"owner_id": deps.person.id}),
+        "read",
+        session=deps.session,
     ):
         return deps
     rows = deps.session.exec(
