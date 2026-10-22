@@ -21,6 +21,9 @@
   .toggle { border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:16px;
             padding:2px 10px; cursor:pointer; font-size:13px; }
   .toggle.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .langs { display:flex; gap:4px; align-items:center; margin-top:4px; font-size:12px; }
+  .langs .toggle { padding:0 8px; font-size:12px; }
+  .langs select { font-size:12px; border:1px solid var(--line); border-radius:12px; background:#fff; }
   .tick { border:0; border-radius:10px; background:var(--accent); color:#fff; padding:4px 12px; cursor:pointer; }
   /* the phones row is its own scroll area under the header, so the header never covers a phone */
   main { flex:1; min-height:0; overflow:auto; display:flex; gap:20px; padding:20px 16px; align-items:flex-start; }
@@ -63,6 +66,7 @@
 <header>
   <h1>Mia phones</h1>
   <div id="chips" class="group"></div>
+  <span class="group"><b>All phones</b><button class="toggle" data-all="en">English</button><button class="toggle" data-all="fil">Filipino</button></span>
   <button class="tick" id="tick">Tick now</button>
   <span class="note" id="note">Loading...</span>
 </header>
@@ -148,6 +152,43 @@ function addCustomer() {
   toggle(c);
 }
 
+// Reply language (person.language): en and fil as chips, the other supported ones in a list.
+const MAIN_LANGS = ["en", "fil"];
+const OTHER_LANGS = ["ceb", "ilo", "hil", "war", "bcl", "pam", "pag", "fi"];
+async function setLanguage(p, language) {
+  const res = await fetch(`/sim/phones/${p.person_id}/language`, {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({language}),
+  });
+  if (!res.ok) { alert(`Language not set for ${p.name}: ${res.status}`); return false; }
+  p.language = (await res.json()).language;
+  if (views[p.person_id]) drawLangs(views[p.person_id]);
+  return true;
+}
+function drawLangs(v) {
+  const p = v.p;
+  v.langs.replaceChildren(el("span", "status", "Replies in"));
+  for (const code of MAIN_LANGS) {
+    const b = el("button", "toggle" + (p.language === code ? " on" : ""), code);
+    b.onclick = () => setLanguage(p, code);
+    v.langs.append(b);
+  }
+  const sel = el("select");
+  sel.append(el("option", null, MAIN_LANGS.includes(p.language) ? "other" : p.language));
+  sel.firstChild.value = "";
+  for (const code of OTHER_LANGS) { const o = el("option", null, code); o.value = code; sel.append(o); }
+  sel.onchange = () => { if (sel.value) setLanguage(p, sel.value); };
+  v.langs.append(sel);
+}
+for (const b of document.querySelectorAll("[data-all]")) {
+  b.onclick = async () => {
+    const note = document.getElementById("note");
+    const staff = people.filter(p => !p.customer);
+    let done = 0;
+    for (const p of staff) done += await setLanguage(p, b.dataset.all);
+    note.textContent = `${done} of ${staff.length} people now reply in ${b.textContent}.`;
+  };
+}
+
 function drawPhones() {
   const main = document.getElementById("phones");
   const shown = people.filter(p => on.has(p.person_id) && p.address);
@@ -172,6 +213,7 @@ function makePhone(p) {
     name.append(app);
   }
   bar.append(name, el("div", "meta", `${p.roles.join(", ")}${p.branch ? " . " + p.branch : ""} . ${p.address}`));
+  if (!p.customer) { v.langs = el("div", "langs"); bar.append(v.langs); drawLangs(v); }
   const list = el("div", "thread");
   v.thread = list;
   const form = el("form");

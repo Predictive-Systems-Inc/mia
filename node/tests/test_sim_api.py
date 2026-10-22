@@ -49,6 +49,8 @@ def test_every_route_is_404_outside_dev_mode(monkeypatch: pytest.MonkeyPatch) ->
     assert client.post("/sim/messages", json={"address": "1", "text": "hi"}).status_code == 404
     assert client.get("/sim/messages", params={"address": "1"}).status_code == 404
     assert client.post("/sim/tick").status_code == 404
+    lang = {"language": "en"}
+    assert client.post("/sim/phones/x/language", json=lang).status_code == 404
 
 
 @pytest.mark.usefixtures("branch")
@@ -57,9 +59,13 @@ def test_every_route_is_404_from_the_lan_or_the_tunnel() -> None:
     assert lan.get("/sim").status_code == 404
     assert lan.get("/sim/phones").status_code == 404
     assert lan.post("/sim/tick").status_code == 404
+    assert lan.post("/sim/phones/x/language", json={"language": "en"}).status_code == 404
     tunnel = TestClient(app)
     assert tunnel.get("/sim/phones", headers={"cf-ray": "8a1b2c3d4e5f-MNL"}).status_code == 404
     assert tunnel.get("/sim", headers={"cf-connecting-ip": "203.0.113.9"}).status_code == 404
+    cf = {"cf-ray": "8a1b2c3d4e5f-MNL"}
+    res = tunnel.post("/sim/phones/x/language", json={"language": "en"}, headers=cf)
+    assert res.status_code == 404
 
 
 def test_the_page_and_the_phone_list_answer_on_loopback(people: dict[str, Person]) -> None:
@@ -190,3 +196,37 @@ def test_an_approved_order_reaches_the_customer_phone_on_its_next_poll(
     assert sim.sent == []  # the reply is queued, not sent: no tick ran
     got = client.get("/sim/messages", params={"address": customer}).json()
     assert [r["text"] for r in got] == [t("cs.order_confirmed", "fil", time="10:00")]
+
+
+def test_the_language_route_sets_it_as_the_person_through_the_service(
+    session: Session, people: dict[str, Person]
+) -> None:
+    client = TestClient(app)
+    juha = people["Juha"]
+    res = client.post(f"/sim/phones/{juha.id}/language", json={"language": "fil"})
+    assert res.status_code == 200 and res.json()["language"] == "fil"
+    session.expire_all()
+    assert session.get(Person, juha.id).language == "fil"  # type: ignore[union-attr]
+    chosen = session.exec(
+        select(Event)
+        .where(Event.action == "person.language_chosen")
+        .where(Event.actor_id == juha.id)
+    ).all()
+    assert [e.entity_id for e in chosen] == [juha.id]  # the seed's own events are the system's
+    phones = {p["person_id"]: p["language"] for p in client.get("/sim/phones").json()}
+    assert phones[juha.id] == "fil"
+
+
+def test_the_language_route_refuses_an_unsupported_language(
+    session: Session, people: dict[str, Person]
+) -> None:
+    client = TestClient(app)
+    juha = people["Juha"]
+    before = juha.language
+    res = client.post(f"/sim/phones/{juha.id}/language", json={"language": "xx"})
+    assert res.status_code == 422
+    assert client.post("/sim/phones/nobody/language", json={"language": "en"}).status_code == 404
+    session.expire_all()
+    assert session.get(Person, juha.id).language == before  # type: ignore[union-attr]
+    by_juha = select(Event).where(Event.action == "person.language_chosen")
+    assert session.exec(by_juha.where(Event.actor_id == juha.id)).all() == []

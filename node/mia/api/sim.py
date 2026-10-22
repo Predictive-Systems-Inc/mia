@@ -17,13 +17,14 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlmodel import Session, col, func, select
 
+from mia import i18n
 from mia.agents.customer_service import public
 from mia.api.deps import DbSession, direct_loopback
 from mia.channels import linking, outbox, registry
 from mia.channels.base import InboundMessage
 from mia.channels.inbound import handle_inbound
 from mia.channels.simulator import SimAdapter
-from mia.core import db, store  # db.utcnow: the clock tests pin
+from mia.core import db, people, store  # db.utcnow: the clock tests pin
 from mia.core.ids import new_id
 from mia.core.models import (
     Actor,
@@ -134,6 +135,17 @@ def add_phone(session: DbSession, body: AddPhone) -> PhoneOut:
         )
     except LookupError as exc:
         raise HTTPException(409, str(exc)) from exc
+    return _phone(session, person, identity.address)
+
+
+def _phone(session: Session, person: Person, address: str | None = None) -> PhoneOut:
+    if address is None:
+        address = session.exec(
+            select(ChannelIdentity.address)
+            .where(ChannelIdentity.person_id == person.id)
+            .where(ChannelIdentity.channel == "sim")
+            .where(ChannelIdentity.status == "active")
+        ).first()
     branch = session.get(Branch, person.branch_id)
     return PhoneOut(
         person_id=person.id,
@@ -141,8 +153,28 @@ def add_phone(session: DbSession, body: AddPhone) -> PhoneOut:
         roles=person.roles,
         language=person.language,
         branch=branch.name if branch else "",
-        address=identity.address,
+        address=address,
     )
+
+
+class SetLanguage(BaseModel):
+    language: str
+
+
+@router.post("/phones/{person_id}/language", response_model=PhoneOut)
+def set_language(session: DbSession, person_id: str, body: SetLanguage) -> PhoneOut:
+    """Set the person's reply language as the person (people.set_language, the service the
+    app's language button uses; event person.language_chosen). 422 outside i18n.SUPPORTED."""
+    person = session.get(Person, person_id)
+    if person is None or person.status != "active":
+        raise HTTPException(404, "no such person")
+    if body.language not in i18n.SUPPORTED:
+        raise HTTPException(422, f"language must be one of {', '.join(i18n.SUPPORTED)}")
+    try:
+        people.set_language(session, Actor.person(person), person, body.language)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return _phone(session, person)
 
 
 class SimMessage(BaseModel):

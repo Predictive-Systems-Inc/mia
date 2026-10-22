@@ -94,6 +94,11 @@ only in dev mode from loopback, like the sim channel itself (ADR 021); anywhere 
   due work, as `uv run mia tick`.
 - `App` on a staff phone opens the person's approval cards (`/notifications`) with Approve and
   Reject, as on the dev chat page.
+- Test in English first: the seed sets everyone to Filipino, so click "All phones: English" once
+  per fresh database. Every person listed (not only the phones switched on) then gets English
+  replies, set as each person's own language choice (event `person.language_chosen`). Each phone's
+  status bar has its own en and fil chips (and a list of the other languages). The customer phone
+  has no switch: it follows the language the customer writes in.
 - Real replies need the Jev decider: start the node with `MIA_DECIDER=jev` as the export line
   above sets, with `MIA_TYPESAFE_KEY` from `.env` (never pasted into a command). With
   `MIA_MODEL=test` and no decider the phones get the customer's "try later" reply and the
