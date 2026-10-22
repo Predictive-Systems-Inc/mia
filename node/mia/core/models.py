@@ -424,7 +424,15 @@ class SalesReceipt(BranchScoped, table=True):
     the payments; a refund is a new receipt with negative lines, never an edit of the sale."""
 
     __tablename__: ClassVar[str] = "sales_receipts"
-    __table_args__ = (UniqueConstraint("branch_id", "receipt_no"),)
+    __table_args__ = (
+        UniqueConstraint("branch_id", "receipt_no"),
+        Index(  # an approval voids or refunds one receipt, structurally
+            "ux_sales_receipts_approval",
+            "approval_id",
+            unique=True,
+            sqlite_where=text("approval_id IS NOT NULL"),
+        ),
+    )
     __redact__: ClassVar[frozenset[str]] = frozenset({"void_reason"})
 
     session_id: str = Field(foreign_key="sales_sessions.id", index=True)

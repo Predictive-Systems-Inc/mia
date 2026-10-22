@@ -33,6 +33,7 @@ from mia.core.models import (
     Tender,
 )
 from mia.core.rbac import Resource, get_rbac
+from mia.core.sales import live_counts
 from mia.templates.retail import hours as retail_hours
 from mia.templates.retail import items as retail_items
 from mia.templates.retail.models import RetailBranchHours, RetailItem
@@ -153,23 +154,7 @@ def _share(
     return max(ranked)[-1] if ranked else None
 
 
-def _live_counts(
-    session: Session,
-    branch_ids: Sequence[str],
-    start: dt.date,
-    end: dt.date,
-    item_id: str | None = None,
-) -> list[SalesCount]:
-    stmt = (
-        select(SalesCount)
-        .where(col(SalesCount.branch_id).in_(branch_ids))
-        .where(col(SalesCount.business_date) >= start)
-        .where(col(SalesCount.business_date) <= end)
-        .where(col(SalesCount.superseded_by).is_(None))
-    )
-    if item_id is not None:
-        stmt = stmt.where(SalesCount.item_id == item_id)
-    return list(session.exec(stmt))
+_live_counts = live_counts  # the live count query lives in core since 1.9 (ADR 022)
 
 
 def _plain(rows: Sequence[SalesCount]) -> list[calc.Count]:

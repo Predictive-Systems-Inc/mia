@@ -15,7 +15,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
-from mia.core import orgconfig, store
+from mia.core import events, orgconfig, store
 from mia.core.models import (
     DISCOUNT_REASONS,
     Actor,
@@ -31,7 +31,8 @@ from mia.core.models import (
 )
 from mia.core.rbac import Resource, get_rbac
 from mia.templates.retail import hours as retail_hours
-from mia.templates.retail.models import RetailItem, RetailItemPrice
+from mia.templates.retail import items as retail_items
+from mia.templates.retail.models import RetailItem
 
 VOID = "sales.void"  # approval type: head staff (supervisor) decides, money risk
 REFUND = "sales.refund"  # approval type: the owner or an admin decides, money risk
@@ -63,7 +64,8 @@ class PaymentIn(BaseModel):
 
 class DaySales(BaseModel):
     """A branch's business date: the source read, (quantity, amount) by item id and amount by
-    tender. On a receipts day item amounts are line totals (before a receipt-level discount)."""
+    tender. On a receipts day item amounts are line totals (before a receipt-level discount)
+    and tender amounts are payments (after it)."""
 
     source: Literal["counts", "receipts"]
     by_item: dict[str, tuple[int, int]]
@@ -92,8 +94,8 @@ def _approved(
     a = session.get(Approval, approval_id) if approval_id else None
     ok = (
         a is not None
-        and (a.branch_id, a.type, a.subject_id, a.status)
-        == (branch_id, kind, subject_id, "approved")
+        and (a.branch_id, a.type, a.subject_type, a.subject_id, a.status)
+        == (branch_id, kind, "sales_receipts", subject_id, "approved")
         and a.evidence.get("risk") == "money"
     )
     decider = session.get(Person, a.decided_by or "") if a is not None and ok else None
@@ -102,6 +104,14 @@ def _approved(
     if session.exec(select(SalesReceipt).where(SalesReceipt.approval_id == a.id)).first():
         raise SalesError("approval")  # one approval, one void or refund
     return a
+
+
+def _within_approved(a: Approval, amount: int, ceiling: int) -> None:
+    """amount (positive) is at most the approval's evidence["amount"] when set and at most
+    ceiling (the receipt's total). SalesError("approved_amount") otherwise."""
+    approved = a.evidence.get("amount", ceiling)
+    if type(approved) is not int or amount > min(approved, ceiling):
+        raise SalesError("approved_amount")
 
 
 def open_session(
@@ -118,6 +128,7 @@ def open_session(
     """Open the person's session at the branch (event sales.session_opened). The float defaults
     to the branch's last closed session's counted cash, else 0. SalesError("session_open") when
     the person already has an open session there."""
+    events.write_lock(session)
     open_ = select(SalesSession).where(
         SalesSession.branch_id == branch_id,
         SalesSession.person_id == person_id,
@@ -165,10 +176,14 @@ def close_session(
     closed_by: str,
     closed_at: dt.datetime,
 ) -> SalesSession:
-    """Close an open session with head staff's count (event sales.session_closed), freezing
+    """Close an open session with head staff's count (closed_by holds supervisor or above;
+    event sales.session_closed), freezing
     expected (expected_cash) and difference (counted less expected)."""
     if sales_session.state != "open":
         raise SalesError("session_closed")
+    head = session.get(Person, closed_by)
+    if head is None or not _holds(head, VOID_ROLE):
+        raise SalesError("closed_by")  # head staff (supervisor or above) counts the drawer
     expected = expected_cash(session, sales_session)
     changes = {
         "state": "closed",
@@ -184,17 +199,8 @@ def close_session(
 def _price(
     session: Session, item: RetailItem, branch_id: str, day: dt.date
 ) -> tuple[int, str | None]:
-    """The dated price and its retail_item_prices id (items.price_on's rule), else the default."""
-    row = session.exec(
-        select(RetailItemPrice)
-        .where(RetailItemPrice.branch_id == branch_id, RetailItemPrice.item_id == item.id)
-        .where(col(RetailItemPrice.effective_on) <= day)
-        .order_by(
-            col(RetailItemPrice.effective_on).desc(),
-            col(RetailItemPrice.created_at).desc(),
-            col(RetailItemPrice.id).desc(),
-        )
-    ).first()
+    """The dated price and its retail_item_prices id (items.price_row_on), else the default."""
+    row = retail_items.price_row_on(session, item, branch_id, day)
     return (row.price, row.id) if row else (item.price, None)
 
 
@@ -222,7 +228,9 @@ def _sale_line(session: Session, line: LineIn, s: SalesSession, day: dt.date) ->
 
 
 def _refund_line(session: Session, line: LineIn, sale: SalesReceipt) -> SalesReceiptLine:
-    """A negative line at the price paid, its total in proportion to the sale line's total."""
+    """A negative line at the price paid, its total in proportion to the sale line's total and
+    scaled by the sale's total over its subtotal (the receipt discount apportioned), rounded
+    toward zero. Asked plus already returned never exceeds the quantity sold."""
     orig = session.get(SalesReceiptLine, line.refunded_line_id or "")
     if orig is None or orig.receipt_id != sale.id or orig.item_id != line.item_id:
         raise SalesError("refunded_line")
@@ -233,7 +241,8 @@ def _refund_line(session: Session, line: LineIn, sale: SalesReceipt) -> SalesRec
     )
     if line.quantity >= 0 or line.discount or -line.quantity - sum(returned) > orig.quantity:
         raise SalesError("quantity")
-    total = -(orig.line_total * -line.quantity // orig.quantity)
+    paid = orig.line_total * -line.quantity * sale.total
+    total = -(paid // (orig.quantity * sale.subtotal)) if sale.subtotal else 0
     return SalesReceiptLine(
         branch_id=orig.branch_id,
         receipt_id="",
@@ -269,11 +278,14 @@ def record_receipt(
 ) -> SalesReceipt:
     """Record a sale, or with refund_of a refund (an owner or admin REFUND approval of that
     receipt), with its lines and payments in one flush: events sales.receipt_recorded or
-    sales.refund_recorded, one per line and sales.payment_recorded per payment. Checked first,
+    sales.refund_recorded, one per line and sales.payment_recorded per payment. A refund names
+    each sale line once, takes no discount of its own and stays within the approved amount
+    (evidence["amount"], at most the sale's total). Checked first,
     nothing written on a refusal: an open session, a new receipt_no at the branch, the dated
     prices, total = subtotal less discount (a reason when there is one), payments summing to
     the total with the receipt's sign. The caller commits."""
     s = sales_session
+    events.write_lock(session)  # the checks read what the writes depend on (rule 11)
     if s.state != "open":
         raise SalesError("session_closed")
     if not lines:
@@ -302,8 +314,14 @@ def record_receipt(
             )
         ):
             raise SalesError("refund_of")
-        _approved(session, approval_id, REFUND, REFUND_ROLE, sale.id, s.branch_id)
+        approval = _approved(session, approval_id, REFUND, REFUND_ROLE, sale.id, s.branch_id)
+        returned = [line.refunded_line_id for line in lines]
+        if len(set(returned)) != len(returned):  # one line per sale line: the cap is per request
+            raise SalesError("refunded_line")
+        if discount:
+            raise SalesError("discount")  # the sale's discount is apportioned to the lines
         rows = [_refund_line(session, line, sale) for line in lines]
+        _within_approved(approval, -sum(r.line_total for r in rows), sale.total)
     subtotal = sum(r.line_total for r in rows)
     total = subtotal - discount
     if discount * sign < 0 or abs(discount) > abs(subtotal):
@@ -357,15 +375,25 @@ def record_receipt(
 def void_receipt(
     session: Session, actor: Actor, receipt: SalesReceipt, approval_id: str, reason: str
 ) -> SalesReceipt:
-    """Void a paid receipt of an open session with head staff's VOID approval of it (event
-    sales.receipt_voided; voided_by is the approver). After the close only a refund is possible.
-    SalesError and nothing written otherwise."""
+    """Void a paid sale of an open session with head staff's VOID approval of it (event
+    sales.receipt_voided; voided_by is the approver), under the write lock so the approval is
+    used once. A refund, or a sale with a paid refund against it, is never voided; after the
+    close only a refund is possible. SalesError and nothing written otherwise."""
+    events.write_lock(session)
     s = session.get(SalesSession, receipt.session_id)
     if s is None or s.state != "open":
         raise SalesError("session_closed")
     if receipt.status != "paid":
         raise SalesError("status")
+    if receipt.kind != "sale":
+        raise SalesError("kind")  # a refund keeps its own approval; it is never voided
+    refunded = select(SalesReceipt).where(
+        SalesReceipt.refund_of == receipt.id, SalesReceipt.status == "paid"
+    )
+    if session.exec(refunded).first():
+        raise SalesError("refunded")  # the money would be reversed twice
     a = _approved(session, approval_id, VOID, VOID_ROLE, receipt.id, receipt.branch_id)
+    _within_approved(a, receipt.total, receipt.total)
     changes = {
         "status": "voided",
         "voided_by": a.decided_by,
@@ -395,11 +423,33 @@ def receipts(
     return list(session.exec(stmt.order_by(col(SalesReceipt.sold_at))))
 
 
+def live_counts(
+    session: Session,
+    branch_ids: Sequence[str],
+    start: dt.date,
+    end: dt.date,
+    item_id: str | None = None,
+) -> list[SalesCount]:
+    """The live sales_counts of the branches from start to end inclusive (superseded rows
+    skipped), optionally of one item. Unchecked: callers check sales_counts read."""
+    stmt = (
+        select(SalesCount)
+        .where(col(SalesCount.branch_id).in_(branch_ids))
+        .where(col(SalesCount.business_date) >= start)
+        .where(col(SalesCount.business_date) <= end)
+        .where(col(SalesCount.superseded_by).is_(None))
+    )
+    if item_id is not None:
+        stmt = stmt.where(SalesCount.item_id == item_id)
+    return list(session.exec(stmt))
+
+
 def day_sales(session: Session, branch_id: str, business_date: dt.date) -> DaySales:
     """The branch's sales of one business date from its one source (SalesSettings.source): on a
-    counts day the live sales_counts (superseded rows skipped, as the sales supervisor reads
-    them); on a receipts day the paid receipts' lines by item and payments by tender, refunds
-    as negatives. Never both. Unchecked: callers check their own read rights."""
+    counts day live_counts; on a receipts day the paid receipts' lines by item and payments by
+    tender, refunds as negatives. Never both. On a receipts day by_item is before the receipt
+    discount (line totals) and by_tender after it (what was paid): the bookkeeper reads
+    by_tender. Unchecked: callers check their own read rights."""
     branch = session.get(Branch, branch_id)
     if branch is None:
         raise SalesError("branch")
@@ -412,12 +462,7 @@ def day_sales(session: Session, branch_id: str, business_date: dt.date) -> DaySa
         items[item_id] = (q + quantity, a + amount)
 
     if source == "counts":
-        counts = session.exec(
-            select(SalesCount)
-            .where(SalesCount.branch_id == branch_id, SalesCount.business_date == business_date)
-            .where(col(SalesCount.superseded_by).is_(None))
-        )
-        for c in counts:
+        for c in live_counts(session, [branch_id], business_date, business_date):
             add(c.item_id, c.quantity, c.amount)
             tenders[c.tender] += c.amount
     else:

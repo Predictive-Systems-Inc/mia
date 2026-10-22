@@ -1991,6 +1991,12 @@ def upgrade() -> None:
             batch_op.f("ix_sales_receipts_session_id"), ["session_id"], unique=False
         )
         batch_op.create_index(batch_op.f("ix_sales_receipts_status"), ["status"], unique=False)
+        batch_op.create_index(
+            "ux_sales_receipts_approval",
+            ["approval_id"],
+            unique=True,
+            sqlite_where=sa.text("approval_id IS NOT NULL"),
+        )
 
     op.create_table(
         "sales_payments",
@@ -2108,6 +2114,9 @@ def downgrade() -> None:
 
     op.drop_table("sales_payments")
     with op.batch_alter_table("sales_receipts", schema=None) as batch_op:
+        batch_op.drop_index(
+            "ux_sales_receipts_approval", sqlite_where=sa.text("approval_id IS NOT NULL")
+        )
         batch_op.drop_index(batch_op.f("ix_sales_receipts_status"))
         batch_op.drop_index(batch_op.f("ix_sales_receipts_session_id"))
         batch_op.drop_index(batch_op.f("ix_sales_receipts_business_date"))

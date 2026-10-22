@@ -3,7 +3,7 @@ same fields and redaction; the customers stay with the customer service."""
 
 from mia.agents.customer_service import MANIFEST
 from mia.agents.customer_service.models import Complaint, Customer
-from mia.core.models import CustomerOrder
+from mia.core.models import STANDARD_VERSION, CustomerOrder
 
 
 def test_customer_orders_keep_their_fields_and_redaction() -> None:
@@ -11,8 +11,8 @@ def test_customer_orders_keep_their_fields_and_redaction() -> None:
         CustomerOrder.__tablename__,
         CustomerOrder.__module__,
         CustomerOrder.__redact__,
-        MANIFEST.standard_version,  # STANDARD_VERSION is 1.9 since sales operations (1_9)
-    ) == ("customer_orders", "mia.core.models", frozenset({"delivery_note"}), "1.8")
+        MANIFEST.standard_version,
+    ) == ("customer_orders", "mia.core.models", frozenset({"delivery_note"}), STANDARD_VERSION)
     assert set(CustomerOrder.model_fields) == {
         "id",
         "created_at",

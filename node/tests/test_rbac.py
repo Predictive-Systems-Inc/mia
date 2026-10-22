@@ -92,6 +92,7 @@ FULL = {"read", "write", "read_all", "write_all"}
 OWN = {"read_own", "write_own"}
 ADMIN_PAY = {"read_all", "read_own", "write_all"}
 ADMIN_HR = ADMIN_PAY | {"read"}
+SALES_READERS = ("sales_supervisor", "bookkeeper", "branch_manager", "inventory_manager")
 SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
     "sales_counts": {
         "clerk": {"read_own", "write_own"},
@@ -163,9 +164,15 @@ SHARED_RIGHTS: dict[str, dict[str, set[str]]] = {
         "agent.production_planner": {"read", "read_all"},
     },
     **{
-        table: {"clerk": OWN, "supervisor": {"read", "write"}, "owner": FULL, "admin": FULL}
+        table: {
+            "clerk": OWN,
+            "supervisor": {"read", "write"},
+            "owner": FULL,
+            "admin": FULL,
+            **{f"agent.{a}": {"read", "read_all"} for a in SALES_READERS},
+        }
         for table in ("sales_sessions", "sales_receipts", "sales_receipt_lines", "sales_payments")
-    },  # 1.9 (ADR 022): new core tables; agent reads arrive with their reader
+    },  # 1.9 (ADR 022): new core tables
     "leave": {
         "staff": OWN,
         "clerk": OWN,

@@ -7,6 +7,14 @@ instructions: {base: prompts/base.md}
 roles:
   agent_role: agent.sales_supervisor
   grants:
+    - data:sales_sessions:read
+    - data:sales_sessions:read_all
+    - data:sales_receipts:read
+    - data:sales_receipts:read_all
+    - data:sales_receipt_lines:read
+    - data:sales_receipt_lines:read_all
+    - data:sales_payments:read
+    - data:sales_payments:read_all
     - data:sales_counts:read
     - data:sales_counts:write
     - data:sales_counts:read_all

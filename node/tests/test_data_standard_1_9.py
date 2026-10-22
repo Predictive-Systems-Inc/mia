@@ -2,6 +2,8 @@
 tables, their services in mia/core/sales.py, and day_sales over the one source a kiosk uses."""
 
 import datetime as dt
+from collections.abc import Iterator
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -12,10 +14,10 @@ from sqlmodel import Session, select
 
 from mia.agents.bookkeeper.tools import tender_sales
 from mia.agents.sales_supervisor import calc
-from mia.agents.sales_supervisor.tools import _live_counts, _plain
+from mia.agents.sales_supervisor import tools as sales_tools
 from mia.cli import _alembic_config
-from mia.core import approvals, orgconfig, sales, store
-from mia.core.db import get_engine, utcnow
+from mia.core import approvals, db, orgconfig, sales, store
+from mia.core.db import get_engine
 from mia.core.models import (
     STANDARD_VERSION,
     TENDERS,
@@ -31,15 +33,26 @@ from mia.core.models import (
 from mia.core.rbac import PermissionDenied
 from mia.core.sales import LineIn, PaymentIn, SalesError
 from mia.templates.retail.models import RetailItem
+from tests.conftest import _ferinos_on
 
 Ferinos = tuple[Branch, dict[str, Person]]
 MNL = ZoneInfo("Asia/Manila")
 TABLES = ("sales_sessions", "sales_receipts", "sales_receipt_lines", "sales_payments")
 
 
+TODAY = dt.date(2026, 10, 28)  # a Wednesday; the seed counts the 14 days before
+
+
+@pytest.fixture
+def ferinos(monkeypatch: pytest.MonkeyPatch, session: Session) -> Iterator[Ferinos]:
+    """The Ferino's seed on TODAY with db.utcnow pinned to 10:00 Manila (conftest._ferinos_on)."""
+    for shop in _ferinos_on(monkeypatch, session, TODAY):
+        yield shop.kiosk, shop.people
+
+
 def yesterday() -> dt.date:
-    """The seed counts the 14 days before today (Manila)."""
-    return dt.datetime.now(MNL).date() - dt.timedelta(days=1)
+    """The pinned clock's day before, a seeded counts day."""
+    return db.utcnow().astimezone(MNL).date() - dt.timedelta(days=1)
 
 
 def noon(day: dt.date, hh: int = 12) -> dt.datetime:
@@ -71,13 +84,21 @@ def sell(
     return sales.record_receipt(session, clerk, s, no, noon(yesterday(), 13), lines, pays)
 
 
-def approve(session: Session, rs: Ferinos, kind: str, subject: str, role: str, by: str) -> str:
+def approve(
+    session: Session,
+    rs: Ferinos,
+    kind: str,
+    subject: str,
+    role: str,
+    by: str,
+    evidence: dict[str, Any] | None = None,
+) -> str:
     people = rs[1]
     a = approvals.request(
         session, kind, ("sales_receipts", subject), kind, Actor.person(people["Ana"]), [role],
-        risk="money",
+        risk="money", evidence=evidence,
     )  # fmt: skip
-    approvals.decide(session, a.id, Actor.person(people[by]), "approved", stepped_up_at=utcnow())
+    approvals.decide(session, a.id, Actor.person(people[by]), "approved", stepped_up_at=db.utcnow())
     return a.id
 
 
@@ -225,7 +246,9 @@ def test_day_sales_on_a_counts_kiosk_equals_the_count_totals(
     kiosk, day = ferinos[0], yesterday()
     got = sales.day_sales(session, kiosk.id, day)
     assert got.source == "counts"
-    assert got.by_item == calc.totals(_plain(_live_counts(session, [kiosk.id], day, day)))
+    live = sales_tools._live_counts(session, [kiosk.id], day, day)
+    assert sales_tools._live_counts is sales.live_counts  # one query, in core
+    assert got.by_item == calc.totals(sales_tools._plain(live))
     want = {t: tender_sales(session, kiosk.id, t, day, day) for t in got.by_tender}
     assert got.by_tender == want and sum(want.values()) > 0
 
@@ -276,3 +299,159 @@ def test_closing_freezes_expected_and_difference(session: Session, ferinos: Feri
     with pytest.raises(SalesError, match="session_closed"):
         sell(session, ferinos, s, "M-2")
     assert opened(session, ferinos).opening_float == 7900  # the last close's counted
+
+
+def classic_and_kape(session: Session) -> tuple[SalesReceiptLine, SalesReceiptLine]:
+    """The sale's Classic line (2 at 4000) and Kape line (1 at 2500)."""
+    lines = sorted(session.exec(select(SalesReceiptLine)).all(), key=lambda ln: ln.unit_price)
+    return lines[1], lines[0]
+
+
+def refund(
+    session: Session,
+    rs: Ferinos,
+    s: SalesSession,
+    sale: SalesReceipt,
+    back: list[LineIn],
+    amount: int,
+    approval_id: str | None,
+    no: str = "M-9",
+) -> SalesReceipt:
+    pay = [PaymentIn(tender="cash", amount=amount)]
+    return sales.record_receipt(
+        session, Actor.person(rs[1]["Ana"]), s, no, noon(yesterday(), 15), back, pay,
+        refund_of=sale.id, approval_id=approval_id,
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize("quantities", [(-1, -1), (-2, -1)], ids=["repeated", "split"])
+def test_a_refund_names_each_sale_line_once(
+    session: Session, ferinos: Ferinos, quantities: tuple[int, int]
+) -> None:
+    s = opened(session, ferinos)
+    sale = sell(session, ferinos, s, "M-1")
+    classic, _ = classic_and_kape(session)
+    ok = approve(session, ferinos, sales.REFUND, sale.id, "admin", "Rosa")
+    back = [
+        LineIn(item_id=classic.item_id, quantity=q, refunded_line_id=classic.id) for q in quantities
+    ]
+    before = written(session)
+    with pytest.raises(SalesError, match="refunded_line"):
+        refund(session, ferinos, s, sale, back, 4000 * sum(quantities), ok)
+    assert written(session) == before
+
+
+def test_a_discounted_sale_is_refunded_at_the_price_paid(
+    session: Session, ferinos: Ferinos
+) -> None:
+    s = opened(session, ferinos)
+    lines = [
+        LineIn(item_id=item(session, "Classic").id, quantity=2),
+        LineIn(item_id=item(session, "Kape").id, quantity=1),
+    ]
+    pays = [PaymentIn(tender="cash", amount=9450)]
+    sale = sales.record_receipt(
+        session, Actor.person(ferinos[1]["Ana"]), s, "M-1", noon(yesterday(), 13), lines, pays,
+        discount=1050, discount_reason="senior",
+    )  # fmt: skip
+    _, kape = classic_and_kape(session)
+    back = [LineIn(item_id=kape.item_id, quantity=-1, refunded_line_id=kape.id)]
+    ok = approve(session, ferinos, sales.REFUND, sale.id, "admin", "Rosa")
+    before = written(session)
+    with pytest.raises(SalesError, match="payments"):  # the full price is not the price paid
+        refund(session, ferinos, s, sale, back, -2500, ok)
+    assert written(session) == before
+    assert refund(session, ferinos, s, sale, back, -2250, ok).total == -2250  # 2500 * 9450/10500
+
+
+def test_a_refund_above_the_approved_amount_is_refused(session: Session, ferinos: Ferinos) -> None:
+    s = opened(session, ferinos)
+    sale = sell(session, ferinos, s, "M-1")
+    _, kape = classic_and_kape(session)
+    back = [LineIn(item_id=kape.item_id, quantity=-1, refunded_line_id=kape.id)]
+    small = approve(session, ferinos, sales.REFUND, sale.id, "admin", "Rosa", {"amount": 1000})
+    before = written(session)
+    with pytest.raises(SalesError, match="approved_amount"):
+        refund(session, ferinos, s, sale, back, -2500, small)
+    assert written(session) == before
+
+
+def test_an_approval_is_used_once(session: Session, ferinos: Ferinos) -> None:
+    s = opened(session, ferinos)
+    sale = sell(session, ferinos, s, "M-1")
+    classic, kape = classic_and_kape(session)
+    ok = approve(session, ferinos, sales.REFUND, sale.id, "admin", "Rosa")
+    refund(session, ferinos, s, sale, [LineIn(item_id=kape.item_id, quantity=-1, refunded_line_id=kape.id)], -2500, ok)  # fmt: skip
+    back = [LineIn(item_id=classic.item_id, quantity=-1, refunded_line_id=classic.id)]
+    before = written(session)
+    with pytest.raises(SalesError, match="approval"):  # two calls in a row
+        refund(session, ferinos, s, sale, back, -4000, ok, "M-10")
+    assert written(session) == before
+    other = sell(session, ferinos, s, "M-2")
+    void_ok = approve(session, ferinos, sales.VOID, other.id, "supervisor", "Marites")
+    first_use = SalesReceipt(  # a concurrent writer's receipt, committed first
+        branch_id=s.branch_id, session_id=s.id, receipt_no="X-1", business_date=yesterday(),
+        sold_at=noon(yesterday()), clerk_id=s.person_id, subtotal=0, total=0, currency="PHP",
+        approval_id=void_ok,
+    )  # fmt: skip
+    store.insert(session, first_use, Actor.system(s.branch_id))
+    before = written(session)
+    with pytest.raises(SalesError, match="approval"):
+        sales.void_receipt(session, Actor.system(s.branch_id), other, void_ok, "x")
+    assert (written(session), other.status) == (before, "paid")
+
+
+def test_money_is_never_reversed_twice(session: Session, ferinos: Ferinos) -> None:
+    s = opened(session, ferinos)
+    sale = sell(session, ferinos, s, "M-1")
+    _, kape = classic_and_kape(session)
+    back = [LineIn(item_id=kape.item_id, quantity=-1, refunded_line_id=kape.id)]
+    ok = approve(session, ferinos, sales.REFUND, sale.id, "admin", "Rosa")
+    returned = refund(session, ferinos, s, sale, back, -2500, ok)
+    void_sale = approve(session, ferinos, sales.VOID, sale.id, "supervisor", "Marites")
+    void_refund = approve(session, ferinos, sales.VOID, returned.id, "supervisor", "Marites")
+    again = approve(session, ferinos, sales.REFUND, returned.id, "admin", "Rosa")
+    before = written(session)
+    with pytest.raises(SalesError, match="refunded"):  # a sale with a paid refund
+        sales.void_receipt(session, Actor.system(s.branch_id), sale, void_sale, "x")
+    with pytest.raises(SalesError, match="kind"):  # a refund is never voided
+        sales.void_receipt(session, Actor.system(s.branch_id), returned, void_refund, "x")
+    with pytest.raises(SalesError, match="refund_of"):  # a refund of a refund
+        refund(session, ferinos, s, returned, back, 2500, again, "M-10")
+    assert written(session) == before
+    other = sell(session, ferinos, s, "M-2")
+    gone = approve(session, ferinos, sales.VOID, other.id, "supervisor", "Marites")
+    sales.void_receipt(session, Actor.system(s.branch_id), other, gone, "x")
+    late = approve(session, ferinos, sales.REFUND, other.id, "admin", "Rosa")
+    before = written(session)
+    with pytest.raises(SalesError, match="refund_of"):  # a refund of a voided sale
+        refund(session, ferinos, s, other, back, -2500, late, "M-11")
+    assert written(session) == before
+
+
+def test_an_approval_references_one_receipt_structurally(
+    session: Session, ferinos: Ferinos
+) -> None:
+    s = opened(session, ferinos)
+    sale = sell(session, ferinos, s, "M-1")
+    ok = approve(session, ferinos, sales.VOID, sale.id, "supervisor", "Marites")
+    for no in ("X-1", "X-2"):  # past the service check: the partial unique index refuses
+        row = SalesReceipt(
+            branch_id=s.branch_id, session_id=s.id, receipt_no=no, business_date=yesterday(),
+            sold_at=noon(yesterday()), clerk_id=s.person_id, subtotal=0, total=0,
+            currency="PHP", approval_id=ok,
+        )  # fmt: skip
+        if no == "X-2":
+            with pytest.raises(IntegrityError):
+                store.insert(session, row, Actor.system(s.branch_id))
+        else:
+            store.insert(session, row, Actor.system(s.branch_id))
+
+
+def test_only_head_staff_close_a_session(session: Session, ferinos: Ferinos) -> None:
+    s = opened(session, ferinos)
+    liza = ferinos[1]["Liza"]
+    before = written(session)
+    with pytest.raises(SalesError, match="closed_by"):
+        sales.close_session(session, Actor.person(liza), s, 0, liza.id, noon(yesterday(), 18))
+    assert (written(session), s.state) == (before, "open")

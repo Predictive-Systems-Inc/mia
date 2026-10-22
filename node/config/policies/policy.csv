@@ -110,8 +110,9 @@ p, admin, *, data:sales_notes, read_all, allow
 p, admin, *, data:sales_notes, write_all, allow
 
 # sales operations (data standard 1.9, ADR 022): a clerk their own sessions, receipts, lines and
-# payments of their branch; head staff the branch's; admin every branch (owner inherits). Agent
-# reads arrive with the agent that reads them, the void and refund approvals with the till
+# payments of their branch; head staff the branch's; admin every branch (owner inherits). The
+# sales supervisor, bookkeeper, branch manager and inventory manager read them (read, read_all)
+# through their manifests; the void and refund approvals arrive with the till
 p, clerk, *, data:sales_sessions, read_own, allow
 p, clerk, *, data:sales_sessions, write_own, allow
 p, clerk, *, data:sales_receipts, read_own, allow

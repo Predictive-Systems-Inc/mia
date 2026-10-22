@@ -189,6 +189,20 @@ def test_no_module_spells_an_agent_id() -> None:
     assert offenders == []
 
 
+def test_core_imports_a_template_only_where_allowed() -> None:
+    """Layering: mia/core never imports mia/templates, except the modules named here."""
+    allowed = {
+        MIA / "core" / "sales.py",  # ADR 022: the sales tables reference retail items and prices
+    }
+    imports = re.compile(r"^\s*(from|import) mia\.templates", re.MULTILINE)
+    offenders = [
+        str(p.relative_to(MIA))
+        for p in (MIA / "core").rglob("*.py")
+        if p not in allowed and imports.search(p.read_text(encoding="utf-8"))
+    ]
+    assert offenders == []
+
+
 def test_agent_tables_carry_the_agent_prefix_and_shared_tables_live_in_core() -> None:
     """Rule 9: a table defined in mia/agents/<id>/ is prefixed <id>_; the shared sales and
     stock tables (data standard 1.5) and the sales operations tables (1.9) are defined in

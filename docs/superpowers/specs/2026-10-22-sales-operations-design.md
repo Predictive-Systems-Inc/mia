@@ -325,15 +325,17 @@ Built with 1.9 (ADR 022): the four tables, `mia/core/sales.py` (`open_session`, 
 `sales.receipts_from` (branch name to first receipts day; empty at Ferino's, so every kiosk is on
 counts) and the human rights in policy.csv. Waiting for the till or a receipt entry path:
 
-- The receipt tools (the till's own spec), and the agent grants of the readers (sales
-  supervisor, bookkeeper, branch manager, production planner, customer service) with them.
+- The receipt tools (the till's own spec); the read grants of the sales supervisor, bookkeeper,
+  branch manager and inventory manager are in (round 1), the production planner's and the
+  customer service's arrive with their reads.
 - The chat path: a clerk typing a receipt (`source` chat), and a clerk's count on a receipts day
   answered with the receipts figures (section 5).
 - The void and refund cards: the approval types `sales.void` (head staff) and `sales.refund`
-  (owner or admin) are checked by the services but nothing requests them yet.
+  (owner or admin) are checked by the services but nothing requests them yet; the refund card
+  sets `evidence["amount"]`, the amount approved.
+- Voiding a sale together with its refunds (refused in v1).
 - Moving the sales supervisor's reports and the bookkeeper's `tender_sales` onto `day_sales`
-  (section 8, step 2); `day_sales` repeats the live count query today (core cannot import an
-  agent) and a test pins it equal to the sales supervisor's totals.
+  (section 8, step 2); the live count query itself is in core (`sales.live_counts`) already.
 - Opening a session on a retail clerk's check-in and closing it from the bookkeeper's closing
   count; `drawer_out` in the session's expected cash (it lives with the bookkeeper today).
 - A running experiment's `to_price` at the till: `experiment_id` is stored as given, the unit

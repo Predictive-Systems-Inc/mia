@@ -49,7 +49,15 @@ def schedule_price(
 def price_on(session: Session, item: RetailItem, branch_id: str, day: dt.date) -> int:
     """The item's price at the branch on a local date: the branch's row with the latest
     effective_on not after day (the newest row on a tie), else the item's default price."""
-    row = session.exec(
+    row = price_row_on(session, item, branch_id, day)
+    return row.price if row else item.price
+
+
+def price_row_on(
+    session: Session, item: RetailItem, branch_id: str, day: dt.date
+) -> RetailItemPrice | None:
+    """The branch's dated price row price_on uses, None when the default price applies."""
+    return session.exec(
         select(RetailItemPrice)
         .where(RetailItemPrice.branch_id == branch_id)
         .where(RetailItemPrice.item_id == item.id)
@@ -60,7 +68,6 @@ def price_on(session: Session, item: RetailItem, branch_id: str, day: dt.date) -
             col(RetailItemPrice.id).desc(),
         )
     ).first()
-    return row.price if row else item.price
 
 
 def apply_due(
