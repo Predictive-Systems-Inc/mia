@@ -811,3 +811,37 @@ def test_the_counts_kiosk_notice_is_per_clerk_and_business_date(
     assert _turn(session, rs[1]["Liza"], "r 2 ube cash").text().startswith(noted)
     rs_pin(at(RS_TODAY + dt.timedelta(days=1), 10))
     assert _turn(session, rs[1]["Ana"], "r 1 ube cash").text().startswith(noted)
+
+
+# ---- Task 2 fix round 2 ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("kiosk", ["counts", "receipts"])
+def test_an_unknown_item_keeps_the_full_parse(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, kiosk: str
+) -> None:
+    if kiosk == "receipts":
+        receipts_kiosk(monkeypatch)
+    assert _groups(session, rs, "classic 5 halo gcash 4") == ([(5, "classic"), (4, "halo")], None)
+    assert _groups(session, rs, "ube 3 halo cash 2") == ([(3, "ube"), (2, "halo")], None)
+    assert _groups(session, rs, "resibo 2 cl 1 ube cash 125") == ([(2, "cl"), (1, "ube")], 125)
+    assert _groups(session, rs, "3 sp cash 150") == ([(3, "sp")], 150)
+
+
+@pytest.mark.usefixtures("ss_jev")
+@pytest.mark.parametrize(
+    ("text", "known", "words"), [("classic 5 halo gcash 4", "Classic", "halo"),
+                                 ("ube 3 halo cash 2", "Ube", "halo")]
+)  # fmt: skip
+def test_an_unknown_item_after_a_tender_asks_which_item(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, text: str, known: str,
+    words: str,
+) -> None:  # fmt: skip
+    ss_answers(
+        monkeypatch, "report_sales", item_0=item(session, known).id, item_1="none",
+        conversation="other",
+    )  # fmt: skip
+    before = len(session.exec(select(SalesCount)).all())
+    asked = _turn(session, rs[1]["Ana"], text)
+    assert t("sales.which_item", "fil", words=words) in asked.text()
+    assert len(session.exec(select(SalesCount)).all()) == before

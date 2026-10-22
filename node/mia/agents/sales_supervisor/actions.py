@@ -19,6 +19,7 @@ from mia.agents.parsing import (
     DAY_NAMES,
     EN_WEEKDAYS,
     FI_WEEKDAYS_ESSIVE,
+    RECEIPT_WORDS,
     Group,
     find_tender,
     menu_tokens,
@@ -257,6 +258,11 @@ def _named(groups: list[Group], menu: set[str]) -> int:
     return sum(g.words in menu or any(w in menu for w in g.words.split()) for g in groups)
 
 
+def _worded(groups: list[Group]) -> int:
+    """How many groups carry an item word, known or not (a receipt word is none)."""
+    return sum(any(w not in RECEIPT_WORDS for w in g.words.split()) for g in groups)
+
+
 def build_query(
     deps: AgentDeps,
     message: str,
@@ -287,7 +293,8 @@ def build_query(
     cut = strip_receipt(message, receipt_no=on_receipts)
     if total is None and cut.total is not None:
         typed = pre_parse(cut.text, menu)[0]
-        if _named(typed, menu) >= _named(groups, menu):  # the typed total takes no item's count
+        kept = _named(typed, menu) >= _named(groups, menu) and _worded(typed) >= _worded(groups)
+        if kept:  # the typed total takes no item's count, known or unknown
             groups, total = typed, cut.total
     why_asked = previous_mia_message in why_texts(deps.lang)
     return Query(
