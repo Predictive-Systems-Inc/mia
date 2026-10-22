@@ -903,3 +903,9 @@ Format for each entry:
 - Question: Does a check-in through the app's schedule route open a sales session too?
 - Assumed answer: not yet; the chat check-in is the receipts kiosk's path until the owner uses the app at a kiosk.
 - Blocking: no.
+
+## Q126: Which drawer a cash expense came from
+- Where: node/mia/agents/bookkeeper/tools.py (record_cash_count on a receipts day, drawer_out), node/mia/core/sales.py
+- Question: When two clerks' drawers are open on one day and a cash expense is paid from the drawer, which session's expected cash is it taken from?
+- Assumed answer: the day's cash expenses are taken once, from the first drawer counted that day; later counts of the day take none. Recording the paying session on the expense is a data standard question for a later version.
+- Blocking: no.
