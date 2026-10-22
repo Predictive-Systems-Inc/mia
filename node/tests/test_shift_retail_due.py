@@ -115,22 +115,86 @@ def test_a_late_check_in_tells_head_staff(
     assert urgency[line] is True
 
 
-def test_a_late_notice_holds_the_missed_check_in_alert(
+def _late(session: Session, who: Person, arrive: dt.time | None) -> None:
+    notice = tools.RecordAbsenceInput(date=RS_TODAY, reason="late", arrive_at=arrive)
+    assert isinstance(
+        tools.record_absence(deps_for(session, who), notice, "c"), tools.RecordAbsenceOutput
+    )
+    session.commit()
+
+
+def _no_show(name: str, time: str) -> tuple[str, str]:
+    """The late no-show words to head staff and to the clerk, in Filipino."""
+    head = t(
+        "retail.alert.late_no_show_supervisor", "fil", name=name, location="Mall kiosk", time=time
+    )
+    return head, t("retail.alert.late_no_show", "fil", location="Mall kiosk", time=time)
+
+
+def test_a_late_notice_holds_the_alert_until_the_arrival_plus_the_window(
     session: Session, rs: Ferinos, rs_pin: Pin
 ) -> None:
-    """Liza sent a late notice at 12:50: nothing more at 13:15; Ana, silent, still gets it."""
+    """Liza at 12:50, "1:30": held at 13:15 and 13:40 (13:30 plus 15 minutes is 13:45), the
+    no-show alert at 13:50 once, nothing at 14:00. Ana, silent, gets the plain alert."""
     ana, liza, marites = (rs[1][n] for n in ("Ana", "Liza", "Marites"))
     rs_pin(at(RS_TODAY, 12, 50))
-    notice = tools.RecordAbsenceInput(date=RS_TODAY, reason="late", arrive_at=dt.time(1, 30))
-    out = tools.record_absence(deps_for(session, liza), notice, "c")
-    assert isinstance(out, tools.RecordAbsenceOutput) and out.arrive_at == "13:30"
+    _late(session, liza, dt.time(1, 30))
+    key = replies.word_key("alert.missed_check_in_supervisor")
+    plain = t(key, "fil", name=liza.name, location="Mall kiosk", time="13:00")
+    head, clerk = _no_show(liza.name, "13:00")
+    for minute in (15, 40):
+        _tick(session, rs_pin, at(RS_TODAY, 13, minute))
+        assert head not in texts(session, marites) and texts(session, liza) == []
+    assert t(key, "fil", name=ana.name, location="Mall kiosk", time="09:00") in texts(
+        session, marites
+    )
+    _tick(session, rs_pin, at(RS_TODAY, 13, 50))
+    _tick(session, rs_pin, at(RS_TODAY, 14, 0))
+    assert (texts(session, marites).count(head), texts(session, liza)) == (1, [clerk])
+    assert plain not in texts(session, marites)
+
+
+def test_a_late_notice_with_no_time_holds_the_alert_an_hour(
+    session: Session, rs: Ferinos, rs_pin: Pin
+) -> None:
+    liza, marites = rs[1]["Liza"], rs[1]["Marites"]
+    rs_pin(at(RS_TODAY, 12, 50))
+    _late(session, liza, None)
+    head, clerk = _no_show(liza.name, "13:00")
+    _tick(session, rs_pin, at(RS_TODAY, 13, 59))
+    assert head not in texts(session, marites)
+    _tick(session, rs_pin, at(RS_TODAY, 14, 0))
+    _tick(session, rs_pin, at(RS_TODAY, 14, 30))
+    assert (texts(session, marites).count(head), texts(session, liza)) == (1, [clerk])
+
+
+def test_a_late_notice_for_the_morning_never_holds_the_afternoon(
+    session: Session, rs: Ferinos, rs_pin: Pin
+) -> None:
+    """Liza with a second shift 08:00 to 12:00: her late notice holds that shift only."""
+    liza, marites = rs[1]["Liza"], rs[1]["Marites"]
+    afternoon = visit_of(session, liza, RS_TODAY)
+    morning = Visit(
+        branch_id=afternoon.branch_id,
+        job_id=afternoon.job_id,
+        location_id=afternoon.location_id,
+        date=RS_TODAY,
+        assigned_person_ids=[liza.id],
+        planned_start=at(RS_TODAY, 8),
+        planned_end=at(RS_TODAY, 12),
+    )
+    store.insert(session, morning, Actor.system(rs[0].id))
+    session.commit()
+    rs_pin(at(RS_TODAY, 7, 50))
+    _late(session, liza, dt.time(8, 30))
+    rs_pin(at(RS_TODAY, 8, 30))
+    assert tools.check_in(deps_for(session, liza), CheckInInput(), "c").status == "ok"
     session.commit()
     _tick(session, rs_pin, at(RS_TODAY, 13, 16))
     key = replies.word_key("alert.missed_check_in_supervisor")
-    liza_missed = t(key, "fil", name=liza.name, location="Mall kiosk", time="13:00")
-    ana_missed = t(key, "fil", name=ana.name, location="Mall kiosk", time="09:00")
-    assert liza_missed not in texts(session, marites) and ana_missed in texts(session, marites)
-    assert texts(session, liza) == []  # no "are you at the kiosk?" either
+    assert t(key, "fil", name=liza.name, location="Mall kiosk", time="13:00") in texts(
+        session, marites
+    )
 
 
 def test_a_missed_check_out_tells_head_staff_in_kiosk_words(

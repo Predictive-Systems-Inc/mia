@@ -501,6 +501,8 @@ STRINGS: dict[str, str | list[str]] = {
     "retail.absence.late_unknown": "Naitala: mahuhuri ka sa saimong shift sa {location} nin {start} sa {date}. Sinabihan ko na an head staff.",
     "retail.alert.late": "Mahuhuri si {name} sa shift na {start} sa {location} sa {date}; maabot siya nin {time}.",
     "retail.alert.late_unknown": "Mahuhuri si {name} sa shift na {start} sa {location} sa {date}.",
+    "retail.alert.late_no_show": "Nagsabi kang mahuhuri ka alagad dai ka pa naka-check in sa {location} para sa shift na {time}. Simbag nin 'Yaon na ako' pag-abot mo.",
+    "retail.alert.late_no_show_supervisor": "Dai nag-abot si {name} sa {location} pakatapos kan saiyang pasabi na mahuhuri (an shift na {time}) asin dai pa naka-check in.",
     "retail.denied.visits": "Pasensya, an saimong sadiri sanang mga shift an mahihiling mo. Naitala ko an hagad.",
     "retail.fallback.help": "Kaya kong itala an pag-absent o pagka-late, ipahiling an saimong mga shift, i-check in asin i-check out ka, magpalit nin shift asin ipasa an problema sa kiosk. Ano an kaipuhan mo?",
     "retail.fallback.quick_visits": "Ipahiling an sakong mga shift",

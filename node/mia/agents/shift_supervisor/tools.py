@@ -15,7 +15,7 @@ from mia.agents.shift_supervisor import cover, scoring
 from mia.agents.shift_supervisor import roster as patterns
 from mia.agents.shift_supervisor import timesheets as sheets
 from mia.agents.shift_supervisor.rules import fmt_date, is_retail
-from mia.core import scheduling, store
+from mia.core import events, scheduling, store
 from mia.core.db import utcnow
 from mia.core.models import (
     Absence,
@@ -33,6 +33,7 @@ from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailBranchHours, RetailClosure
 
 MORNING_ENDS = dt.time(12, 0)
+LATE_NOTICE = "visit.late_notice"  # alerts.LATE reads it
 
 
 # ---- shared read models -------------------------------------------------------------------
@@ -296,6 +297,21 @@ def record_absence(
         info = visit_info(deps.session, late, tz)
         arrive = _arrival(args.arrive_at, late, tz) if args.arrive_at else None
         _tell_late(deps, person, info, late.branch_id, arrive)
+        when = None
+        if arrive:
+            local = late.planned_start.astimezone(ZoneInfo(tz))
+            hour, minute = map(int, arrive.split(":"))
+            when = local.replace(hour=hour, minute=minute, second=0, microsecond=0).isoformat()
+        after = {"person_id": person.id, "absence_id": absence.id, "arrive_at": when}
+        events.emit(  # the hold on this shift's missed check-in alert (alerts.LATE)
+            deps.session,
+            LATE_NOTICE,
+            ("visit", late.id),
+            None,
+            after,
+            deps.actor,
+            tool_call_id=tool_call_id,
+        )
         return RecordAbsenceOutput(
             absence_id=absence.id,
             person=person.name,

@@ -23,11 +23,11 @@ from sqlmodel import Session, col, select
 
 from mia.agents.shift_supervisor import MANIFEST, cover, replies, timesheets
 from mia.agents.shift_supervisor.rules import _visit_card, is_retail, word_key
-from mia.agents.shift_supervisor.tools import VisitInfo, visit_info
+from mia.agents.shift_supervisor.tools import LATE_NOTICE, VisitInfo, visit_info
 from mia.chat.blocks import Block, TextBlock
 from mia.chat.channels import notify
 from mia.core import approvals, events, scheduling
-from mia.core.models import Absence, Actor, Approval, Branch, Event, Person, Timesheet, Visit
+from mia.core.models import Actor, Approval, Branch, Event, Person, Timesheet, Visit
 from mia.core.orgconfig import load as load_org
 from mia.i18n import t
 from mia.templates.retail import hours as retail_hours
@@ -35,6 +35,8 @@ from mia.templates.retail import hours as retail_hours
 log = logging.getLogger(__name__)
 MISSED = "visit.missed_check_in"
 MISSED_OUT = "visit.missed_check_out"
+LATE = LATE_NOTICE  # retail: a clerk's late notice for one shift (tools.record_absence)
+LATE_HOLD = dt.timedelta(minutes=60)  # a late notice with no time holds the alert this long
 OVERTIME = "timesheet.overtime"
 UNSTAFFED = "alert.unstaffed_visits"
 PLAN = "notification.daily_plan"
@@ -108,13 +110,17 @@ def _each_branch(session: Session, now: dt.datetime, fn: BranchAlert) -> int:
     return count
 
 
-def _sent_late(session: Session, visit: Visit) -> bool:
-    """True when every clerk on the visit sent a late notice for its day (a late absence).
-    ponytail: by day, not by shift; a clerk with two shifts in a day is rare at a kiosk."""
-    ids = visit.assigned_person_ids
-    stmt = select(Absence.person_id).where(Absence.date == visit.date)
-    late = session.exec(stmt.where(Absence.reason == "late").where(col(Absence.person_id).in_(ids)))
-    return set(ids) <= set(late.all())
+def _late_until(session: Session, visit: Visit, grace: dt.timedelta) -> dt.datetime | None:
+    """The end of the hold a late notice for this shift puts on its missed check-in alert: the
+    stated arrival plus the check-in window, else LATE_HOLD after the start; None without a
+    notice. The latest notice for the shift counts."""
+    rows = session.exec(
+        select(Event).where(Event.action == LATE).where(Event.entity_id == visit.id)
+    ).all()
+    if not rows:
+        return None
+    arrive = (max(rows, key=lambda e: e.timestamp).after or {}).get("arrive_at")
+    return dt.datetime.fromisoformat(arrive) + grace if arrive else visit.planned_start + LATE_HOLD
 
 
 def _missed_in(session: Session, branch: Branch, now: dt.datetime) -> int:
@@ -134,8 +140,10 @@ def _missed_in(session: Session, branch: Branch, now: dt.datetime) -> int:
             continue
         if visit.planned_start < now - dt.timedelta(days=1) or _marked(session, MISSED, visit.id):
             continue
-        if is_retail() and _sent_late(session, visit):
-            continue  # head staff heard at the late notice: no second word (spec 4, scenario 3)
+        until = _late_until(session, visit, grace) if is_retail() else None
+        if until is not None and now < until:
+            continue  # held after a late notice, until the stated arrival plus the window
+        late = until is not None
         info = visit_info(session, visit, branch.timezone)
         _mark(session, branch.id, MISSED, ("visit", visit.id), {"planned_start": info.start})
         names = []
@@ -146,12 +154,14 @@ def _missed_in(session: Session, branch: Branch, now: dt.datetime) -> int:
             names.append(person.name)
             if person.status != "active":
                 continue  # nothing to a person who left; the supervisors still hear
-            key = word_key("alert.missed_check_in")
+            key = "retail.alert.late_no_show" if late else word_key("alert.missed_check_in")
             text = t(key, person.language, location=info.location, time=info.start)
             _send(session, person, [TextBlock(text=text)], urgent=True)
         for sup in supervisors(session, branch.id):
             text = t(
-                word_key("alert.missed_check_in_supervisor"),
+                "retail.alert.late_no_show_supervisor"
+                if late
+                else word_key("alert.missed_check_in_supervisor"),
                 sup.language,
                 name=", ".join(names) or "?",
                 location=info.location,
