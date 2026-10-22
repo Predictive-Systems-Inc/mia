@@ -3,6 +3,9 @@ closing cash count and the night's tick, on RS_TODAY (a Wednesday: Ana 09:00 to 
 13:00 to 21:00). Every peso is computed here from the item prices of the day; a reply is read
 only for the words, never for a number. Clerks write Filipino, the owner English.
 
+The router is not exercised: each turn goes to the named agent as it would for a person with one
+agent.
+
 Steps no agent does today are left out, not faked (each named where it would be):
 - no agent tells head staff of a slow day while the shop is open (the owner's end-of-day report
   and the branch manager's evening nudge to the clerks are the only target comparisons, sales
@@ -153,7 +156,7 @@ def test_a_normal_day_at_the_mall_kiosk(day: Day, session: Session) -> None:
     day.at(13, 20)
     assert day.told("Marites", step=day.tick()) == []  # Liza checked in: no missed check-in
 
-    # 14:00 Mila orders 10 Classic for 18:00 on WhatsApp; Marites confirms the card in the app
+    # 14:00 Mila orders 10 Classic for 18:00 on WhatsApp; Marites confirms it through the app's decide path
     day.at(14)
     ordered = day.customer(MILA, "pa-order po 10 classic, pickup 6pm", "place_order", time="t0")
     assert "customer_service.order_placed" in ordered.actions()
@@ -201,7 +204,7 @@ def test_a_normal_day_at_the_mall_kiosk(day: Day, session: Session) -> None:
     counts = [NOON, AFTERNOON, AFTERNOON_GCASH, EVENING]
     assert the_counts(day) == expected_rows(counts)
 
-    # 21:10 Marites counts the drawer: 30 pesos and the centavos short, within the threshold
+    # 21:10 Marites counts the drawer: 30 pesos short, within the threshold
     total, gcash = amount(day, counts), amount(day, counts, "gcash")
     cash = total - gcash  # the day's cash sales: total sales less the non-cash tender
     assert (total, cash) == (157_900, 148_900)  # the figures in docs/testing-ferinos.md

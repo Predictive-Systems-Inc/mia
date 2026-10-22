@@ -209,7 +209,9 @@ def test_a_direct_link_revokes_the_open_invite(session: Session, bm: Ferinos) ->
     (maria,) = _people_named(session, "Maria")
     call_tool(admin, SET, SetPhoneInput(person_id=maria.id, phone=TYPED), "s1")
     late = linking.redeem(session, "whatsapp", "639981112222", out["invite_code"], utcnow())
-    assert late.status in ("expired", "invalid")  # revoked; the second-number guard too
+    assert (
+        late.status == "invalid"
+    )  # a different number than the linked one: the guard answers first
     assert linking.identity_for(session, "whatsapp", "639981112222") is None
     (code,) = session.exec(select(AuthCode).where(AuthCode.person_id == maria.id)).all()
     assert code.expires_at == code.created_at and code.used_at is None
@@ -385,6 +387,15 @@ def test_a_supervisor_is_refused_in_the_chat(
     _answers(monkeypatch, "add_person", [], new_name="n0", role="clerk")
     assert _turn(session, marites, "idagdag si maria clerk") == t("bm.not_allowed", "fil")
     assert _people_named(session, "Maria") == []
+
+
+def test_a_not_owner_admin_add_replies_no_record_in_the_chat(
+    session: Session, bm: Ferinos, jev_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    admin = _admin(session, bm[0])
+    _answers(monkeypatch, "add_person", [], new_name="n0", role="admin")
+    assert _turn(session, admin, "add user eve admin") == t("bm.no_record", "en")
+    assert _people_named(session, "Eve") == []
 
 
 @pytest.mark.parametrize(

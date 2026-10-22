@@ -3,7 +3,8 @@ agent with the fake Jev, a customer's channel message, the tick, and what each s
 
 An agent is addressed directly: for the turn the organisation runs only that agent (the
 Ferino's settings kept), so the turn goes to it as `_choose` sends a one-agent person; the
-tick runs every agent of the full settings. Jev is the fake transport (tests/jev_fake.py),
+tick runs every agent of the full settings. The router is not exercised: each turn goes to
+the named agent as it would for a person with one agent. Jev is the fake transport (tests/jev_fake.py),
 never the real service.
 """
 

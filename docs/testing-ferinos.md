@@ -93,7 +93,7 @@ price experiment runs); the cash count is the day's cash sales less 30 pesos.
 | 14:00 | customer (sim) | `pa-order po 10 classic, pickup 6pm` | customer service: the order waits; Marites, Ana and Liza get "Bagong order" |
 | 14:05 | Marites | approve the order card in her chat | the customer is told the order is confirmed for 18:00 |
 | 16:00 | Ana | `ubos na ang ube` | inventory manager: Ube sold out at 16:00 |
-| 17:00 | Ana | `sp 4 cl 6` | sales supervisor: recorded as cash |
+| 17:00 | Ana | `sp 4 cl 6` | sales supervisor: recorded as cash (the counts cover the sales before the 16:00 sell-out) |
 | 17:01 | Ana | `ube 2 gcash` | sales supervisor: recorded as GCash (one tender per message; two in one message are asked) |
 | 17:02 | Ana | `uwi na ako` | shift supervisor: checked out, the timesheet drafted |
 | 20:30 | Liza | `sp 3 cl 5` | sales supervisor: recorded, the day's total |

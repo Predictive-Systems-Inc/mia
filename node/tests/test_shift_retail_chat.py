@@ -395,7 +395,9 @@ def test_a_late_check_in_at_its_stated_time_checks_in(
     [
         ("fil", "may 3 pm na meeting", set()),  # "may" is "there is", 3 pm a time
         ("fil", "sarado sa December 5", {"2026-12-05"}),  # an English month from a fil sender
-        ("fil", "sarado may 3", set()),  # the English pass's 3 May is past: dropped
+        ("fil", "sarado sa June 5", {"2027-06-05"}),  # a past English day rolls to next year
+        ("fil", "sarado may 3", {"2027-05-03"}),  # the English pass's 3 May is past: next year
+        ("fil", "may sakit ako kahapon", {"2026-10-27"}),  # yesterday words stay past
         ("en", "closed May 3", {"2026-05-03"}),
     ],
 )

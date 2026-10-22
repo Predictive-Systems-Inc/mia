@@ -13,7 +13,7 @@ from typing import Any
 
 from mia.agents import decider as shared
 from mia.agents.decider import Alternative, DecideError, Decision, Reader
-from mia.agents.parsing import find_dates, has_negation, strip_times
+from mia.agents.parsing import MONTHS, find_dates, has_negation, strip_times
 from mia.agents.shift_supervisor.actions import (
     ANOTHER_DAY,
     SUPERVISING,
@@ -98,16 +98,35 @@ def _late(q: Query) -> bool:
     return away and (late or arrive)
 
 
+def _next_year(d: dt.date) -> dt.date:
+    """The same month and day a year on (29 Feb becomes 1 Mar)."""
+    try:
+        return d.replace(year=d.year + 1)
+    except ValueError:
+        return dt.date(d.year + 1, 3, 1)
+
+
+_MONTH_DAY = re.compile(
+    rf"\b(?:{'|'.join(MONTHS)})\.?\s*\d|\d\s*(?:of\s+)?(?:{'|'.join(MONTHS)})\b"
+)
+
+
 def _named_days(q: Query) -> set[str]:
     """The ISO days the message names: parsing.find_dates in the sender's language, plus an
     English pass for the month names (an English "May 5" from a fil sender) on the text without
-    its clock times, so fil "may 3 pm" ("there is", 3 pm) is never May 3. The English pass keeps
-    only days from today on: fil "sarado may 3" is never a past 3 May (a close_day button); the
-    sender's own pass keeps past days ("kasuhapon" is yesterday, asked as an off day)."""
+    its clock times, so fil "may 3 pm" ("there is", 3 pm) is never May 3. A past month-day
+    rolls to next year (fil "sarado sa June 5" in October means the coming 5 June, and the
+    sender pass's past 5 June is dropped); the sender's own pass otherwise keeps past days
+    ("kasuhapon" is yesterday, asked as an off day)."""
     days = find_dates(q.message, q.today, q.lang)
     if q.lang != "en":
-        english = find_dates(strip_times(q.message), q.today, "en")
-        days += [(i, d) for i, d in english if d >= q.today]
+        text = strip_times(q.message)
+        english = find_dates(text, q.today, "en")
+        if _MONTH_DAY.search(text.casefold()):
+            past = {d for _, d in english if d < q.today}
+            days = [(i, d) for i, d in days if d not in past]
+            english = [(i, _next_year(d) if d in past else d) for i, d in english]
+        days += english
     return {d.isoformat() for _, d in days}
 
 
