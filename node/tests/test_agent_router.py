@@ -825,7 +825,7 @@ def test_an_unclear_message_or_a_close_call_stays_with_the_shift_supervisor(
 
 @pytest.mark.parametrize(
     ("agent", "name", "text"),
-    [("inventory_manager", "Ana", "sp 4 cl 6"), ("customer_service", "Liza", "sp 3 cl 5")],
+    [("inventory_manager", "Ana", "sales today?"), ("customer_service", "Liza", "sales today?")],
 )
 def test_a_notification_never_makes_its_agent_the_active_one(
     session: Session,
@@ -836,8 +836,8 @@ def test_a_notification_never_makes_its_agent_the_active_one(
     text: str,
 ) -> None:
     """An alert the person did not ask for ("Ube sold out", a customer order) is no
-    conversation: the count after it is routed with no active agent and reaches the sales
-    supervisor without a switch."""
+    conversation: the message after it is routed with no active agent and reaches the sales
+    supervisor without a switch (a count goes there by code, with no route request)."""
     only = orgconfig.OrgSettings(agents=[agent, "sales_supervisor"])
     monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: only))
     monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
@@ -877,3 +877,110 @@ def test_here_na_reaches_the_shift_supervisor(
     reply = _turn(session, ana, "here na")
     assert reply.agent_id == "shift_supervisor"
     assert not session.exec(select(Event).where(Event.action == "chat.agent_switched")).all()
+
+
+# Rule 7: a count-shaped message goes to the sales supervisor by code, with no route request
+CLERK_AGENTS = ["shift_supervisor", "sales_supervisor", "inventory_manager", "production_planner"]
+
+
+@pytest.fixture
+def clerk_day(
+    monkeypatch: pytest.MonkeyPatch, ferinos: tuple[Any, dict[str, Person]]
+) -> tuple[dict[str, Person], dict[str, Any], list[dict[str, Any]]]:
+    """Ferino's with four agents, Jev on. The router answers route["agent"] (its requests are
+    recorded); every decider answers its first action (check_in for the shift supervisor)."""
+    only = orgconfig.OrgSettings(agents=CLERK_AGENTS)
+    monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: only))
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")
+    get_settings.cache_clear()
+    route: dict[str, Any] = {"agent": "shift_supervisor"}
+    routed: list[dict[str, Any]] = []
+
+    def answer(body: dict[str, Any]) -> dict[str, Any]:
+        if "agent" in body["questions"]:
+            routed.append(body)
+            return {"agent": choice(route["agent"])}
+        actions = body["questions"]["action"]["criteria"]
+        return answers_for(body, "check_in" if "check_in" in actions else next(iter(actions)))
+
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(answer))
+    return ferinos[1], route, routed
+
+
+@pytest.mark.parametrize(
+    ("name", "first", "agent", "text"),
+    [
+        ("Ana", "in na ako", "shift_supervisor", "sp 5 cl 8 ube 3"),
+        ("Ana", "ube sold out", "inventory_manager", "sp 4 cl 6"),
+        ("Ana", "ube sold out", "inventory_manager", "ube 2 gcash"),
+        ("Liza", "in na ako", "shift_supervisor", "sp 3 cl 5"),
+        ("Liza", None, None, "sp 3 cl 5"),
+    ],
+)
+def test_a_count_shaped_message_goes_to_the_sales_supervisor_by_code(
+    session: Session,
+    clerk_day: tuple[dict[str, Person], dict[str, Any], list[dict[str, Any]]],
+    name: str,
+    first: str | None,
+    agent: str | None,
+    text: str,
+) -> None:
+    people, route, routed = clerk_day
+    thread = None
+    if first is not None:
+        route["agent"] = agent
+        before = _turn(session, people[name], first)
+        assert before.agent_id == agent
+        thread = before.thread_id
+    routed.clear()
+    reply = _turn(session, people[name], text, thread)
+    assert reply.agent_id == "sales_supervisor" and routed == []
+    switched = session.exec(select(Event).where(Event.action == "chat.agent_switched")).all()
+    assert [e.after for e in switched] == (
+        [] if agent is None else [{"from": agent, "to": "sales_supervisor"}]
+    )
+
+
+@pytest.mark.parametrize(
+    "text", ["ube 10 left", "baked 40 ube", "5 ube na lang", "ilan pa ube", "eggs 10", "ube"]
+)
+def test_a_message_with_another_word_is_not_count_shaped(
+    session: Session, ferinos: tuple[Any, dict[str, Person]], text: str
+) -> None:
+    from mia.agents.sales_supervisor.actions import count_shaped
+
+    assert not count_shaped(session, ferinos[1]["Ana"].branch_id, text)
+
+
+@pytest.mark.parametrize(
+    "text", ["sp 5 cl 8 ube 3", "ube 2 gcash", "3 ube 2 classic cash", "sp 2 po at cl 1"]
+)
+def test_counts_with_tenders_and_fillers_are_count_shaped(
+    session: Session, ferinos: tuple[Any, dict[str, Person]], text: str
+) -> None:
+    from mia.agents.sales_supervisor.actions import count_shaped
+
+    assert count_shaped(session, ferinos[1]["Ana"].branch_id, text)
+
+
+def test_a_count_word_message_keeps_its_routing(
+    session: Session,
+    clerk_day: tuple[dict[str, Person], dict[str, Any], list[dict[str, Any]]],
+) -> None:
+    """ "ube 10 left" is the inventory's: the router is asked."""
+    people, route, routed = clerk_day
+    route["agent"] = "inventory_manager"
+    reply = _turn(session, people["Ana"], "ube 10 left")
+    assert reply.agent_id == "inventory_manager" and len(routed) == 1
+
+
+def test_the_count_filler_is_never_a_stock_or_production_word() -> None:
+    from mia.agents.inventory_manager import decider as stock
+    from mia.agents.production_planner import words as bake
+    from mia.agents.sales_supervisor.actions import COUNT_FILLER
+
+    production = {*bake.DIRECTION, *bake.REASONS, *bake.BATCH_WORDS, *bake.PIECE_WORDS}
+    production |= {*bake.GOOD_WORDS, *bake.MINUTE_WORDS}
+    taken = stock.KIND_WORDS | stock.WASTE_WORDS | stock.QUESTION_WORDS | production
+    assert not COUNT_FILLER & taken

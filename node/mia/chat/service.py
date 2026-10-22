@@ -20,6 +20,8 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, Turn
 from mia.agents.registry import AGENTS, DEFAULT
+from mia.agents.sales_supervisor import MANIFEST as SALES
+from mia.agents.sales_supervisor.actions import count_shaped
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat import agent_router, deferred, features, help_menu, language, phrases, route_memory
 from mia.chat.access import agents_for
@@ -507,6 +509,17 @@ def _taught(
     return agent_router.Route("switch" if switch else "chosen", hit.agent_id)
 
 
+def _counted(
+    session: Session, deps: AgentDeps, text: str, agents: list[AgentSpec], active: str | None
+) -> agent_router.Route | None:
+    """The sales supervisor for a count-shaped message ("sp 5 cl 8 ube 3", count_shaped; rule
+    7: code finds the counts, no Jev route request), a switch when another agent is active.
+    None when the person has no sales supervisor or the message carries any other word."""
+    if SALES.id not in {a.id for a in agents} or not count_shaped(session, deps.branch.id, text):
+        return None
+    return agent_router.Route("switch" if active not in (None, SALES.id) else "chosen", SALES.id)
+
+
 def _recalled(
     session: Session, deps: AgentDeps, text: str, agents: list[AgentSpec], active: str | None
 ) -> agent_router.Route | None:
@@ -553,10 +566,13 @@ async def route_turn(
             agent_deps.notice = [TextBlock(text=t("chat.switched", deps.lang, agent=label))]
     else:
         error: str | None = None
-        taught = await asyncio.to_thread(_taught, session, deps, text, agents, active)
-        recalled = taught or await asyncio.to_thread(_recalled, session, deps, text, agents, active)
+        recalled = None
+        for step in (_taught, _counted, _recalled):  # a phrase, a count, a learned tap: no Jev
+            recalled = await asyncio.to_thread(step, session, deps, text, agents, active)
+            if recalled is not None:
+                break
         if recalled is not None:
-            picked = recalled  # a phrase, or an exact repeat of a learned tap: no Jev request
+            picked = recalled
         # configuration, not an outage: no request, no failure event. The router is gated like
         # the shift supervisor's decider (D18): MIA_DECIDER=jev turns both on.
         elif ctx.level == "none" or get_settings().MIA_DECIDER != "jev":

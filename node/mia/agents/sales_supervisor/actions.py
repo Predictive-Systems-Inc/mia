@@ -9,10 +9,11 @@ group; with groups, a period question reads its item from `item_0` (ruling 7).
 import calendar
 import datetime as dt
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from sqlmodel import col, or_, select
+from sqlmodel import Session, col, or_, select
 
 from mia.agents.base import AgentDeps
 from mia.agents.decider import NOT_STATED, Action
@@ -21,10 +22,12 @@ from mia.agents.parsing import (
     EN_WEEKDAYS,
     FI_WEEKDAYS_ESSIVE,
     RECEIPT_WORDS,
+    TENDER_WORDS,
     Group,
     find_tender,
     menu_tokens,
     pre_parse,
+    said,
     strip_receipt,
     tenders_in,
     was_corrected,
@@ -322,6 +325,35 @@ def _worded(groups: list[Group]) -> int:
     return sum(any(w not in RECEIPT_WORDS for w in g.words.split()) for g in groups)
 
 
+def _menu(session: Session, branch_id: str) -> Sequence[RetailItem]:
+    """The branch's active menu items (its own and the organisation's), in menu order."""
+    stmt = (
+        select(RetailItem)
+        .where(RetailItem.active)
+        .where(or_(col(RetailItem.branch_id) == branch_id, col(RetailItem.branch_id).is_(None)))
+        .order_by(col(RetailItem.sort_order))
+    )
+    return session.exec(stmt).all()
+
+
+# The words a bare count may carry besides items, numbers, tenders and receipt words. Never an
+# inventory kind or waste word ("lang", "nalang", "nlng": "5 ube na lang" is a leftover) nor a
+# production word (the test checks).
+COUNT_FILLER = frozenset({"na", "po", "and", "at"})
+
+
+def count_shaped(session: Session, branch_id: str, message: str) -> bool:
+    """True when the message is only sales counts: pre_parse (as build_query calls it) finds a
+    group naming a menu item, and every other word is a number, a menu token, a tender, a
+    receipt word or COUNT_FILLER. Any other word ("left", "baked", "ilan", a date) is False.
+    Reads only."""
+    menu = menu_tokens((i.name, i.short_codes) for i in _menu(session, branch_id))
+    if not _named(pre_parse(message, menu)[0], menu):
+        return False
+    allowed = menu | TENDER_WORDS.keys() | RECEIPT_WORDS | COUNT_FILLER
+    return all(w in allowed or w.replace(".", "").isdigit() for w in said(message))
+
+
 def build_query(
     deps: AgentDeps,
     message: str,
@@ -334,13 +366,7 @@ def build_query(
     Every branch of the organisation is offered (the tools refuse what the person may not
     reach); `previous_id` is kept only when the previous message is the why question."""
     session, branch = deps.session, deps.branch
-    stmt = (
-        select(RetailItem)
-        .where(RetailItem.active)
-        .where(or_(col(RetailItem.branch_id) == branch.id, col(RetailItem.branch_id).is_(None)))
-        .order_by(col(RetailItem.sort_order))
-    )
-    rows = session.exec(stmt).all()
+    rows = _menu(session, branch.id)
     items = {i.id: f"{i.name} ({', '.join(i.short_codes)})" for i in rows}
     branches = {b.id: b.name for b in retail_hours.shops(session, deps.organisation_id)}
     source = sales.source_of(branch, deps.today)
