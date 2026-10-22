@@ -269,8 +269,10 @@ def _last_mia(
 
 
 def active_agent(session: Session, thread: Thread) -> str | None:
-    """The agent of the thread's latest Mia message (assistant or notification), if any."""
-    row = _last_mia(session, thread)
+    """The agent of Mia's latest reply on the thread, if any. A notification (an alert the
+    person did not ask for) never makes its agent the active one: the next message is routed
+    as if it had not come (a tap on its buttons still reaches it, _pending)."""
+    row = _last_mia(session, thread, notifications=False)
     return row.agent_id if row is not None else None
 
 

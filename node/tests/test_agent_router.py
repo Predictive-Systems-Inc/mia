@@ -15,6 +15,7 @@ from mia.core.jev import JevError
 from mia.core.models import Actor, Event, Message, Person
 from mia.i18n import t
 from mia.settings import get_settings
+from mia.templates.retail.models import RetailItem
 from tests.jev_fake import answers_for, choice, fake_jev
 
 TWO = ["shift_supervisor", "sales_supervisor"]
@@ -732,3 +733,132 @@ def test_a_tap_on_an_old_question_keeps_its_agent(
     manila_at(15, 30)
     reply = _turn(session, rosa, "Special", thread)
     assert stock_and_sales == [] and reply.agent_id == "inventory_manager"
+
+
+# D45 (Q128): a confident pick hands over; the active agent keeps unclear messages and close calls
+@pytest.mark.parametrize(
+    ("picked", "probs", "expected"),
+    [
+        ("sales_supervisor", {"sales_supervisor": 0.9, "shift_supervisor": 0.05}, "switch"),
+        ("sales_supervisor", {"sales_supervisor": 0.62, "shift_supervisor": 0.55}, "keep"),
+        ("sales_supervisor", {"sales_supervisor": 0.8, "shift_supervisor": 0.55}, "switch"),
+        ("sales_supervisor", {"sales_supervisor": 0.79, "shift_supervisor": 0.6}, "keep"),
+    ],
+)
+def test_a_pick_hands_over_only_when_it_leads_the_active_agent_by_the_margin(
+    picked: str, probs: dict[str, float], expected: str
+) -> None:
+    answer = {"agent": choice(picked, probs[picked], probs)}
+    got = agent_router.decide(answer, _agents(*TWO), "shift_supervisor")
+    assert got.kind == expected
+    assert got.agent_id == (picked if expected == "switch" else "shift_supervisor")
+
+
+@pytest.fixture
+def ana_at_the_kiosk(
+    monkeypatch: pytest.MonkeyPatch, session: Session, ferinos: tuple[Any, dict[str, Person]]
+) -> tuple[Person, dict[str, Any]]:
+    """Ferino's with the shift and sales supervisors, Jev on. The router answers what the
+    returned dict holds (`agent`, `probs`); the shift supervisor's decider check_in, the sales
+    supervisor's decider a count of Ube and Classic."""
+    only = orgconfig.OrgSettings(agents=TWO)
+    monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: only))
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")
+    get_settings.cache_clear()
+    route: dict[str, Any] = {"agent": "shift_supervisor", "probs": None}
+    ube, classic = (
+        session.exec(select(RetailItem).where(RetailItem.name == n)).one().id
+        for n in ("Ube", "Classic")
+    )
+
+    def answer(body: dict[str, Any]) -> dict[str, Any]:
+        if "agent" in body["questions"]:
+            p = (route["probs"] or {}).get(route["agent"], 0.95)
+            return {"agent": choice(route["agent"], p, route["probs"])}
+        if "report_sales" in body["questions"]["action"]["criteria"]:
+            return answers_for(body, "report_sales", item_0=ube, item_1=classic)
+        return answers_for(body, "check_in")
+
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(answer))
+    return ferinos[1]["Ana"], route
+
+
+def test_a_count_after_a_check_in_reply_goes_to_the_sales_supervisor(
+    session: Session, ana_at_the_kiosk: tuple[Person, dict[str, Any]]
+) -> None:
+    """Q128: Ana's "3 ube 2 classic cash" right after the shift supervisor's check-in reply."""
+    ana, route = ana_at_the_kiosk
+    first = _turn(session, ana, "in na ako")
+    assert first.agent_id == "shift_supervisor"
+    route.update(
+        agent="sales_supervisor", probs={"sales_supervisor": 0.9, "shift_supervisor": 0.08}
+    )
+    second = _turn(session, ana, "3 ube 2 classic cash", first.thread_id)
+    assert second.agent_id == "sales_supervisor"
+    switched = session.exec(select(Event).where(Event.action == "chat.agent_switched")).one()
+    assert switched.after == {"from": "shift_supervisor", "to": "sales_supervisor"}
+    counted = session.exec(select(Event).where(Event.action == "sales.counted")).all()
+    assert len(counted) == 2
+
+
+@pytest.mark.parametrize(
+    ("agent", "probs"),
+    [
+        ("unclear", {"unclear": 0.7, "shift_supervisor": 0.2, "sales_supervisor": 0.1}),
+        ("sales_supervisor", {"sales_supervisor": 0.62, "shift_supervisor": 0.55}),
+    ],
+)
+def test_an_unclear_message_or_a_close_call_stays_with_the_shift_supervisor(
+    session: Session,
+    ana_at_the_kiosk: tuple[Person, dict[str, Any]],
+    agent: str,
+    probs: dict[str, float],
+) -> None:
+    ana, route = ana_at_the_kiosk
+    first = _turn(session, ana, "in na ako")
+    route.update(agent=agent, probs=probs)
+    second = _turn(session, ana, "ok", first.thread_id)
+    assert second.agent_id == "shift_supervisor"
+    assert not session.exec(select(Event).where(Event.action == "chat.agent_switched")).all()
+
+
+@pytest.mark.parametrize(
+    ("agent", "name", "text"),
+    [("inventory_manager", "Ana", "sp 4 cl 6"), ("customer_service", "Liza", "sp 3 cl 5")],
+)
+def test_a_notification_never_makes_its_agent_the_active_one(
+    session: Session,
+    ferinos: tuple[Any, dict[str, Person]],
+    monkeypatch: pytest.MonkeyPatch,
+    agent: str,
+    name: str,
+    text: str,
+) -> None:
+    """An alert the person did not ask for ("Ube sold out", a customer order) is no
+    conversation: the count after it is routed with no active agent and reaches the sales
+    supervisor without a switch."""
+    only = orgconfig.OrgSettings(agents=[agent, "sales_supervisor"])
+    monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: only))
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")
+    get_settings.cache_clear()
+    routed: list[dict[str, Any]] = []
+
+    def answer(body: dict[str, Any]) -> dict[str, Any]:
+        if "agent" in body["questions"]:
+            routed.append(body)
+            return {"agent": choice("sales_supervisor")}
+        return answers_for(body, "sales_today")
+
+    monkeypatch.setattr(jev, "_inner", lambda: fake_jev(answer))
+    from mia.chat.blocks import TextBlock
+    from mia.chat.channels import notify
+
+    person = ferinos[1][name]
+    note = notify(session, person, [TextBlock(text="!")], Actor.system(person.branch_id), agent)
+    session.commit()
+    reply = _turn(session, person, text, note.thread_id)
+    assert reply.agent_id == "sales_supervisor"
+    assert [r["state"]["active_agent"] for r in routed] == [None]
+    assert not session.exec(select(Event).where(Event.action == "chat.agent_switched")).all()

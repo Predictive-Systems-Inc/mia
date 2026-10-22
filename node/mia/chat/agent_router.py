@@ -1,7 +1,8 @@
 """Which of a person's agents answers a message: one Jev choice (spec 2026-10-18, Router).
 
-Sticky: the active agent keeps the turn unless Jev picks another one; below THRESHOLD that pick
-asks with buttons (Q40), at or above it switches.
+The active agent keeps the turn unless Jev picks another one; below THRESHOLD that pick asks
+with buttons (Q40); at or above it, it switches when it leads the active agent by MARGIN (D45,
+Q128), else the active agent keeps the close call.
 The message is state, never instructions (rule 8); names in state are pseudonymised."""
 
 from dataclasses import dataclass
@@ -15,6 +16,9 @@ from mia.core.jev import JevError
 from mia.settings import get_settings
 
 UNCLEAR = "unclear"
+# D45: a confident pick hands over only when the active agent's probability is at least this
+# far below it; a close call stays with the agent the person is talking to.
+MARGIN = 0.2
 
 
 @dataclass(frozen=True)
@@ -66,10 +70,16 @@ def _ranked(answer: dict[str, Any], ids: set[str], picked: str) -> tuple[str, ..
     return ranked or ((picked,) if picked in ids else ())
 
 
+def _probability(answer: dict[str, Any], agent: str) -> float:
+    """Jev's probability for `agent` (0 when not given; _ranked has checked the values)."""
+    return float((answer.get("probabilities") or {}).get(agent, 0.0))
+
+
 def decide(answers: dict[str, Any], agents: list[AgentSpec], active: str | None) -> Route:
     """The spec's router table plus the follow-up's rows: a confident `unclear` with no active
     agent goes to the lead agent (agents[0]) with kind small_talk; with an agent active, another
-    agent below THRESHOLD asks (Q40) and `unclear` keeps. Raises JevError for an answer outside
+    agent below THRESHOLD asks (Q40), at or above it switches when the active agent's probability
+    is at least MARGIN below the pick (D45), and `unclear` or a close call keeps. Raises JevError for an answer outside
     the options."""
     try:
         picked = str(answers["agent"]["choice"])
@@ -89,6 +99,8 @@ def decide(answers: dict[str, Any], agents: list[AgentSpec], active: str | None)
             return Route("keep", active, confidence, picked)
         if not sure:  # Q40: another agent, unsure: ask rather than keep silently
             return Route("ask", None, confidence, picked, ranked)
+        if _probability(answers["agent"], active) > confidence - MARGIN:
+            return Route("keep", active, confidence, picked)  # D45: a close call keeps
         return Route("switch", picked, confidence, picked)
     if picked == UNCLEAR and confidence >= THRESHOLD:
         # a confident "for no agent" is small talk: the lead agent greets back, no buttons

@@ -31,6 +31,7 @@ class Jev:
 
     def __init__(self) -> None:
         self.routed: list[dict[str, Any]] = []
+        self.route = "sales_supervisor"  # the router's pick
         self.decided: list[dict[str, Any]] = []
         self.answer: Callable[[dict[str, Any]], dict[str, Any]] = lambda b: answers_for(
             b, "sales_today"
@@ -52,7 +53,7 @@ def fake(monkeypatch: pytest.MonkeyPatch, ferinos: tuple[Any, dict[str, Person]]
     def answer(body: dict[str, Any]) -> dict[str, Any]:
         if "agent" in body["questions"]:
             state.routed.append(body)
-            return {"agent": choice("sales_supervisor")}
+            return {"agent": choice(state.route)}
         state.decided.append(body)
         return state.answer(body)
 
@@ -64,6 +65,15 @@ def _turn(session: Session, person: Person, text: str, thread: str | None = None
     reply = asyncio.run(run_turn(session, None, person, text, thread))
     session.commit()
     return reply
+
+
+def _inventory_answered(session: Session, person: Person, fake: Jev) -> str:
+    """A thread whose last Mia message is the inventory manager's reply (the active agent; a
+    notification is not one); the router's request is forgotten. Its thread id."""
+    fake.route = "inventory_manager"
+    thread = _turn(session, person, "ube stock?").thread_id
+    fake.route, fake.routed[:] = "sales_supervisor", []
+    return thread
 
 
 def _buttons(reply: ChatReply) -> list[str]:
@@ -144,11 +154,7 @@ def test_a_taught_phrase_routes_without_jev_also_with_another_agent_active(
         "sales_supervisor",
         "sales_today",
     )
-    from mia.chat.channels import notify
-
-    note = notify(session, rosa, [], Actor.system(rosa.branch_id), "inventory_manager")
-    session.commit()
-    reply = _turn(session, rosa, "Sales today", note.thread_id)
+    reply = _turn(session, rosa, "Sales today", _inventory_answered(session, rosa, fake))
     assert fake.routed == [] and reply.agent_id == "sales_supervisor"
     assert "Mall kiosk" in reply.text()
     switched = session.exec(select(Event).where(Event.action == "chat.agent_switched")).all()
@@ -352,7 +358,6 @@ def test_a_tapped_phrase_never_switches_an_active_agent(
     session: Session, ferinos: tuple[Any, dict[str, Person]], fake: Jev
 ) -> None:
     """A learned (tapped) phrase routes only when no agent is active (H4); taught ones may."""
-    from mia.chat.channels import notify
     from mia.core import events
 
     rosa = _rosa(ferinos)
@@ -360,9 +365,7 @@ def test_a_tapped_phrase_never_switches_an_active_agent(
     events.emit(
         session, phrases.CONFIRMED, ("phrase", "stock benta"), None, tap, Actor.person(rosa)
     )
-    note = notify(session, rosa, [], Actor.system(rosa.branch_id), "inventory_manager")
-    session.commit()
-    _turn(session, rosa, "stock benta", note.thread_id)
+    _turn(session, rosa, "stock benta", _inventory_answered(session, rosa, fake))
     assert len(fake.routed) == 1  # Jev routed it: the tap did not switch the live agent
     fresh = _turn(session, rosa, "stock benta")  # a new thread, no agent active
     assert len(fake.routed) == 1 and fresh.agent_id == "sales_supervisor"
