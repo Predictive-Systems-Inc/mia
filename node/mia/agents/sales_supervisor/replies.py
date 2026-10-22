@@ -10,6 +10,7 @@ from mia.agents.sales_supervisor import calc
 from mia.agents.sales_supervisor.tools import (
     BranchToday,
     CorrectCountOutput,
+    ItemCodesOutput,
     PeriodReportOutput,
     ReceiptOut,
     ReceiptsOutput,
@@ -112,6 +113,20 @@ def tool_reply(tool: str, out: dict[str, Any], args: dict[str, Any], lang: str) 
         total = format_money(rep.total, rep.currency, lang)
         best = rep.best_day.isoformat()
         return _text("sales.period", lang, start=start, end=end, total=total, best_day=best)
+    if tool == "item_codes":
+        menu = ItemCodesOutput.model_validate(out)
+        rows = [
+            t(
+                "sales.codes.line",
+                lang,
+                item=i.item,
+                codes=", ".join(i.codes),
+                price=format_money(i.price, menu.currency, lang),
+            )
+            for i in menu.items
+        ]
+        heading = t("sales.codes", lang, branch=menu.branch)
+        return [TextBlock(text="\n".join([heading, *rows]))]
     if tool == "set_target":
         st = SetTargetOutput.model_validate(out)
         when = st.starts_on.isoformat() if st.period == "day" else st.starts_on.strftime("%Y-%m")

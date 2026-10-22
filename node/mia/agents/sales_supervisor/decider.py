@@ -141,6 +141,8 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
             "branch_id": _branch(r),
             "item_id": item,
         }, None
+    if action == "item_codes":
+        return {}, None
     if action == "set_target":
         when = r.pick("target_start", set(_target_starts()))
         stated = r.pick("target_period", {"day", "month"}, count_unstated=True)

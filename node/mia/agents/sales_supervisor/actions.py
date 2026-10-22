@@ -131,6 +131,14 @@ ACTIONS: dict[str, Action] = {
         ("period", "branch"),
         f"intent.{MANIFEST.id}.sales_period",
     ),
+    "item_codes": Action(
+        "The sender asks for the menu: the list of items with their short codes and prices"
+        " (item codes, codes, menu, list of items, anong code ng, mga code). A question, never"
+        " a count.",
+        "item_codes",
+        (),
+        f"intent.{MANIFEST.id}.item_codes",
+    ),
     "set_target": Action(
         "The owner or a supervisor sets a sales target: target, quota or goal with an amount,"
         " for a day (today, bukas, tomorrow) or a month (buwan, month), for their branch or a"
@@ -170,6 +178,7 @@ NOULS = {
     "correct_sales": "Does {who} correct a count already reported?",
     "sales_today": "Does {who} ask how today's sales are going?",
     "sales_period": "Does {who} ask about sales on a past day or over a period?",
+    "item_codes": "Does {who} ask for the item codes, the menu or the prices?",
     "set_target": "Does {who} set a sales target?",
     "why_answer": "Does {who} answer Mia's question why sales went well?",
     "reply_only": "Is the message of {who} only small talk or off topic, with no sales action?",
@@ -369,7 +378,8 @@ def _choice(instructions: str, options: dict[str, str]) -> dict[str, Any]:
     return {"type": "choice", "instructions": instructions, "criteria": options}
 
 
-# Offered only on a receipts kiosk: a counts kiosk's request is the one before receipts (I2).
+# Offered only on a receipts kiosk: a counts kiosk's request is the one before receipts (I2)
+# plus item_codes, a read every kiosk offers.
 RECEIPT_ACTIONS = frozenset(["record_receipt", "void_receipt", "refund_receipt", "read_receipts"])
 
 

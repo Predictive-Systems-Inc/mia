@@ -122,7 +122,7 @@ def test_no_tagalog() -> None:
 
 
 def test_the_short_half_is_short_and_new() -> None:
-    """D42: sixteen en and sixteen fil (gate.SHORT_ROWS), two asks each, short and
+    """D42: seventeen en and seventeen fil (gate.SHORT_ROWS), two asks each, short and
     unpunctuated, an offered action, the first expected item seeded and typed with its count,
     no text in another half or a raw file."""
     first = [c.expected_items[0] if c.expected_items else ("", None) for c in SHORT]

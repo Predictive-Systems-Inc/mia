@@ -892,6 +892,46 @@ def receipts(deps: AgentDeps, args: ReceiptsInput, tool_call_id: str) -> Receipt
     )
 
 
+# ---- item_codes ---------------------------------------------------------------------------
+
+
+class ItemCodesInput(BaseModel):
+    pass
+
+
+class ItemCode(BaseModel):
+    item: str
+    codes: list[str]
+    price: int  # minor units, the branch's dated price on its business date
+
+
+class ItemCodesOutput(BaseModel):
+    branch: str
+    items: list[ItemCode]
+    currency: str
+
+
+def item_codes(deps: AgentDeps, args: ItemCodesInput, tool_call_id: str) -> ItemCodesOutput:
+    """Every active item of the person's branch in menu order with its short codes and its
+    price on the branch's business date (items.price_on: the dated price, else the default),
+    after the items read check. LookupError when the branch has no items."""
+    _check(deps, ITEMS, "read", tool_call_id)
+    day = _business_day(deps, deps.branch, tool_call_id)
+    catalog = _catalog(deps.session, deps.branch.id)
+    return ItemCodesOutput(
+        branch=deps.branch.name,
+        items=[
+            ItemCode(
+                item=i.name,
+                codes=i.short_codes,
+                price=retail_items.price_on(deps.session, i, deps.branch.id, day),
+            )
+            for i in catalog
+        ],
+        currency=_currency(deps.session, deps.branch.id),
+    )
+
+
 def _on_receipts(deps: AgentDeps, tool_call_id: str) -> None:
     if sales.source_of(deps.branch, _business_day(deps, deps.branch, tool_call_id)) == "counts":
         raise LookupError("counts_kiosk")
@@ -1281,6 +1321,12 @@ BINDINGS = [
         receipts,
         ReceiptsInput,
         "Today's receipts of the branch the person may read, or the last one.",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.item_codes",
+        item_codes,
+        ItemCodesInput,
+        "The branch's menu: each item's short codes and today's price.",
     ),
     ToolBinding(
         VOID_TOOL,

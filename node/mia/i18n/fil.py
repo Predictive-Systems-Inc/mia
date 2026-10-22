@@ -714,4 +714,7 @@ STRINGS: dict[str, str | list[str]] = {
     "sales.receipts.last_voided": "Huling resibo #{no} nang {time}: {lines}, {total} {tender} (na-void).",
     "sales.receipts.last_refund": "Ang huling resibo #{no} nang {time} ay refund: {lines}, {total} {tender} ibinalik.",
     "intent.sales_supervisor.read_receipts": "Mga resibo",
+    "sales.codes": "Menu ng {branch}: item, mga code, presyo ngayon.",
+    "sales.codes.line": "{item}: {codes} {price}",
+    "intent.sales_supervisor.item_codes": "Mga code ng item",
 }

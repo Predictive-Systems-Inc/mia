@@ -1020,6 +1020,9 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "sales.receipts.last_voided": "Last receipt #{no} at {time}: {lines}, {total} {tender} (voided).",
         "sales.receipts.last_refund": "Last receipt #{no} at {time} is a refund: {lines}, {total} {tender} back.",
         "intent.sales_supervisor.read_receipts": "Receipts",
+        "sales.codes": "{branch} menu: item, codes, today's price.",
+        "sales.codes.line": "{item}: {codes} {price}",
+        "intent.sales_supervisor.item_codes": "Item codes",
     },
     "fi": {
         "absence.recorded": [
@@ -2029,5 +2032,8 @@ STRINGS: dict[str, dict[str, str | list[str]]] = {
         "sales.receipts.last_voided": "Viimeisin kuitti #{no} klo {time}: {lines}, {total} {tender} (mitätöity).",
         "sales.receipts.last_refund": "Viimeisin kuitti #{no} klo {time} on hyvitys: {lines}, {total} {tender} takaisin.",
         "intent.sales_supervisor.read_receipts": "Kuitit",
+        "sales.codes": "{branch}: tuote, koodit, tämän päivän hinta.",
+        "sales.codes.line": "{item}: {codes} {price}",
+        "intent.sales_supervisor.item_codes": "Tuotekoodit",
     },
 }

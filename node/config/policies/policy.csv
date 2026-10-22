@@ -74,6 +74,7 @@ p, clerk, *, tool:sales_supervisor.today, execute, allow
 p, clerk, *, tool:sales_supervisor.record_note, execute, allow
 p, clerk, *, tool:sales_supervisor.record_receipt, execute, allow
 p, clerk, *, tool:sales_supervisor.receipts, execute, allow
+p, clerk, *, tool:sales_supervisor.item_codes, execute, allow
 p, clerk, *, tool:sales_supervisor.void_receipt, request, allow
 p, clerk, *, tool:sales_supervisor.refund_receipt, request, allow
 p, clerk, *, data:sales_counts, write_own, allow
@@ -92,6 +93,7 @@ p, supervisor, *, tool:sales_supervisor.set_target, execute, allow
 p, supervisor, *, tool:sales_supervisor.record_note, execute, allow
 p, supervisor, *, tool:sales_supervisor.record_receipt, execute, allow
 p, supervisor, *, tool:sales_supervisor.receipts, execute, allow
+p, supervisor, *, tool:sales_supervisor.item_codes, execute, allow
 p, supervisor, *, tool:sales_supervisor.void_receipt, request, allow
 p, supervisor, *, tool:sales_supervisor.refund_receipt, request, allow
 # a void is decided by head staff, a refund by the owner or an admin (owner and admin inherit)

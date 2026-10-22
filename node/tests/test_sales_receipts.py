@@ -1667,9 +1667,9 @@ def test_a_receipts_clerk_covering_a_counts_stall_reports_counts_there(
 
 
 PRE_PLAN_ACTIONS = [
-    "report_sales", "correct_sales", "sales_today", "sales_period", "set_target", "why_answer",
-    "reply_only", "clarify",
-]  # fmt: skip
+    "report_sales", "correct_sales", "sales_today", "sales_period", "item_codes", "set_target",
+    "why_answer", "reply_only", "clarify",
+]  # fmt: skip  # item_codes: a read every kiosk offers, added after the plan on purpose
 PRE_PLAN_QUESTIONS = {"period", "branch", "target_period", "target_start", "conversation"}
 RECEIPT_ACTIONS = ["record_receipt", "void_receipt", "refund_receipt", "read_receipts"]
 
