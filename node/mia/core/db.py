@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -32,9 +32,35 @@ class TZDateTime(TypeDecorator[datetime]):
         return None if value is None else datetime.fromisoformat(value)
 
 
+_dev_offset = timedelta(0)  # the phones page's test clock; never read outside dev mode
+
+
 def utcnow() -> datetime:
-    """Current time, timezone-aware (UTC)."""
-    return datetime.now(UTC)
+    """Current time, timezone-aware (UTC). In dev mode only, shifted by the test clock
+    (set_dev_clock); in required mode it is always the real clock."""
+    now = datetime.now(UTC)
+    if _dev_offset and get_settings().MIA_AUTH_MODE == "dev":
+        return now + _dev_offset
+    return now
+
+
+def set_dev_clock(at: datetime | None) -> None:
+    """Move this process's clock so utcnow() reads `at` now (and runs on from there); None
+    returns to the real clock. Dev mode only: raises PermissionError in required mode. In memory,
+    so a restart returns to real time."""
+    global _dev_offset
+    if get_settings().MIA_AUTH_MODE != "dev":
+        raise PermissionError("the test clock is dev mode only")
+    if at is not None and at.tzinfo is None:
+        raise ValueError("naive datetime; times must carry a time zone")
+    _dev_offset = timedelta(0) if at is None else at - datetime.now(UTC)
+
+
+def dev_clock() -> datetime | None:
+    """The shifted now when the test clock is set (dev mode), else None."""
+    if _dev_offset and get_settings().MIA_AUTH_MODE == "dev":
+        return utcnow()
+    return None
 
 
 def _set_pragmas(dbapi_conn: Any, _record: Any) -> None:

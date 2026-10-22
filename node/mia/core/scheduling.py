@@ -17,6 +17,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.shift_supervisor import scoring
 from mia.core import approvals, events, store
+from mia.core.db import utcnow  # bound here, so the tests' clock pins never reach it
 from mia.core.models import (
     Actor,
     Approval,
@@ -290,7 +291,7 @@ def generate(
     pairs are left alone, cancelled ones included. New visits copy the last assignment on the
     same weekday when that person is still eligible, else they are `unfilled`."""
     tz = branch.timezone
-    today = today or dt.datetime.now(ZoneInfo(tz)).date()
+    today = today or utcnow().astimezone(ZoneInfo(tz)).date()
     events.write_lock(session)  # the ticker and `mia schedule generate` must not both read
     jobs = session.exec(select(Job).where(Job.branch_id == branch.id)).all()
     existing = {

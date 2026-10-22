@@ -1,8 +1,10 @@
 """The phones page (/sim): dev and loopback only, phones linked through the service, replies and
 polls drained per address, and a tick on demand."""
 
+import datetime as dt
 import functools
 from collections.abc import Iterator
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,7 +15,7 @@ from mia.api.main import app
 from mia.channels import linking, registry
 from mia.channels.base import ChannelPayload
 from mia.channels.simulator import SimAdapter
-from mia.core import orgconfig
+from mia.core import db, orgconfig
 from mia.core.models import Actor, Approval, ChannelIdentity, Event, Person
 from mia.core.orgconfig import ChannelConfig, OrgSettings
 from mia.i18n import t
@@ -51,6 +53,8 @@ def test_every_route_is_404_outside_dev_mode(monkeypatch: pytest.MonkeyPatch) ->
     assert client.post("/sim/tick").status_code == 404
     lang = {"language": "en"}
     assert client.post("/sim/phones/x/language", json=lang).status_code == 404
+    assert client.get("/sim/clock").status_code == 404
+    assert client.post("/sim/clock", json={"reset": True}).status_code == 404
 
 
 @pytest.mark.usefixtures("branch")
@@ -60,6 +64,8 @@ def test_every_route_is_404_from_the_lan_or_the_tunnel() -> None:
     assert lan.get("/sim/phones").status_code == 404
     assert lan.post("/sim/tick").status_code == 404
     assert lan.post("/sim/phones/x/language", json={"language": "en"}).status_code == 404
+    assert lan.get("/sim/clock").status_code == 404
+    assert lan.post("/sim/clock", json={"at": "2026-10-28T09:00"}).status_code == 404
     tunnel = TestClient(app)
     assert tunnel.get("/sim/phones", headers={"cf-ray": "8a1b2c3d4e5f-MNL"}).status_code == 404
     assert tunnel.get("/sim", headers={"cf-connecting-ip": "203.0.113.9"}).status_code == 404
@@ -230,3 +236,28 @@ def test_the_language_route_refuses_an_unsupported_language(
     assert session.get(Person, juha.id).language == before  # type: ignore[union-attr]
     by_juha = select(Event).where(Event.action == "person.language_chosen")
     assert session.exec(by_juha.where(Event.actor_id == juha.id)).all() == []
+
+
+@pytest.mark.usefixtures("branch")
+def test_the_clock_moves_to_a_local_time_and_resets() -> None:
+    client = TestClient(app)
+    real = client.get("/sim/clock").json()
+    assert real["shifted"] is False and real["timezone"]
+    zone = ZoneInfo(real["timezone"])
+    res = client.post("/sim/clock", json={"at": "2026-10-28T09:00"})  # naive: the org's zone
+    assert res.status_code == 200, res.text
+    now = dt.datetime.fromisoformat(res.json()["now"])
+    assert res.json()["shifted"] is True
+    assert now.strftime("%Y-%m-%dT%H:%M") == "2026-10-28T09:00"
+    assert now.utcoffset() == dt.datetime(2026, 10, 28, 9, tzinfo=zone).utcoffset()
+    assert abs(db.utcnow() - now) < dt.timedelta(seconds=5)
+    back = client.post("/sim/clock", json={"at": "2026-10-27T21:10:00+08:00"})  # back is allowed
+    assert back.json()["now"].startswith(
+        dt.datetime(2026, 10, 27, 13, 10, tzinfo=dt.UTC).astimezone(zone).isoformat()[:16]
+    )
+    assert client.post("/sim/clock", json={}).status_code == 422
+    both = {"at": "2026-10-28T09:00", "reset": True}
+    assert client.post("/sim/clock", json=both).status_code == 422
+    reset = client.post("/sim/clock", json={"reset": True}).json()
+    assert reset["shifted"] is False and db.dev_clock() is None
+    assert abs(db.utcnow() - dt.datetime.now(dt.UTC)) < dt.timedelta(seconds=5)

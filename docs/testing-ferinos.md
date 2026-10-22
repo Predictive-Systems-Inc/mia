@@ -151,6 +151,22 @@ no agent tells head staff of a slow day while the kiosk is open (the owner's rep
 branch manager's evening nudge to the clerks compare with the target); the sales report goes to
 the owner, not to head staff.
 
+### Playing the day on the phones page
+
+At any hour, the phones page (/sim) can play the day with its test clock (top bar, "Node time").
+Pick a day the seed gave Ana a 09:00 shift (a Wednesday in the scenario). Each row of the table
+is a step: type that day and the step's time in the clock's box and press Set
+(or use "+15 min", "+1 h" and "Next day 08:00"), then send the message from that person's phone;
+on the tick row press "Tick now" instead of running `mia tick`. Setting the clock runs nothing by
+itself, only Tick now (or the node's own ticker) runs due work at the new time; the 13:15 missed
+check-in notice, for example, needs the clock past 13:15 and a tick. While the clock is shifted
+it shows amber with "(test time)"; "Real time" returns to the real clock.
+
+The clock is dev only (MIA_AUTH_MODE=dev, loopback; in required mode the node ignores it) and in
+memory: a server restart returns to real time. Start from a fresh test database
+(step 1 at the top of this page): moving the clock back interleaves the new events
+with later ones, so a replayed day in a used database reads out of order.
+
 ## Adding a real person and linking a phone
 
 ```

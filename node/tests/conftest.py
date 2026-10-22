@@ -67,6 +67,7 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     monkeypatch.setattr(keys, "SCRYPT_N", 2**8)  # the real 2**17 makes every login slow
     keys.reset_cache()
     scheduling.reset_generation()
+    monkeypatch.setattr(db, "_dev_offset", dt.timedelta(0))  # the sim test clock, real time
     get_settings.cache_clear()
     shift_supervisor_agent.get_agent.cache_clear()
     db.reset_engines()

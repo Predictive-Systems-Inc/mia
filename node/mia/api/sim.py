@@ -9,8 +9,10 @@ the sim adapter keeps every payload in memory until a phone fetches it.
 """
 
 import asyncio
+import datetime as dt
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -251,3 +253,45 @@ async def tick(session: DbSession) -> dict[str, int]:
     advanced, sent = await run_due_work()
     after = await asyncio.to_thread(_waiting, session)
     return {"advanced": advanced, "sent": sent, "queued": max(after - before, 0)}
+
+
+class ClockOut(BaseModel):
+    now: dt.datetime  # the node's now in the organisation's time zone
+    timezone: str
+    shifted: bool  # True while the test clock is set
+
+
+class SetClock(BaseModel):
+    at: dt.datetime | None = None  # local date and time in the organisation's zone
+    reset: bool = False
+
+
+def _zone(session: Session) -> str:
+    """The organisation's time zone: its first branch's (as the seeds read it)."""
+    return session.exec(select(Branch.timezone).order_by(col(Branch.id))).first() or "UTC"
+
+
+def _clock(session: Session) -> ClockOut:
+    zone = _zone(session)
+    now = db.utcnow().astimezone(ZoneInfo(zone))
+    return ClockOut(now=now, timezone=zone, shifted=db.dev_clock() is not None)
+
+
+@router.get("/clock", response_model=ClockOut)
+def clock(session: DbSession) -> ClockOut:
+    """The node's now (db.utcnow, test clock included) in the organisation's zone."""
+    return _clock(session)
+
+
+@router.post("/clock", response_model=ClockOut)
+def set_clock(session: DbSession, body: SetClock) -> ClockOut:
+    """Set the test clock to a local time (naive means the organisation's zone) or reset it.
+    Runs nothing by itself; /sim/tick runs due work at the new time. Moving back is allowed,
+    but then events land out of order in that database."""
+    if body.reset == (body.at is not None):
+        raise HTTPException(422, "either at or reset")
+    at = body.at
+    if at is not None and at.tzinfo is None:
+        at = at.replace(tzinfo=ZoneInfo(_zone(session)))
+    db.set_dev_clock(at)
+    return _clock(session)

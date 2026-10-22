@@ -137,7 +137,7 @@ def schedule(
     branch, one person or one site."""
     me = _person(ctx)
     branch = branch_of(session, ctx)
-    start = start or dt.datetime.now(ZoneInfo(branch.timezone)).date()
+    start = start or utcnow().astimezone(ZoneInfo(branch.timezone)).date()
     if person_id is None and location_id is None and not get_rbac().check(ctx.actor, VISIT, "read"):
         person_id = me.id
     require_visit(session, ctx, "read", person_id)

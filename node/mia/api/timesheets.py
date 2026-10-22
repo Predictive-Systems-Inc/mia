@@ -11,6 +11,7 @@ from sqlmodel import col, select
 from mia.agents.shift_supervisor import timesheets
 from mia.api.deps import AuthContext, DbSession, PersonAuth
 from mia.api.schedule import branch_of
+from mia.core.db import utcnow
 from mia.core.models import Location, Person, Timesheet, Visit
 from mia.core.rbac import PermissionDenied, Resource, get_rbac
 
@@ -93,7 +94,7 @@ def list_timesheets(
         )
     except PermissionDenied as exc:
         raise HTTPException(403, "not allowed") from exc
-    end = end or dt.datetime.now(zone).date()
+    end = end or utcnow().astimezone(zone).date()
     start = start or end - dt.timedelta(days=14)
     stmt = (
         select(Timesheet)

@@ -24,6 +24,11 @@
   .langs { display:flex; gap:4px; align-items:center; margin-top:4px; font-size:12px; }
   .langs .toggle { padding:0 8px; font-size:12px; }
   .langs select { font-size:12px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+  .clock { display:flex; gap:4px; align-items:center; flex-wrap:wrap; font-size:13px; }
+  .clock output { font-variant-numeric:tabular-nums; font-weight:600; padding:2px 8px; border-radius:10px; }
+  .clock.shifted output { background:#fff3d6; color:#8a5a00; border:1px solid #e0a800; }
+  .clock input { font-size:13px; border:1px solid var(--line); border-radius:8px; padding:1px 4px; }
+  .clock button { border:1px solid var(--line); background:#fff; border-radius:12px; padding:0 8px; font-size:12px; cursor:pointer; }
   .tick { border:0; border-radius:10px; background:var(--accent); color:#fff; padding:4px 12px; cursor:pointer; }
   /* the phones row is its own scroll area under the header, so the header never covers a phone */
   main { flex:1; min-height:0; overflow:auto; display:flex; gap:20px; padding:20px 16px; align-items:flex-start; }
@@ -67,6 +72,13 @@
   <h1>Mia phones</h1>
   <div id="chips" class="group"></div>
   <span class="group"><b>All phones</b><button class="toggle" data-all="en">English</button><button class="toggle" data-all="fil">Filipino</button></span>
+  <span class="clock" id="clock" title="The node's clock (dev only, in memory). Setting it runs nothing; Tick now runs due work at that time. Moving back puts events out of order in this database.">
+    <b>Node time</b><output id="now">...</output>
+    <input type="datetime-local" id="at" step="60"><button data-set>Set</button>
+    <button data-add="15">+15 min</button><button data-add="60">+1 h</button>
+    <button data-next>Next day 08:00</button><button data-reset>Real time</button>
+    <small style="color:var(--muted)">Set runs nothing (Tick now does). Back in time = events out of order.</small>
+  </span>
   <button class="tick" id="tick">Tick now</button>
   <span class="note" id="note">Loading...</span>
 </header>
@@ -292,7 +304,38 @@ async function poll(v) {
   } catch { /* the node restarted; the next poll tries again */ }
   finally { v.busy = false; }
 }
-setInterval(() => { for (const v of Object.values(views)) poll(v); }, 2000);
+setInterval(() => { for (const v of Object.values(views)) poll(v); drawClock(); }, 2000);
+
+// The test clock (dev only): the node's local time, shown amber with "test time" while shifted.
+let nodeNow = null;  // "YYYY-MM-DDTHH:MM" in the organisation's zone
+async function drawClock(res) {
+  try { res ??= await fetch("/sim/clock"); } catch { return; }
+  const box = document.getElementById("clock");
+  if (!res.ok) { document.getElementById("now").textContent = `clock: ${res.status}`; return; }
+  const c = await res.json();
+  nodeNow = c.now.slice(0, 16);
+  const day = new Date(nodeNow + ":00").toLocaleDateString("en", {weekday: "short"});
+  document.getElementById("now").textContent = `${day} ${nodeNow.replace("T", " ")}${c.shifted ? " (test time)" : ""}`;
+  box.classList.toggle("shifted", c.shifted);
+}
+async function setClock(body) {
+  drawClock(await fetch("/sim/clock", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}));
+}
+function local(d) {  // a Date read as wall-clock parts, back to "YYYY-MM-DDTHH:MM"
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+// Wall-clock arithmetic on the node's local time; the browser's zone only does the carrying.
+document.querySelector("[data-set]").onclick = () => { const at = document.getElementById("at").value; if (at) setClock({at}); };
+for (const b of document.querySelectorAll("[data-add]")) {
+  b.onclick = () => { if (!nodeNow) return; const d = new Date(nodeNow + ":00"); d.setMinutes(d.getMinutes() + Number(b.dataset.add)); setClock({at: local(d)}); };
+}
+document.querySelector("[data-next]").onclick = () => {
+  if (!nodeNow) return;
+  const d = new Date(nodeNow + ":00"); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0);
+  setClock({at: local(d)});
+};
+document.querySelector("[data-reset]").onclick = () => setClock({reset: true});
 
 // The App drawer: the person's approval cards from /notifications, decided as in index.html.
 async function openDrawer(v) {
@@ -367,6 +410,7 @@ async function init() {
   on = new Set([...on].filter(id => known.has(id)));
   drawChips();
   drawPhones();
+  drawClock();
 }
 init();
 </script>

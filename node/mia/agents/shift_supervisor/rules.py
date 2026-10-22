@@ -34,6 +34,7 @@ from mia.chat.blocks import (
     TextBlock,
 )
 from mia.core import orgconfig
+from mia.core.db import utcnow
 from mia.i18n import t
 from mia.i18n.strings import STRINGS
 
@@ -54,7 +55,7 @@ def word_key(key: str) -> str:
 
 def _context(info: AgentInfo) -> tuple[dt.date, str]:
     text = info.instructions or ""
-    today = dt.datetime.now(dt.UTC).date()
+    today = utcnow().date()
     lang = "en"
     if m := re.search(r"^Today: (\d{4}-\d{2}-\d{2})$", text, re.MULTILINE):
         today = dt.date.fromisoformat(m[1])
