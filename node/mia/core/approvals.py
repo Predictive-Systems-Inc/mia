@@ -80,11 +80,14 @@ def request(
     expires_at: datetime | None = None,
     escalate_to: list[str] | None = None,
     tool_call_id: str | None = None,
+    branch_id: str | None = None,
 ) -> Approval:
-    """Create a pending approval. Money, external and delete risks are forced to app_only and
-    recorded as evidence["risk"] (the approvals table has no risk column; D37 reads it). It
-    expires at `expires_at` when given, else `ttl` from now. A timed-out request escalates once
-    to `escalate_to` (default owner); `escalate_to=[]` expires it at the deadline instead."""
+    """Create a pending approval at `branch_id` (default the requester's branch), the branch
+    whose people may decide it (decide's scope); a requester still never decides their own.
+    Money, external and delete risks are forced to app_only and recorded as evidence["risk"]
+    (the approvals table has no risk column; D37 reads it). It expires at `expires_at` when
+    given, else `ttl` from now. A timed-out request escalates once to `escalate_to` (default
+    owner); `escalate_to=[]` expires it at the deadline instead."""
     if not approver_roles:
         raise ValueError("an approval needs at least one approver role")
     if risk in RISKY:
@@ -93,7 +96,7 @@ def request(
     else:
         evidence = {k: v for k, v in (evidence or {}).items() if k != "risk"}  # never caller-set
     approval = Approval(
-        branch_id=requester.branch_id,
+        branch_id=branch_id or requester.branch_id,
         type=type,
         requester_type=requester.principal.type,
         requester_id=requester.principal.id,

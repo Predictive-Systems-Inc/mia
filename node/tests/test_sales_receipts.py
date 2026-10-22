@@ -1644,6 +1644,42 @@ def test_a_covering_clerks_receipt_lands_at_the_visits_kiosk(
 
 
 @pytest.mark.usefixtures("ss_jev")
+def test_a_covering_clerks_void_goes_to_the_visits_kiosk(
+    session: Session, rs: Ferinos, rs_pin: Pin, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pao (Street stall home) covers the Mall kiosk and voids a Mall receipt: the approval is
+    the Mall's, its card goes to Marites (Mall), not Jun (Street); Jun cannot decide it,
+    Pao never decides his own, Marites can."""
+    receipts_kiosk(monkeypatch)
+    people = rs[1]
+    pao, jun, marites = people["Pao"], people["Jun"], people["Marites"]
+    rs_pin(at(MONDAY, 12))
+    _cover(session, rs, "Ana", "Pao", TUESDAY, "Marites")
+    rs_pin(at(TUESDAY, 8, 50))
+    shift_tools.check_in(shift_deps(session, pao, TUESDAY), CheckInInput(), "c")
+    session.commit()
+    rs_pin(at(TUESDAY, 10))
+    ss_answers(monkeypatch, "record_receipt", item_0=item(session, "Ube").id, conversation="other")
+    _turn(session, pao, "r 3 ube cash")
+    (r,) = _receipts(session)
+    before = {p.id: len(told(session, p)) for p in (jun, marites)}
+    deps = ss_tools.at_visit(dataclasses.replace(ss_deps(session, pao), today=TUESDAY))
+    args = VoidReceiptInput(receipt_no=r.receipt_no, reason="mali")
+    out = call_tool(deps, ss_binding("void_receipt"), args, "c")
+    session.commit()
+    a = session.get(Approval, out["approval_id"])
+    assert a is not None and a.branch_id == rs[0].id == r.branch_id != pao.branch_id
+    assert len(told(session, marites)) == before[marites.id] + 1
+    assert len(told(session, jun)) == before[jun.id]
+    for who in (jun, pao):
+        with pytest.raises(ApprovalError):
+            _decide(session, a.id, who)
+    _decide(session, a.id, marites)
+    session.refresh(r)
+    assert (r.status, r.voided_by) == ("voided", marites.id)
+
+
+@pytest.mark.usefixtures("ss_jev")
 def test_a_receipts_clerk_covering_a_counts_stall_reports_counts_there(
     session: Session, rs: Ferinos, rs_pin: Pin, monkeypatch: pytest.MonkeyPatch
 ) -> None:

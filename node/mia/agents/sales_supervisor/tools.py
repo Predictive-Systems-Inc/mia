@@ -1067,9 +1067,10 @@ def _others(deps: AgentDeps, people: list[Person]) -> list[Person]:
 
 
 def _request_void(deps: AgentDeps, args: VoidReceiptInput, tool_call_id: str) -> Approval:
-    """The void's approval (type sales.void, subject the receipt, its total as the amount) and
-    its card to the branch's head staff other than the requester (none: the owners and
-    admins). It writes nothing to the receipt."""
+    """The void's approval (type sales.void, subject the receipt, its total as the amount) at
+    the receipt's branch (a cover's visit kiosk, not her home) and its card to that branch's
+    head staff other than the requester (none: the owners and admins). It writes nothing to
+    the receipt."""
     r = _find_receipt(deps, args.receipt_no, tool_call_id)
     out = receipt_out(deps.session, deps.branch, r)
 
@@ -1101,8 +1102,9 @@ def _request_void(deps: AgentDeps, args: VoidReceiptInput, tool_call_id: str) ->
             "reason": args.reason,
         },
         tool_call_id=tool_call_id,
+        branch_id=r.branch_id,
     )
-    heads = _others(deps, alerts.supervisors(deps.session, deps.branch.id))
+    heads = _others(deps, alerts.supervisors(deps.session, r.branch_id))
     for p in heads or _others(deps, alerts.leads(deps.session, deps.organisation_id)):
         notify(deps.session, p, [TextBlock(text=card(_lang(p)))], deps.actor, MANIFEST.id)
     return approval
@@ -1110,7 +1112,8 @@ def _request_void(deps: AgentDeps, args: VoidReceiptInput, tool_call_id: str) ->
 
 def _request_refund(deps: AgentDeps, args: RefundReceiptInput, tool_call_id: str) -> Approval:
     """The refund's approval (type sales.refund, subject the sale, the computed refund as the
-    amount) and its card to the owners and admins other than the requester."""
+    amount) at the sale's branch (a cover's visit kiosk) and its card to the owners and admins
+    other than the requester."""
     sale = _find_receipt(deps, args.receipt_no, tool_call_id)
     lines = refund_lines(deps.session, sale, args.items)
     amount = _refund_amount(deps, sale, lines)
@@ -1144,6 +1147,7 @@ def _request_refund(deps: AgentDeps, args: RefundReceiptInput, tool_call_id: str
             "reason": args.reason,
         },
         tool_call_id=tool_call_id,
+        branch_id=sale.branch_id,
     )
     for p in _others(deps, alerts.leads(deps.session, deps.organisation_id)):
         notify(deps.session, p, [TextBlock(text=card(_lang(p)))], deps.actor, MANIFEST.id)

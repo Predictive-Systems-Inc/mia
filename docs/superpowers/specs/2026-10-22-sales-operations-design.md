@@ -380,8 +380,13 @@ are tests/test_day_sales_reads.py.
   read the counts kiosk's twelve rows per language as before (18 of 24 right, no wrong write),
   but the eight receipt rows got three right and five asks; the receipt phrasings need a tune
   half before clerks rely on them.
-- A cover's void or refund card goes to her home branch's deciders (below).
 - The owner's go-ahead (Q118) and a day end to end on the real phones.
+
+**A cover's void and refund cards (23 Oct 2026).** Done: `approvals.request` takes an explicit
+`branch_id` (default the requester's) for the approval row and its decider scope, and
+`_request_void` and `_request_refund` pass the receipt's branch, so a covering clerk's card
+reaches the visit kiosk's head staff (void) or is decided at that kiosk (refund); the requester
+still never decides their own (`test_a_covering_clerks_void_goes_to_the_visits_kiosk`).
 
 Still carried over:
 
@@ -403,8 +408,6 @@ Still carried over:
 - A refund is paid only from the requester's own drawer (Q127).
 - Head staff cannot request a refund in the chat.
 - A stale drawer is closed by the next count, the CashCount dated by the closing date.
-- A cover's void or refund card goes to her home branch's deciders (an approval's branch is
-  the requester's), while the handler runs at the receipt's kiosk.
 - Two open drawers whose clerks share a first name get one button between them.
 - The money guard does not recognise a `sales.void` approval in `deps.approved` (it fails
   closed: an approved void runs through its handler, never a second tool call).
