@@ -15,7 +15,13 @@ from sqlmodel import Session, col, select
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
 from mia.agents.decider import THRESHOLD, Decision
 from mia.agents.sales_supervisor import MANIFEST, actions, decider, due, replies
-from mia.agents.sales_supervisor.tools import BINDINGS, RecordReceiptOutput, receipt_out
+from mia.agents.sales_supervisor.tools import (
+    BINDINGS,
+    RecordReceiptOutput,
+    RefundReceiptInput,
+    receipt_out,
+    refund_lines,
+)
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import reply_text, store_reply
@@ -43,6 +49,8 @@ RECEIPT_REFUSALS = {
     "refunded_line": "sales.refund.too_much",
     "approved_amount": "sales.refund.too_much",
     "counts_kiosk": "sales.receipts.counts_kiosk",
+    "refund_of": "sales.refund.not_refundable",
+    "needs_drawer": "sales.refund.needs_drawer",
 }
 
 
@@ -192,7 +200,9 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
         action = decision.raw_action  # the action is clear, one count's item is not
     if (
         action == "clarify"
-        and decision.missing == "receipt_no"
+        and decision.missing in ("receipt_no", "items")
+        and decision.raw_action in actions.ACTIONS
+        and actions.ACTIONS[decision.raw_action].tool in RECEIPT_TOOLS
         and decision.confidence >= THRESHOLD
     ):
         action = decision.raw_action or action  # the action is clear, its receipt number is not
@@ -214,6 +224,9 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
         return reply_text(session, deps, thread, t("sales.receipts.counts_kiosk", deps.lang))
     if tool in RECEIPT_TOOLS and not decision.args.get("receipt_no"):
         return reply_text(session, deps, thread, t("sales.receipt.which_no", deps.lang))
+    if tool == "refund_receipt" and decision.missing == "items":  # an item named, no count
+        no = str(decision.args["receipt_no"])
+        return reply_text(session, deps, thread, t("sales.refund.which_items", deps.lang, no=no))
     index = replies.unknown_item(decision.args)
     if index is not None:
         return _ask_item(session, deps, thread, decision, index)
@@ -251,7 +264,11 @@ def _asked(session: Session, deps: AgentDeps, approval_id: str) -> list[Block]:
     if approval.type == sales.VOID:
         return replies.void_asked(receipt_out(session, deps.branch, receipt), deps.lang)
     amount = int(approval.evidence["amount"])
-    return replies.refund_asked(receipt.receipt_no, amount, receipt.currency, deps.lang)
+    items = RefundReceiptInput.model_validate(approval.evidence["input"]).items
+    lines = refund_lines(session, receipt, items)
+    names = {i.id: i.name for i in session.exec(select(RetailItem))}
+    shown = [(-x.quantity, names[x.item_id]) for x in lines]
+    return replies.refund_asked(receipt.receipt_no, amount, shown, receipt.currency, deps.lang)
 
 
 AS_COUNT = "sales.as_count_noted"  # marker: the counts-kiosk notice was said (person, date)

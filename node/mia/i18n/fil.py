@@ -689,7 +689,7 @@ STRINGS: dict[str, str | list[str]] = {
     "sales.void.already": "Na-void na dati ang resibo #{no}.",
     "sales.void.refund_kind": "Refund ang resibo #{no}; hindi ito mava-void.",
     "sales.void.refunded": "May refund na ang resibo #{no}, kaya hindi ito mava-void.",
-    "sales.refund.asked": "Ipinadala sa may-ari para aprubahan ang refund na {amount} sa resibo #{no}.",
+    "sales.refund.asked": "Ipinadala sa may-ari para aprubahan ang refund na {amount} sa resibo #{no} ({lines}).",
     "sales.refund.card": "Gustong mag-refund ni {who} ng {amount} sa resibo #{no} ({lines}). Dahilan: {reason}. Magdesisyon sa Mia app.",
     "sales.refund.done": "Naitala ang refund #{refund_no} na {amount} sa resibo #{no}, ibinalik sa {tender}.",
     "sales.refund.rejected": "Hindi inaprubahan ang refund sa resibo #{no}.",
@@ -699,4 +699,9 @@ STRINGS: dict[str, str | list[str]] = {
     "sales.receipts.counts_kiosk": "Bilang ang inuulat ng kiosk na ito, kaya walang resibo. Ayusin na lang ang bilang.",
     "intent.sales_supervisor.void_receipt": "Mag-void ng resibo",
     "intent.sales_supervisor.refund_receipt": "Mag-refund ng benta",
+    "sales.refund.needs_drawer": "Ang clerk na may drawer na magbabayad nito ang magri-ring up ng refund; pakisabi sa kanya na ipadala ito.",
+    "sales.refund.not_refundable": "Hindi mare-refund ang resibo #{no}: na-void na ito o refund mismo.",
+    "sales.refund.changed": "Hindi naitala ang refund sa resibo #{no}: nagbago ang resibo mula nang hilingin.",
+    "sales.void.not_done": "Hindi na-void ang resibo #{no}: nagbago ito mula nang hilingin.",
+    "sales.refund.which_items": "Ilan at alin ang ibinalik mula sa resibo #{no}? Sabihin ang bilang ng bawat item.",
 }

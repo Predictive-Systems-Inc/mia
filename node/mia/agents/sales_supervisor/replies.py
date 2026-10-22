@@ -213,6 +213,10 @@ def void_asked(out: ReceiptOut, lang: str) -> list[Block]:
     )
 
 
-def refund_asked(no: str, amount: int, currency: str, lang: str) -> list[Block]:
-    """The refund was sent to the owner: the computed amount and the sale's number."""
-    return _text("sales.refund.asked", lang, amount=format_money(amount, currency, lang), no=no)
+def refund_asked(
+    no: str, amount: int, lines: list[tuple[int, str]], currency: str, lang: str
+) -> list[Block]:
+    """The refund was sent to the owner: the computed amount, the sale's number and the lines
+    asked for, so a refund wider than meant is seen."""
+    money = format_money(amount, currency, lang)
+    return _text("sales.refund.asked", lang, amount=money, no=no, lines=_lines(lines, lang))

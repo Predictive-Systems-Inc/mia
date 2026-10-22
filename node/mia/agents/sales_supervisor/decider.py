@@ -115,7 +115,11 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
             back.append(_count(r, i, g.quantity))
         args = {"receipt_no": q.receipt_no, "items": back, "reason": q.message[:200]}
         unknown = next((f"item_{i}" for i, c in enumerate(back) if c["item_id"] is None), None)
-        return args, "receipt_no" if q.receipt_no is None else unknown
+        # an item named without a count asks for the items; empty items (the whole sale) only
+        # when no item is named at all
+        said = r.answers.get("item", {}).get("choice") if not back else None
+        named = "items" if said in q.items else None
+        return args, "receipt_no" if q.receipt_no is None else unknown or named
     if action == "correct_sales":
         quantity = q.groups[0].quantity if q.groups else None
         if quantity is None:

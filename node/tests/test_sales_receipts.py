@@ -30,7 +30,7 @@ from mia.agents.shift_supervisor import tools as shift_tools
 from mia.agents.shift_supervisor.rules import fmt_date
 from mia.agents.shift_supervisor.tools import AssignCoverInput, CheckInInput, RespondToCoverInput
 from mia.chat.blocks import TextBlock
-from mia.core import approvals, db, events, orgconfig, sales
+from mia.core import approvals, db, events, orgconfig, sales, store
 from mia.core.approvals import ApprovalError
 from mia.core.models import (
     TENDERS,
@@ -1187,7 +1187,8 @@ def test_a_refund_in_the_chat_says_it_was_sent_to_the_owner(
     _scenario(session, rs, monkeypatch)
     ss_answers(monkeypatch, "refund_receipt", item_0=item(session, "Ube").id, conversation="other")
     reply = _turn(session, rs[1]["Ana"], "refund 1 ube resibo 1")
-    assert reply.text() == t("sales.refund.asked", "fil", amount=money(4_500), no="1")
+    asked = t("sales.refund.asked", "fil", amount=money(4_500), no="1", lines="1 Ube")
+    assert reply.text() == asked
 
 
 @pytest.mark.usefixtures("ss_jev")
@@ -1199,3 +1200,102 @@ def test_a_void_of_an_unknown_number_in_the_chat_says_so(
     assert _turn(session, rs[1]["Ana"], "void 99").text() == t(
         "sales.void.no_receipt", "fil", no="99"
     )
+
+
+# ---- Task 3 fix round 1 ---------------------------------------------------------------------
+
+
+def test_a_refund_is_paid_only_from_the_requesters_own_drawer(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s, _ = _scenario(session, rs, monkeypatch)
+    out = _refund(session, rs[1]["Ana"], "1", [("Ube", 1)])
+    marites, rosa = rs[1]["Marites"], rs[1]["Rosa"]
+    sales.close_session(session, Actor.person(marites), s, 126_000, marites.id, at(RS_TODAY, 13))
+    liza = drawer(session, rs, "Liza", 13)
+    session.commit()
+    with pytest.raises(LookupError, match="no_session"):
+        _decide(session, out["approval_id"], rosa)
+    session.rollback()
+    approvals.close_refused(session, out["approval_id"], Actor.person(rosa), "no_session")
+    session.commit()
+    assert session.exec(select(SalesReceipt).where(SalesReceipt.kind == "refund")).all() == []
+    assert sales.expected_cash(session, liza) == MALL_FLOAT
+    assert told(session, rs[1]["Ana"])[-1] == t("sales.refund.not_done", "fil", no="1")
+
+
+def test_head_staff_cannot_request_a_refund(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    for who in ("Marites", "Rosa"):
+        out = _refund(session, rs[1][who], "1", [("Ube", 1)])
+        assert (out["status"], out["message"]) == ("invalid", "needs_drawer")
+    assert _cards(session, sales.REFUND) == []
+
+
+def test_a_refund_refused_at_approval_tells_the_clerk_why(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    ana, rosa = rs[1]["Ana"], rs[1]["Rosa"]
+    first = _refund(session, ana, "1", [("Ube", 1)], "a")
+    second = _refund(session, ana, "1", [("Ube", 1)], "b")
+    _decide(session, first["approval_id"], rosa)
+    session.commit()
+    with pytest.raises(LookupError, match="quantity"):
+        _decide(session, second["approval_id"], rosa)
+    session.rollback()
+    approvals.close_refused(session, second["approval_id"], Actor.person(rosa), "quantity")
+    assert told(session, ana)[-1] == t("sales.refund.changed", "fil", no="1")
+
+
+def test_a_void_refused_at_approval_is_not_called_expired(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    ana, marites = rs[1]["Ana"], rs[1]["Marites"]
+    first, second = _void(session, ana, "3", "a"), _void(session, ana, "3", "b")
+    _decide(session, first["approval_id"], marites)
+    session.commit()
+    with pytest.raises(LookupError, match="status"):
+        _decide(session, second["approval_id"], marites)
+    session.rollback()
+    approvals.close_refused(session, second["approval_id"], Actor.person(marites), "status")
+    assert told(session, ana)[-1] == t("sales.void.not_done", "fil", no="3")
+
+
+def test_cards_go_only_to_who_can_decide_them(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    jun = rs[1]["Jun"]  # another branch's supervisor, made an admin there
+    store.update(session, jun, {"roles": ["admin"]}, Actor.person(rs[1]["Rosa"]))
+    _refund(session, rs[1]["Ana"], "1", [("Ube", 1)])
+    _void(session, rs[1]["Marites"], "3")  # no other supervisor: the branch's leads
+    assert told(session, jun) == []
+    assert len(told(session, rs[1]["Rosa"])) == 2
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_an_item_named_without_a_count_asks_never_refunds_the_whole_sale(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    ss_answers(monkeypatch, "refund_receipt", item=item(session, "Ube").id, conversation="other")
+    reply = _turn(session, rs[1]["Ana"], "refund ube resibo 1")
+    assert reply.text() == t("sales.refund.which_items", "fil", no="1")
+    assert _cards(session, sales.REFUND) == []
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_a_refund_of_a_voided_sale_says_it_cannot_be_refunded(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _scenario(session, rs, monkeypatch)
+    _decide(session, _void(session, rs[1]["Ana"], "3")["approval_id"], rs[1]["Marites"])
+    session.commit()
+    ss_answers(monkeypatch, "refund_receipt", conversation="other")
+    reply = _turn(session, rs[1]["Ana"], "refund resibo 3")
+    assert reply.text() == t("sales.refund.not_refundable", "fil", no="3")
+    assert _cards(session, sales.REFUND) == []

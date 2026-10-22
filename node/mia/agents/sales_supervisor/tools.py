@@ -23,7 +23,7 @@ from mia.agents.sales_supervisor import MANIFEST, calc
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
-from mia.core import approvals, events, sales, store
+from mia.core import approvals, events, sales, scheduling, store
 from mia.core.db import utcnow
 from mia.core.models import (
     TENDERS,
@@ -816,7 +816,7 @@ def _on_receipts(deps: AgentDeps, tool_call_id: str) -> None:
         raise LookupError("counts_kiosk")
 
 
-def _refund_lines(
+def refund_lines(
     session: Session, sale: SalesReceipt, items: Sequence[CountIn]
 ) -> list[sales.LineIn]:
     """Each item to the first sale line of that item, its quantity negative; no items is every
@@ -860,11 +860,14 @@ def check_void(deps: AgentDeps, args: VoidReceiptInput, tool_call_id: str) -> No
 
 
 def check_refund(deps: AgentDeps, args: RefundReceiptInput, tool_call_id: str) -> None:
-    """The precheck of refund_receipt (before any card): a receipts kiosk, a receipt the
-    person may refund, and lines core would accept (refund_of, refunded_line, quantity)."""
+    """The precheck of refund_receipt (before any card): a receipts kiosk, a clerk with a
+    drawer to pay it out of (needs_drawer for head staff), a receipt the person may refund,
+    and lines core would accept (refund_of, refunded_line, quantity)."""
     _on_receipts(deps, tool_call_id)
+    if not scheduling.is_staff(deps.person):
+        raise LookupError("needs_drawer")  # head staff have no drawer to pay it out of
     sale = _find_receipt(deps, args.receipt_no, tool_call_id)
-    _refund_amount(deps, sale, _refund_lines(deps.session, sale, args.items))
+    _refund_amount(deps, sale, refund_lines(deps.session, sale, args.items))
 
 
 def _first(person: Person) -> str:
@@ -893,7 +896,9 @@ def _tell(session: Session, person: Person, key: str, **params: object) -> None:
 
 
 def _others(deps: AgentDeps, people: list[Person]) -> list[Person]:
-    return [p for p in people if p.id != deps.person.id]
+    """The people of the requester's branch other than the requester: only they can decide
+    (approvals.decide refuses another branch)."""
+    return [p for p in people if p.id != deps.person.id and p.branch_id == deps.branch.id]
 
 
 def _request_void(deps: AgentDeps, args: VoidReceiptInput, tool_call_id: str) -> Approval:
@@ -942,7 +947,7 @@ def _request_refund(deps: AgentDeps, args: RefundReceiptInput, tool_call_id: str
     """The refund's approval (type sales.refund, subject the sale, the computed refund as the
     amount) and its card to the owners and admins other than the requester."""
     sale = _find_receipt(deps, args.receipt_no, tool_call_id)
-    lines = _refund_lines(deps.session, sale, args.items)
+    lines = refund_lines(deps.session, sale, args.items)
     amount = _refund_amount(deps, sale, lines)
     names = _names(deps.session)
     shown = [(x.quantity, names[x.item_id].name) for x in lines]
@@ -1018,13 +1023,12 @@ def refund_receipt(deps: AgentDeps, args: RefundReceiptInput, tool_call_id: str)
     _check(deps, _as_reporter(SESSIONS, deps), "read", tool_call_id)
     sale = _find_receipt(deps, args.receipt_no, tool_call_id)
     approval = _approval_of(deps, sales.REFUND, sale.id)
-    lines = _refund_lines(deps.session, sale, args.items)
+    lines = refund_lines(deps.session, sale, args.items)
     amount = _refund_amount(deps, sale, lines)
     events.write_lock(deps.session)  # the drawer and the next number decide the write
     drawers = sales.open_sessions(deps.session, deps.branch.id)
-    s = next((d for d in drawers if d.person_id == deps.person.id), None) or next(
-        iter(drawers), None
-    )
+    # the requester's own drawer pays it out, never another clerk's (her count would be short)
+    s = next((d for d in drawers if d.person_id == deps.person.id), None)
     if s is None:
         raise LookupError("no_session")
     tenders = {
@@ -1103,10 +1107,11 @@ def apply_refund_approval(session: Session, approval: Approval, decider: Actor) 
     )
 
 
-def _rejected(kind: str, refused: str) -> Callable[[Session, Approval, Actor], None]:
-    """The reject handler of a void or refund: the requester is told sales.<kind>.rejected,
-    or for a request closed as expired sales.<kind>.<refused key> when close_refused gave the
-    reason in REFUSED, else sales.<kind>.expired."""
+def _rejected(kind: str, refused: str, other: str) -> Callable[[Session, Approval, Actor], None]:
+    """The reject handler of a void or refund, telling the requester sales.<kind>.<key>:
+    rejected for a rejection; for a request closed as expired, `refused` when close_refused
+    gave the reason in REFUSED, `other` for any other refusal reason (the run was refused, the
+    receipt changed), and expired only for a real timeout (no reason)."""
 
     def handler(session: Session, approval: Approval, decider: Actor) -> None:
         if "input" not in approval.evidence:
@@ -1116,7 +1121,14 @@ def _rejected(kind: str, refused: str) -> Callable[[Session, Approval, Actor], N
             return
         key = "rejected"
         if approval.status == "expired":
-            key = refused if approval.reason == REFUSED[kind] else "expired"
+            # ponytail: a timeout (expire_if_due) leaves no reason; close_refused always gives one
+            key = (
+                "expired"
+                if approval.reason is None
+                else refused
+                if approval.reason == REFUSED[kind]
+                else other
+            )
         _tell(session, person, f"sales.{kind}.{key}", no=approval.evidence.get("receipt_no", ""))
 
     return handler
@@ -1125,8 +1137,12 @@ def _rejected(kind: str, refused: str) -> Callable[[Session, Approval, Actor], N
 REFUSED = {"void": "session_closed", "refund": "no_session"}  # close_refused reason -> key
 approvals.register_handler(sales.VOID, apply_void_approval)
 approvals.register_handler(sales.REFUND, apply_refund_approval)
-approvals.register_reject_handler(sales.VOID, _rejected("void", "closed"), on_refused=True)
-approvals.register_reject_handler(sales.REFUND, _rejected("refund", "not_done"), on_refused=True)
+approvals.register_reject_handler(
+    sales.VOID, _rejected("void", "closed", "not_done"), on_refused=True
+)
+approvals.register_reject_handler(
+    sales.REFUND, _rejected("refund", "not_done", "changed"), on_refused=True
+)
 
 
 BINDINGS = [
