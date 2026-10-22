@@ -867,3 +867,39 @@ Format for each entry:
 - Question: Until a point-of-sale device or app writes receipts, how do receipts reach the 1.9 tables on a kiosk set up for receipts?
 - Assumed answer: the chat is the till. A clerk's check-in opens a sales session, a clerk rings up a receipt by text ("resibo 2 cl 1 sp cash 150"), a void raises head staff's card and a refund the owner's or admin's, the closing count closes the session against its expected cash, and the owner's reports read receipts on that kiosk; a counts kiosk is unchanged. A POS later writes the same tables through the same service functions.
 - Blocking: no.
+
+## Q120: One drawer, two clerks
+- Where: node/mia/core/sales.py (open_sessions, close_session), the bookkeeper's record_cash_count, docs/superpowers/plans/2026-10-22-sales-receipts-chat.md
+- Question: At a kiosk with one physical drawer and a morning and an evening clerk, is the drawer counted at the handover?
+- Assumed answer: yes; each count closes the earliest open session, takes its takings out and leaves the float. Without a handover count the evening count closes the morning session and the reply names the still-open one.
+- Blocking: no.
+
+## Q121: The opening float of a session
+- Where: node/mia/core/orgconfig.py (SalesSettings.opening_float), node/mia/core/sales.py (open_for_shift)
+- Question: What is a session's opening float?
+- Assumed answer: the branch setting sales.opening_float (default 0), the same for every session; not the last closed session's counted cash, which would carry yesterday's deposited money.
+- Blocking: no.
+
+## Q122: Petty cash taken from the drawer on a receipts day
+- Where: node/mia/agents/bookkeeper/tools.py (record_cash_count, drawer_out)
+- Question: Where is money taken out of the drawer (a cash expense) subtracted on a receipts day?
+- Assumed answer: from the count's expected figure (the bookkeeper_cash_counts row and the owner's alert), not from the session's frozen expected and difference (core, carried over in the spec).
+- Blocking: no.
+
+## Q123: The cash count row on a receipts day
+- Where: node/mia/agents/bookkeeper/tools.py, docs/superpowers/specs/2026-10-22-sales-operations-design.md section 5
+- Question: Does the closing count on a receipts day still write a bookkeeper_cash_counts row, or only close the session?
+- Assumed answer: both. The balances, the count reminder and the replace-a-count flow read that table; the session is the per-clerk record beside it. The spec's "instead" is amended by a dated note.
+- Blocking: no.
+
+## Q124: Who may void or refund which receipt
+- Where: node/mia/agents/sales_supervisor (void_receipt, refund_receipt), node/config/policies/policy.csv
+- Question: May a clerk ask to void or refund another clerk's receipt? Are split tender, senior and PWD discounts and refunds without a receipt number handled in the chat?
+- Assumed answer: a clerk asks only about her own receipts, head staff about any of the branch; the approval stays with head staff (void) or the owner or admin (refund). Split tender, discounts and refunds without a number wait for the till.
+- Blocking: no.
+
+## Q125: Check-in from the app on a receipts kiosk
+- Where: node/mia/api/schedule.py, node/mia/agents/shift_supervisor/tools.py (check_in)
+- Question: Does a check-in through the app's schedule route open a sales session too?
+- Assumed answer: not yet; the chat check-in is the receipts kiosk's path until the owner uses the app at a kiosk.
+- Blocking: no.
