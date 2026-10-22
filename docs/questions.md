@@ -861,3 +861,9 @@ Format for each entry:
 - Assumed answer: core, data standard 1.9, after the owner's yes; nothing is built until then.
 - Answer (22 Oct 2026, D43): yes, the four tables now as core (1.9); a session per clerk shift; void by head staff, refund by owner or admin; both sources supported, set up per kiosk.
 - Blocking: no (answered)
+
+## Q119: The chat as the till until a POS exists
+- Where: data standard 1.9 (sales_sessions, sales_receipts, sales_receipt_lines, sales_payments), the sales supervisor, the bookkeeper's closing count, docs/superpowers/plans/2026-10-22-sales-receipts-chat.md
+- Question: Until a point-of-sale device or app writes receipts, how do receipts reach the 1.9 tables on a kiosk set up for receipts?
+- Assumed answer: the chat is the till. A clerk's check-in opens a sales session, a clerk rings up a receipt by text ("resibo 2 cl 1 sp cash 150"), a void raises head staff's card and a refund the owner's or admin's, the closing count closes the session against its expected cash, and the owner's reports read receipts on that kiosk; a counts kiosk is unchanged. A POS later writes the same tables through the same service functions.
+- Blocking: no.
