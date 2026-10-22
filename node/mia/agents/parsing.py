@@ -206,24 +206,26 @@ def _receipt_no(tokens: list[str]) -> tuple[str | None, set[int]]:
     return None, set()
 
 
-def strip_receipt(text: str) -> Stripped:
-    """The message's tokens without the typed total and the receipt number. The total is the
-    last token when it is a number after a tender word and an earlier number exists (whole
-    pesos). A receipt number is read only when a void or refund word is present. Pure."""
+def strip_receipt(text: str, *, total: bool = True, receipt_no: bool = True) -> Stripped:
+    """The message's tokens without the typed total and the receipt number (each only when
+    its flag is set). The total is the last token when it is a number after a tender word and
+    an earlier number exists (whole pesos). A receipt number is read only when a void or
+    refund word is present. Pure."""
     tokens = _tokens(text)
-    total: int | None = None
+    typed: int | None = None
     if (
-        len(tokens) > 2
+        total
+        and len(tokens) > 2
         and tokens[-1].isdigit()
         and _tender(tokens[-2]) is not None
         and any(tok.isdigit() for tok in tokens[:-2])
     ):
-        total = int(tokens.pop())
+        typed = int(tokens.pop())
     no, taken = None, set[int]()
-    if any(tok in VOID_WORDS | REFUND_WORDS for tok in tokens):
+    if receipt_no and any(tok in VOID_WORDS | REFUND_WORDS for tok in tokens):
         no, taken = _receipt_no(tokens)
     kept = " ".join(tok for i, tok in enumerate(tokens) if i not in taken)
-    return Stripped(kept, total, no)
+    return Stripped(kept, typed, no)
 
 
 WORD = re.compile(r"\d+(?:\.\d+)?|[^\W\d_]+")  # a word or a number

@@ -49,6 +49,7 @@ NOTES = Resource(kind="data", name=SalesNote.__tablename__)
 ITEMS = Resource(kind="data", name=RetailItem.__tablename__)
 WHY_ASKED = "sales.why_asked"  # the due work's marker of a why question (due.WHY)
 HOURS = Resource(kind="data", name=RetailBranchHours.__tablename__)
+SESSIONS = Resource(kind="data", name=SalesSession.__tablename__)
 RECEIPT_TABLES = [
     Resource(kind="data", name=t.__tablename__)
     for t in (SalesReceipt, SalesReceiptLine, SalesPayment)
@@ -636,11 +637,12 @@ class RecordReceiptOutput(BaseModel):
 def _next_receipt_no(session: Session, branch_id: str) -> str:
     """One more than the highest all-digit receipt number of the branch, from "1". Call it
     under events.write_lock so two receipts never take the same number."""
-    # ponytail: a running integer over the branch's own numbers; a till brings its own numbering
+    # ponytail: a running integer over the branch's own numbers, a full scan per receipt; a max
+    # query or a per-branch counter when that is slow. A till brings its own numbering.
     numbers = session.exec(
         select(SalesReceipt.receipt_no).where(SalesReceipt.branch_id == branch_id)
     )
-    return str(1 + max((int(n) for n in numbers if n.isdigit()), default=0))
+    return str(1 + max((int(n) for n in numbers if n.isascii() and n.isdigit()), default=0))
 
 
 def record_receipt(
@@ -654,6 +656,8 @@ def record_receipt(
     branch does not sell, LookupError(<code>) for a refused core write."""
     for table in RECEIPT_TABLES:
         _check(deps, _as_reporter(table, deps), "write", tool_call_id)
+    _check(deps, _as_reporter(SESSIONS, deps), "read", tool_call_id)  # her open session
+    _check(deps, _as_reporter(RECEIPT_TABLES[0], deps), "read", tool_call_id)  # the next number
     _check(deps, ITEMS, "read", tool_call_id)
     day = _business_day(deps, deps.branch, tool_call_id)
     if sales.source_of(deps.branch, day) == "counts":

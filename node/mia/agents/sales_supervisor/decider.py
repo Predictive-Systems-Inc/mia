@@ -148,6 +148,11 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
     return {}, None  # clarify
 
 
+# The action of each kiosk source that the other one is turned into (code, never Jev).
+KIOSK = {
+    "receipts": ("report_sales", "record_receipt"),
+    "counts": ("record_receipt", "report_sales"),
+}
 RUNNER_UP = 0.4  # a second yes at or above this beside one confident yes asks instead of writing
 
 
@@ -184,6 +189,7 @@ def _parse(answers: dict[str, Any], q: Query) -> Decision:
     """The shared parse, except that a correction by rule (a negation dropped a number from a
     single group) is `correct_sales` whatever Jev's action pick was; `raw_action` keeps Jev's
     pick and the confidence comes from the item pick only."""
+    answers, converted = _fold(answers, q)
     answers = _from_nouls(answers)
     top = answers.get("action")
     if q.corrected and len(q.groups) == 1 and isinstance(top, dict):
@@ -198,23 +204,41 @@ def _parse(answers: dict[str, Any], q: Query) -> Decision:
         }
         decision = shared.parse(forced, q, actions=ACTIONS, args=_args)
         return decision.model_copy(update={"raw_action": str(top.get("choice", ""))})
-    return _for_kiosk(answers, q, shared.parse(answers, q, actions=ACTIONS, args=_args))
+    decision = shared.parse(answers, q, actions=ACTIONS, args=_args)
+    return _for_kiosk(answers, q, decision, converted)
 
 
-# The action of each kiosk source that the other one is turned into (code, never Jev).
-KIOSK = {
-    "receipts": ("report_sales", "record_receipt"),
-    "counts": ("record_receipt", "report_sales"),
-}
+def _fold(answers: dict[str, Any], q: Query) -> tuple[dict[str, Any], bool]:
+    """Under the nouls, the yes to the other kiosk's action folded into the kiosk's own (the
+    higher of the two, the other's set to 0), so a yes to both is never a Did you mean; True
+    when the other's yes was the higher. The choice answers pass unchanged."""
+    wrong, right = (f"is_{a}" for a in KIOSK[q.source])
+    if "action" in answers or wrong not in answers or right not in answers:
+        return answers, False
+    try:
+        no, yes = float(answers[wrong]["noul"]), float(answers[right]["noul"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DecideError(f"unexpected answer: {exc!r}") from exc
+    folded = {
+        **answers,
+        right: {**answers[right], "noul": max(yes, no)},
+        wrong: {**answers[wrong], "noul": 0.0},
+    }
+    return folded, no > yes
 
 
-def _for_kiosk(answers: dict[str, Any], q: Query, decision: Decision) -> Decision:
+def _for_kiosk(
+    answers: dict[str, Any], q: Query, decision: Decision, converted: bool = False
+) -> Decision:
     """The decision as the kiosk's source records sales: on a receipts kiosk a report_sales
     pick is parsed again as record_receipt, on a counts kiosk a record_receipt pick as
     report_sales with `as_count` (the turn says so once a day). `raw_action` is the forced
     action, so the which-item question runs it; the other action is never an alternative."""
     wrong, right = KIOSK[q.source]
     alternatives = [a for a in decision.alternatives if a.action != wrong]
+    if converted and decision.raw_action == right and right == "report_sales":
+        args = {**decision.args, "as_count": True}  # the nouls said receipt (_fold)
+        return decision.model_copy(update={"alternatives": alternatives, "args": args})
     if decision.raw_action != wrong:
         return decision.model_copy(update={"alternatives": alternatives})
     top = answers["action"]

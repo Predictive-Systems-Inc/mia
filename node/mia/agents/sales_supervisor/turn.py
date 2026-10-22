@@ -177,7 +177,8 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     if action == "clarify" and decision.missing == "tender":
         if "typed_total" not in decision.args:  # a count: two tenders are sent apart
             return reply_text(session, deps, thread, t("sales.ask.tender", deps.lang))
-        action = decision.raw_action  # a receipt: the tender buttons below
+        if decision.confidence >= THRESHOLD:
+            action = decision.raw_action  # a clear receipt: the tender buttons below
     if action == "clarify":
         return _did_you_mean(session, deps, thread, decision)
     spec = actions.ACTIONS.get(action)
@@ -218,6 +219,7 @@ AS_COUNT = "sales.as_count_noted"  # marker: the counts-kiosk notice was said (p
 
 def _as_count(session: Session, deps: AgentDeps, day: str) -> list[Block]:
     """The counts-kiosk notice, once per person and business date (an AS_COUNT marker)."""
+    events.write_lock(session)  # read the marker and write it in one transaction (rule 11)
     said = session.exec(
         select(Event).where(Event.action == AS_COUNT).where(Event.entity_id == deps.person.id)
     )

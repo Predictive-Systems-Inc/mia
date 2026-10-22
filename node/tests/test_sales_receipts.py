@@ -18,13 +18,14 @@ from mia.agents.bookkeeper.models import CashCount
 from mia.agents.bookkeeper.tools import CashCountInput, ExpenseInput
 from mia.agents.sales_supervisor import MANIFEST as SS
 from mia.agents.sales_supervisor import tools as ss_tools
+from mia.agents.sales_supervisor.actions import build_query
 from mia.agents.sales_supervisor.tools import CountIn, RecordReceiptInput
 from mia.agents.shift_supervisor import replies as shift_replies
 from mia.agents.shift_supervisor import tools as shift_tools
 from mia.agents.shift_supervisor.rules import fmt_date
 from mia.agents.shift_supervisor.tools import AssignCoverInput, CheckInInput, RespondToCoverInput
 from mia.chat.blocks import TextBlock
-from mia.core import orgconfig, sales
+from mia.core import events, orgconfig, sales
 from mia.core.models import (
     TENDERS,
     Actor,
@@ -659,3 +660,154 @@ def test_no_open_session_asks_to_check_in(
     reply = _turn(session, rs[1]["Ana"], "r 3 ube cash")
     assert reply.text() == t("sales.receipt.no_session", "fil")
     assert session.exec(select(SalesSession)).all() == [] and _receipts(session) == []
+
+
+# ---- Task 2 fix round 1 ---------------------------------------------------------------------
+
+
+def _groups(session: Session, rs: Ferinos, text: str) -> tuple[list[tuple[int | None, str]], Any]:
+    q = build_query(ss_deps(session, rs[1]["Ana"]), text, "")
+    return [(g.quantity, g.words) for g in q.groups], q.total
+
+
+@pytest.mark.parametrize("kiosk", ["counts", "receipts"])
+def test_a_typed_total_never_eats_a_count(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, kiosk: str
+) -> None:
+    if kiosk == "receipts":
+        receipts_kiosk(monkeypatch)
+    assert _groups(session, rs, "classic 5 ube gcash 4") == ([(5, "classic"), (4, "ube")], None)
+    assert _groups(session, rs, "resibo 2 cl 1 ube cash 125") == ([(2, "cl"), (1, "ube")], 125)
+
+
+def test_a_void_word_strips_a_number_only_on_a_receipts_kiosk(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert _groups(session, rs, "cancel 3 ube") == ([(3, "ube")], None)
+    assert build_query(ss_deps(session, rs[1]["Ana"]), "cancel 3 ube", "").receipt_no is None
+    receipts_kiosk(monkeypatch)
+    assert build_query(ss_deps(session, rs[1]["Ana"]), "void resibo 3", "").receipt_no == "3"
+
+
+def test_the_receipt_tool_checks_the_session_read(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipts_kiosk(monkeypatch)
+    drawer(session, rs)
+    monkeypatch.setattr(get_rbac(), "require", _deny_on("sales_sessions"))
+    with pytest.raises(PermissionDenied):
+        ss_tools.record_receipt(ss_deps(session, rs[1]["Ana"]), _ube(session, 3, "cash"), "c")
+    assert _receipts(session) == []
+
+
+def test_two_chat_receipts_after_a_tills_number_run_from_one_under_the_lock(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipts_kiosk(monkeypatch)
+    s = drawer(session, rs)
+    ring(session, rs, s, "POS-9", [("Ube", 1)], "cash")
+    locked: list[bool] = []
+    real_lock, real_next = events.write_lock, ss_tools._next_receipt_no
+
+    def lock(db: Session) -> None:
+        locked.append(True)
+        real_lock(db)
+
+    def next_no(db: Session, branch_id: str) -> str:
+        assert locked and db.in_transaction()  # computed under the write lock
+        return real_next(db, branch_id)
+
+    monkeypatch.setattr(events, "write_lock", lock)
+    monkeypatch.setattr(ss_tools, "_next_receipt_no", next_no)
+    deps = ss_deps(session, rs[1]["Ana"])
+    numbers = [ss_tools.record_receipt(deps, _ube(session, 1, "cash"), c).receipt_no for c in "ab"]
+    assert numbers == ["1", "2"]
+
+
+def test_a_taken_receipt_number_is_refused_not_written(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipts_kiosk(monkeypatch)
+    ring(session, rs, drawer(session, rs), "1", [("Ube", 1)], "cash")
+    monkeypatch.setattr(ss_tools, "_next_receipt_no", lambda db, branch_id: "1")
+    with pytest.raises(LookupError, match="receipt_no"):
+        ss_tools.record_receipt(ss_deps(session, rs[1]["Ana"]), _ube(session, 1, "cash"), "c")
+    assert len(_receipts(session)) == 1
+
+
+def test_a_till_number_with_a_superscript_digit_is_skipped(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipts_kiosk(monkeypatch)
+    ring(session, rs, drawer(session, rs), "\u00b2", [("Ube", 1)], "cash")
+    assert ss_tools._next_receipt_no(session, rs[0].id) == "1"
+
+
+def test_both_yeses_ring_the_sale_on_a_receipts_kiosk(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, rs_shop: Any
+) -> None:
+    _nouls(monkeypatch)
+    _open_drawer(session, rs, monkeypatch)
+    both = {"record_receipt": 0.9, "report_sales": 0.9}
+    ube = item(session, "Ube").id
+    ss_answers(monkeypatch, "record_receipt", probabilities=both, item_0=ube, conversation="other")
+    _turn(session, rs[1]["Ana"], "r 3 ube cash")
+    (r,) = _receipts(session)
+    assert (r.receipt_no, r.total) == ("1", 13_500)
+
+
+def _nouls(monkeypatch: pytest.MonkeyPatch) -> None:
+    only = orgconfig.load().model_copy(update={"agents": [SS.id]})
+    monkeypatch.setattr(orgconfig, "load", functools.cache(lambda org=None: only))
+    monkeypatch.setenv("MIA_TYPESAFE_KEY", "k")
+    monkeypatch.setenv("MIA_DECIDER", "jev")
+    monkeypatch.setenv("MIA_SALES_QUESTION", "nouls")
+    get_settings.cache_clear()
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_an_unsure_receipt_without_a_tender_asks_did_you_mean(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _open_drawer(session, rs, monkeypatch)
+    cl, ube = item(session, "Classic").id, item(session, "Ube").id
+    unsure = {"record_receipt": 0.3, "sales_today": 0.25}
+    ss_answers(
+        monkeypatch, "record_receipt", confidence=0.3, probabilities=unsure,
+        item_0=cl, item_1=ube, conversation="other",
+    )  # fmt: skip
+    asked = _turn(session, rs[1]["Ana"], "2 cl 1 ube")
+    assert t("bk.tender.gcash", "fil") not in asked.text()
+    assert _receipts(session) == []
+
+
+@pytest.mark.usefixtures("ss_jev")
+@pytest.mark.parametrize(
+    ("kiosk", "other"), [("counts", "record_receipt"), ("receipts", "report_sales")]
+)
+def test_did_you_mean_never_offers_the_other_kiosks_action(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, kiosk: str, other: str
+) -> None:
+    if kiosk == "receipts":
+        _open_drawer(session, rs, monkeypatch)
+    unsure = {"sales_today": 0.5, other: 0.45}
+    ube = item(session, "Ube").id
+    ss_answers(
+        monkeypatch, "sales_today", confidence=0.5, probabilities=unsure,
+        item_0=ube, conversation="other",
+    )  # fmt: skip
+    buttons = _buttons(_turn(session, rs[1]["Ana"], "kumusta 3 ube"))
+    assert t("intent.sales_supervisor.sales_today", "fil") in buttons
+    assert t(f"intent.sales_supervisor.{other}", "fil") not in buttons
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_the_counts_kiosk_notice_is_per_clerk_and_business_date(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, rs_pin: Pin
+) -> None:
+    ss_answers(monkeypatch, "record_receipt", item_0=item(session, "Ube").id, conversation="other")
+    noted = t("sales.receipt.as_count", "fil")
+    assert _turn(session, rs[1]["Ana"], "r 3 ube cash").text().startswith(noted)
+    assert _turn(session, rs[1]["Liza"], "r 2 ube cash").text().startswith(noted)
+    rs_pin(at(RS_TODAY + dt.timedelta(days=1), 10))
+    assert _turn(session, rs[1]["Ana"], "r 1 ube cash").text().startswith(noted)

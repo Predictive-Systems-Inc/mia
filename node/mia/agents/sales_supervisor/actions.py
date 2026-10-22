@@ -252,6 +252,11 @@ def _period(value: str | None, today: dt.date, lang: str) -> tuple[dt.date, dt.d
     return None
 
 
+def _named(groups: list[Group], menu: set[str]) -> int:
+    """How many groups name a menu item (a menu token among their words)."""
+    return sum(g.words in menu or any(w in menu for w in g.words.split()) for g in groups)
+
+
 def build_query(
     deps: AgentDeps,
     message: str,
@@ -273,8 +278,17 @@ def build_query(
     rows = session.exec(stmt).all()
     items = {i.id: f"{i.name} ({', '.join(i.short_codes)})" for i in rows}
     branches = {b.id: b.name for b in retail_hours.shops(session, deps.organisation_id)}
-    stripped = strip_receipt(message)
-    groups, total = pre_parse(stripped.text, menu_tokens((i.name, i.short_codes) for i in rows))
+    source = sales.source_of(branch, deps.today)
+    menu = menu_tokens((i.name, i.short_codes) for i in rows)
+    # a receipt number is read on a receipts kiosk only: a counts kiosk parses as it always did
+    on_receipts = source == "receipts"
+    base = strip_receipt(message, total=False, receipt_no=on_receipts)
+    groups, total = pre_parse(base.text if on_receipts else message, menu)
+    cut = strip_receipt(message, receipt_no=on_receipts)
+    if total is None and cut.total is not None:
+        typed = pre_parse(cut.text, menu)[0]
+        if _named(typed, menu) >= _named(groups, menu):  # the typed total takes no item's count
+            groups, total = typed, cut.total
     why_asked = previous_mia_message in why_texts(deps.lang)
     return Query(
         message=message,
@@ -282,7 +296,7 @@ def build_query(
         role=", ".join(deps.person.roles),
         today=deps.today,
         groups=groups,
-        total=stripped.total if total is None else total,
+        total=total,
         items=items,
         branches=branches,
         periods=_periods(deps.lang),
@@ -294,8 +308,8 @@ def build_query(
         tender=find_tender(message),
         tenders=tenders_in(message),
         org=org.name if (org := session.get(Organisation, deps.organisation_id)) else "the shops",
-        source=sales.source_of(branch, deps.today),
-        receipt_no=stripped.receipt_no,
+        source=source,
+        receipt_no=base.receipt_no,
     )
 
 
