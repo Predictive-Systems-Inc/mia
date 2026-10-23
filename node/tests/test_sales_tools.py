@@ -462,7 +462,7 @@ def test_day_total_is_the_branchs_running_total(session: Session, ferinos: Ferin
     tools.record_counts(ana, three_special(session), "c1")  # 148.50 (the seeded experiment)
     classic = RecordCountsInput(items=[CountIn(item_id=item(session, "Classic"), quantity=2)])
     tools.record_counts(liza, classic, "c2")  # 80.00
-    out = tools.record_counts(ana, three_special(session, total=99999), "c3")  # 148.50
+    out = tools.record_counts(ana, three_special(session, total=14850), "c3")  # a matching total
     assert out.day_total == 14850 + 8000 + 14850
     assert out.target_share is not None
 

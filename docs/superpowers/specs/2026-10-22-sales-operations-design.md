@@ -44,8 +44,9 @@ What it lacks for receipt-level sales:
   one sale; a correction supersedes a whole count.
 - No shift. The cash count is per branch and business date; with two clerks on one day at the
   Mall kiosk there is no opening float and no count per clerk.
-- No discount. A count's amount is quantity times price unless the clerk states a total, so a
-  senior or PWD discount or a promo shows only as a lower amount with no reason.
+- No discount. A count's amount is always quantity times price; a stated total that disagrees
+  asks before recording, as a receipt does (Q44, 24 Oct 2026), so a senior or PWD discount or a
+  promo has no place yet.
 - No link from a sale to the price that applied. The dated price is read at report time.
 
 ## 3. The reference designs mapped to Ferino's
@@ -353,8 +354,8 @@ shop of her checked-in visit of the day (`sales_supervisor.tools.at_visit`); the
 reminder and the missing counts notice are skipped on a receipts day (not moved); and the
 clerk's receipts read in the chat (`read_receipts`, today or last). Jev is offered the receipt
 actions (record, void, refund, read) and `receipts_which` only on a receipts kiosk, so a counts
-kiosk's request is the one before the plan, and a counts kiosk reads a typed total only after a
-receipt word. The end to end day is `test_a_receipts_day_at_the_mall_kiosk` in
+kiosk's request is the one before the plan, and both kiosks read a typed total after a tender
+(a count with one that disagrees asks, Q44). The end to end day is `test_a_receipts_day_at_the_mall_kiosk` in
 tests/test_day_sales_clerk.py.
 
 **The reads moved onto `day_sales` (22 Oct 2026).** `sales.sale_rows` gives `live_counts`'

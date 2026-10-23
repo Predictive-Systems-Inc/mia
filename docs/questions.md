@@ -416,6 +416,7 @@ Format for each entry:
 - Question: Scenario 1 says the amount is quantity times price "unless the clerk states a total". Should a stated total be stored (on the counts or as its own event) and shown instead of the computed sum?
 - Assumed answer: not in v1. Rows keep quantity times price and the reply shows the branch's running total; the stated total is parsed but dropped. Revisit when the bookkeeper reconciles cash.
 - Blocking: no.
+- Answer (24 Oct 2026, the owner): a stated total that disagrees asks before recording, as receipts do.
 
 ## Q45: "Box of 4" carries a number in its name
 - Where: mia/templates/retail/seed.py (ITEMS); mia/agents/sales_supervisor/actions.py (pre_parse)

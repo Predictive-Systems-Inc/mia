@@ -228,16 +228,17 @@ def ask_tender(decision: Decision, lang: str) -> tuple[list[Block], Options]:
 
 
 def ask_total(
-    decision: Decision, out: RecordReceiptOutput, lang: str
+    decision: Decision, out: RecordReceiptOutput | RecordCountsOutput, lang: str
 ) -> tuple[list[Block], Options]:
-    """The typed total differs from the prices: one button records at the computed total (the
-    decision without the typed total), plus Something else."""
+    """The typed total of a receipt or a count differs from the prices: one button records at
+    the computed total (the decision without the typed total), plus Something else."""
     computed = format_money(out.total, out.currency, lang)
     typed = format_money(out.typed_total or 0, out.currency, lang)
     use = t("sales.receipt.use_computed", lang, total=computed)
     other = t("clarify.something_else", lang)
+    key = "typed_total" if isinstance(out, RecordReceiptOutput) else "total"
     options: Options = {
-        use: _asked(decision, {**decision.args, "typed_total": None}),
+        use: _asked(decision, {**decision.args, key: None}),
         other: Decision(action="clarify", confidence=1.0).model_dump(mode="json"),
     }
     blocks: list[Block] = [

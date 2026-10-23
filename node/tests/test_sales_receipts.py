@@ -25,6 +25,7 @@ from mia.agents.sales_supervisor import tools as ss_tools
 from mia.agents.sales_supervisor.actions import build_query
 from mia.agents.sales_supervisor.tools import (
     CountIn,
+    RecordCountsInput,
     RecordReceiptInput,
     RefundReceiptInput,
     VoidReceiptInput,
@@ -33,7 +34,7 @@ from mia.agents.shift_supervisor import replies as shift_replies
 from mia.agents.shift_supervisor import tools as shift_tools
 from mia.agents.shift_supervisor.rules import fmt_date
 from mia.agents.shift_supervisor.tools import AssignCoverInput, CheckInInput, RespondToCoverInput
-from mia.chat.blocks import TextBlock
+from mia.chat.blocks import QuickRepliesBlock, TextBlock
 from mia.core import approvals, db, events, orgconfig, sales, scheduling, store
 from mia.core.approvals import ApprovalError
 from mia.core.models import (
@@ -638,6 +639,51 @@ def test_a_receipt_on_a_counts_kiosk_is_a_count_and_says_so_once(
     assert _receipts(session) == []
 
 
+def _counts_today(session: Session) -> list[tuple[str, int, int]]:
+    rows = session.exec(select(SalesCount).where(SalesCount.business_date == RS_TODAY))
+    return sorted((c.item_id, c.quantity, c.amount) for c in rows)
+
+
+def test_a_stated_count_total_that_disagrees_writes_nothing(session: Session, rs: Ferinos) -> None:
+    items = [CountIn(item_id=item(session, n).id, quantity=q) for n, q in [("Ube", 3)]]
+    args = RecordCountsInput(items=items, total=15_000)
+    out = ss_tools.record_counts(ss_deps(session, rs[1]["Ana"]), args, "c")
+    assert (out.status, out.total, out.typed_total, out.recorded) == (
+        "total_differs", 13_500, 15_000, []
+    )  # fmt: skip
+    assert _counts_today(session) == []
+
+
+@pytest.mark.usefixtures("ss_jev")
+def test_a_count_with_a_disagreeing_total_asks_before_recording(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ana = rs[1]["Ana"]
+    sp, cl, ube = (item(session, n).id for n in ("Special", "Classic", "Ube"))
+    ss_answers(monkeypatch, "report_sales", item_0=sp, item_1=cl, item_2=ube, conversation="other")
+    # Mall kiosk prices: Special 49.50, Classic 40, Ube 45, so 247.50 + 320 + 135 = 702.50
+    asked = _turn(session, ana, "sp 5 cl 8 ube 3 cash 800")
+    question = t("sales.receipt.total_differs", "fil", computed=money(70_250), typed=money(80_000))
+    assert asked.blocks[0].text == question  # type: ignore[union-attr]
+    assert _counts_today(session) == []
+    use = t("sales.receipt.use_computed", "fil", total=money(70_250))
+    assert _buttons(asked) == [use, t("clarify.something_else", "fil")]
+    _turn(session, ana, use, asked.thread_id)
+    assert _counts_today(session) == sorted([(sp, 5, 24_750), (cl, 8, 32_000), (ube, 3, 13_500)])
+
+
+@pytest.mark.usefixtures("ss_jev")
+@pytest.mark.parametrize("text", ["sp 4 cl 8 ube 3 cash 653", "sp 4 cl 8 ube 3"])
+def test_a_count_with_a_matching_or_no_total_records_at_once(
+    session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, text: str
+) -> None:
+    sp, cl, ube = (item(session, n).id for n in ("Special", "Classic", "Ube"))
+    ss_answers(monkeypatch, "report_sales", item_0=sp, item_1=cl, item_2=ube, conversation="other")
+    reply = _turn(session, rs[1]["Ana"], text)  # 198 + 320 + 135 = 653
+    assert not any(isinstance(b, QuickRepliesBlock) for b in reply.blocks)
+    assert _counts_today(session) == sorted([(sp, 4, 19_800), (cl, 8, 32_000), (ube, 3, 13_500)])
+
+
 @pytest.mark.usefixtures("ss_jev")
 def test_no_open_session_asks_to_check_in(
     session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch
@@ -812,9 +858,8 @@ def test_an_unknown_item_keeps_the_full_parse(
     assert _groups(session, rs, "classic 5 halo gcash 4") == ([(5, "classic"), (4, "halo")], None)
     assert _groups(session, rs, "ube 3 halo cash 2") == ([(3, "ube"), (2, "halo")], None)
     assert _groups(session, rs, "resibo 2 cl 1 ube cash 125") == ([(2, "cl"), (1, "ube")], 125)
-    # a typed total is read on a receipts kiosk, or after a receipt word (counts parse as before)
-    typed = ([(3, "sp")], 150) if kiosk == "receipts" else ([(3, "sp"), (150, "")], None)
-    assert _groups(session, rs, "3 sp cash 150") == typed
+    # a typed total after a tender is read on either kiosk (a count asks too, the owner's call)
+    assert _groups(session, rs, "3 sp cash 150") == ([(3, "sp")], 150)
 
 
 @pytest.mark.usefixtures("ss_jev")

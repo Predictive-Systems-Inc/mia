@@ -17,6 +17,7 @@ from mia.agents.decider import THRESHOLD, Alternative, Decision
 from mia.agents.sales_supervisor import MANIFEST, actions, decider, due, replies
 from mia.agents.sales_supervisor.tools import (
     BINDINGS,
+    RecordCountsOutput,
     RecordReceiptOutput,
     RefundReceiptInput,
     at_visit,
@@ -264,6 +265,11 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
         receipt = RecordReceiptOutput.model_validate(out)
         ask = replies.ask_total if out["status"] == "total_differs" else replies.ask_confirm
         blocks, options = ask(decision, receipt, deps.lang)
+        return _ask(session, deps, thread, blocks, options)
+    if tool == "record_counts" and out["status"] == "total_differs":
+        blocks, options = replies.ask_total(
+            decision, RecordCountsOutput.model_validate(out), deps.lang
+        )
         return _ask(session, deps, thread, blocks, options)
     blocks = replies.tool_reply(tool, out, decision.args, deps.lang)
     if tool == "record_counts" and decision.args.get("as_count"):

@@ -328,6 +328,7 @@ def test_a_count_is_answered_with_recorded_and_the_date_and_time() -> None:
     line = {"count_id": "c", "item_id": "i1", "item": "Special", "quantity": 3, "amount": 13500}
     out = {
         "recorded": [line | {"tender": "cash"}],
+        "total": 13500,
         "business_date": "2026-10-23",
         "reported_at": "2026-10-23T12:05:00+08:00",
         "day_total": 13500,

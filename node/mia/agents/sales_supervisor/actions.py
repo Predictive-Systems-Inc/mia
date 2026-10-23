@@ -379,7 +379,7 @@ def build_query(
     groups, total = pre_parse(base.text if on_receipts else message, menu)
     cut = strip_receipt(message, receipt_no=on_receipts)
     receipt_word = any(w in RECEIPT_WORDS for w in message.casefold().split())
-    if total is None and cut.total is not None and (on_receipts or receipt_word):
+    if total is None and cut.total is not None:  # either kiosk: a count's total asks too
         typed = pre_parse(cut.text, menu)[0]
         kept = _named(typed, menu) >= _named(groups, menu) and _worded(typed) >= _worded(groups)
         if kept:  # the typed total takes no item's count, known or unknown

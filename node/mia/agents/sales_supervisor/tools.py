@@ -276,7 +276,10 @@ class RecordCountsInput(BaseModel):
 
 
 class RecordCountsOutput(BaseModel):
+    status: Literal["recorded", "total_differs"] = "recorded"
     recorded: list[CountOut]
+    total: int  # the computed sum of quantity times price of this count's lines
+    typed_total: int | None = None  # the stated total
     business_date: dt.date
     reported_at: dt.datetime  # when the count was said, in the branch's time zone
     day_total: int
@@ -321,7 +324,8 @@ def record_counts(
     deps: AgentDeps, args: RecordCountsInput, tool_call_id: str
 ) -> RecordCountsOutput:
     """Record one count row per item for the business date (event sales.counted per row).
-    Amounts are quantity times price; a stated total is not stored (Q44). day_total is the
+    Amounts are quantity times price; a stated total is never stored, and one that differs
+    from the computed sum writes nothing (total_differs, both figures; Q44). day_total is the
     branch's live total for the business date after the insert, every reporter included.
     Raises LookupError for an item the branch does not sell, LookupError("business_date") for a
     stated day other than today or yesterday."""
@@ -332,6 +336,25 @@ def record_counts(
         if count.item_id not in catalog:
             raise LookupError(f"no item {count.item_id!r} at this branch")
     day = _count_day(deps, args.business_date, args.source_message_id, tool_call_id)
+    total = sum(
+        c.quantity * retail_items.price_on(deps.session, catalog[c.item_id], deps.branch.id, day)
+        for c in args.items
+    )
+    reported_at = _reported_at(deps, args.source_message_id).astimezone(
+        ZoneInfo(deps.branch.timezone)
+    )
+    if args.total is not None and args.total != total:
+        return RecordCountsOutput(
+            status="total_differs",
+            recorded=[],
+            total=total,
+            typed_total=args.total,
+            business_date=day,
+            reported_at=reported_at,
+            day_total=0,  # nothing recorded; the reply asks
+            currency=catalog[args.items[0].item_id].currency,
+            target_share=None,
+        )
     rows = [
         store.insert(
             deps.session,
@@ -352,10 +375,10 @@ def record_counts(
     live = live_counts(deps.session, [deps.branch.id], day, day)
     return RecordCountsOutput(
         recorded=[_count_out(r, catalog[r.item_id]) for r in rows],
+        total=total,
+        typed_total=args.total,
         business_date=day,
-        reported_at=_reported_at(deps, args.source_message_id).astimezone(
-            ZoneInfo(deps.branch.timezone)
-        ),
+        reported_at=reported_at,
         day_total=sum(a for _, a in calc.totals(_plain(live)).values()),
         currency=rows[0].currency,  # ponytail: one currency per branch in v1
         target_share=target_share(deps, deps.branch.id, day, tool_call_id),
