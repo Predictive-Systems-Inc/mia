@@ -183,7 +183,7 @@ STRINGS: dict[str, str | list[str]] = {
     "cs.prices": "Amon presyo: {items}.",
     "cs.delivers": "Huo, nagadeliver kami sa {area}. Ang delivery fee {fee}.",
     "cs.no_delivery": "Pasensya, wala kami nagadeliver didto. Mahimo ninyo kuhaon sa {branch}.",
-    "cs.order_waiting": "Salamat! Ang inyo order para sa pickup sa {time} nagahulat pa sang kumpirmasyon sang tindahan.",
+    "cs.order_waiting": "Nabaton namon ang inyo order request para sa pickup sa {time}. Indi pa ini kumpirmado: magasabat ang tindahan sa indi madugay.",
     "cs.order_confirmed": "Kumpirmado na ang inyo order. Kitaay kita sa {time}!",
     "cs.order_ready": "Handa na ang inyo order para sa pickup sa {time}.",
     "cs.order_rejected.closed": "Pasensya, indi namon mabaton ang inyo order: sirado ang tindahan sa {time}.",
