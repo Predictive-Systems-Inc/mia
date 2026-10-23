@@ -8,8 +8,10 @@ import importlib
 import os
 import re
 import shutil
+import sqlite3
 import tempfile
 from collections.abc import Callable, Iterator
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,7 +29,7 @@ from mia import i18n
 from mia.agents.shift_supervisor import agent as shift_supervisor_agent
 from mia.channels import registry
 from mia.core import db, keys, orgconfig, scheduling
-from mia.core.models import Actor, Branch, Person
+from mia.core.models import Actor, Branch, Event, Person
 from mia.schema import create_all
 from mia.settings import get_settings
 from mia.templates.cleaning.seed import seed
@@ -202,11 +204,78 @@ def session(engine: Engine) -> Iterator[Session]:
         yield s
 
 
-@pytest.fixture
-def branch(session: Session) -> Branch:
-    b = seed(session)
+@dataclass
+class _Template:
+    path: Path
+    branch_id: str
+    started: datetime  # db.utcnow() when the template's seed began
+    took: dt.timedelta  # on that clock
+
+
+_TEMPLATES: dict[tuple[object, ...], list[_Template]] = {}
+_CLOCK_SLACK = dt.timedelta(seconds=30)
+
+
+def _seeded(
+    m: pytest.MonkeyPatch,
+    session: Session,
+    seed_fn: Callable[..., Branch],
+    tz: str,
+    today: dt.date | None = None,
+) -> Branch:
+    """seed_fn(session, today=today) committed, as the first branch. The first test per (seed,
+    org, today, local date, org settings) seeds and saves its database as a template; later
+    tests whose clock reads within _CLOCK_SLACK of the template's get a sqlite backup copy
+    (rows, ids, events and hash chain as seeded) and their clock moved on by the seed's time,
+    so seeded rows stay in their past. A test that wrote rows before seeding seeds itself.
+    ponytail: keyed on what the seeds read today; a seed reading more must join the key."""
+    config = orgconfig.load()
+    key = (
+        seed_fn,
+        get_settings().MIA_ORG,
+        today,
+        datetime.now(ZoneInfo(tz)).date(),
+        config.model_dump_json() if hasattr(config, "model_dump_json") else repr(config),
+    )
+    started = db.utcnow()
+    fresh = session.exec(select(Event).limit(1)).first() is None
+    raw = session.connection().connection.driver_connection
+    assert isinstance(raw, sqlite3.Connection)
+    near = [t for t in _TEMPLATES.get(key, []) if abs(started - t.started) <= _CLOCK_SLACK]
+    if fresh and near:
+        hit = near[0]
+        with closing(sqlite3.connect(hit.path)) as src:
+            src.backup(raw)
+        session.expire_all()
+        if seed_fn.__module__ == "mia.templates.retail.seed":  # in-process, as _seed_production
+            from mia.templates.retail import seed as retail_seed
+
+            if orgconfig.load().production_planner.commissary == retail_seed.COMMISSARY:
+                roles = retail_seed.MANIFEST.roles
+                retail_seed.get_rbac().load_agent_role(roles.agent_role, roles.grants, roles.denies)
+        ahead = hit.started + hit.took - started
+        if ahead > dt.timedelta(0):
+            for name in CLOCK_USERS:
+                mod = importlib.import_module(name)
+                m.setattr(mod, "utcnow", lambda f=mod.utcnow: f() + ahead)
+        b = session.get(Branch, hit.branch_id)
+        assert b is not None
+        return b
+    b = seed_fn(session, today=today)
     session.commit()
+    if fresh:
+        path = Path(tempfile.mkdtemp(prefix="mia-seed-")) / "seed.db"
+        raw = session.connection().connection.driver_connection
+        assert isinstance(raw, sqlite3.Connection)
+        with closing(sqlite3.connect(path)) as dst:
+            raw.backup(dst)
+        _TEMPLATES.setdefault(key, []).append(_Template(path, b.id, started, db.utcnow() - started))
     return b
+
+
+@pytest.fixture
+def branch(monkeypatch: pytest.MonkeyPatch, session: Session) -> Branch:
+    return _seeded(monkeypatch, session, seed, "Europe/Helsinki")
 
 
 @pytest.fixture
@@ -352,8 +421,7 @@ def ferinos(
         get_settings.cache_clear()
         load.cache_clear()
         _counts_only(m)
-        kiosk = retail_seed.seed(session)
-        session.commit()
+        kiosk = _seeded(monkeypatch, session, retail_seed.seed, "Asia/Manila")
         staff = {p.name.split()[0]: p for p in session.exec(select(Person)).all()}
         yield kiosk, staff
     get_settings.cache_clear()
@@ -426,8 +494,7 @@ def _ferinos_on(
         get_settings.cache_clear()
         load.cache_clear()
         _counts_only(m)
-        kiosk = retail_seed.seed(session, today=today)
-        session.commit()
+        kiosk = _seeded(monkeypatch, session, retail_seed.seed, "Asia/Manila", today)
         people = {p.name.split()[0]: p for p in session.exec(select(Person)).all()}
         yield Shop(kiosk, people, pin)
     get_settings.cache_clear()
