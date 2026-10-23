@@ -284,6 +284,20 @@ def test_a_breakdown_word_settles_a_doubtful_period_pick() -> None:
     d = _parse(answers, query("benta kahapon bawat item"))
     assert d.action == "sales_period" and d.args["breakdown"] == "item"
     assert _parse(answers, query("benta kahapon")).action == "clarify"
+    # live 24 Oct: Jev read "benta" as a count; with no counts typed it is the period read
+    as_count = {
+        **answers,
+        "action": {
+            "choice": "report_sales",
+            "confidence": 0.52,
+            "probabilities": {"report_sales": 0.52},
+        },
+    }
+    d = _parse(as_count, query("benta kahapon bawat item"))
+    assert d.action == "sales_period" and d.args["breakdown"] == "item"
+    counts = query("3 sp bawat item")
+    typed = {**as_count, "item_0": {"choice": next(iter(counts.items)), "confidence": 0.9}}
+    assert _parse(typed, counts).action != "sales_period"  # counts typed: never the read
 
 
 def test_without_a_negation_jevs_pick_stands() -> None:

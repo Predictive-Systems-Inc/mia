@@ -549,10 +549,11 @@ SPEC = AgentSpec(
     label_key=f"agent.{MANIFEST.id}.label",
     router_description=(
         "Leading the shop: coaching and tips for staff, how to sell more and advice on low sales,"
-        " upselling, price and promo experiments, menu prices, short codes and combos, opening"
-        " hours, who is in charge, people and roles and who approves what, permits and renewals,"
-        " the weekly summary and the monthly numbers; not sales counts or targets and not a shift"
-        " change."
+        " upselling, price and promo experiments, menu prices, changing short codes and combos,"
+        " opening hours, who is in charge, people and roles and who approves what, permits and"
+        " renewals, the weekly coaching summary; not sales figures for a day, week or month (benta"
+        " kahapon, last week per item), not the list of item codes, not sales counts or targets"
+        " and not a shift change."
     ),
     handle_turn=handle_turn,
     run_due=due.run_due,

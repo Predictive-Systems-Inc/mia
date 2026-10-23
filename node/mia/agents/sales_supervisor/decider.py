@@ -232,11 +232,16 @@ def _parse(answers: dict[str, Any], q: Query) -> Decision:
         }
         decision = shared.parse(forced, q, actions=ACTIONS, args=_args)
         return decision.model_copy(update={"raw_action": str(top.get("choice", ""))})
-    if isinstance(top, dict) and top.get("choice") == "sales_period" and breakdown_of(q.message):
-        # a read whose breakdown words code found ("bawat item"): Jev's doubt about a period
-        # question is settled, never a write (rule 7); the period still comes from its slot
-        top = {**top, "confidence": max(float(top.get("confidence", 0)), THRESHOLD)}
-        answers = {**answers, "action": top}
+    picks = {"sales_period", "report_sales", "record_receipt"}
+    choice = top.get("choice") if isinstance(top, dict) else None
+    if choice in picks and breakdown_of(q.message) and (choice == "sales_period" or not q.groups):
+        # breakdown words code found ("bawat item", "per kiosk") with no counts typed: a
+        # question about past sales, never a count or a receipt (rule 7: code reads the words);
+        # the read answers and the period still comes from its slot
+        assert isinstance(top, dict)
+        confidence = max(float(top.get("confidence", 0)), THRESHOLD)
+        top = {**top, "choice": "sales_period", "confidence": confidence}
+        answers = {**answers, "action": {**top, "probabilities": {"sales_period": confidence}}}
     decision = shared.parse(answers, q, actions=ACTIONS, args=_args)
     return _for_kiosk(answers, q, decision, converted)
 

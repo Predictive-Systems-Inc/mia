@@ -352,6 +352,8 @@ SPEC = AgentSpec(
     router_description=(
         "Sales: clerks reporting how many of each item they sold and for how much, corrections to a"
         " reported count (sorry, 4 special not 3), daily, morning and mid-day sales totals, sales"
+        " for a past day, week or month, per item or per kiosk (benta kahapon, last week per item,"
+        " bawat item, per kiosk), sales"
         " targets, how today compares, the best day, why sales went well, the list of item codes"
         " (the short codes clerks text) with today's prices, and receipts: ringing up a sale (resibo,"
         " r), voiding or refunding a receipt (void, cancel, refund, ibalik) and reading receipts"
