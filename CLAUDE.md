@@ -51,7 +51,12 @@ The package lives in node/mia; paths below are relative to node/ (mia/core means
 ## How to work
 - Once per clone: uv sync && uv run pre-commit install
 - Read the failing test or the acceptance criterion first, then change code, then run:
-  uv run ruff check . && uv run ruff format . && uv run mypy node/mia && uv run pytest
+  uv run ruff check . && uv run ruff format . && uv run mypy node/mia, then the tests the change
+  affects (the default local check for small changes; --paths turns ALL into node/tests):
+  uv run python node/tests/affected.py --worktree --paths | xargs -r uv run pytest --no-cov -q
+  Pull requests run only the affected tests. The full suite (uv run pytest, with the coverage
+  gate) must pass before merge to main: run CI's workflow_dispatch on the branch (or run it
+  locally); CI also runs it on every push to main.
 - One test: uv run pytest node/tests/test_chat.py -k name --no-cov.
   Agent evals: uv run pytest node/tests/evals -m evals (MIA_EVAL_MODEL=<route> for a real model).
 - Tests run offline: MIA_MODEL=test (the deterministic rules model) and model requests are blocked.

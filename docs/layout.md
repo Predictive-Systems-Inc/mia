@@ -139,7 +139,9 @@ mia/
                             production_planner_cases.py, test_production_planner_cases.py and
                             test_production_planner_evals.py for the production planner's;
                             <id>_cases.py and
-                            test_<id>_evals.py from the scaffold)
+                            test_<id>_evals.py from the scaffold);
+                            affected.py (the tests a change affects, from a reverse import
+                            graph; ALL for shared foundations) and test_affected.py
   docs/                     spec, plan, brief, ADRs, questions, decisions, ideas, capabilities,
                             research/ (research notes and dated evaluation reports, ADR 012),
                             testing-ferinos.md (the local test and staff phone test runbook)
