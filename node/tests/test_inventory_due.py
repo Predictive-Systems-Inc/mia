@@ -26,6 +26,7 @@ from mia.core.models import (
 from mia.core.orgconfig import ChannelConfig, OrgSettings, QuietHours
 from mia.i18n import t
 from mia.templates.retail.models import RetailBranchHours, RetailClosure
+from tests.conftest import Shop
 from tests.test_inventory_tools import deps_for, ingredient, item, stall
 
 Ferinos = tuple[Branch, dict[str, Person]]
@@ -207,11 +208,9 @@ def test_bake_plan_message_before_opening(
     assert len(_markers(session, due.PLAN)) == 1
 
 
-def test_no_bake_plan_when_every_item_stays_the_same(
-    session: Session, ferinos: Ferinos, manila_at: At
-) -> None:
-    _, people = ferinos
-    due.run_due(session, manila_at(8, 0))
+def test_no_bake_plan_when_every_item_stays_the_same(session: Session, rs_shop: Shop) -> None:
+    people = rs_shop.people  # seeded and clocked on a fixed Wednesday, not the real date
+    due.run_due(session, rs_shop.pin(8, 0))
     assert _notes(session, people["Ana"]) == [] and _markers(session, due.PLAN) == []
 
 

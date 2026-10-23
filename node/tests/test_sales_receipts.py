@@ -52,7 +52,7 @@ from mia.core.models import (
 )
 from mia.core.money import format_money
 from mia.core.people import add_person
-from mia.core.rbac import PermissionDenied, Rbac, Resource, get_rbac
+from mia.core.rbac import PermissionDenied, Rbac, Resource
 from mia.core.sales import LineIn, PaymentIn
 from mia.i18n import t
 from mia.settings import get_settings
@@ -130,10 +130,10 @@ def _deny_on(name: str) -> Callable[..., None]:
     """Rbac.require that raises PermissionDenied for the named data resource only."""
     real = Rbac.require
 
-    def require(actor: Actor, resource: Resource, action: str, **kw: object) -> None:
+    def require(self: Rbac, actor: Actor, resource: Resource, action: str, **kw: object) -> None:
         if resource.name == name:
             raise PermissionDenied(actor.principal.id, f"{resource.obj}:{action}")
-        real(get_rbac(), actor, resource, action, **kw)  # type: ignore[arg-type]
+        real(self, actor, resource, action, **kw)  # type: ignore[arg-type]
 
     return require
 
@@ -165,7 +165,7 @@ def test_a_denied_session_write_leaves_the_visit_planned(
     receipts_kiosk(monkeypatch)
     rs_pin(at(RS_TODAY, 9))
     deps = shift_deps(session, rs[1]["Ana"])
-    monkeypatch.setattr(get_rbac(), "require", _deny_on("sales_sessions"))
+    monkeypatch.setattr(Rbac, "require", _deny_on("sales_sessions"))
     out = call_tool(deps, shift_binding("check_in"), CheckInInput(), "c")
     assert out["status"] == "denied"
     assert visit_of(session, rs[1]["Ana"], RS_TODAY).status == "planned"
@@ -727,7 +727,7 @@ def test_the_receipt_tool_checks_the_session_read(
 ) -> None:
     receipts_kiosk(monkeypatch)
     drawer(session, rs)
-    monkeypatch.setattr(get_rbac(), "require", _deny_on("sales_sessions"))
+    monkeypatch.setattr(Rbac, "require", _deny_on("sales_sessions"))
     with pytest.raises(PermissionDenied):
         ss_tools.record_receipt(ss_deps(session, rs[1]["Ana"]), _ube(session, 3, "cash"), "c")
     assert _receipts(session) == []
@@ -1526,7 +1526,7 @@ def test_the_bookkeeper_tools_over_tender_sales_check_the_receipt_tables(
     rs_pin(at(RS_TODAY, 17, 5))
     written = select(Event).where(~col(Event.action).startswith("rbac."))
     before = len(session.exec(written).all())
-    monkeypatch.setattr(get_rbac(), "require", _deny_on(table))
+    monkeypatch.setattr(Rbac, "require", _deny_on(table))
     with pytest.raises(PermissionDenied):
         BK_CALLS[tool](bk_deps(session, rs[1]["Rosa"]))
     assert len(session.exec(written).all()) == before  # only the checks' own audit rows
@@ -1545,7 +1545,7 @@ def test_sales_today_checks_every_receipt_table(
     session: Session, rs: Ferinos, monkeypatch: pytest.MonkeyPatch, table: str
 ) -> None:
     _day(session, rs, monkeypatch)
-    monkeypatch.setattr(get_rbac(), "require", _deny_on(table))
+    monkeypatch.setattr(Rbac, "require", _deny_on(table))
     with pytest.raises(PermissionDenied):
         ss_tools.today(ss_deps(session, rs[1]["Marites"]), ss_tools.TodayInput(), "c")
 
