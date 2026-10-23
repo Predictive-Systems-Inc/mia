@@ -36,4 +36,4 @@ production_planner:
   dispatch_at: "08:30"
 # A kiosk's day of sales is its clerks' counts until the owner names its first receipts day here
 # by branch name, e.g. receipts_from: {Mall kiosk: 2026-12-01}; never both for one day (D43).
-sales: {receipts_from: {}}
+sales: {receipts_from: {"Mall kiosk": 2026-10-23}, opening_float: {"Mall kiosk": 100000}}

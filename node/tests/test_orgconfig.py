@@ -96,7 +96,10 @@ def test_bookkeeper_settings_load() -> None:
 
 def test_sales_settings_load_the_opening_float() -> None:
     assert orgconfig.SalesSettings().opening_float == {}
-    assert orgconfig.load("ferinos").sales.opening_float == {}
+    # the owner put the Mall kiosk on receipts on 23 Oct 2026 with a PHP 1,000.00 float
+    sales = orgconfig.load("ferinos").sales
+    assert sales.opening_float == {"Mall kiosk": 100_000}
+    assert sales.receipts_from == {"Mall kiosk": dt.date(2026, 10, 23)}
 
 
 def test_delivery_areas_in_two_currencies_fail_to_load() -> None:

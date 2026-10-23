@@ -312,6 +312,27 @@ def daytime(monkeypatch: pytest.MonkeyPatch) -> Callable[[], datetime]:
     return now
 
 
+def _counts_only(m: pytest.MonkeyPatch) -> None:
+    """Tests run Ferino's on counts whatever the org's settings.yaml says (the owner may put a
+    kiosk on receipts there); a test that wants receipts patches orgconfig.load itself."""
+    real = orgconfig.load
+    copies: list[tuple[orgconfig.OrgSettings, orgconfig.OrgSettings]] = []  # (loaded, copy)
+
+    def load(org: str | None = None) -> orgconfig.OrgSettings:
+        loaded = real(org)
+        for seen, copy in copies:
+            if seen is loaded:
+                return copy
+        copy = loaded.model_copy(deep=True)
+        copy.sales.receipts_from = {}
+        copy.sales.opening_float = {}
+        copies.append((loaded, copy))
+        return copy
+
+    load.cache_clear = real.cache_clear  # type: ignore[attr-defined]  # a nested fixture clears it
+    m.setattr(orgconfig, "load", load)
+
+
 @pytest.fixture
 def ferinos(
     monkeypatch: pytest.MonkeyPatch, session: Session
@@ -326,6 +347,7 @@ def ferinos(
         m.setenv("MIA_ORG", "ferinos")
         get_settings.cache_clear()
         load.cache_clear()
+        _counts_only(m)
         kiosk = retail_seed.seed(session)
         session.commit()
         staff = {p.name.split()[0]: p for p in session.exec(select(Person)).all()}
@@ -399,6 +421,7 @@ def _ferinos_on(
         m.setenv("MIA_ORG", "ferinos")
         get_settings.cache_clear()
         load.cache_clear()
+        _counts_only(m)
         kiosk = retail_seed.seed(session, today=today)
         session.commit()
         people = {p.name.split()[0]: p for p in session.exec(select(Person)).all()}
