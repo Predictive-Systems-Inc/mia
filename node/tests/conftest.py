@@ -6,6 +6,9 @@ No network and no API keys: MIA_MODEL=test everywhere, and egress tests use mock
 import datetime as dt
 import importlib
 import os
+import re
+import shutil
+import tempfile
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -312,25 +315,26 @@ def daytime(monkeypatch: pytest.MonkeyPatch) -> Callable[[], datetime]:
     return now
 
 
+_COUNTS_CONFIG: Path | None = None
+
+
 def _counts_only(m: pytest.MonkeyPatch) -> None:
     """Tests run Ferino's on counts whatever the org's settings.yaml says (the owner may put a
-    kiosk on receipts there); a test that wants receipts patches orgconfig.load itself."""
-    real = orgconfig.load
-    copies: list[tuple[orgconfig.OrgSettings, orgconfig.OrgSettings]] = []  # (loaded, copy)
-
-    def load(org: str | None = None) -> orgconfig.OrgSettings:
-        loaded = real(org)
-        for seen, copy in copies:
-            if seen is loaded:
-                return copy
-        copy = loaded.model_copy(deep=True)
-        copy.sales.receipts_from = {}
-        copy.sales.opening_float = {}
-        copies.append((loaded, copy))
-        return copy
-
-    load.cache_clear = real.cache_clear  # type: ignore[attr-defined]  # a nested fixture clears it
-    m.setattr(orgconfig, "load", load)
+    kiosk on receipts there): the settings point at a copy of node/config, made once per run,
+    whose Ferino's file has no receipts kiosk. A test that wants receipts patches orgconfig.load
+    itself. ponytail: one copy per process; nothing per call, so orgconfig.load stays cached."""
+    global _COUNTS_CONFIG
+    if _COUNTS_CONFIG is None:
+        real = get_settings().config_dir
+        target = Path(tempfile.mkdtemp(prefix="mia-counts-config-")) / "config"
+        shutil.copytree(real, target)
+        yaml_path = target / "org" / "ferinos" / "settings.yaml"
+        text = yaml_path.read_text()
+        text = re.sub(r"(?m)^sales:.*$", "sales: {receipts_from: {}}", text)
+        yaml_path.write_text(text)
+        _COUNTS_CONFIG = target
+    m.setattr(type(get_settings()), "config_dir", property(lambda self: _COUNTS_CONFIG))
+    orgconfig.load.cache_clear()
 
 
 @pytest.fixture
