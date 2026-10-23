@@ -268,6 +268,24 @@ def test_a_correction_by_rule_is_correct_sales_whatever_jevs_pick() -> None:
     assert d.action == "correct_sales" and d.raw_action == "sales_period"
 
 
+def test_a_breakdown_word_settles_a_doubtful_period_pick() -> None:
+    """'benta kahapon bawat item' fell from 0.62 to 0.49 on sales_period (23 Oct run): code read
+    the breakdown words, so the read answers instead of asking; without them it still asks."""
+    answers = {
+        "action": {
+            "choice": "sales_period",
+            "confidence": 0.49,
+            "probabilities": {"sales_period": 0.49, "report_sales": 0.2},
+        },
+        "period": {"choice": "not_stated", "confidence": 0.9},
+        "branch": {"choice": "not_stated", "confidence": 0.9},
+        "item": {"choice": "not_stated", "confidence": 0.9},
+    }
+    d = _parse(answers, query("benta kahapon bawat item"))
+    assert d.action == "sales_period" and d.args["breakdown"] == "item"
+    assert _parse(answers, query("benta kahapon")).action == "clarify"
+
+
 def test_without_a_negation_jevs_pick_stands() -> None:
     d = _parsed("3 special 5 classic", "report_sales")
     assert d.action == "report_sales" and len(d.args["items"]) == 2

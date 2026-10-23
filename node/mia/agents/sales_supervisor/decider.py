@@ -232,6 +232,11 @@ def _parse(answers: dict[str, Any], q: Query) -> Decision:
         }
         decision = shared.parse(forced, q, actions=ACTIONS, args=_args)
         return decision.model_copy(update={"raw_action": str(top.get("choice", ""))})
+    if isinstance(top, dict) and top.get("choice") == "sales_period" and breakdown_of(q.message):
+        # a read whose breakdown words code found ("bawat item"): Jev's doubt about a period
+        # question is settled, never a write (rule 7); the period still comes from its slot
+        top = {**top, "confidence": max(float(top.get("confidence", 0)), THRESHOLD)}
+        answers = {**answers, "action": top}
     decision = shared.parse(answers, q, actions=ACTIONS, args=_args)
     return _for_kiosk(answers, q, decision, converted)
 
