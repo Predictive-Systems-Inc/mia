@@ -276,6 +276,23 @@ def test_an_expense_is_recorded_by_category(
     )
 
 
+def test_a_typed_amount_answers_how_much_it_was(
+    session: Session, bk_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An expense without an amount asks "How much was it"; a typed "2,500" completes it in
+    code (decider.slot_answer, no Jev request); a sentence goes to Jev."""
+    _answers(monkeypatch, "expense", category="utilities")
+    marites = bk_en[1]["Marites"]
+    asked = _turn(session, marites, "nagbayad sa kuryente")
+    assert asked.text() == t("bk.ask.amount", EN)
+    seen: list[dict[str, Any]] = []
+    _answers(monkeypatch, "clarify", seen)
+    _turn(session, marites, "2,500", asked.thread_id)
+    assert seen == []
+    row = session.exec(select(Expense).order_by(col(Expense.id).desc())).first()
+    assert row is not None and (row.category, row.amount) == ("utilities", 250_000)
+
+
 def test_petty_cash_keeps_its_balance(
     session: Session, bk_en: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

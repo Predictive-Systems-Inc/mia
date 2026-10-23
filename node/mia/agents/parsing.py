@@ -228,6 +228,21 @@ def strip_receipt(text: str, *, total: bool = True, receipt_no: bool = True) -> 
     return Stripped(kept, typed, no)
 
 
+def receipt_no_only(text: str) -> str | None:
+    """The receipt number when the message is only that: "2", "#2", "resibo 2" (a typed answer
+    to "which receipt number?"); None for any other message. Pure."""
+    rest = [tok.strip(".!?;:\"'()").removeprefix("#") for tok in _tokens(text)]
+    rest = [tok for tok in rest if tok and tok not in RECEIPT_WORDS]
+    return rest[0] if len(rest) == 1 and rest[0].isdigit() else None
+
+
+def tender_only(text: str) -> str | None:
+    """The tender when the message names one and nothing else ("cash", "GCash"); None for any
+    other message. Pure."""
+    named = {_tender(tok) for tok in _tokens(text)}
+    return next(iter(named)) if len(named) == 1 and None not in named else None
+
+
 WORD = re.compile(r"\d+(?:\.\d+)?|[^\W\d_]+")  # a word or a number
 
 

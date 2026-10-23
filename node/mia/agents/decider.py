@@ -10,16 +10,23 @@ import asyncio
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 from mia.chat.route_memory import key_of
-from mia.core import jev
+from mia.core import events, jev
 from mia.core.egress import EgressBlocked, Pseudonymiser, current_context
 from mia.core.events import mask_phones
 from mia.core.jev import JevError
 from mia.settings import get_settings
+
+if TYPE_CHECKING:
+    from sqlmodel import Session
+
+    from mia.agents.base import AgentDeps
+    from mia.chat.blocks import ChatReply
+    from mia.core.models import Thread
 
 NOT_STATED = "not_stated"
 # ponytail: one threshold for every action, set from the dev split (Task 7); per action if the
@@ -33,6 +40,14 @@ class Action:
     tool: str | None  # the tool name without the agent prefix; None for clarify and reply_only
     slots: tuple[str, ...] = ()
     label_key: str | None = None  # the "Did you mean" button label; None is never offered
+
+
+# A missing input an agent asked for as text, with the decision a typed answer completes
+# (ask_slot, slot_answer); chat.service keeps the next message with the agent while it is fresh.
+SLOT_ASKED = "decision.slot_asked"
+# Reads the asked input from a typed answer: (text, the asked decision's args) -> the completed
+# args, or None when code cannot read it (rule 7: code reads the slot, never Jev).
+SlotReader = Callable[[str, dict[str, Any]], dict[str, Any] | None]
 
 
 class DecideError(JevError):
@@ -253,3 +268,66 @@ def honour(decision: Decision, taught: str | None) -> Decision:
                 alternatives=[a for a in decision.alternatives if a.action != taught],
             )
     return decision
+
+
+def remember_slot(
+    session: "Session",
+    deps: "AgentDeps",
+    thread: "Thread",
+    message_id: str,
+    action: str,
+    args: dict[str, Any],
+    slot: str,
+) -> None:
+    """Record that message_id asks for the missing input `slot` of `action`, with the decision's
+    args so far (a SLOT_ASKED event on the thread; the args are data, rule 8)."""
+    after = {
+        "message_id": message_id,
+        "agent_id": deps.manifest.id,
+        "action": action,
+        "args": args,
+        "slot": slot,
+    }
+    events.emit(session, SLOT_ASKED, ("thread", thread.id), None, after, deps.actor)
+
+
+def ask_slot(
+    session: "Session",
+    deps: "AgentDeps",
+    thread: "Thread",
+    text: str,
+    action: str,
+    args: dict[str, Any],
+    slot: str,
+) -> "ChatReply":
+    """Store the question `text` for the missing input `slot` of `action` and remember the
+    decision so far (remember_slot). Returns the stored reply; the caller commits."""
+    from mia.chat.replies import reply_text  # chat imports the agents; the agents read chat lazily
+
+    reply = reply_text(session, deps, thread, text)
+    remember_slot(session, deps, thread, reply.message_id, action, args, slot)
+    return reply
+
+
+def slot_answer(
+    session: "Session",
+    deps: "AgentDeps",
+    thread: "Thread",
+    text: str,
+    readers: Mapping[str, SlotReader],
+) -> Decision | None:
+    """The asked decision completed from `text` when this agent's SLOT_ASKED question is still
+    pending (chat.service.slot_asked: the thread's last Mia message, within PENDING_WINDOW) and
+    the agent's reader for that slot reads it; None otherwise (Jev decides as before). The
+    decision runs through the agent's normal guards and tool (rules 3 and 4)."""
+    from mia.chat.service import slot_asked
+
+    after = slot_asked(session, thread)
+    if after is None or after.get("agent_id") != deps.manifest.id:
+        return None
+    reader = readers.get(str(after.get("slot")))
+    args = reader(text, dict(after.get("args") or {})) if reader is not None else None
+    if args is None:
+        return None
+    action = str(after["action"])
+    return Decision(action=action, args=args, confidence=1.0, raw_action=action)

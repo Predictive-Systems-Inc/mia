@@ -171,7 +171,8 @@ def _report(r: Reader) -> tuple[dict[str, Any], str | None]:
         if kind is None or kind in ASKS:  # no number: "how many are left", a read, never a write
             return _event(r, kind or "count", ref, None, None) | {ON_HAND: True}, None
         if kind == "waste":  # no number: ask how many, never a waste of nothing (rule 7)
-            return {"events": [_event(r, kind, ref, None, reason)]}, "quantity"
+            waste = [_event(r, kind, ref, None, reason)]
+            return {"events": waste, "source_message_id": q.message_id}, "quantity"
         events.append(_event(r, kind, ref, None, reason))
     args = {"events": events, "source_message_id": q.message_id}
     return args, "reason" if kind == "waste" and reason is None else None

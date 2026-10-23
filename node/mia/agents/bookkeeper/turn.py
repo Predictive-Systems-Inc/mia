@@ -19,10 +19,11 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ValidationError
 from sqlmodel import Session, col, select
 
+from mia.agents import parsing
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
-from mia.agents.bookkeeper import MANIFEST, actions, calc, decider, due, replies, tools
+from mia.agents.bookkeeper import MANIFEST, actions, calc, decider, due, replies, tools, words
 from mia.agents.bookkeeper.models import CashCount
-from mia.agents.decider import Decision
+from mia.agents.decider import Decision, SlotReader, ask_slot, slot_answer
 from mia.agents.sales_supervisor.tools import _currency, _reported_at
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
@@ -76,6 +77,9 @@ def _query(
         return tapped, None
     if classify(html.unescape(text), deps.today, deps.lang).injection:
         return Decision(action="reply_only", args={"kind": "injection"}, confidence=1), None
+    answered = slot_answer(session, deps, thread, text, _slot_readers(deps.lang))
+    if answered is not None:
+        return answered, None
     last = _last_question(session, thread)
     said = session.exec(
         select(Message.id)
@@ -84,6 +88,28 @@ def _query(
         .order_by(col(Message.id).desc())
     ).first()
     return None, actions.build_query(deps, text, last.text if last else "", message_id=said)
+
+
+CURRENCY_WORDS = frozenset(["php", "peso", "pesos", "piso"])
+OTHER_INPUTS = ("provider", "category", "bank", "kind")  # asked after the amount, if missing
+
+
+def _slot_readers(lang: str) -> dict[str, SlotReader]:
+    """The missing inputs a typed answer to Mia's question completes (decider.slot_answer):
+    the amount, from a message that is only one amount ("2,500", "P2500 pesos"), when no other
+    input of the write is missing (a cash count's amount is its `counted`)."""
+
+    def amount(text: str, args: dict[str, Any]) -> dict[str, Any] | None:
+        found = list(words.amounts(text, lang).values())
+        extra = [w for w in parsing.said(text) if not w.replace(".", "").isdigit()]
+        if len(found) != 1 or set(extra) - CURRENCY_WORDS - {"p"}:
+            return None
+        if any(k in args and args[k] is None for k in OTHER_INPUTS):
+            return None
+        key = "counted" if "counted" in args else "amount"
+        return {**args, key: found[0]}
+
+    return {"amount": amount}
 
 
 def _ask(
@@ -137,7 +163,8 @@ def _clarify(session: Session, deps: AgentDeps, thread: Thread, decision: Decisi
     if decision.raw_action == "petty_cash" and decision.missing == "kind":
         return _ask_petty_kind(session, deps, thread, decision)
     if decision.raw_action in WRITES and decision.missing in ASKED:
-        return reply_text(session, deps, thread, t(f"bk.ask.{decision.missing}", deps.lang))
+        asked, slot = t(f"bk.ask.{decision.missing}", deps.lang), decision.missing
+        return ask_slot(session, deps, thread, asked, decision.raw_action, decision.args, slot)
     return _did_you_mean(session, deps, thread, decision)
 
 

@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
-from mia.agents.decider import THRESHOLD, Decision
+from mia.agents.decider import THRESHOLD, Decision, SlotReader, ask_slot, slot_answer
 from mia.agents.inventory_manager import MANIFEST, actions, calc, decider, due, replies, tools
 from mia.agents.shift_supervisor.classifier import classify
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
@@ -60,6 +60,20 @@ def _tapped(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Dec
     return Decision.model_validate(chosen) if chosen else None
 
 
+def _waste_quantity(text: str, args: dict[str, Any]) -> dict[str, Any] | None:
+    """A waste's quantity from a typed answer that is only a whole number above zero ("8"),
+    when the one waste event has its reason (else the reason buttons are still to come)."""
+    word = text.strip().strip(".!?")
+    found = args.get("events") or []
+    if not word.isdigit() or int(word) < 1 or len(found) != 1 or not found[0].get("reason"):
+        return None
+    return {**args, "events": [{**found[0], "quantity": int(word)}]}
+
+
+# the missing inputs a typed answer to Mia's question completes (decider.slot_answer)
+SLOT_READERS: dict[str, SlotReader] = {"quantity": _waste_quantity}
+
+
 def _query(
     session: Session, deps: AgentDeps, thread: Thread, text: str
 ) -> tuple[Decision | None, actions.Query | None]:
@@ -69,6 +83,9 @@ def _query(
         return tapped, None
     if classify(html.unescape(text), deps.today, deps.lang).injection:
         return Decision(action="reply_only", args={"kind": "injection"}, confidence=1), None
+    answered = slot_answer(session, deps, thread, text, SLOT_READERS)
+    if answered is not None:
+        return answered, None
     last = _last_question(session, thread)
     said = session.exec(
         select(Message.id)
@@ -230,8 +247,9 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
         return _ask(session, deps, thread, *replies.ask_kind(decision, names, deps.lang))
     if decision.action == "clarify" and decision.missing == "quantity" and sure:
         name = next(iter(_names(session, decision.args.get("events") or []).values()), "")
-        return reply_text(
-            session, deps, thread, t("stock.ask.waste_quantity", deps.lang, item=name)
+        asked = t("stock.ask.waste_quantity", deps.lang, item=name)
+        return ask_slot(
+            session, deps, thread, asked, decision.raw_action, decision.args, "quantity"
         )
     if decision.action == "clarify":
         return _did_you_mean(session, deps, thread, decision)

@@ -435,6 +435,24 @@ def test_waste_without_a_number_asks_how_many_and_records_nothing(
     assert not _mine(session, people["Ana"], "waste")
 
 
+def test_a_typed_number_answers_how_many_were_thrown_away(
+    session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ "Ilang Ube ang itinapon?" answered "8": code reads the number and records the waste
+    (decider.slot_answer), no Jev request; a word that is not a number goes to Jev."""
+    _, people = ferinos
+    _answers(monkeypatch, "report_stock", kind="waste", reason="burnt", item=_id(session, "Ube"))
+    asked = _turn(session, people["Ana"], "nagtapon ng ube, nasunog")
+    seen: list[dict[str, Any]] = []
+    _answers(monkeypatch, "clarify", seen)
+    reply = _turn(session, people["Ana"], "8", asked.thread_id)
+    assert seen == []
+    assert reply.text().startswith("8 Ube ang itinapon")
+    assert [(w.quantity, w.reason) for w in _mine(session, people["Ana"], "waste")] == [
+        (8, "burnt")
+    ]
+
+
 def test_an_unsure_reason_asks_with_the_reason_buttons(
     session: Session, ferinos: Ferinos, jev_on: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

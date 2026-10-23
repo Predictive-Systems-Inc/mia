@@ -19,6 +19,7 @@ from pydantic_ai.messages import ModelMessage
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, Turn
+from mia.agents.decider import SLOT_ASKED
 from mia.agents.registry import AGENTS, DEFAULT
 from mia.agents.sales_supervisor import MANIFEST as SALES
 from mia.agents.sales_supervisor.actions import count_shaped
@@ -284,7 +285,8 @@ PENDING_WINDOW = dt.timedelta(minutes=30)
 
 
 def _pending(session: Session, thread: Thread, text: str, lang: str) -> Message | None:
-    """Mia's latest message when it is a question (it has buttons) that `text` answers, so its
+    """Mia's latest message when it is a question (it has buttons, or it asked for a missing
+    input as text: slot_asked) that `text` answers, so its
     agent keeps the turn without the router: a tap (the exact text of one of its buttons, at
     any age, as a cover request's Accept), or typed text within PENDING_WINDOW of a question
     that is not "Did you mean" (a slot question such as "Which item?" takes a typed answer).
@@ -296,13 +298,30 @@ def _pending(session: Session, thread: Thread, text: str, lang: str) -> Message 
     if row is None:
         return None
     buttons = [o for b in row.blocks if b.get("type") == "quick_replies" for o in b["options"]]
-    if not buttons:
-        return None
+    if not buttons:  # a question asked as text (a missing input, SLOT_ASKED) takes a typed answer
+        return row if slot_asked(session, thread) is not None else None
     if text.strip() in buttons:
         return row
     did_you_mean = t("clarify.something_else", lang) in buttons
     fresh = utcnow() - row.created_at <= PENDING_WINDOW
     return row if fresh and not did_you_mean else None
+
+
+def slot_asked(session: Session, thread: Thread) -> dict[str, Any] | None:
+    """The SLOT_ASKED event's data (agent_id, action, args, slot) when its question is the
+    thread's last Mia message and was asked within PENDING_WINDOW; otherwise None (a later
+    message, a notification after it, or the window passed: the message goes the normal way)."""
+    row = _last_mia(session, thread, questions=True)
+    if row is None or utcnow() - row.created_at > PENDING_WINDOW:
+        return None
+    asked = session.exec(
+        select(Event)
+        .where(Event.action == SLOT_ASKED)
+        .where(Event.entity_id == thread.id)
+        .order_by(col(Event.id).desc())
+    ).first()
+    after = (asked.after or {}) if asked is not None else {}
+    return after if after.get("message_id") == row.id else None
 
 
 def _route_tapped(

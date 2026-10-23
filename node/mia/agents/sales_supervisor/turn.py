@@ -13,7 +13,23 @@ from pydantic import ValidationError
 from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, AgentSpec, Turn, call_tool
-from mia.agents.decider import THRESHOLD, Alternative, Decision
+from mia.agents.decider import (
+    THRESHOLD,
+    Alternative,
+    Decision,
+    SlotReader,
+    ask_slot,
+    remember_slot,
+    slot_answer,
+)
+from mia.agents.parsing import (
+    RECEIPT_WORDS,
+    REFUND_WORDS,
+    VOID_WORDS,
+    receipt_no_only,
+    said,
+    tender_only,
+)
 from mia.agents.sales_supervisor import MANIFEST, actions, decider, due, replies
 from mia.agents.sales_supervisor.tools import (
     BINDINGS,
@@ -82,15 +98,41 @@ def _tapped(session: Session, deps: AgentDeps, thread: Thread, text: str) -> Dec
     return Decision.model_validate(chosen) if chosen else None
 
 
+def _receipt_no(text: str, args: dict[str, Any]) -> dict[str, Any] | None:
+    """A void's or refund's receipt number from a typed answer ("2", "#2", "resibo 2"). A
+    refund that named no counted item is completed only when its message said nothing but the
+    refund word (else an item named without a count could become the whole sale: Jev decides
+    with the question as context, and the refund rules ask)."""
+    no = receipt_no_only(text)
+    words = set(said(str(args.get("reason", "")))) - VOID_WORDS - REFUND_WORDS - RECEIPT_WORDS
+    if no is None or ("items" in args and not args["items"] and words):
+        return None
+    return {**args, "receipt_no": no}
+
+
+def _tender(text: str, args: dict[str, Any]) -> dict[str, Any] | None:
+    """A receipt's tender from a typed answer that names only one ("cash", "GCash")."""
+    tender = tender_only(text)
+    return None if tender is None else {**args, "tender": tender}
+
+
+# the missing inputs a typed answer to Mia's question completes (decider.slot_answer)
+SLOT_READERS: dict[str, SlotReader] = {"receipt_no": _receipt_no, "tender": _tender}
+
+
 def _query(
     session: Session, deps: AgentDeps, thread: Thread, text: str
 ) -> tuple[Decision | None, actions.Query | None]:
-    """A decision already made (a tapped button, an injection), or the query for Jev."""
+    """A decision already made (a tapped button, an injection, a typed answer that fills the
+    missing input Mia asked for), or the query for Jev."""
     tapped = _tapped(session, deps, thread, text)
     if tapped is not None:
         return tapped, None
     if classify(html.unescape(text), deps.today, deps.lang).injection:
         return Decision(action="reply_only", args={"kind": "injection"}, confidence=1), None
+    answered = slot_answer(session, deps, thread, text, SLOT_READERS)
+    if answered is not None:
+        return answered, None
     last = _last_question(session, thread)  # a notification (the why question) counts
     said = session.exec(
         select(Message.id)
@@ -239,7 +281,8 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
     if tool in (*RECEIPT_TOOLS, "receipts") and on_counts:
         return reply_text(session, deps, thread, t("sales.receipts.counts_kiosk", deps.lang))
     if tool in RECEIPT_TOOLS and not decision.args.get("receipt_no"):
-        return reply_text(session, deps, thread, t("sales.receipt.which_no", deps.lang))
+        which = t("sales.receipt.which_no", deps.lang)
+        return ask_slot(session, deps, thread, which, action, decision.args, "receipt_no")
     if tool == "refund_receipt" and decision.missing == "items":  # an item named, no count
         no = str(decision.args["receipt_no"])
         return reply_text(session, deps, thread, t("sales.refund.which_items", deps.lang, no=no))
@@ -248,7 +291,9 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
         return _ask_item(session, deps, thread, decision, index)
     if tool == "record_receipt" and decision.args.get("tender") is None:
         blocks, options = replies.ask_tender(decision, deps.lang)
-        return _ask(session, deps, thread, blocks, options)
+        asked = _ask(session, deps, thread, blocks, options)  # a typed tender answers it too
+        remember_slot(session, deps, thread, asked.message_id, action, decision.args, "tender")
+        return asked
     binding = _BINDINGS[f"{MANIFEST.id}.{tool}"]
     try:
         args = binding.input_type.model_validate(decision.args)
