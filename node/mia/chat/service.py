@@ -514,18 +514,23 @@ def _settle(
 def _taught(
     session: Session, deps: AgentDeps, text: str, agents: list[AgentSpec], active: str | None
 ) -> agent_router.Route | None:
-    """The phrasebook's agent for the message's key (chat.phrases): a taught phrase also when
+    """The phrasebook's agent for the message's key (chat.phrases; a saved report counts as
+    taught for the sales supervisor): a taught phrase also when
     another agent is active (a switch: a person said what the words mean), a tapped one only
     when none is (as _recalled). None when the key has no phrase or its agent is no longer one
     of the person's (rule 4)."""
     key = route_memory.key_of(text)
     hit = next((p for p in phrases.entries(session, deps.branch.id) if p.key == key), None)
-    if hit is None or hit.agent_id not in {a.id for a in agents}:
+    if hit is None and phrases.saved_report(session, deps.branch.id, key) is not None:
+        agent, taught = phrases.REPORT_AGENT, True  # a saved report routes as a taught phrase
+    elif hit is not None:
+        agent, taught = hit.agent_id, hit.taught
+    else:
         return None
-    if active is not None and not hit.taught:
+    if agent not in {a.id for a in agents} or (active is not None and not taught):
         return None
-    switch = active is not None and active != hit.agent_id
-    return agent_router.Route("switch" if switch else "chosen", hit.agent_id)
+    switch = active is not None and active != agent
+    return agent_router.Route("switch" if switch else "chosen", agent)
 
 
 def _counted(

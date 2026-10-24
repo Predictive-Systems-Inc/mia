@@ -18,10 +18,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from importlib import import_module
 from pathlib import Path
+from typing import Any
 
 from sqlmodel import Session, col, select
 
 from mia.agents.decider import Action
+from mia.agents.sales_supervisor import MANIFEST as SALES
 from mia.chat.route_memory import key_of
 from mia.core import events
 from mia.core.models import Actor, Event, Message, Thread
@@ -30,7 +32,14 @@ from mia.i18n import t
 TAUGHT = "phrase.taught"
 RETIRED = "phrase.retired"
 CONFIRMED = "phrase.confirmed"
-ALL = (TAUGHT, RETIRED, CONFIRMED)
+# Saved report forms (teach-Mia 4c): a report question's form, never its figures, kept for its
+# message key and run again with no model request; folded here beside the phrases.
+REPORT_SAVED = "report.saved"
+REPORT_RETIRED = "report.retired"
+REPORTS = (REPORT_SAVED, REPORT_RETIRED)
+REPORT_AGENT = SALES.id  # the one agent with a report form today
+REPORTS_CSV = "sales_supervisor_reports.csv"  # the saved reports as rows (text, key, form)
+ALL = (TAUGHT, RETIRED, CONFIRMED, *REPORTS)
 UNTEACHABLE = frozenset({"money", "external", "delete"})
 EXAMPLES = 3  # taught examples per action in the decider's option text
 EXAMPLE_ROLES = frozenset({"owner", "admin"})  # whose taught phrases become examples
@@ -150,7 +159,7 @@ def _fold(found: Sequence[Event], branch_id: str) -> list[Phrase]:
     for ev in found:
         a = ev.after or {}
         key = str(a.get("key", ""))
-        if not has_letter(key):  # a bare-number key from before fddf7a0 is never a phrase
+        if not has_letter(key) or ev.action in REPORTS:  # a bare-number key is never a phrase
             continue
         if ev.action == RETIRED:
             keys.pop(key, None)
@@ -298,6 +307,66 @@ def confirm_tap(
     events.emit(session, CONFIRMED, ("phrase", key), None, confirmed, actor)
 
 
+def _saved(found: Sequence[Event]) -> dict[str, dict[str, Any]]:
+    """The live saved reports by key from report events oldest first: the latest
+    report.saved of a key unless a report.retired came after it."""
+    out: dict[str, dict[str, Any]] = {}
+    for ev in found:
+        a = ev.after or {}
+        if ev.action == REPORT_RETIRED:
+            out.pop(str(a.get("key")), None)
+        elif ev.action == REPORT_SAVED:
+            out[str(a.get("key"))] = a
+    return out
+
+
+def saved_reports(session: Session, branch_id: str) -> dict[str, dict[str, Any]]:
+    """The branch's live saved reports, key to the report.saved payload (key, text, form,
+    agent_id, branch_id). Reads only."""
+    return _saved(_events(session, branch_id))
+
+
+def saved_report(session: Session, branch_id: str, key: str) -> dict[str, Any] | None:
+    """The live saved form for the message key at the branch, or None. Reads only."""
+    found = saved_reports(session, branch_id).get(key)
+    return dict(found["form"]) if found else None
+
+
+def _emit_saved(
+    session: Session, actor: Actor, branch_id: str | None, text: str, form: dict[str, Any],
+    message_id: str | None = None,
+) -> Event:  # fmt: skip
+    key = key_of(text)
+    if not has_letter(key):
+        raise TeachError("a saved report needs a word, not only numbers")
+    after = {
+        "key": key,
+        "text": text.strip(),
+        "agent_id": REPORT_AGENT,
+        "form": form,
+        "branch_id": branch_id,
+        "message_id": message_id,
+        "person_id": actor.person_id,
+    }
+    return events.emit(session, REPORT_SAVED, ("report", key), None, after, actor)
+
+
+def save_report(
+    session: Session, actor: Actor, branch_id: str, message: Message, form: dict[str, Any]
+) -> Event:
+    """Emits report.saved (in the caller's transaction) for the key of the message at the
+    branch with the answered form. Raises TeachError for a key with no letter."""
+    return _emit_saved(session, actor, branch_id, message.text, form, message.id)
+
+
+def retire_report(session: Session, actor: Actor, branch_id: str | None, key: str) -> Event:
+    """Emits report.retired for the key at the branch (None: every branch) and commits."""
+    after = {"key": key_of(key), "branch_id": branch_id}
+    ev = events.emit(session, REPORT_RETIRED, ("report", key_of(key)), None, after, actor)
+    session.commit()
+    return ev
+
+
 def _something_else() -> set[str]:
     from mia.i18n import SUPPORTED
 
@@ -323,11 +392,59 @@ def _taught_phrases(session: Session) -> list[Phrase]:
     return out
 
 
+def _export_reports(session: Session, folder: Path) -> int:
+    """Appends each live saved report of every branch to <folder>/REPORTS_CSV (text, key,
+    form as JSON; the header written when the file is new) unless its key is there."""
+    from mia.core.models import Branch
+
+    path = folder / REPORTS_CSV
+    present: set[str] = set()
+    if path.exists():
+        with path.open(encoding="utf-8", newline="") as f:
+            present = {r["key"] for r in csv.DictReader(f)}
+    rows = []
+    for branch_id in session.exec(select(Branch.id).order_by(col(Branch.id))):
+        for key, a in saved_reports(session, branch_id).items():
+            if key not in present:
+                present.add(key)
+                rows.append({"text": a.get("text", key), "key": key, "form": json.dumps(a["form"])})
+    if rows or not path.exists():
+        new = not path.exists()
+        with path.open("a", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, ["text", "key", "form"], lineterminator="\n")
+            if new:
+                writer.writeheader()
+            writer.writerows(rows)
+    return len(rows)
+
+
+def _import_reports(session: Session, folder: Path, branch_id: str, every: bool) -> int:
+    """Replays each row of <folder>/REPORTS_CSV as report.saved by the system actor unless
+    that key's form is saved at the branch already."""
+    path = folder / REPORTS_CSV
+    if not path.exists():
+        return 0
+    live = saved_reports(session, branch_id)
+    with path.open(encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+    added = 0
+    for r in rows:
+        form = json.loads(r["form"])
+        if live.get(key_of(r["text"]), {}).get("form") == form:
+            continue
+        _emit_saved(session, Actor.system(branch_id), None if every else branch_id, r["text"], form)
+        live[key_of(r["text"])] = {"form": form}
+        added += 1
+    session.commit()
+    return added
+
+
 def export_rows(session: Session, folder: Path) -> int:
     """Appends each taught phrase as a short-half row of <folder>/<agent>.csv (intent the
     action, lang the teacher's, extra {"scenario": "taught", "taught": true}) unless a row
-    with that intent and message is there; the header is kept. Returns the rows added."""
-    added = 0
+    with that intent and message is there; the header is kept; and each saved report to
+    <folder>/REPORTS_CSV. Returns the rows added."""
+    added = _export_reports(session, folder)
     for p in _taught_phrases(session):
         path = folder / f"{p.agent_id}.csv"
         if not path.exists():
@@ -354,12 +471,14 @@ def export_rows(session: Session, folder: Path) -> int:
 def import_rows(session: Session, folder: Path, branch_id: str, *, every: bool = False) -> int:
     """Replays every row of <folder>/<agent>.csv whose extra says "taught": true as a
     phrase.taught at the branch (every branch with every=True) by the system actor, the row's
-    role as the teacher's, skipping phrases already taught there. Returns how many were
-    taught."""
+    role as the teacher's, skipping phrases already taught there; then the saved reports of
+    <folder>/REPORTS_CSV as report.saved. Returns how many were taught or saved."""
     live = {(p.key, p.agent_id, p.action) for p in entries(session, branch_id) if p.taught}
     actor = Actor.system(branch_id)
     taught = 0
     for path in sorted(folder.glob("*.csv")):
+        if path.name == REPORTS_CSV:
+            continue
         with path.open(encoding="utf-8", newline="") as f:
             rows = list(csv.DictReader(f))
         for r in rows:
@@ -373,4 +492,4 @@ def import_rows(session: Session, folder: Path, branch_id: str, *, every: bool =
                   r["intent"], lang=r.get("lang") or "en", roles=role)  # fmt: skip
             live.add((key_of(r["message"]), path.stem, r["intent"]))
             taught += 1
-    return taught
+    return taught + _import_reports(session, folder, branch_id, every)

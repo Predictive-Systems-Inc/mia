@@ -57,7 +57,8 @@ mia/
                             tools.py, calc.py, due.py, replies.py, turn.py,
                             tests/scenarios.yaml (chat scenarios); its tables are core (1.5);
                             the chat till on a receipts kiosk: record, void, refund and read
-                            receipts
+                            receipts; report.py and report_model.py: report questions
+                            (teach-Mia 4c)
         inventory_manager/  Inventory Manager: the mia agent scaffold shape (turn.py, actions.py, ...);
                             its tables are core (1.5, 1.6)
         hr_officer/         HR Officer: the mia agent scaffold shape (turn.py, actions.py, ...);

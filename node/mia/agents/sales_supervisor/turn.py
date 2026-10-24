@@ -30,32 +30,47 @@ from mia.agents.parsing import (
     said,
     tender_only,
 )
-from mia.agents.sales_supervisor import MANIFEST, actions, decider, due, replies
+from mia.agents.sales_supervisor import MANIFEST, actions, decider, due, replies, report_model
+from mia.agents.sales_supervisor.report import ReportForm
+from mia.agents.sales_supervisor.report_model import Answer
 from mia.agents.sales_supervisor.tools import (
     BINDINGS,
+    COUNTS,
     RecordCountsOutput,
     RecordReceiptOutput,
     RefundReceiptInput,
+    ReportInput,
+    ReportOutput,
     at_visit,
     receipt_out,
     refund_lines,
 )
 from mia.agents.shift_supervisor.classifier import classify
+from mia.chat import phrases
 from mia.chat.blocks import Block, ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.replies import reply_text, store_reply
+from mia.chat.route_memory import key_of
 from mia.core import events, sales
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
-from mia.core.models import Approval, Event, Message, SalesReceipt, Thread
+from mia.core.models import Actor, Approval, Event, Message, SalesReceipt, Thread
+from mia.core.rbac import Resource, get_rbac
 from mia.i18n import t
 from mia.settings import get_settings
+from mia.templates.retail import hours as retail_hours
 from mia.templates.retail.models import RetailItem
 
 log = logging.getLogger(__name__)
 _BINDINGS = {b.tool_id: b for b in BINDINGS}
 _warned = False  # the no-Jev warning is logged once per process
 RECEIPT_TOOLS = ("void_receipt", "refund_receipt")
+# Internal actions, never in actions.ACTIONS (Jev never sees them, never teachable): a report
+# form run by the report tool, and the Save as a report button (teach-Mia 4c).
+REPORT = "report"
+REPORT_SAVE = "report_save"
+REPORT_TOOL = Resource(kind="tool", name=f"{MANIFEST.id}.report")
+NAMED_PERIODS = ("today", "yesterday", "this_week", "last_week", "this_month", "last_month")
 # a void's or refund's refusal code -> its reply (each takes the receipt number as no)
 RECEIPT_REFUSALS = {
     "receipt": "sales.void.no_receipt",
@@ -120,6 +135,16 @@ def _tender(text: str, args: dict[str, Any]) -> dict[str, Any] | None:
 SLOT_READERS: dict[str, SlotReader] = {"receipt_no": _receipt_no, "tender": _tender}
 
 
+def _said(session: Session, thread: Thread) -> str | None:
+    """The id of the thread's latest user message (this turn's, stored before the turn)."""
+    return session.exec(
+        select(Message.id)
+        .where(Message.thread_id == thread.id)
+        .where(Message.role == "user")
+        .order_by(col(Message.id).desc())
+    ).first()
+
+
 def _query(
     session: Session, deps: AgentDeps, thread: Thread, text: str
 ) -> tuple[Decision | None, actions.Query | None]:
@@ -133,13 +158,11 @@ def _query(
     answered = slot_answer(session, deps, thread, text, SLOT_READERS)
     if answered is not None:
         return answered, None
+    saved = phrases.saved_report(session, deps.branch.id, key_of(text))
+    if saved is not None:  # a saved report runs with no Jev and no model request
+        return Decision(action=REPORT, args={"form": saved}, confidence=1.0), None
     last = _last_question(session, thread)  # a notification (the why question) counts
-    said = session.exec(
-        select(Message.id)
-        .where(Message.thread_id == thread.id)
-        .where(Message.role == "user")
-        .order_by(col(Message.id).desc())
-    ).first()
+    said = _said(session, thread)
     previous, previous_id = (last.text, last.id) if last else ("", None)
     query = actions.build_query(deps, text, previous, message_id=said, previous_id=previous_id)
     return None, query
@@ -186,7 +209,8 @@ def _did_you_mean(
         TextBlock(text=t("clarify.question", deps.lang)),
         QuickRepliesBlock(options=[*options, other]),
     ]
-    options[other] = Decision(action="clarify", confidence=1.0).model_dump(mode="json")
+    asked = {"asked": _said(session, thread)}  # the report step reads it (teach-Mia 4c)
+    options[other] = Decision(action="clarify", args=asked, confidence=1.0).model_dump(mode="json")
     return _ask(session, deps, thread, blocks, options)
 
 
@@ -246,6 +270,10 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
         decision.model_dump(mode="json"),
         deps.actor,
     )
+    if decision.action == REPORT:
+        return _report(session, deps, thread, decision)
+    if decision.action == REPORT_SAVE:
+        return _save_report(session, deps, thread, decision)
     action = decision.action
     item_missing = (decision.missing or "").startswith("item_")
     if action == "clarify" and item_missing and decision.confidence >= THRESHOLD:
@@ -353,6 +381,192 @@ def _as_count(session: Session, deps: AgentDeps, day: str) -> list[Block]:
     return [TextBlock(text=t("sales.receipt.as_count", deps.lang))]
 
 
+# ---- report questions (teach-Mia 4c) ------------------------------------------------------
+
+
+def _offerable(decision: Decision) -> bool:
+    """True when a Did you mean would offer a button (an alternative with a label and all its
+    inputs) or the one ring-up question asks instead."""
+    for alt in decision.alternatives:
+        spec = actions.ACTIONS.get(alt.action)
+        if spec is not None and spec.label_key is not None and alt.missing is None:
+            return True
+    return _only_ring_up(decision) is not None
+
+
+def _wants_report(
+    session: Session,
+    deps: AgentDeps,
+    thread: Thread,
+    decision: Decision,
+    query: actions.Query | None,
+) -> tuple[str, str | None] | None:
+    """(the message text, its id) when the report step should run, else None: a route is set,
+    the person holds the report tool (checked before any model request), and either Jev's
+    decision is today's rephrase (clarify with nothing to offer and no missing input) or a
+    reply_only of kind other or capabilities on a report-like message, or the decision is a
+    tapped Something else whose asked message is report-like."""
+    if report_model.route() is None:
+        return None
+    if not get_rbac().check(deps.actor, REPORT_TOOL, "execute", session=session):
+        return None
+    if query is not None:
+        rephrase = decision.action == "clarify" and decision.missing is None
+        rephrase = rephrase and not _offerable(decision)
+        kind = decision.args.get("kind")
+        chat = decision.action == "reply_only" and kind in ("other", "capabilities")
+        if (rephrase or chat) and actions.report_like(query.message, query.counts_only):
+            return query.message, query.message_id
+        return None
+    asked = decision.args.get("asked") if decision.action == "clarify" else None
+    message = session.get(Message, str(asked)) if asked else None
+    if message is None or message.thread_id != thread.id:
+        return None
+    counts = actions.count_shaped(session, deps.branch.id, message.text)
+    return (message.text, message.id) if actions.report_like(message.text, counts) else None
+
+
+def _report_context(deps: AgentDeps) -> report_model.Context:
+    """What the report model reads beside the message: the business date, the menu, every
+    shop of the organisation (as Jev's query offers them; the tool refuses a kiosk the person
+    may not read) and the period ids."""
+    session = deps.session
+    return report_model.Context(
+        today=deps.today,
+        items={i.id: i.name for i in actions._menu(session, deps.branch.id)},
+        kiosks={b.id: b.name for b in retail_hours.shops(session, deps.organisation_id)},
+        periods=actions._periods(deps.lang),
+    )
+
+
+def _reported(session: Session, thread: Thread, message_id: str | None) -> bool:
+    """True when a report clarifying question was already asked about the message."""
+    asked = session.exec(
+        select(Event)
+        .where(Event.action == "decision.clarify_asked")
+        .where(Event.entity_id == thread.id)
+    )
+    for ev in asked:
+        for option in ((ev.after or {}).get("options") or {}).values():
+            if not isinstance(option, dict) or option.get("action") != REPORT:
+                continue
+            if (option.get("args") or {}).get("message_id") == message_id:
+                return True
+    return False
+
+
+def _clarify_options(
+    session: Session, deps: AgentDeps, question: str, partial: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    """The buttons of a report question, built by code (never the model's words): label to
+    the completed form. which_kiosk: the person's kiosk, every shop and All kiosks for one who
+    may read every kiosk; which_period: the named periods; which_measure: pieces or amount.
+    A completion that is no valid form is left out."""
+    lang = deps.lang
+    choices: dict[str, dict[str, Any]]
+    if question == "which_kiosk":
+        shops = [deps.branch]
+        wide = get_rbac().check(deps.actor, COUNTS, "read_all", session=session)
+        if wide:
+            shops += [
+                b for b in retail_hours.shops(session, deps.organisation_id) if b != deps.branch
+            ]
+        choices = {b.name: {"kiosks": [b.id]} for b in shops}
+        if wide:
+            choices[t("sales.report.all_kiosks", lang)] = {"kiosks": ["all"]}
+    elif question == "which_period":
+        choices = {
+            t(f"sales.report.period.{p}", lang): {"period": p, "start": None, "end": None}
+            for p in NAMED_PERIODS
+        }
+    else:
+        choices = {
+            t(f"sales.report.measure.{m}", lang): {"measure": m} for m in ("pieces", "amount")
+        }
+    out = {}
+    for label, field in choices.items():
+        try:
+            out[label] = ReportForm.model_validate({**partial, **field}).model_dump(mode="json")
+        except ValidationError:
+            continue
+    return out
+
+
+def _report_reply(
+    session: Session, deps: AgentDeps, thread: Thread, answer: Answer, message_id: str | None
+) -> ChatReply:
+    """The model's answer worded by code: a form runs through the report tool (_act); a
+    clarifying question asks with code-built buttons, once per message (a second one, or one
+    with no valid button, gets today's rephrase)."""
+    if answer.form is not None:
+        form = answer.form.model_dump(mode="json")
+        decision = Decision(action=REPORT, args={"form": form, "message_id": message_id},
+                            confidence=1.0)  # fmt: skip
+        return _act(session, deps, thread, decision)
+    assert answer.clarify is not None
+    options = _clarify_options(session, deps, answer.clarify.question, answer.clarify.partial)
+    if not options or _reported(session, thread, message_id):
+        return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
+    stored = {
+        label: Decision(
+            action=REPORT, args={"form": form, "message_id": message_id}, confidence=1.0
+        ).model_dump(mode="json")
+        for label, form in options.items()
+    }
+    question = t(f"sales.report.ask.{answer.clarify.question}", deps.lang)
+    blocks: list[Block] = [TextBlock(text=question), QuickRepliesBlock(options=list(stored))]
+    return _ask(session, deps, thread, blocks, stored)
+
+
+def _report(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) -> ChatReply:
+    """Run a report form through the report tool (the guard, rule 4) and word the table; a
+    named period on a message with a word offers Save as a report. An invalid form gets
+    today's rephrase and a decision.failed."""
+    try:
+        args = ReportInput.model_validate(decision.args)
+    except ValidationError:
+        return _report_failed(session, deps, thread, "form")
+    out = call_tool(deps, _BINDINGS[f"{MANIFEST.id}.report"], args, new_id())
+    if "status" in out and "message" in out:  # a ToolRefusal
+        if out["status"] == "invalid":
+            error = {"error": f"report: {out['message']}"}
+            events.emit(session, "decision.failed", ("thread", thread.id), None, error, deps.actor)
+        return _refusal(session, deps, thread, decision, "report", out)
+    blocks = replies.report_text(ReportOutput.model_validate(out).result, deps.lang)
+    message_id = decision.args.get("message_id")
+    message = session.get(Message, str(message_id)) if message_id else None
+    if args.form.period is None or message is None or not phrases.has_letter(key_of(message.text)):
+        return store_reply(session, deps, thread, blocks)
+    label = t("sales.report.save", deps.lang)
+    save = {"form": args.form.model_dump(mode="json"), "message_id": message.id}
+    options = {
+        label: Decision(action=REPORT_SAVE, args=save, confidence=1.0).model_dump(mode="json")
+    }
+    return _ask(session, deps, thread, [*blocks, QuickRepliesBlock(options=[label])], options)
+
+
+def _report_failed(session: Session, deps: AgentDeps, thread: Thread, error: str) -> ChatReply:
+    after = {"error": f"report: {error}"}
+    events.emit(session, "decision.failed", ("thread", thread.id), None, after, deps.actor)
+    return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
+
+
+def _save_report(
+    session: Session, deps: AgentDeps, thread: Thread, decision: Decision
+) -> ChatReply:
+    """Save the answered form for its message key (report.saved); anyone who got the answer
+    may (it only reads, and rbac is checked again on every run)."""
+    message = session.get(Message, str(decision.args.get("message_id")))
+    if message is None or message.thread_id != thread.id:
+        return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
+    try:
+        form = ReportForm.model_validate(decision.args.get("form")).model_dump(mode="json")
+        phrases.save_report(session, Actor.person(deps.person), deps.branch.id, message, form)
+    except (ValidationError, phrases.TeachError):
+        return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
+    return reply_text(session, deps, thread, t("sales.report.saved", deps.lang))
+
+
 def _failed(session: Session, deps: AgentDeps, thread: Thread, error: str) -> ChatReply:
     events.emit(
         session, "decision.failed", ("thread", thread.id), None, {"error": error}, deps.actor
@@ -376,6 +590,14 @@ async def _jev_turn(
         except JevError as exc:
             return await asyncio.to_thread(_failed, session, deps, thread, str(exc))
     assert decision is not None
+    wanted = await asyncio.to_thread(_wants_report, session, deps, thread, decision, query)
+    if wanted is not None:  # the report step (teach-Mia 4c); None keeps today's reply
+        rctx = await asyncio.to_thread(_report_context, deps)
+        await asyncio.to_thread(session.commit)
+        with egress_context(replace(ctx, purpose=report_model.PURPOSE)):
+            answer = await report_model.ask(wanted[0], rctx)
+        if answer is not None:
+            return await asyncio.to_thread(_report_reply, session, deps, thread, answer, wanted[1])
     return await asyncio.to_thread(_act, session, deps, thread, decision)
 
 

@@ -67,6 +67,21 @@ def breakdown_of(message: str) -> Literal["item", "kiosk"] | None:
     return None
 
 
+# A report question's words (en and fil, teach-Mia 4c): code reads them, never a model (rule 7).
+REPORT_WORDS = (
+    "benta", "sales", "sold", "nabenta", "magkano", "ilan", "how many", "how much", "total",
+    "report", "per", "bawat", "kada", "compare", "vs",
+)  # fmt: skip
+
+
+def report_like(message: str, counts_only: bool) -> bool:
+    """True when the message holds a REPORT_WORDS phrase as whole words (after casefold, as
+    breakdown_of reads BREAKDOWNS) and is not only counts (Query.counts_only)."""
+    text = " ".join(message.casefold().split())
+    words = (re.search(rf"(?<![\w-]){re.escape(w)}(?![\w-])", text) for w in REPORT_WORDS)
+    return not counts_only and any(words)
+
+
 def day_when(weekday: int, lang: str) -> str:
     """The weekday (0 is Monday) as the due messages put it: the essive in Finnish, else the
     capitalised name in the language (English when it has none)."""

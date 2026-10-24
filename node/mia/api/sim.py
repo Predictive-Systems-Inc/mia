@@ -405,7 +405,23 @@ def phrase_list(session: DbSession) -> dict[str, Any]:
             name = names.get(p.branch_id, "") if p.branch_id else "every branch"
             rows.append(PhraseOut(branch=name, **{k: getattr(p, k) for k in PHRASE_FIELDS}))
     versions = {name: phrases.version(session, branch_id) for branch_id, name in names.items()}
-    return {"versions": versions, "phrases": rows}
+    return {"versions": versions, "phrases": rows, "reports": _reports(session, names)}
+
+
+def _reports(session: Session, names: dict[str, str]) -> list[dict[str, Any]]:
+    """Every branch's live saved reports (teach-Mia 4c), each (branch scope, key) once."""
+    seen: set[tuple[str | None, str]] = set()
+    out = []
+    for branch_id in names:
+        for key, a in phrases.saved_reports(session, branch_id).items():
+            scope = a.get("branch_id")
+            if (scope, key) in seen:
+                continue
+            seen.add((scope, key))
+            branch = names.get(scope, "") if scope else "every branch"
+            out.append({"branch": branch, "branch_id": scope, "key": key,
+                        "text": a.get("text", key), "form": a["form"]})  # fmt: skip
+    return out
 
 
 PHRASE_FIELDS = ("branch_id", "key", "text", "agent_id", "action", "taught", "confidence", "taps")
@@ -421,6 +437,14 @@ def retire(session: DbSession, body: RetireIn) -> dict[str, int]:
     """Retire a phrase at its branch (None: every branch) by the sim's actor."""
     branch_id = body.branch_id or session.exec(select(Branch.id).order_by(col(Branch.id))).first()
     phrases.retire(session, _actor(branch_id or ""), body.branch_id, body.key)
+    return {"version": phrases.version(session, branch_id or "")}
+
+
+@router.post("/reports/retire")
+def retire_report(session: DbSession, body: RetireIn) -> dict[str, int]:
+    """Retire a saved report at its branch (None: every branch) by the sim's actor."""
+    branch_id = body.branch_id or session.exec(select(Branch.id).order_by(col(Branch.id))).first()
+    phrases.retire_report(session, _actor(branch_id or ""), body.branch_id, body.key)
     return {"version": phrases.version(session, branch_id or "")}
 
 

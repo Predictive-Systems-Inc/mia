@@ -13,7 +13,11 @@ from mia.agents.decider import Alternative, Decision, honour
 from mia.chat import phrases
 from tests.evals import cases, gate
 
-AGENTS = sorted(p.stem for p in cases.FOLDER.glob("*.csv") if p.stem != "router")
+AGENTS = sorted(
+    p.stem
+    for p in cases.FOLDER.glob("*.csv")
+    if p.stem != "router" and p.name != phrases.REPORTS_CSV  # saved reports are not cases
+)
 
 
 def _decided(agent: str, action: str) -> dict[str, object]:

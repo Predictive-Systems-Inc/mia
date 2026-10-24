@@ -540,6 +540,19 @@ async function openPhrases() {
     const source = p.taught ? "taught" : `${p.taps} taps, confidence ${p.confidence}`;
     return [p.text, p.agent_id, p.action, source, p.branch, b];
   })));
+  if (!(book.reports || []).length) return;
+  list.append(el("div", "status", "Saved reports: the same question runs its form again with no model call."));
+  list.append(table(["Text", "Report", "Branch", ""], book.reports.map(r => {
+    const b = el("button", null, "Retire");
+    b.onclick = async () => {
+      await fetch("/sim/reports/retire", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({key: r.key, branch_id: r.branch_id})});
+      openPhrases();
+    };
+    const f = r.form;
+    const when = f.period || `${f.start} to ${f.end}`;
+    const words = [f.measure, when, f.group_by !== "none" ? `per ${f.group_by}` : "", f.compare_to !== "none" ? `vs ${f.compare_to}` : ""];
+    return [r.text, words.filter(Boolean).join(", "), r.branch, b];
+  })));
 }
 
 async function openRequests() {
