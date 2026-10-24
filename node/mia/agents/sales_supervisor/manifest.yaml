@@ -1,0 +1,62 @@
+id: sales_supervisor
+name: Sales Supervisor
+version: 0.1.0
+standard_version: "1.10"
+job_description: job.md
+instructions: {base: prompts/base.md}
+roles:
+  agent_role: agent.sales_supervisor
+  grants:
+    - data:sales_sessions:read
+    - data:sales_sessions:read_all
+    - data:sales_receipts:read
+    - data:sales_receipts:read_all
+    - data:sales_receipts:write
+    - data:sales_receipt_lines:read
+    - data:sales_receipt_lines:read_all
+    - data:sales_receipt_lines:write
+    - data:sales_payments:read
+    - data:sales_payments:read_all
+    - data:sales_payments:write
+    - data:sales_counts:read
+    - data:sales_counts:write
+    - data:sales_counts:read_all
+    - data:sales_targets:read
+    - data:sales_targets:write
+    - data:sales_targets:write_all
+    - data:sales_notes:write
+    - data:retail_items:read
+    - data:retail_branch_hours:read
+    - data:core.person:read
+    - data:core.branch:read
+    - data:core.visit:read  # at_visit: a cover sells at the visit's shop
+    - tool:sales_supervisor.record_counts:execute
+    - tool:sales_supervisor.correct_count:execute
+    - tool:sales_supervisor.today:execute
+    - tool:sales_supervisor.period_report:execute
+    - tool:sales_supervisor.report:execute
+    - tool:sales_supervisor.set_target:execute
+    - tool:sales_supervisor.record_note:execute
+    - tool:sales_supervisor.record_receipt:execute
+    - tool:sales_supervisor.receipts:execute
+    - tool:sales_supervisor.item_codes:execute
+    - tool:sales_supervisor.void_receipt:request
+    - tool:sales_supervisor.refund_receipt:request
+  denies: [tool:*:approve]
+  approvers:
+    sales_supervisor.void_receipt: [supervisor, admin, owner]
+    sales_supervisor.refund_receipt: [admin, owner]
+tools:
+  - {id: sales_supervisor.record_counts, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_counts, sales_targets], writes: [sales_counts]}
+  - {id: sales_supervisor.correct_count, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_counts], writes: [sales_counts]}
+  - {id: sales_supervisor.today, kind: agent, risk: read, approval: never, reads: [retail_items, retail_branch_hours, sales_counts, sales_targets, sales_receipts, sales_receipt_lines, sales_payments, person, branch]}
+  - {id: sales_supervisor.period_report, kind: agent, risk: read, approval: never, reads: [retail_items, sales_counts, sales_receipts, sales_receipt_lines, sales_payments, branch]}
+  - {id: sales_supervisor.report, kind: agent, risk: read, approval: never, reads: [retail_items, sales_counts, sales_receipts, sales_receipt_lines, sales_payments, branch]}
+  - {id: sales_supervisor.set_target, kind: agent, risk: write_internal, approval: never, reads: [branch], writes: [sales_targets]}
+  - {id: sales_supervisor.record_note, kind: agent, risk: write_internal, approval: never, writes: [sales_notes]}
+  - {id: sales_supervisor.record_receipt, kind: agent, risk: write_internal, approval: never, reads: [retail_items, retail_branch_hours, sales_sessions, sales_receipts], writes: [sales_receipts, sales_receipt_lines, sales_payments]}
+  - {id: sales_supervisor.receipts, kind: agent, risk: read, approval: never, reads: [sales_receipts, sales_receipt_lines, sales_payments, retail_items]}
+  - {id: sales_supervisor.item_codes, kind: agent, risk: read, approval: never, reads: [retail_items, retail_item_prices, retail_branch_hours]}
+  - {id: sales_supervisor.void_receipt, kind: agent, risk: money, approval: always, reads: [sales_sessions, sales_receipts, sales_receipt_lines, sales_payments], writes: [sales_receipts, approval]}
+  - {id: sales_supervisor.refund_receipt, kind: agent, risk: money, approval: always, reads: [sales_sessions, sales_receipts, sales_receipt_lines, sales_payments], writes: [sales_receipts, sales_receipt_lines, sales_payments, approval]}
+tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

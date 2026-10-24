@@ -3,13 +3,12 @@
 Guarantees: each row is leased (attempts and next try written and committed) before the network
 call, so a crash never double-sends quickly and never holds the write lock across the network
 (rule 11); DB work runs in worker threads (rule 12); every send emits `channel.sent` with a
-payload hash, never content; Meta's outside-window error (131047) re-sends once as the
+payload HMAC, never content; Meta's outside-window error (131047) re-sends once as the
 `mia_new_message` template and holds the original until the person replies.
 """
 
 import asyncio
 import datetime as dt
-import hashlib
 import json
 
 from pydantic import BaseModel
@@ -21,8 +20,8 @@ from mia.channels.base import ChannelPayload, DeliveryResult, TemplateCall
 from mia.channels.render import to_parts
 from mia.channels.service import TEMPLATE_KIND
 from mia.channels.transport import sending
-from mia.chat.blocks import TextBlock
-from mia.core import events, store
+from mia.chat.blocks import ApprovalCardBlock, Block, FileBlock, FormBlock
+from mia.core import events, keys, store
 from mia.core.db import session_scope, utcnow
 from mia.core.models import Actor, ChannelIdentity, ChannelOutbox, Person, Principal
 
@@ -108,7 +107,7 @@ def _record(lease: _Lease, result: DeliveryResult) -> None:
                 actor,
                 action="channel.status",
             )
-            digest = hashlib.sha256(json.dumps(lease.body, sort_keys=True).encode()).hexdigest()
+            digest = _digest(lease.body)
             after = {
                 "channel": row.channel,
                 "person_id": row.person_id,
@@ -204,25 +203,38 @@ def release_held(session: Session, identity: ChannelIdentity) -> int:
     return queued
 
 
-async def send_direct(channel: str, address: str, text: str) -> bool:
-    """Reply to an address that is not linked to anyone (no person, so no outbox row).
+async def send_direct(
+    channel: str, address: str, blocks: list[Block], lang: str
+) -> list[DeliveryResult]:
+    """Reply to an address that is not linked to anyone (no person, so no outbox row): text,
+    cards and quick replies only. Blocks that only open the app (approval cards, forms, files)
+    are dropped, and nothing is rendered sensitive, so the reply never carries an app link.
 
-    Used only for answers to a message the address just sent, so the channel's window is open.
-    Logged as `channel.sent` with a payload hash, like outbox sends.
+    The caller keeps to the channel's window (an answer to a message the address just sent, or
+    a customer reply inside the window). Logged as `channel.sent` with a payload HMAC, like
+    outbox sends. Returns one result per payload sent.
     """
     adapter = registry.get(channel)
-    parts = to_parts([TextBlock(text=text)], adapter.capabilities, "fi")
-    ok = True
-    for payload in adapter.render(address, parts):
+    shown: list[Block] = [
+        b for b in blocks if not isinstance(b, ApprovalCardBlock | FormBlock | FileBlock)
+    ]
+    results = []
+    for payload in adapter.render(address, to_parts(shown, adapter.capabilities, lang)):
         with sending(f"direct:{address}"):
             result = await adapter.send(payload)
-        ok = ok and result.ok
+        results.append(result)
         await asyncio.to_thread(_log_direct, channel, payload.body, result)
-    return ok
+    return results
+
+
+def _digest(body: dict[str, object]) -> str:
+    """The payload's keyed hash (HMAC): the body holds the address, and a plain hash of a fixed
+    reply text could be tried against every number of the country's form."""
+    return keys.code_hmac(json.dumps(body, sort_keys=True))
 
 
 def _log_direct(channel: str, body: dict[str, object], result: DeliveryResult) -> None:
-    digest = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+    digest = _digest(body)
     actor = Actor(principal=Principal(type="system", id=f"channel:{channel}"), branch_id="")
     after = {"channel": channel, "payload_hash": digest, "ok": result.ok}
     with session_scope() as session:

@@ -7,27 +7,385 @@ g, owner, admin, *
 g, admin, supervisor, *
 g, supervisor, staff, *
 g, accountant, viewer, *
+g, clerk, staff, *
 
 # staff: own schedule, own tasks
 p, staff, *, data:core.visit, read_own, allow
 p, staff, *, data:core.person, read_own, allow
 p, staff, *, data:core.location, read, allow
-p, staff, *, data:dispatcher_absences, write_own, allow
-p, staff, *, tool:dispatcher.get_my_visits, execute, allow
-p, staff, *, tool:dispatcher.record_absence, execute, allow
-p, staff, *, tool:dispatcher.respond_to_cover, execute, allow
+p, staff, *, data:core.absence, write_own, allow
+p, staff, *, tool:shift_supervisor.get_my_visits, execute, allow
+p, staff, *, tool:shift_supervisor.record_absence, execute, allow
+p, staff, *, tool:shift_supervisor.respond_to_cover, execute, allow
+p, staff, *, tool:shift_supervisor.check_in, execute, allow
+p, staff, *, tool:shift_supervisor.check_out, execute, allow
+p, staff, *, tool:shift_supervisor.visit_details, execute, allow
+p, staff, *, tool:shift_supervisor.report_site_problem, execute, allow
+p, staff, *, data:core.incident, write_own, allow
+p, staff, *, tool:shift_supervisor.checklist, execute, allow
+p, staff, *, data:cleaning_checklist_ticks, write_own, allow
+p, staff, *, data:core.timesheet, read_own, allow
+p, staff, *, data:core.timesheet, write_own, allow
+p, staff, *, data:core.visit, write_own, allow
+p, staff, *, data:core.auth_devices, read_own, allow
+p, staff, *, data:core.auth_devices, write_own, allow
+
+# staff (clerk inherits): their week, a swap with a co-worker, their own draft time
+p, staff, *, tool:shift_supervisor.roster, execute, allow
+p, staff, *, tool:shift_supervisor.swap_shifts, execute, allow
+p, staff, *, tool:shift_supervisor.correct_timesheet, execute, allow
+p, staff, *, data:retail_closures, read, allow
 
 # supervisor: schedules and approvals for daily operations
 p, supervisor, *, data:core.*, read, allow
-p, supervisor, *, data:dispatcher_*, write, allow
-p, supervisor, *, tool:dispatcher.find_replacements, execute, allow
-p, supervisor, *, tool:dispatcher.assign_cover, execute, allow
+p, supervisor, *, data:core.absence, write, allow
+p, supervisor, *, data:core.timesheet, write, allow
+p, supervisor, *, data:core.incident, write, allow
+p, supervisor, *, data:cleaning_checklist_ticks, write, allow
+p, supervisor, *, data:cleaning_checklist_ticks, read, allow
+p, supervisor, *, tool:shift_supervisor.find_replacements, execute, allow
+p, supervisor, *, tool:shift_supervisor.assign_cover, execute, allow
+p, supervisor, *, data:core.visit, write, allow
+p, supervisor, *, data:core.auth_devices, write, allow
+
+# supervisor: the branch's roster pattern, closed days and swap confirmations; owner and admin inherit
+p, supervisor, *, tool:shift_supervisor.set_roster, execute, allow
+p, supervisor, *, tool:shift_supervisor.close_day, execute, allow
+p, supervisor, *, tool:shift_supervisor.swap, approve, allow
+p, supervisor, *, data:core.job, write, allow
+p, supervisor, *, data:retail_closures, write, allow
 
 # admin and owner decide cover overrides (instructions that break a scheduling rule)
-p, admin, *, tool:dispatcher.cover_override, approve, allow
+p, admin, *, tool:shift_supervisor.cover_override, approve, allow
+p, admin, *, tool:shift_supervisor.swap_override, approve, allow
+p, admin, *, data:core.job, write_all, allow
+p, admin, *, data:retail_closures, write_all, allow
 
 # admin: users, roles, settings (Phase 1 adds endpoints)
 p, admin, *, data:core.*, write, allow
 
 # viewer: read reports
 p, viewer, *, data:reports, read, allow
+
+# everyone: ask for a feature Mia does not have (spec teach-mia 4b)
+p, staff, *, data:feature_requests, write, allow
+p, viewer, *, data:feature_requests, write, allow
+
+# clerk: report the day's counts, read them back, say why; report questions on her own kiosk (D49)
+p, clerk, *, tool:sales_supervisor.record_counts, execute, allow
+p, clerk, *, tool:sales_supervisor.correct_count, execute, allow
+p, clerk, *, tool:sales_supervisor.today, execute, allow
+p, clerk, *, tool:sales_supervisor.report, execute, allow
+p, clerk, *, tool:sales_supervisor.record_note, execute, allow
+p, clerk, *, tool:sales_supervisor.record_receipt, execute, allow
+p, clerk, *, tool:sales_supervisor.receipts, execute, allow
+p, clerk, *, tool:sales_supervisor.item_codes, execute, allow
+p, clerk, *, tool:sales_supervisor.void_receipt, request, allow
+p, clerk, *, tool:sales_supervisor.refund_receipt, request, allow
+p, clerk, *, data:sales_counts, write_own, allow
+p, clerk, *, data:sales_counts, read_own, allow
+p, clerk, *, data:sales_notes, write_own, allow
+p, clerk, *, data:retail_items, read, allow
+p, clerk, *, data:retail_branch_hours, read, allow
+p, clerk, *, data:sales_targets, read, allow
+
+# supervisor: sales reports and targets for their branch (owner and admin inherit)
+p, supervisor, *, tool:sales_supervisor.record_counts, execute, allow
+p, supervisor, *, tool:sales_supervisor.correct_count, execute, allow
+p, supervisor, *, tool:sales_supervisor.today, execute, allow
+p, supervisor, *, tool:sales_supervisor.period_report, execute, allow
+p, supervisor, *, tool:sales_supervisor.report, execute, allow
+p, supervisor, *, tool:sales_supervisor.set_target, execute, allow
+p, supervisor, *, tool:sales_supervisor.record_note, execute, allow
+p, supervisor, *, tool:sales_supervisor.record_receipt, execute, allow
+p, supervisor, *, tool:sales_supervisor.receipts, execute, allow
+p, supervisor, *, tool:sales_supervisor.item_codes, execute, allow
+p, supervisor, *, tool:sales_supervisor.void_receipt, request, allow
+p, supervisor, *, tool:sales_supervisor.refund_receipt, request, allow
+# a void is decided by head staff, a refund by the owner or an admin (owner and admin inherit)
+p, supervisor, *, tool:sales_supervisor.void_receipt, approve, allow
+p, admin, *, tool:sales_supervisor.refund_receipt, approve, allow
+p, supervisor, *, data:sales_counts, read, allow
+p, supervisor, *, data:sales_counts, write, allow
+p, supervisor, *, data:sales_targets, write, allow
+p, supervisor, *, data:sales_notes, read, allow
+p, supervisor, *, data:sales_notes, write, allow
+p, supervisor, *, data:retail_items, read, allow
+p, supervisor, *, data:retail_branch_hours, read, allow
+p, supervisor, *, data:sales_targets, read, allow
+
+# admin: every sales table, and other branches (read_all, write_all); owner inherits
+p, admin, *, data:sales_counts, read, allow
+p, admin, *, data:sales_counts, write, allow
+p, admin, *, data:sales_counts, read_all, allow
+p, admin, *, data:sales_counts, write_all, allow
+p, admin, *, data:sales_targets, read, allow
+p, admin, *, data:sales_targets, write, allow
+p, admin, *, data:sales_targets, read_all, allow
+p, admin, *, data:sales_targets, write_all, allow
+p, admin, *, data:sales_notes, read, allow
+p, admin, *, data:sales_notes, write, allow
+p, admin, *, data:sales_notes, read_all, allow
+p, admin, *, data:sales_notes, write_all, allow
+
+# sales operations (data standard 1.9, ADR 022): a clerk their own sessions, receipts, lines and
+# payments of their branch; head staff the branch's; admin every branch (owner inherits). The
+# sales supervisor, bookkeeper, branch manager and inventory manager read them (read, read_all)
+# through their manifests; the void and refund approvals arrive with the till
+p, clerk, *, data:sales_sessions, read_own, allow
+p, clerk, *, data:sales_sessions, write_own, allow
+p, clerk, *, data:sales_receipts, read_own, allow
+p, clerk, *, data:sales_receipts, write_own, allow
+p, clerk, *, data:sales_receipt_lines, read_own, allow
+p, clerk, *, data:sales_receipt_lines, write_own, allow
+p, clerk, *, data:sales_payments, read_own, allow
+p, clerk, *, data:sales_payments, write_own, allow
+p, supervisor, *, data:sales_sessions, read, allow
+p, supervisor, *, data:sales_sessions, write, allow
+p, supervisor, *, data:sales_receipts, read, allow
+p, supervisor, *, data:sales_receipts, write, allow
+p, supervisor, *, data:sales_receipt_lines, read, allow
+p, supervisor, *, data:sales_receipt_lines, write, allow
+p, supervisor, *, data:sales_payments, read, allow
+p, supervisor, *, data:sales_payments, write, allow
+p, admin, *, data:sales_sessions, read, allow
+p, admin, *, data:sales_sessions, write, allow
+p, admin, *, data:sales_sessions, read_all, allow
+p, admin, *, data:sales_sessions, write_all, allow
+p, admin, *, data:sales_receipts, read, allow
+p, admin, *, data:sales_receipts, write, allow
+p, admin, *, data:sales_receipts, read_all, allow
+p, admin, *, data:sales_receipts, write_all, allow
+p, admin, *, data:sales_receipt_lines, read, allow
+p, admin, *, data:sales_receipt_lines, write, allow
+p, admin, *, data:sales_receipt_lines, read_all, allow
+p, admin, *, data:sales_receipt_lines, write_all, allow
+p, admin, *, data:sales_payments, read, allow
+p, admin, *, data:sales_payments, write, allow
+p, admin, *, data:sales_payments, read_all, allow
+p, admin, *, data:sales_payments, write_all, allow
+
+# clerk: report stock, ask how many are left, what is low and the bake plan (own branch; no orders)
+p, clerk, *, tool:inventory_manager.record_events, execute, allow
+p, clerk, *, tool:inventory_manager.low_stock, execute, allow
+p, clerk, *, tool:inventory_manager.on_hand, execute, allow
+p, clerk, *, tool:inventory_manager.plan_tomorrow, execute, allow
+p, clerk, *, data:stock_events, write_own, allow
+p, clerk, *, data:stock_events, read_own, allow
+p, clerk, *, data:retail_ingredients, read, allow
+
+# supervisor: the same, plus request a supplier order (it waits for the owner) and receive it
+p, supervisor, *, tool:inventory_manager.record_events, execute, allow
+p, supervisor, *, tool:inventory_manager.low_stock, execute, allow
+p, supervisor, *, tool:inventory_manager.on_hand, execute, allow
+p, supervisor, *, tool:inventory_manager.plan_tomorrow, execute, allow
+p, supervisor, *, tool:inventory_manager.draft_order, request, allow
+p, supervisor, *, tool:inventory_manager.receive_delivery, execute, allow
+p, supervisor, *, data:stock_events, read, allow
+p, supervisor, *, data:stock_events, write, allow
+p, supervisor, *, data:supplier_orders, read, allow
+p, supervisor, *, data:supplier_orders, write, allow
+p, supervisor, *, data:retail_ingredients, read, allow
+
+# admin: stock and orders of every branch; owner inherits
+p, admin, *, data:supplier_orders, read_all, allow
+p, admin, *, data:supplier_orders, write_all, allow
+p, admin, *, data:stock_events, read_all, allow
+p, admin, *, data:stock_events, write_all, allow
+
+# staff (clerk inherits): their own hours, payday, 13th month, contributions, leave balance,
+# holiday pay and payslip; request leave (it waits for head staff)
+p, staff, *, tool:hr_officer.hours, execute, allow
+p, staff, *, tool:hr_officer.next_payday, execute, allow
+p, staff, *, tool:hr_officer.thirteenth_month, execute, allow
+p, staff, *, tool:hr_officer.last_contributions, execute, allow
+p, staff, *, tool:hr_officer.balance, execute, allow
+p, staff, *, tool:hr_officer.holiday, execute, allow
+p, staff, *, tool:hr_officer.resend_payslip, execute, allow
+p, staff, *, tool:hr_officer.request_leave, request, allow
+p, staff, *, data:contracts, read_own, allow
+p, staff, *, data:payslips, read_own, allow
+p, staff, *, data:leave, read_own, allow
+p, staff, *, data:leave, write_own, allow
+
+# supervisor: the branch's hours (core.timesheet read comes with data:core.*); leave approvals
+# come from the manifest's approvers list
+p, supervisor, *, data:contracts, read, allow
+
+# admin: every person of every branch, the certificate text and contracts; owner inherits
+p, admin, *, data:contracts, read_all, allow
+p, admin, *, data:contracts, write_all, allow
+p, admin, *, data:payslips, read_all, allow
+p, admin, *, data:payslips, write_all, allow
+p, admin, *, data:leave, read_all, allow
+p, admin, *, data:leave, write_all, allow
+p, admin, *, data:core.timesheet, read_all, allow
+p, admin, *, tool:hr_officer.certificate_text, execute, allow
+p, admin, *, tool:hr_officer.set_contract, execute, allow
+
+# customer (a member of the public on a channel, customer_service only): inherits nothing, no
+# agent:*:use; every grant one by one. read_own and write_own allow a row only when its owner
+# is the customer's own id: the tools pass the row's customer_id as owner_id, so another
+# customer's row is an rbac deny (rbac.principal_allowed).
+p, customer, *, tool:customer_service.hours, execute, allow
+p, customer, *, tool:customer_service.prices, execute, allow
+p, customer, *, tool:customer_service.delivery_area, execute, allow
+p, customer, *, tool:customer_service.order_status, execute, allow
+p, customer, *, tool:customer_service.cancel_order, execute, allow
+p, customer, *, tool:customer_service.complain, execute, allow
+p, customer, *, tool:customer_service.set_language, execute, allow
+p, customer, *, tool:customer_service.place_order, request, allow
+p, customer, *, data:retail_items, read, allow
+p, customer, *, data:retail_branch_hours, read, allow
+p, customer, *, data:customer_orders, read_own, allow
+p, customer, *, data:customer_orders, write_own, allow
+p, customer, *, data:customer_service_complaints, write_own, allow
+p, customer, *, data:customer_service_customers, write_own, allow
+
+# clerk: the day's customer orders, mark one ready or picked up (own branch)
+p, clerk, *, tool:customer_service.orders_today, execute, allow
+p, clerk, *, tool:customer_service.mark_ready, execute, allow
+p, clerk, *, tool:customer_service.mark_picked_up, execute, allow
+p, clerk, *, data:customer_orders, read, allow
+p, clerk, *, data:customer_orders, write, allow
+p, clerk, *, data:customer_service_customers, read, allow
+
+# supervisor: the same, plus resolve a complaint (owner and admin inherit)
+p, supervisor, *, tool:customer_service.orders_today, execute, allow
+p, supervisor, *, tool:customer_service.mark_ready, execute, allow
+p, supervisor, *, tool:customer_service.mark_picked_up, execute, allow
+p, supervisor, *, tool:customer_service.resolve_complaint, execute, allow
+p, supervisor, *, data:customer_orders, read, allow
+p, supervisor, *, data:customer_orders, write, allow
+p, supervisor, *, data:customer_service_customers, read, allow
+p, supervisor, *, data:customer_service_complaints, read, allow
+p, supervisor, *, data:customer_service_complaints, write, allow
+
+# admin: customer orders (core since data standard 1.8), customers and complaints of every
+# branch; owner inherits
+p, admin, *, data:customer_service_*, read_all, allow
+p, admin, *, data:customer_service_*, write_all, allow
+p, admin, *, data:customer_orders, read_all, allow
+p, admin, *, data:customer_orders, write_all, allow
+
+# clerk: their own coaching and how to sell (own branch; how_to_sell logs the tips given as
+# their own coaching rows). sales_notes read_own gives the note themes only; read_own gates by
+# role, the tools pass the clerk's own id as owner_id
+p, clerk, *, tool:branch_manager.coaching, execute, allow
+p, clerk, *, tool:branch_manager.how_to_sell, execute, allow
+p, clerk, *, data:branch_manager_coaching, read_own, allow
+p, clerk, *, data:branch_manager_coaching, write_own, allow
+p, clerk, *, data:branch_manager_tips, read, allow
+p, clerk, *, data:sales_notes, read_own, allow
+
+# supervisor: the same, plus score experiments, short codes and the weekly summary; propose an
+# experiment or a price change (each waits for the owner; the approved one is written as the
+# requester, so experiments write); owner and admin inherit
+p, supervisor, *, tool:branch_manager.coaching, execute, allow
+p, supervisor, *, tool:branch_manager.how_to_sell, execute, allow
+p, supervisor, *, tool:branch_manager.score_experiment, execute, allow
+p, supervisor, *, tool:branch_manager.set_short_code, execute, allow
+p, supervisor, *, tool:branch_manager.weekly_summary, execute, allow
+p, supervisor, *, tool:branch_manager.propose_experiment, request, allow
+p, supervisor, *, tool:branch_manager.change_price, request, allow
+p, supervisor, *, data:branch_manager_*, read, allow
+p, supervisor, *, data:branch_manager_coaching, write, allow
+p, supervisor, *, data:branch_manager_experiments, write, allow
+p, supervisor, *, data:retail_items, write, allow
+
+# admin: the branch manager's tables of every branch, deciding an experiment and the monthly
+# letter; the owner inherits
+p, admin, *, tool:branch_manager.decide_experiment, execute, allow
+p, admin, *, tool:branch_manager.monthly_letter, execute, allow
+p, admin, *, data:branch_manager_*, read_all, allow
+p, admin, *, data:branch_manager_*, write_all, allow
+
+# admin: add a user from the chat (roles clerk, staff, supervisor or admin, never owner) and link
+# a mobile number to a person (Q117); data:core.* write above covers the person and identity rows
+p, admin, *, tool:branch_manager.add_person, execute, allow
+p, admin, *, tool:branch_manager.set_phone, execute, allow
+
+# admin: a supervisor's extra kiosks (D50, data standard 1.10); only the owner or an admin assigns
+p, admin, *, tool:branch_manager.assign_kiosk, execute, allow
+p, admin, *, data:branch_assignments, read, allow
+p, admin, *, data:branch_assignments, write, allow
+p, admin, *, data:branch_assignments, read_all, allow
+p, admin, *, data:branch_assignments, write_all, allow
+
+# supervisor (head staff): the closing count, settlements, payouts, expenses, petty cash, deposits
+# and balances of their branch; an expense over the limit waits for the owner; owner and admin
+# inherit
+p, supervisor, *, tool:bookkeeper.record_cash_count, execute, allow
+p, supervisor, *, tool:bookkeeper.record_settlement, execute, allow
+p, supervisor, *, tool:bookkeeper.record_payout, execute, allow
+p, supervisor, *, tool:bookkeeper.record_expense, execute, allow
+p, supervisor, *, tool:bookkeeper.record_petty, execute, allow
+p, supervisor, *, tool:bookkeeper.record_deposit, execute, allow
+p, supervisor, *, tool:bookkeeper.balances, execute, allow
+p, supervisor, *, tool:bookkeeper.record_large_expense, request, allow
+p, supervisor, *, data:bookkeeper_*, read, allow
+p, supervisor, *, data:bookkeeper_*, write, allow
+
+# admin: every branch, the journal, the tax figure and the monthly profit (payslip totals
+# through the admin's read_all on payslips, never the supervisor's); the owner inherits
+p, admin, *, tool:bookkeeper.sales_journal, execute, allow
+p, admin, *, tool:bookkeeper.tax_quarter, execute, allow
+p, admin, *, tool:bookkeeper.monthly_profit, execute, allow
+p, admin, *, data:bookkeeper_*, read_all, allow
+p, admin, *, data:bookkeeper_*, write_all, allow
+
+# staff (the driver, Q94: staff at the commissary with the skill driver, checked in
+# confirm_delivery; read_own gates by role only, the rows are those from the driver's branch).
+# The staff use offer is by role, not by skill; dispatch_list's precheck refuses staff without
+# the driver skill (spec section 9). A clerk inherits staff's planner lines, but the agent
+# itself is denied to clerks
+p, staff, *, tool:production_planner.dispatch_list, execute, allow
+p, staff, *, tool:production_planner.confirm_delivery, execute, allow
+p, staff, *, data:production_planner_dispatches, read_own, allow
+p, staff, *, data:production_planner_dispatches, write_own, allow
+
+# supervisor (the commissary head plans, records batches and packs; a kiosk supervisor reads
+# their kiosk's dispatch and plan lines; the plan rows are at the commissary, so a kiosk
+# supervisor's write needs write_all and is refused); owner and admin inherit
+p, supervisor, *, tool:production_planner.plan, execute, allow
+p, supervisor, *, tool:production_planner.change_plan, execute, allow
+p, supervisor, *, tool:production_planner.confirm_plan, execute, allow
+p, supervisor, *, tool:production_planner.batch_sheet, execute, allow
+p, supervisor, *, tool:production_planner.record_batch, execute, allow
+p, supervisor, *, tool:production_planner.capacity, execute, allow
+p, supervisor, *, data:production_planner_*, read, allow
+p, supervisor, *, data:production_planner_*, write, allow
+
+# admin: recipes and every branch's planner rows; the owner inherits
+p, admin, *, tool:production_planner.set_recipe, execute, allow
+p, admin, *, data:production_planner_*, read_all, allow
+p, admin, *, data:production_planner_*, write_all, allow
+
+# a clerk inherits staff and is not offered the planner (spec section 3)
+p, clerk, *, agent:production_planner, use, deny
+
+# agents a role may talk to (chat/access.py); owner inherits admin > supervisor > staff
+p, staff, *, agent:shift_supervisor, use, allow
+p, clerk, *, agent:sales_supervisor, use, allow
+p, clerk, *, agent:inventory_manager, use, allow
+p, supervisor, *, agent:sales_supervisor, use, allow
+p, supervisor, *, agent:inventory_manager, use, allow
+p, owner, *, agent:bookkeeper, use, allow
+p, owner, *, agent:hr_officer, use, allow
+p, owner, *, agent:branch_manager, use, allow
+p, owner, *, agent:inventory_manager, use, allow
+p, staff, *, agent:hr_officer, use, allow
+p, supervisor, *, agent:hr_officer, use, allow
+p, clerk, *, agent:customer_service, use, allow
+p, supervisor, *, agent:customer_service, use, allow
+p, owner, *, agent:customer_service, use, allow
+p, admin, *, agent:customer_service, use, allow
+p, clerk, *, agent:branch_manager, use, allow
+p, supervisor, *, agent:branch_manager, use, allow
+p, admin, *, agent:branch_manager, use, allow
+p, supervisor, *, agent:bookkeeper, use, allow
+p, admin, *, agent:bookkeeper, use, allow
+p, staff, *, agent:production_planner, use, allow
+p, supervisor, *, agent:production_planner, use, allow
+p, owner, *, agent:production_planner, use, allow
+p, admin, *, agent:production_planner, use, allow

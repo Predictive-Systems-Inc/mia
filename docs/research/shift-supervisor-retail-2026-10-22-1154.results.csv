@@ -1,0 +1,25 @@
+message,lang,half,intent,predicted,confidence,score,missing
+late 15m traffic,en,short,record_absence,clarify,0.43,ask,
+sick tmrw cant come,en,short,record_absence,record_absence,0.98,right,
+here now opening,en,short,check_in,check_in,0.99,right,
+done going home,en,short,check_out,check_out,0.97,right,
+my sched tmrw,en,short,get_my_visits,get_my_visits,0.99,wrong,
+roster this wk,en,short,week_roster,week_roster,0.93,right,
+who can cover ana tmrw,en,short,find_replacements,clarify,0.92,ask,visit
+swap w liza fri,en,short,swap,swap,0.86,right,
+forgot time out left 9pm,en,short,correct_time,correct_time,0.88,right,
+oven broken,en,short,report_site_problem,report_site_problem,1.0,right,
+liza fri,en,short,ask,clarify,0.55,ask,visit
+9pm,en,short,ask,clarify,0.59,ask,
+late ako 10 mins,fil,short,record_absence,clarify,0.54,ask,
+masakit ulo ko absent muna,fil,short,record_absence,clarify,0.49,ask,
+andito na me sa kiosk,fil,short,check_in,check_in,0.64,right,
+out na ko tnx,fil,short,check_out,check_out,0.79,right,
+sched ko bukas,fil,short,get_my_visits,clarify,0.22,ask,
+sino pwede kay ana bukas,fil,short,find_replacements,clarify,0.93,ask,visit
+palit kami ni liza sab,fil,short,swap,clarify,0.91,ask,date
+nakalimutan ko time out 9pm,fil,short,correct_time,clarify,0.38,ask,
+sira ref,fil,short,report_site_problem,report_site_problem,0.72,right,
+sarado mall sa sabado,fil,short,close_day,clarify,0.45,ask,
+bukas po,fil,short,ask,clarify,0.29,ask,
+liza po,fil,short,ask,clarify,0.32,ask,

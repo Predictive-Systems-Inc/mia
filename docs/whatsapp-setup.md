@@ -48,6 +48,27 @@ English: "Mia: you have a new message about work. Reply to see it." [Show]; "Hi 
 cover the visit on {{3}} at {{4}}, {{2}}?" [Accept] [Decline]. Until a template is approved,
 messages to people outside the window stay in the app only (the outbox marks them failed).
 
+Sign-in code (`mia_login_code`, category Authentication, a copy-code button; deploy/install.md
+needs it approved before staff can sign in over the tunnel). Meta may offer its own preset body
+for authentication templates; use it when it does, these are the texts otherwise:
+
+| Language | Body | Button |
+|---|---|---|
+| `fi` | Kirjautumiskoodisi on {{1}}. Älä jaa sitä. | Copy code: Kopioi koodi |
+| `en` | Your sign-in code is {{1}}. Do not share it. | Copy code: Copy code |
+
+### Filipino (`fil`) and Cebuano (`ceb`), for Ferino's
+Machine drafts until a native speaker reviews them (Q28 to Q35). Create each template again in
+these languages. `node/mia/channels/whatsapp/templates.py` registers `fil` and `ceb`, but Mia
+sends only the languages in `MIA_WA_TEMPLATE_LANGS` (default `fi,en`), so add `fil,ceb` there once
+Meta approves them (a Ferino's number with only these: `MIA_WA_TEMPLATE_LANGS=fil,ceb`).
+
+| Name | `fil` body and buttons | `ceb` body and buttons |
+|---|---|---|
+| `mia_new_message` | Mia: may bago kang mensahe tungkol sa trabaho. Sumagot para makita ito. [Ipakita] | Mia: naa kay bag-ong mensahe bahin sa trabaho. Tubaga aron makita kini. [Ipakita] |
+| `mia_cover_request` | Hi {{1}}, puwede mo bang i-cover ang pasok sa {{3}} nang {{4}}, {{2}}? [Tatanggapin ko] [Hindi ako puwede] | Hi {{1}}, mahimo ba nimong i-cover ang duty sa {{3}} sa {{4}}, {{2}}? [Modawat ko] [Dili ko mahimo] |
+| `mia_login_code` | Ang sign-in code mo ay {{1}}. Huwag itong ibahagi. [Kopyahin ang code] | Ang imong sign-in code kay {{1}}. Ayaw kini ipakigbahin. [Kopyaha ang code] |
+
 ## 5. Check it
 1. `uv run mia serve` (with the tunnel running). Meta's "Verify and save" must succeed.
 2. `uv run mia invite <your name in the seed or one you added>`; open the link on your phone and send.

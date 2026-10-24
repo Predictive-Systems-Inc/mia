@@ -1,6 +1,8 @@
 .DS_Store
 .env
 data/
+!node/tests/fixtures/**/data/
+!node/mia/agents/*/skill/data/
 *.db
 *.db-wal
 *.db-shm
@@ -12,3 +14,5 @@ coverage.xml
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.claude/worktrees/
+deploy/master.key

@@ -30,9 +30,14 @@ def notify(
     template: TemplateCall | None = None,
     urgent: bool = False,
     sensitive: bool = False,
+    redact_log: bool = False,
+    approval_id: str | None = None,
 ) -> Message:
     """Store a proactive message in the person's latest thread with the agent (the app copy is
-    always kept), then queue it on every enabled channel the person has linked."""
+    always kept), then queue it on every enabled channel the person has linked. A sensitive
+    message's text and blocks are redacted in its notification.sent event; redact_log redacts
+    them there too while the channels still get the text. approval_id names the approval the
+    message asks about on that event (D47: a button tap finds it there)."""
     thread = session.exec(
         select(Thread)
         .where(Thread.person_id == person.id)
@@ -55,7 +60,17 @@ def notify(
         text=text,
         blocks=[b.model_dump(mode="json") for b in blocks],
     )
-    stored = store.insert(session, message, actor, action="notification.sent")
+    # A sensitive body (a payslip, say) stays in the row the person reads, never in the log.
+    sensitive = sensitive or any(getattr(b, "sensitive", False) for b in blocks)  # as deliver()
+    hidden = ("text", "blocks") if sensitive or redact_log else ()
+    stored = store.insert(
+        session,
+        message,
+        actor,
+        action="notification.sent",
+        redact=hidden,
+        approval_id=approval_id,
+    )
     deliver(
         session,
         person,

@@ -1,0 +1,75 @@
+id: bookkeeper
+name: "Bookkeeper"
+version: 0.1.0
+standard_version: "1.10"
+job_description: job.md
+instructions: {base: prompts/base.md}
+roles:
+  agent_role: agent.bookkeeper
+  grants:
+    - data:sales_sessions:read
+    - data:sales_sessions:read_all
+    - data:sales_sessions:write  # the closing count closes the clerk's drawer
+    - data:sales_receipts:read
+    - data:sales_receipts:read_all
+    - data:sales_receipt_lines:read
+    - data:sales_receipt_lines:read_all
+    - data:sales_payments:read
+    - data:sales_payments:read_all
+    - data:sales_counts:read
+    - data:sales_counts:read_all
+    - data:stock_events:read
+    - data:stock_events:read_all
+    - data:supplier_orders:read
+    - data:supplier_orders:read_all
+    - data:payslips:read_all
+    - data:retail_items:read
+    - data:retail_branch_hours:read
+    - data:core.person:read
+    - data:bookkeeper_cash_counts:read
+    - data:bookkeeper_cash_counts:write
+    - data:bookkeeper_cash_counts:read_all
+    - data:bookkeeper_settlements:read
+    - data:bookkeeper_settlements:write
+    - data:bookkeeper_settlements:read_all
+    - data:bookkeeper_payouts:read
+    - data:bookkeeper_payouts:write
+    - data:bookkeeper_payouts:read_all
+    - data:bookkeeper_expenses:read
+    - data:bookkeeper_expenses:write
+    - data:bookkeeper_expenses:read_all
+    - data:bookkeeper_deposits:read
+    - data:bookkeeper_deposits:write
+    - data:bookkeeper_deposits:read_all
+    - data:bookkeeper_tax:read
+    - data:bookkeeper_tax:write
+    - data:bookkeeper_tax:read_all
+    - tool:bookkeeper.record_cash_count:execute
+    - tool:bookkeeper.record_settlement:execute
+    - tool:bookkeeper.record_payout:execute
+    - tool:bookkeeper.record_expense:execute
+    - tool:bookkeeper.record_petty:execute
+    - tool:bookkeeper.record_deposit:execute
+    - tool:bookkeeper.balances:execute
+    - tool:bookkeeper.sales_journal:execute
+    - tool:bookkeeper.tax_quarter:execute
+    - tool:bookkeeper.monthly_profit:execute
+    - tool:bookkeeper.record_large_expense:request
+  denies: [tool:*:approve]
+  # An expense over the limit waits for the owner (or an admin), in the app with the PIN
+  # step-up; the owner's own large expense is decided by the owner with the step-up (D37).
+  approvers:
+    bookkeeper.record_large_expense: [owner, admin]
+tools:
+  - {id: bookkeeper.record_cash_count, kind: agent, risk: write_internal, approval: never, reads: [sales_counts, sales_sessions, sales_receipts, sales_receipt_lines, sales_payments, bookkeeper_cash_counts, bookkeeper_expenses, bookkeeper_deposits, retail_items, retail_branch_hours], writes: [bookkeeper_cash_counts, sales_sessions]}
+  - {id: bookkeeper.record_settlement, kind: agent, risk: write_internal, approval: never, reads: [sales_counts, sales_receipts, sales_receipt_lines, sales_payments, retail_items], writes: [bookkeeper_settlements]}
+  - {id: bookkeeper.record_payout, kind: agent, risk: write_internal, approval: never, reads: [sales_counts, sales_receipts, sales_receipt_lines, sales_payments, retail_items], writes: [bookkeeper_payouts]}
+  - {id: bookkeeper.record_expense, kind: agent, risk: write_internal, approval: never, reads: [bookkeeper_expenses, retail_items, retail_branch_hours], writes: [bookkeeper_expenses]}
+  - {id: bookkeeper.record_large_expense, kind: agent, risk: money, approval: always, reads: [bookkeeper_expenses, retail_items, retail_branch_hours], writes: [bookkeeper_expenses, approval]}
+  - {id: bookkeeper.record_petty, kind: agent, risk: write_internal, approval: never, reads: [bookkeeper_cash_counts, bookkeeper_expenses, bookkeeper_deposits, retail_items, retail_branch_hours], writes: [bookkeeper_expenses, bookkeeper_deposits]}
+  - {id: bookkeeper.record_deposit, kind: agent, risk: write_internal, approval: never, reads: [bookkeeper_cash_counts, bookkeeper_expenses, bookkeeper_deposits, retail_items, retail_branch_hours], writes: [bookkeeper_deposits]}
+  - {id: bookkeeper.balances, kind: agent, risk: read, approval: never, reads: [bookkeeper_cash_counts, bookkeeper_expenses, bookkeeper_deposits, retail_items, retail_branch_hours]}
+  - {id: bookkeeper.sales_journal, kind: agent, risk: read, approval: never, reads: [sales_counts, sales_receipts, sales_receipt_lines, sales_payments, retail_items]}
+  - {id: bookkeeper.tax_quarter, kind: agent, risk: read, approval: never, reads: [sales_counts, sales_receipts, sales_receipt_lines, sales_payments, bookkeeper_expenses, bookkeeper_tax, retail_items, retail_branch_hours]}
+  - {id: bookkeeper.monthly_profit, kind: agent, risk: read, sensitive: true, approval: never, reads: [payslips, sales_counts, sales_receipts, sales_receipt_lines, sales_payments, bookkeeper_expenses, supplier_orders, stock_events, retail_items]}
+tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

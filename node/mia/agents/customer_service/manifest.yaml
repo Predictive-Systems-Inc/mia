@@ -1,0 +1,47 @@
+id: customer_service
+name: "Customer Service"
+version: 0.1.0
+standard_version: "1.10"
+job_description: job.md
+instructions: {base: prompts/base.md}
+roles:
+  agent_role: agent.customer_service
+  grants:
+    - data:customer_orders:read
+    - data:customer_orders:write
+    - data:customer_service_customers:read
+    - data:customer_service_customers:write
+    - data:customer_service_complaints:read
+    - data:customer_service_complaints:write
+    - data:retail_items:read
+    - data:retail_branch_hours:read
+    - tool:customer_service.hours:execute
+    - tool:customer_service.prices:execute
+    - tool:customer_service.delivery_area:execute
+    - tool:customer_service.order_status:execute
+    - tool:customer_service.cancel_order:execute
+    - tool:customer_service.complain:execute
+    - tool:customer_service.set_language:execute
+    - tool:customer_service.place_order:request
+    - tool:customer_service.orders_today:execute
+    - tool:customer_service.mark_ready:execute
+    - tool:customer_service.mark_picked_up:execute
+    - tool:customer_service.resolve_complaint:execute
+  denies: [tool:*:approve]
+  # An order is always approved by the branch's clerks and up, from the chat buttons or the app
+  # (D47). It is no money risk: nothing is paid in the chat, the customer pays at pickup.
+  approvers: {customer_service.place_order: [clerk, supervisor, owner, admin]}
+tools:
+  - {id: customer_service.hours, kind: agent, risk: read, approval: never, reads: [retail_branch_hours]}
+  - {id: customer_service.prices, kind: agent, risk: read, approval: never, reads: [retail_items]}
+  - {id: customer_service.delivery_area, kind: agent, risk: read, approval: never, reads: [branch]}
+  - {id: customer_service.place_order, kind: agent, risk: write_internal, sensitive: true, approval: always, approval_channel: chat, reads: [retail_items, retail_branch_hours], writes: [customer_orders, approval, message]}
+  - {id: customer_service.order_status, kind: agent, risk: read, approval: never, reads: [customer_orders]}
+  - {id: customer_service.cancel_order, kind: agent, risk: write_internal, approval: never, reads: [customer_orders], writes: [customer_orders, message]}
+  - {id: customer_service.complain, kind: agent, risk: write_internal, sensitive: true, approval: never, writes: [customer_service_complaints, message]}
+  - {id: customer_service.set_language, kind: agent, risk: write_internal, approval: never, reads: [customer_service_customers], writes: [customer_service_customers]}
+  - {id: customer_service.orders_today, kind: agent, risk: read, sensitive: true, approval: never, reads: [customer_orders, customer_service_customers, retail_items]}
+  - {id: customer_service.mark_ready, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [customer_orders], writes: [customer_orders, customer_service_messages]}
+  - {id: customer_service.mark_picked_up, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [customer_orders], writes: [customer_orders]}
+  - {id: customer_service.resolve_complaint, kind: agent, risk: write_internal, approval: never, reads: [customer_service_complaints], writes: [customer_service_complaints]}
+tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

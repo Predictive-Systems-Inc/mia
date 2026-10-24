@@ -4,7 +4,7 @@ import datetime as dt
 
 import pytest
 
-from mia.agents.dispatcher.classifier import classify, detect_language, parse_date, parse_time
+from mia.agents.shift_supervisor.classifier import classify, parse_date, parse_time
 
 TODAY = dt.date(2026, 9, 30)  # a Wednesday
 
@@ -28,7 +28,7 @@ TODAY = dt.date(2026, 9, 30)  # a Wednesday
     ],
 )
 def test_intents(text: str, intent: str, lang: str) -> None:
-    result = classify(text, TODAY, "en")
+    result = classify(text, TODAY, lang)  # lang is the person's, never detected
     assert (result.name, result.lang) == (intent, lang)
 
 
@@ -42,6 +42,7 @@ def test_possessives() -> None:
     assert classify("Show me Maria's visits.", TODAY).person_hint == "Maria"
     assert classify("Näytä Marian käynnit", TODAY).person_hint == "Marian"
     assert classify("Näytä minun käynnit", TODAY).person_hint is None
+    assert classify("What's my schedule this week?", TODAY).person_hint is None
 
 
 def test_late_is_a_morning_absence() -> None:
@@ -74,5 +75,49 @@ def test_dates() -> None:
     assert parse_time("no time") is None
 
 
-def test_language_default() -> None:
-    assert detect_language("12345", "fi") == "fi"
+@pytest.mark.parametrize(
+    ("text", "intent", "lang"),
+    [
+        ("Olen perillä", "check_in", "fi"),
+        ("Olen paikalla Kampissa", "check_in", "fi"),
+        ("I've arrived at Kalasatama", "check_in", "en"),
+        ("I'm here", "check_in", "en"),
+        ("Valmis, lähden nyt", "check_out", "fi"),
+        ("I'm done here", "check_out", "en"),
+        ("All done at Kamppi", "check_out", "en"),
+        ("Mikä on ovikoodi?", "visit_details", "fi"),
+        ("What's the address of the Töölö visit?", "visit_details", "en"),
+        ("Mitkä ovat ohjeet Kampissa?", "visit_details", "fi"),
+    ],
+)
+def test_field_work_intents(text: str, intent: str, lang: str) -> None:
+    got = classify(text, TODAY, lang)
+    assert (got.name, got.lang) == (intent, lang)
+
+
+def test_field_work_location_hint() -> None:
+    assert classify("I've arrived at Kalasatama", TODAY).location_hint == "Kalasatama"
+    assert classify("Mikä on ovikoodi Kampissa?", TODAY).location_hint == "Kampissa"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Just checking in, is the Kamppi visit still on?",
+        "Can you check out my schedule for Monday?",
+        "Finished the kitchen, where is the vacuum?",
+        "I'm done with the report",
+        "Olen valmis aloittamaan",
+        "Lähden lomalle ensi viikolla",
+        "Aloitan huomenna klo 8",
+        "Olen paikalla huomenna klo 8",
+        "The delivery arrived",
+        "Who is at the site today?",
+        "Onko Maria paikalla?",
+        "Mitä on tehty tänään?",
+        "I'm done, show my visits",
+    ],
+)
+def test_everyday_messages_never_check_in_or_out(text: str) -> None:
+    """A check-in or check-out is a write: only an anchored phrase triggers it."""
+    assert classify(text, TODAY).name not in ("check_in", "check_out"), text

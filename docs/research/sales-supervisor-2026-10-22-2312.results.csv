@@ -1,0 +1,33 @@
+message,lang,half,intent,predicted,confidence,score,missing
+sp 5 cl 8 ube 3,en,short,report_sales,report_sales,0.98,right,
+ube 7 se 4,en,short,report_sales,report_sales,0.92,right,
+sorry cl 6 not 8,en,short,correct_sales,correct_sales,0.95,right,
+sales so far,en,short,sales_today,sales_today,0.9,right,
+how much today mall,en,short,sales_today,sales_today,0.95,right,
+sales yday,en,short,sales_period,sales_period,0.99,right,
+best day this wk,en,short,sales_period,sales_period,0.78,right,
+target 4500 tmrw,en,short,set_target,set_target,0.99,right,
+payday crowd,en,short,why_answer,why_answer,0.75,right,
+thx mia,en,short,reply_only,reply_only,1.0,right,
+cl 8 or 9,en,short,ask,clarify,0.52,ask,
+ube pls,en,short,ask,clarify,0.35,ask,
+2 cl 1 ube cash 125,en,short,record_receipt,clarify,0.66,ask,item_2
+cancel receipt 4 wrong,en,short,void_receipt,clarify,0.96,ask,receipt_no
+refund 1 ube receipt 2,en,short,refund_receipt,clarify,0.76,ask,receipt_no
+receipts today,en,short,read_receipts,read_receipts,0.91,right,
+cl 10 sp 4 ube 6,fil,short,report_sales,report_sales,0.84,right,
+benta ko 5 se 3 co,fil,short,report_sales,clarify,0.43,ask,
+mali pala ube 4 dapat,fil,short,correct_sales,correct_sales,0.98,right,
+kumusta benta ngayon,fil,short,sales_today,sales_today,1.0,right,
+magkano na tayo today,fil,short,sales_today,sales_today,1.0,right,
+benta kahapon street,fil,short,sales_period,sales_period,0.81,right,
+benta nung isang linggo,fil,short,sales_period,clarify,0.53,ask,items
+target bukas 5000,fil,short,set_target,set_target,0.66,right,
+sweldo kasi dami tao,fil,short,why_answer,why_answer,0.91,right,
+sige tnx po,fil,short,reply_only,reply_only,0.87,right,
+ube pa,fil,short,ask,clarify,0.21,ask,
+yung kahapon,fil,short,ask,sales_period,0.97,wrong,
+resibo 3 ube cash 135,fil,short,record_receipt,record_receipt,0.96,right,
+void 3 mali,fil,short,void_receipt,clarify,0.71,ask,receipt_no
+ibalik 1 cl resibo 2,fil,short,refund_receipt,clarify,0.74,ask,receipt_no
+huling resibo,fil,short,read_receipts,read_receipts,0.98,right,

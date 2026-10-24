@@ -105,11 +105,6 @@ def egress_context(ctx: EgressContext) -> Iterator[EgressContext]:
         _context.reset(token)
 
 
-def bind_context(ctx: EgressContext) -> None:
-    """Set the context for the rest of the current task (for streamed responses)."""
-    _context.set(ctx)
-
-
 def current_context() -> EgressContext:
     """The active egress context. Raises EgressBlocked when none is set."""
     ctx = _context.get()
@@ -162,7 +157,10 @@ def send(
 
 def _usage_counts(body: dict[str, Any]) -> tuple[int, int]:
     u = body.get("usage") or {}
-    return int(u.get("prompt_tokens", 0) or 0), int(u.get("completion_tokens", 0) or 0)
+    # OpenAI-style (gateway) or input/output (TypeSafe)
+    prompt = u.get("prompt_tokens", u.get("input_tokens", 0))
+    completion = u.get("completion_tokens", u.get("output_tokens", 0))
+    return int(prompt or 0), int(completion or 0)
 
 
 class EgressTransport(httpx.AsyncBaseTransport):
@@ -232,8 +230,9 @@ class EgressTransport(httpx.AsyncBaseTransport):
         input_tokens = output_tokens = 0
         try:
             body = json.loads(content)
-            model = str(body.get("model", model))
-            input_tokens, output_tokens = _usage_counts(body)
+            if isinstance(body, dict):  # an error or a malformed answer may be any JSON
+                model = str(body.get("model", model))
+                input_tokens, output_tokens = _usage_counts(body)
         except ValueError:
             pass
         usage.record(

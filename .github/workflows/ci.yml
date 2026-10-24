@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 env:
   MIA_MODEL: test
@@ -35,15 +36,52 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the PR base, for the affected tests
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
       - run: uv sync --locked
-      # Unit tests, no network; fails under 80% coverage of mia/core (see pyproject addopts).
-      - run: uv run pytest
+      # Pull requests: only the tests the change affects (node/tests/affected.py), no coverage
+      # gate on a partial run. ALL (a shared foundation changed) runs the full suite.
+      - name: Affected tests
+        id: affected
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          uv run python node/tests/affected.py --base "origin/${{ github.base_ref }}" > affected.txt
+          cat affected.txt
+          echo "count=$(wc -l < affected.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          echo "all=$(grep -qx ALL affected.txt && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.affected.outputs.count != '0' && steps.affected.outputs.all == 'false'
+        run: xargs uv run pytest --no-cov < affected.txt
+      # Push to main, manual runs and ALL: unit tests, no network; fails under 80% coverage of
+      # mia/core (see pyproject addopts).
+      - if: github.event_name != 'pull_request' || steps.affected.outputs.all == 'true'
+        run: uv run pytest
       # The quick start must work on a clean machine.
       - run: cp .env.example .env && uv run mia migrate && uv run mia seed
       - run: uv run mia chat "Olen kipeä huomenna." --as Juha
+
+  # The install from deploy/install.md: build, start, health, then a backup restore test.
+  docker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp ../.env.example .env
+      - run: docker compose config --quiet
+      - run: docker compose build  # the litestream sidecar reuses the node image
+      - run: docker compose up -d --wait
+      - run: curl -fsS http://127.0.0.1:8000/health
+      - run: docker compose exec -T node mia seed
+      - run: sleep 5 && ./restore-test.sh
+      - if: failure()
+        run: docker compose logs
+      - if: always()
+        run: docker compose down -v
 
   evals:
     runs-on: ubuntu-latest

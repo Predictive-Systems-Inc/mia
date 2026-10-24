@@ -1,0 +1,39 @@
+# Organisation settings for Ferino's Bibingka (kiosks in the Philippines). Times are local "HH:MM".
+template: retail
+agents: [sales_supervisor, shift_supervisor, inventory_manager, hr_officer, customer_service, branch_manager, bookkeeper, production_planner]
+languages: [fil, ceb, en]
+quiet_hours: {start: "21:00", end: "06:00"}
+channels:                      # messaging channels (ADR 007); off unless enabled
+  sim: {enabled: true}         # simulated channel for local trials: uv run mia channels sim
+                               # sim runs only in dev mode (loopback); ignored on a server
+  whatsapp: {enabled: false}  # needs the MIA_WA_* settings, see docs/whatsapp-setup.md
+payroll: {cutoffs: semi_monthly, pay_lag_days: 5}
+delivery_areas:
+  - {name: Marikina, fee: 5000, currency: PHP}
+  - {name: Quezon City, fee: 8000, currency: PHP}
+  - {name: Pasig, fee: 6000, currency: PHP}
+customer_service: {max_order_quantity: 50, messages_per_hour: 30, public_calls_per_hour: 600, menu_words: [bibingka]}
+branch_manager: {experiment_days: 14, nudge_after_misses: 3}
+# The next week's roster goes out on this local weekday (0 is Monday) and time (Q110).
+shift_supervisor: {weekly_roster_weekday: 6, weekly_roster_time: "17:00"}
+# Money in minor units (PHP), fees and commissions in integer percents (placeholders, Q90).
+bookkeeper:
+  threshold: 10000
+  expense_limit: 500000
+  fees: {gcash: 2, maya: 2}
+  commissions: {grab: 25, foodpanda: 28}
+  tax_regime: vat
+  petty_floor: 50000
+  undeposited_limit: 2000000
+# The commissary bakes for the kiosks; the ovens run in hours (local), the draft plan goes to the
+# head at plan_at the day before, the dispatch list at dispatch_at at the latest.
+production_planner:
+  commissary: Commissary
+  serves: [Mall kiosk, Street stall]
+  ovens: 2
+  hours: {start: "03:00", end: "09:00"}
+  plan_at: "14:00"
+  dispatch_at: "08:30"
+# A kiosk's day of sales is its clerks' counts until the owner names its first receipts day here
+# by branch name, e.g. receipts_from: {Mall kiosk: 2026-12-01}; never both for one day (D43).
+sales: {receipts_from: {"Mall kiosk": 2026-10-23}, opening_float: {"Mall kiosk": 100000}}

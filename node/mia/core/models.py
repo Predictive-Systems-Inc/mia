@@ -8,15 +8,22 @@ carries id, branch_id, created_at and updated_at, except organisation (no branch
 
 import datetime as dt
 from datetime import datetime
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, get_args
 
-from sqlalchemy import JSON, UniqueConstraint
+from sqlalchemy import JSON, Index, UniqueConstraint, text
 from sqlmodel import Field, SQLModel
 
-from mia.core.db import TZDateTime, utcnow
+from mia.core import db
+from mia.core.db import TZDateTime
 from mia.core.ids import new_id
 
-STANDARD_VERSION = "1.2"
+STANDARD_VERSION = "1.10"
+
+
+def _now() -> datetime:
+    """db.utcnow looked up per call, so a test that pins mia.core.db.utcnow pins row stamps."""
+    return db.utcnow()
+
 
 # Code lists, versioned with the standard.
 PersonStatus = Literal["active", "inactive"]
@@ -24,16 +31,27 @@ EngagementType = Literal["employee", "contractor", "agency"]
 ClientType = Literal["business", "residential"]
 VisitStatus = Literal["planned", "in_progress", "completed", "cancelled", "unfilled"]
 ApprovalStatus = Literal["pending", "approved", "rejected", "expired", "escalated"]
-ApprovalChannel = Literal["app_only", "any"]
-ActorType = Literal["person", "agent", "system"]
+ApprovalChannel = Literal["app_only", "any", "chat"]
+ActorType = Literal["person", "agent", "system", "customer"]
+Tender = Literal["cash", "gcash", "maya", "grab", "foodpanda"]  # how a sale was paid (1.6)
+TENDERS: tuple[str, ...] = get_args(Tender)
+# what an incident is about (1.7: equipment, no_delivery and customer for a kiosk, D39)
+IncidentKind = Literal["cannot_access", "site_problem", "equipment", "no_delivery", "customer"]
+INCIDENT_KINDS: tuple[str, ...] = get_args(IncidentKind)
+# sales operations (1.9, ADR 022)
+SessionState = Literal["open", "closed"]
+ReceiptKind = Literal["sale", "refund"]
+ReceiptStatus = Literal["paid", "voided"]
+DiscountReason = Literal["senior", "pwd", "promo", "staff", "other"]
+DISCOUNT_REASONS: tuple[str, ...] = get_args(DiscountReason)
 
 
 class Stamped(SQLModel):
     """Fields shared by every data standard table except events."""
 
     id: str = Field(default_factory=new_id, primary_key=True, max_length=26)
-    created_at: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
-    updated_at: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
+    created_at: datetime = Field(default_factory=_now, sa_type=TZDateTime)
+    updated_at: datetime = Field(default_factory=_now, sa_type=TZDateTime)
 
 
 class BranchScoped(Stamped):
@@ -66,6 +84,28 @@ class Person(BranchScoped, table=True):
     accepts_calls: bool = True
 
 
+class BranchAssignment(BranchScoped, table=True):
+    """An extra branch a supervisor works at beside their home branch (data standard 1.10,
+    ADR 024, D50). branch_id is the assigned branch. Active from from_date to the day before
+    to_date (open while to_date is None). At most one open assignment per person and branch (a
+    partial unique index)."""
+
+    __tablename__: ClassVar[str] = "branch_assignments"
+    __table_args__ = (
+        Index(
+            "ux_branch_assignments_open",
+            "person_id",
+            "branch_id",
+            unique=True,
+            sqlite_where=text("to_date IS NULL"),
+        ),
+    )
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    from_date: dt.date
+    to_date: dt.date | None = None
+
+
 class Availability(BranchScoped, table=True):
     """Weekly availability window for a person (weekday 0 = Monday), local time "HH:MM"."""
 
@@ -94,6 +134,10 @@ class Client(BranchScoped, table=True):
 
 
 class Location(BranchScoped, table=True):
+    __redact__: ClassVar[frozenset[str]] = frozenset(
+        {"access_notes"}
+    )  # door codes stay off the chain
+
     client_id: str = Field(foreign_key="client.id", index=True)
     name: str
     address: str
@@ -128,7 +172,347 @@ class Visit(BranchScoped, table=True):
     proof_refs: list[str] = Field(default_factory=list, sa_type=JSON)
 
 
+class Absence(BranchScoped, table=True):
+    """A person's reported absence for one day, or part of it (data standard 1.4)."""
+
+    __tablename__: ClassVar[str] = "absences"
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    date: dt.date = Field(index=True)
+    reason: str = "sick"  # sick, late, leaving_early, other
+    partial_day: str | None = None  # None = whole day, "morning", "afternoon"
+    reported_by: str
+
+
+class CoverRequest(BranchScoped, table=True):
+    """One ask to one candidate to cover a visit, with its escalation state (decision D10).
+
+    status: awaiting_approval, asking, accepted, declined, timed_out, cancelled.
+    stage (while asking): waiting_quiet (message held until quiet hours end), message, call.
+    """
+
+    __tablename__: ClassVar[str] = "cover_requests"
+
+    visit_id: str = Field(foreign_key="visit.id", index=True)
+    candidate_id: str = Field(foreign_key="person.id", index=True)
+    replace_person_ids: list[str] = Field(default_factory=list, sa_type=JSON)
+    queue: list[str] = Field(default_factory=list, sa_type=JSON)  # next candidates, best first
+    instructed_by: str
+    approval_id: str | None = None
+    status: str = "asking"
+    stage: str = "message"
+    next_action_at: dt.datetime | None = Field(default=None, sa_type=TZDateTime, index=True)
+
+
+class Timesheet(BranchScoped, table=True):
+    """One person's time on one visit (data standard 1.4; Q20 placed it in core).
+
+    source: check_out (from the visit's actual times), planned (a completed visit without
+    them), correction. status: draft, approved. Whoever entered it never approves it.
+    """
+
+    __tablename__: ClassVar[str] = "timesheets"
+    __table_args__ = (UniqueConstraint("visit_id", "person_id"),)
+
+    visit_id: str = Field(foreign_key="visit.id", index=True)
+    person_id: str = Field(foreign_key="person.id", index=True)
+    date: dt.date = Field(index=True)
+    start: dt.datetime = Field(sa_type=TZDateTime)
+    end: dt.datetime = Field(sa_type=TZDateTime)
+    minutes: int
+    source: str = "check_out"
+    status: str = Field(default="draft", index=True)
+    entered_by: str
+    note: str = ""
+    approved_by: str | None = None
+    approved_at: dt.datetime | None = Field(default=None, sa_type=TZDateTime)
+
+
+class Incident(BranchScoped, table=True):
+    """A problem reported from a site or a kiosk: cannot get in, the site is unusable, broken
+    equipment, a delivery that never came, or a customer making trouble (INCIDENT_KINDS)."""
+
+    __tablename__: ClassVar[str] = "incidents"
+
+    visit_id: str = Field(foreign_key="visit.id", index=True)
+    person_id: str = Field(foreign_key="person.id", index=True)
+    kind: str  # one of INCIDENT_KINDS (1.7)
+    text: str  # the cleaner's words: data, never instructions
+    status: str = Field(default="open", index=True)  # open, resolved
+    resolved_by: str | None = None
+    resolved_at: dt.datetime | None = Field(default=None, sa_type=TZDateTime)
+
+
+class SalesCount(BranchScoped, table=True):
+    """One reported count of one item for a business date; a correction supersedes a row
+    (data standard 1.5). tender is how it was paid, one of TENDERS (data standard 1.6)."""
+
+    __tablename__: ClassVar[str] = "sales_counts"
+
+    item_id: str = Field(foreign_key="retail_items.id", index=True)
+    quantity: int
+    amount: int  # integer minor units
+    currency: str = Field(max_length=3)
+    reported_at: dt.datetime = Field(sa_type=TZDateTime)
+    reported_by: str = Field(foreign_key="person.id", index=True)
+    business_date: dt.date = Field(index=True)
+    supersedes: str | None = None
+    superseded_by: str | None = None
+    source_message_id: str | None = None
+    tender: str = Field(default="cash", max_length=16, index=True)
+
+
+class SalesTarget(BranchScoped, table=True):
+    """A day or month target (money, quantity, or both) from a start date (data standard 1.5)."""
+
+    __tablename__: ClassVar[str] = "sales_targets"
+
+    period: str  # day or month
+    starts_on: dt.date = Field(index=True)
+    amount: int | None = None
+    currency: str = Field(max_length=3)
+    quantity: int | None = None
+    item_id: str | None = None
+    set_by: str
+
+
+class SalesNote(BranchScoped, table=True):
+    """A clerk's words about the day (why sales were up or down) (data standard 1.5)."""
+
+    __tablename__: ClassVar[str] = "sales_notes"
+
+    business_date: dt.date = Field(index=True)
+    person_id: str
+    text: str
+    themes: list[str] = Field(default_factory=list, sa_type=JSON)
+    asked_message_id: str | None = None
+
+
+class StockEvent(BranchScoped, table=True):
+    """One thing said about stock: sold_out, count, leftover, waste, low or received
+    (data standard 1.5)."""
+
+    __tablename__: ClassVar[str] = "stock_events"
+
+    kind: str
+    item_id: str | None = Field(default=None, foreign_key="retail_items.id")
+    ingredient_id: str | None = Field(default=None, foreign_key="retail_ingredients.id")
+    quantity: int | None = None
+    unit: str | None = None
+    reason: str | None = None
+    at: dt.datetime = Field(sa_type=TZDateTime)  # the sell-out time or the report time
+    reported_by: str = Field(foreign_key="person.id")
+    business_date: dt.date = Field(index=True)
+    source_message_id: str | None = None
+    order_id: str | None = None
+
+
+class SupplierOrder(BranchScoped, table=True):
+    """A supplier order: draft, approved, rejected or received. Lines carry ingredient_id,
+    quantity, unit and unit_price (minor units); total is in minor units (data standard 1.6)."""
+
+    __tablename__: ClassVar[str] = "supplier_orders"
+
+    supplier: str
+    lines: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    currency: str = Field(max_length=3)
+    total: int | None = None
+    status: str
+    approval_id: str | None = None
+    requested_by: str
+    business_date: dt.date
+
+
+class Contract(BranchScoped, table=True):
+    """One person's terms: employment type (regular, probationary, part_time), daily rate in
+    minor units, rest day (weekday number), start and optional end date (data standard 1.6)."""
+
+    __redact__: ClassVar[frozenset[str]] = frozenset(
+        {"daily_rate"}
+    )  # pay and leave stay off the chain
+    __tablename__: ClassVar[str] = "contracts"
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    employment_type: str
+    daily_rate: int
+    currency: str = Field(max_length=3)
+    rest_day: int
+    start_date: dt.date
+    end_date: dt.date | None = None
+    position: str
+    set_by: str
+
+
+class Payslip(BranchScoped, table=True):
+    """One issued payslip per person and cutoff. lines carry kind, minutes or days, rate and
+    amount; deductions carry kind and amount; money is in minor units (data standard 1.6)."""
+
+    __redact__: ClassVar[frozenset[str]] = frozenset(
+        {"lines", "gross", "deductions", "net"}
+    )  # pay and leave stay off the chain
+    __tablename__: ClassVar[str] = "payslips"
+    __table_args__ = (UniqueConstraint("person_id", "cutoff_start"),)
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    cutoff_start: dt.date
+    cutoff_end: dt.date
+    pay_date: dt.date
+    lines: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    gross: int
+    deductions: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    net: int
+    currency: str = Field(max_length=3)
+    issued_at: dt.datetime = Field(sa_type=TZDateTime)
+    message_id: str | None = None
+
+
+class Leave(BranchScoped, table=True):
+    """A leave request or grant: kind vacation, sick or unpaid; status requested, approved or
+    rejected. reason is free text and is stored as data (data standard 1.6)."""
+
+    __redact__: ClassVar[frozenset[str]] = frozenset(
+        {"kind", "reason"}
+    )  # pay and leave stay off the chain
+    __tablename__: ClassVar[str] = "leave"
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    kind: str
+    start_date: dt.date
+    end_date: dt.date
+    days: int
+    status: str
+    approval_id: str | None = None
+    reason: str = ""
+
+
+# shared since data standard 1.8 (ADR 020); the customers stay with the customer service
+class CustomerOrder(BranchScoped, table=True):
+    """A customer order. lines carry item_id, quantity and unit_price (minor units); total is
+    the lines plus any delivery fee. fulfilment pickup or delivery; status waiting, confirmed,
+    ready, picked_up, cancelled or rejected; decided_by is the person who approved or rejected."""
+
+    __redact__: ClassVar[frozenset[str]] = frozenset({"delivery_note"})
+    __tablename__: ClassVar[str] = "customer_orders"
+
+    customer_id: str = Field(foreign_key="customer_service_customers.id", index=True)
+    lines: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
+    total: int
+    currency: str = Field(max_length=3)
+    fulfilment: str
+    pickup_at: dt.datetime = Field(sa_type=TZDateTime)
+    delivery_area: str | None = None
+    delivery_note: str | None = None
+    status: str
+    approval_id: str | None = None
+    decided_by: str | None = None
+    source_message_id: str | None = None
+
+
+# sales operations, core since data standard 1.9 (ADR 022, D43): the Odoo pos.session, pos.order,
+# pos.order.line and pos.payment mapped onto a kiosk. Money is minor units, negative on a refund.
+class SalesSession(BranchScoped, table=True):
+    """One clerk's shift at a kiosk: opened at check-in, closed by head staff's cash count.
+    expected and difference are computed in code and frozen at close. At most one open session
+    per person and branch (a partial unique index)."""
+
+    __tablename__: ClassVar[str] = "sales_sessions"
+    __table_args__ = (
+        Index(
+            "ux_sales_sessions_open",
+            "branch_id",
+            "person_id",
+            unique=True,
+            sqlite_where=text("state = 'open'"),
+        ),
+    )
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    visit_id: str | None = Field(default=None, foreign_key="visit.id")
+    business_date: dt.date = Field(index=True)
+    opened_at: dt.datetime = Field(sa_type=TZDateTime)
+    closed_at: dt.datetime | None = Field(default=None, sa_type=TZDateTime)
+    state: str = Field(default="open", index=True)  # SessionState
+    opening_float: int = 0
+    counted: int | None = None
+    expected: int | None = None
+    difference: int | None = None
+    currency: str = Field(max_length=3)
+    closed_by: str | None = Field(default=None, foreign_key="person.id")
+    note: str = ""  # data, never instructions
+
+
+class SalesReceipt(BranchScoped, table=True):
+    """One customer sale or one refund. total is subtotal less discount and equals the sum of
+    the payments; a refund is a new receipt with negative lines, never an edit of the sale."""
+
+    __tablename__: ClassVar[str] = "sales_receipts"
+    __table_args__ = (
+        UniqueConstraint("branch_id", "receipt_no"),
+        Index(  # an approval voids or refunds one receipt, structurally
+            "ux_sales_receipts_approval",
+            "approval_id",
+            unique=True,
+            sqlite_where=text("approval_id IS NOT NULL"),
+        ),
+    )
+    __redact__: ClassVar[frozenset[str]] = frozenset({"void_reason"})
+
+    session_id: str = Field(foreign_key="sales_sessions.id", index=True)
+    receipt_no: str = Field(max_length=32)
+    business_date: dt.date = Field(index=True)
+    sold_at: dt.datetime = Field(sa_type=TZDateTime)
+    clerk_id: str = Field(foreign_key="person.id")
+    customer_id: str | None = Field(default=None, foreign_key="customer_service_customers.id")
+    order_id: str | None = Field(default=None, foreign_key="customer_orders.id")
+    kind: str = "sale"  # ReceiptKind
+    refund_of: str | None = Field(default=None, foreign_key="sales_receipts.id")
+    subtotal: int
+    discount: int = 0
+    discount_reason: str | None = None  # one of DISCOUNT_REASONS
+    total: int
+    currency: str = Field(max_length=3)
+    status: str = Field(default="paid", index=True)  # ReceiptStatus
+    voided_by: str | None = Field(default=None, foreign_key="person.id")
+    void_reason: str | None = None  # data, never instructions
+    approval_id: str | None = Field(default=None, foreign_key="approval.id")
+    source: str = "pos"  # pos (a till) or chat (typed by a clerk)
+    source_message_id: str | None = None
+
+
+class SalesReceiptLine(BranchScoped, table=True):
+    """One item on a receipt: line_total is quantity times unit_price less discount; unit_price
+    is the dated price at sold_at (price_id the row used, None for the item's default)."""
+
+    __tablename__: ClassVar[str] = "sales_receipt_lines"
+
+    receipt_id: str = Field(foreign_key="sales_receipts.id", index=True)
+    item_id: str = Field(foreign_key="retail_items.id", index=True)
+    quantity: int  # negative on a refund
+    unit_price: int
+    price_id: str | None = Field(default=None, foreign_key="retail_item_prices.id")
+    experiment_id: str | None = Field(default=None, foreign_key="branch_manager_experiments.id")
+    discount: int = 0
+    line_total: int
+    refunded_line_id: str | None = Field(default=None, foreign_key="sales_receipt_lines.id")
+    currency: str = Field(max_length=3)
+
+
+class SalesPayment(BranchScoped, table=True):
+    """One tender applied to a receipt, net of change (change is never stored)."""
+
+    __tablename__: ClassVar[str] = "sales_payments"
+
+    receipt_id: str = Field(foreign_key="sales_receipts.id", index=True)
+    session_id: str = Field(foreign_key="sales_sessions.id", index=True)
+    tender: str = Field(max_length=16, index=True)  # one of TENDERS
+    amount: int  # negative on a refund
+    currency: str = Field(max_length=3)
+    paid_at: dt.datetime = Field(sa_type=TZDateTime)
+    reference: str | None = Field(default=None, max_length=64)  # the e-wallet reference
+
+
 class Approval(BranchScoped, table=True):
+    __redact__: ClassVar[frozenset[str]] = frozenset({"evidence"})
     type: str
     requester_type: str
     requester_id: str
@@ -174,7 +558,7 @@ class Event(SQLModel, table=True):
     __tablename__: ClassVar[str] = "events"
 
     id: str = Field(default_factory=new_id, primary_key=True, max_length=26)
-    timestamp: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
+    timestamp: datetime = Field(default_factory=_now, sa_type=TZDateTime)
     branch_id: str = Field(index=True, max_length=26)
     actor_type: str
     actor_id: str
@@ -203,7 +587,7 @@ class UsageCloudRequest(BranchScoped, table=True):
     output_tokens: int = 0
     cost_minor: int = 0
     currency: str = "EUR"
-    timestamp: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
+    timestamp: datetime = Field(default_factory=_now, sa_type=TZDateTime)
     result: str = "success"  # success, error, retried
 
 
@@ -222,7 +606,7 @@ class GeocodeCache(BranchScoped, table=True):
 class EgressLog(BranchScoped, table=True):
     __tablename__: ClassVar[str] = "egress_log"
 
-    timestamp: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
+    timestamp: datetime = Field(default_factory=_now, sa_type=TZDateTime)
     agent_id: str
     purpose: str
     level: str
@@ -243,38 +627,117 @@ class ChannelIdentity(BranchScoped, table=True):
     channel: str = Field(index=True)
     address: str = Field(index=True)
     status: str = "active"  # active, revoked
-    verified_at: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
-    consent_at: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
+    verified_at: datetime = Field(default_factory=_now, sa_type=TZDateTime)
+    consent_at: datetime = Field(default_factory=_now, sa_type=TZDateTime)
     last_inbound_at: datetime | None = Field(default=None, sa_type=TZDateTime)
 
 
-class ChannelLinkCode(BranchScoped, table=True):
-    """A one-time link code, stored only as an HMAC of the code."""
+class AuthCode(BranchScoped, table=True):
+    """A one-time code: channel link (invite, self), staff OTP, login link, MFA token or
+    enrolment link. Stored only as an HMAC (core/keys.py), single use, expiring, at most 5 tries."""
 
-    __tablename__: ClassVar[str] = "channel_link_codes"
+    __tablename__: ClassVar[str] = "auth_codes"
+    __redact__: ClassVar[frozenset[str]] = frozenset({"code_hmac"})
 
     person_id: str = Field(foreign_key="person.id", index=True)
     code_hmac: str = Field(unique=True)
-    purpose: str  # invite, self
+    purpose: str  # invite, self, otp_login, link_login, mfa, enrol
+    address: str | None = None  # where it was sent, if anywhere
+    tries: int = 0
     expires_at: datetime = Field(sa_type=TZDateTime)
     used_at: datetime | None = Field(default=None, sa_type=TZDateTime)
     created_by: str
 
 
-class ChannelLinkAttempt(Stamped, table=True):
-    """One attempt to redeem a link code, for the lockout count. Not tied to a branch."""
+class AuthAttempt(Stamped, table=True):
+    """One credential check, for rate limits and lockouts. `key` is `<subject>@<ip>` where the
+    subject is a login HMAC, an address, a person or client id; `@-` when there is no IP."""
 
-    __tablename__: ClassVar[str] = "channel_link_attempts"
+    __tablename__: ClassVar[str] = "auth_attempts"
 
-    channel: str
-    address: str = Field(index=True)
+    kind: str  # link_code, password, otp, pin, client_secret, mfa, device
+    key: str = Field(index=True)
     ok: bool
+
+
+class AuthCredential(BranchScoped, table=True):
+    """One login factor of a person: password, totp, recovery_code, pin (passkey later)."""
+
+    __tablename__: ClassVar[str] = "auth_credentials"
+    __redact__: ClassVar[frozenset[str]] = frozenset({"secret_hash", "data"})
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    kind: str
+    login: str | None = Field(default=None, unique=True)  # lowercased email, password rows only
+    secret_hash: str | None = None  # scrypt string; null for totp
+    data: dict[str, Any] = Field(default_factory=dict, sa_type=JSON)  # totp: nonce, last_step
+    status: str = "active"  # pending, active, revoked, used, locked
+    last_used_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+
+
+class AuthDevice(BranchScoped, table=True):
+    """A browser or phone a person signed in on. Mobile devices hold a device secret."""
+
+    __tablename__: ClassVar[str] = "auth_devices"
+    __redact__: ClassVar[frozenset[str]] = frozenset({"secret_hash"})
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    kind: str  # browser, mobile
+    name: str
+    secret_hash: str | None = None
+    status: str = "active"  # active, revoked
+    last_seen_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    revoked_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    revoked_by: str | None = None
+
+
+class AuthSession(BranchScoped, table=True):
+    """One signed-in session of a person or a client. Tokens are stored as SHA-256 hashes."""
+
+    __tablename__: ClassVar[str] = "auth_sessions"
+    __redact__: ClassVar[frozenset[str]] = frozenset(
+        {"access_hash", "refresh_hash", "prev_refresh_hash"}
+    )
+
+    subject_type: str  # person, client
+    subject_id: str = Field(index=True)
+    device_id: str | None = Field(default=None, foreign_key="auth_devices.id")
+    method: str  # password_totp, password, phone_otp, device, wa_link, client, enrol
+    aal: str  # aal1, aal2, client, enrol
+    access_hash: str = Field(unique=True)
+    access_expires_at: datetime = Field(sa_type=TZDateTime)
+    refresh_hash: str | None = Field(default=None, unique=True)
+    prev_refresh_hash: str | None = None
+    refresh_expires_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    absolute_expires_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    stepped_up_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    status: str = "active"  # active, revoked
+    ip: str = ""
+
+
+class AuthClient(BranchScoped, table=True):
+    """An outside agent or service with OAuth2 client credentials issued by this node."""
+
+    __tablename__: ClassVar[str] = "auth_clients"
+    __redact__: ClassVar[frozenset[str]] = frozenset({"secret_hash"})
+
+    name: str
+    client_id: str = Field(unique=True)
+    secret_hash: str
+    roles: list[str] = Field(default_factory=list, sa_type=JSON)
+    status: str = "active"  # active, revoked
+    expires_at: datetime | None = Field(default=None, sa_type=TZDateTime)
+    created_by: str
+    last_used_at: datetime | None = Field(default=None, sa_type=TZDateTime)
 
 
 class ChannelOutbox(BranchScoped, table=True):
     """One outbound channel message: queued, sent, delivered, read, failed or held."""
 
     __tablename__: ClassVar[str] = "channel_outbox"
+    # Message bodies stay in chat_messages and the outbox row; events carry the row's state
+    # only (sign-in codes travel through the outbox too).
+    __redact__: ClassVar[frozenset[str]] = frozenset({"payload"})
 
     person_id: str = Field(foreign_key="person.id", index=True)
     channel: str
@@ -293,6 +756,10 @@ class ChannelInbound(Stamped, table=True):
     """One inbound channel message, unique per channel message id (Meta resends webhooks)."""
 
     __tablename__: ClassVar[str] = "channel_inbound"
+    # The body is replayable channel data (text goes to messages, a shared location is dropped
+    # once handled) and the address may be a customer's number (customer_service): neither
+    # enters the append-only events.
+    __redact__: ClassVar[frozenset[str]] = frozenset({"body", "address"})
     __table_args__ = (UniqueConstraint("channel", "channel_message_id"),)
 
     channel: str

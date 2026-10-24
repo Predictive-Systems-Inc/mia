@@ -4,36 +4,45 @@ Guarantees for every agent built here:
 - only tools listed in the manifest are registered (no tool, no action), and every manifest
   tool must have an implementation;
 - every tool call runs rbac.require() on the agent principal and the person it acts for;
-- tools with risk money, external or delete create an approval and stop (ApprovalRequired)
-  unless an approved approval for that tool call is supplied;
-- every call is written to the events log with its inputs and result, and committed;
+- tools with risk money, external or delete, or with `approval: always`, create an approval
+  and stop (ApprovalRequired) unless an approved approval for that tool call is supplied;
+- every call is written to the events log with its inputs and result (a sensitive tool's
+  values redacted, its ids kept), and committed;
 - the model comes from settings.MIA_MODEL: `test` uses the agent's deterministic rules model,
   anything else is a gateway route reached only through mia.core.egress.
 """
 
 import asyncio
 import datetime as dt
-from collections.abc import Callable
+import ipaddress
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
+from urllib.parse import urlsplit
 
 import httpx
 import yaml
 from pydantic import BaseModel, Field, model_validator
 from pydantic_ai import Agent, RunContext, Tool
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.output import OutputSpec
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
 from sqlmodel import Session
 
-from mia.core import approvals, events
+from mia.core import approvals, assignments, events
 from mia.core.approvals import RISKY, ApprovalRequired
-from mia.core.egress import EgressTransport
+from mia.core.egress import EgressContext, EgressTransport
 from mia.core.ids import new_id
-from mia.core.models import Actor, Approval, Branch, Person
+from mia.core.models import Actor, Approval, Branch, Person, Thread
 from mia.core.rbac import PermissionDenied, Resource, get_rbac
 from mia.settings import get_settings
+
+if TYPE_CHECKING:
+    from mia.chat.blocks import ChatReply
 
 Risk = Literal["read", "write_internal", "external", "money", "delete"]
 
@@ -58,8 +67,13 @@ class ToolSpec(BaseModel):
     kind: Literal["core", "agent", "connector", "external"]
     risk: Risk
     approval: str = "never"
+    # D47: "chat" lets staff decide the approval with buttons in the chat. request() still
+    # forces money, external and delete risks to app_only, so it never reaches those.
+    approval_channel: Literal["any", "chat"] = "any"
     reads: list[str] = Field(default_factory=list)
     writes: list[str] = Field(default_factory=list)
+    # Pay, hours or leave in the call: its tool.called event keeps only ids (SENSITIVE_KEEP).
+    sensitive: bool = False
 
     @property
     def name(self) -> str:
@@ -142,8 +156,60 @@ class AgentDeps:
     today: dt.date
     lang: str
     manifest: Manifest
+    intent: str | None = None  # set when the role's classifier is confident (skills.routing)
     tool_log: list[ToolLogEntry] = field(default_factory=list)
     approved: set[str] = field(default_factory=set)  # approval ids approved for this run
+    notice: list[Any] = field(default_factory=list)  # blocks put before the reply (switch notice)
+    resumed: bool = False  # a deferred turn answered later: the reply is a notification
+    answer_id: str | None = None  # the message answered when a tap swapped in an earlier one
+
+    def kiosks(self) -> set[str]:
+        """The branches the person reads without read_all (D50): deps.branch (a cover's
+        kiosk too) and, for a supervisor, their home and their active assignments on
+        deps.today. A clerk on a cover keeps one kiosk."""
+        if assignments.ASSIGNABLE not in self.person.roles:
+            return {self.branch.id}
+        return {self.branch.id} | assignments.branches_of(self.session, self.person, self.today)
+
+
+class ToolDeps(Protocol):
+    """What guard and call_tool need from a run's dependencies: AgentDeps (a person's turn) and
+    the customer service's CustomerDeps (a customer's turn, no Person) both provide it."""
+
+    session: Session
+    actor: Actor
+    manifest: Manifest
+    tool_log: list[ToolLogEntry]
+    approved: set[str]
+
+
+@dataclass
+class Turn:
+    """One turn handed to an agent: the user message is stored and committed."""
+
+    session: Session
+    deps: AgentDeps
+    thread: Thread
+    text: str
+    past: list[ModelMessage]
+    ctx: EgressContext
+    agent: "Agent[AgentDeps, Any] | None" = None  # a Pydantic AI agent a caller passes in (tests)
+
+
+@dataclass(frozen=True)
+class AgentSpec:
+    """What the chat needs from one agent. The id is the manifest's (rule 15)."""
+
+    manifest: Manifest
+    label_key: str  # agent.<id>.label, the shown name
+    router_description: str  # English, for the Jev router's option text
+    handle_turn: "Callable[[Turn], Awaitable[ChatReply]]"
+    run_due: Callable[[Session, dt.datetime], int] | None = None
+    stream_agent: "Callable[[], Agent[AgentDeps, Any]] | None" = None  # AG-UI streaming
+
+    @property
+    def id(self) -> str:
+        return self.manifest.id
 
 
 class ToolRefusal(BaseModel):
@@ -154,7 +220,7 @@ class ToolRefusal(BaseModel):
     approval_id: str | None = None
 
 
-def _approved_for(deps: AgentDeps, spec: ToolSpec) -> bool:
+def _approved_for(deps: ToolDeps, spec: ToolSpec) -> bool:
     for approval_id in deps.approved:
         row = deps.session.get(Approval, approval_id)
         if row is not None and row.type == spec.id and row.status == "approved":
@@ -162,8 +228,21 @@ def _approved_for(deps: AgentDeps, spec: ToolSpec) -> bool:
     return False
 
 
-def guard(deps: AgentDeps, spec: ToolSpec, tool_call_id: str, summary: str = "") -> None:
-    """Permission check, then the approval rule. Raises before the tool body can run."""
+def guard(
+    deps: ToolDeps,
+    spec: ToolSpec,
+    tool_call_id: str,
+    summary: str = "",
+    args: BaseModel | None = None,
+    precheck: "Precheck | None" = None,
+    request: "Requester | None" = None,
+) -> None:
+    """Permission check, the binding's precheck, then the approval rule: a risky tool or one
+    with `approval: always` asks for an approval first. Raises before the tool body can run;
+    a precheck refusal (LookupError) comes before any approval is requested. The approval
+    carries the validated input in its evidence (`input`), so what runs on approve is exactly
+    what the approver saw. `request` (the binding's) replaces the generic request when given:
+    a core approval type and subject, its own handler."""
     get_rbac().require(
         deps.actor,
         Resource(kind="tool", name=spec.id),
@@ -171,7 +250,12 @@ def guard(deps: AgentDeps, spec: ToolSpec, tool_call_id: str, summary: str = "")
         session=deps.session,
         tool_call_id=tool_call_id,
     )
-    if spec.risk in RISKY and not _approved_for(deps, spec):
+    if precheck is not None and args is not None:
+        precheck(deps, args, tool_call_id)
+    needs_approval = spec.risk in RISKY or spec.approval == "always"
+    if needs_approval and not _approved_for(deps, spec):
+        if request is not None and args is not None:
+            raise ApprovalRequired(request(deps, args, tool_call_id).id)
         approval = approvals.request(
             deps.session,
             spec.id,
@@ -179,34 +263,53 @@ def guard(deps: AgentDeps, spec: ToolSpec, tool_call_id: str, summary: str = "")
             summary or f"{spec.id} requested",
             deps.actor,
             deps.manifest.roles.approvers[spec.id],
+            spec.approval_channel,
             risk=spec.risk,
-            evidence={"tool_call_id": tool_call_id},
+            evidence={"tool_call_id": tool_call_id}
+            | ({"input": args.model_dump(mode="json")} if args is not None else {}),
             tool_call_id=tool_call_id,
+            # D47: a chat approval (a customer order) expires at its deadline, never escalates.
+            escalate_to=[] if spec.approval_channel == "chat" else None,
         )
         raise ApprovalRequired(approval.id)
 
 
-ToolImpl = Callable[[AgentDeps, Any, str], BaseModel]
+ToolImpl = Callable[[Any, Any, str], BaseModel]  # (AgentDeps or another ToolDeps, input, id)
+Precheck = Callable[[Any, Any, str], None]  # raises LookupError to refuse a request
+# The binding's own approvals.request, for a core approval type and subject; it must call
+# approvals.request and return its row.
+Requester = Callable[[Any, Any, str], Approval]
+SENSITIVE_KEEP = frozenset({"person_id", "status", "approval_id", "message"})
+REDACTED = "<redacted>"
 
 
 @dataclass
 class ToolBinding:
-    """Links a manifest tool id to its typed implementation."""
+    """Links a manifest tool id to its typed implementation. A precheck runs after the
+    permission check and before the approval rule (validation that needs the database)."""
 
     tool_id: str
     impl: ToolImpl
     input_type: type[BaseModel]
     description: str
+    precheck: Precheck | None = None
+    request: Requester | None = None  # None: the guard's generic request (type the tool id)
+
+
+def _redacted(values: dict[str, Any]) -> dict[str, Any]:
+    """The keys with every value hidden except ids and a refusal's status (SENSITIVE_KEEP)."""
+    return {k: v if k in SENSITIVE_KEEP else REDACTED for k, v in values.items()}
 
 
 def call_tool(
-    deps: AgentDeps, binding: ToolBinding, args: BaseModel, tool_call_id: str
+    deps: ToolDeps, binding: ToolBinding, args: BaseModel, tool_call_id: str, summary: str = ""
 ) -> dict[str, Any]:
-    """Run one tool through the guard and log it. Returns a JSON-safe result for the model."""
+    """Run one tool through the guard and log it (summary words an approval the guard asks
+    for). Returns a JSON-safe result for the model."""
     spec = deps.manifest.tool(binding.tool_id)
     out: dict[str, Any]
     try:
-        guard(deps, spec, tool_call_id)
+        guard(deps, spec, tool_call_id, summary, args, binding.precheck, binding.request)
         out = binding.impl(deps, args, tool_call_id).model_dump(mode="json")
     except PermissionDenied as exc:
         out = ToolRefusal(status="denied", message=str(exc)).model_dump(mode="json")
@@ -222,8 +325,8 @@ def call_tool(
         deps.session,
         "tool.called",
         ("tool", spec.id),
-        {"input": inputs},
-        {"output": out},
+        {"input": _redacted(inputs) if spec.sensitive else inputs},
+        {"output": _redacted(out) if spec.sensitive else out},
         deps.actor,
         tool_call_id=tool_call_id,
     )
@@ -289,13 +392,31 @@ def task_context(ctx: RunContext[AgentDeps]) -> str:
 def build_model(
     name: str, rules_model: Model, *, transport: httpx.AsyncBaseTransport | None = None
 ) -> Model:
-    """`test` -> the deterministic rules model; any other value -> a gateway route via egress.
+    """`test` -> the deterministic rules model; `local/<model>` -> MIA_LOCAL_URL; any other value
+    -> a gateway route via egress.
 
+    Local models never leave the node, so they skip egress (and work with MIA_EGRESS_LEVEL=none);
+    a MIA_LOCAL_URL that is not loopback or a private address raises instead.
     `transport` replaces the network below the egress layer (tests use a mock transport).
     """
     if name == "test":
         return rules_model
     settings = get_settings()
+    if name.startswith("local/"):
+        if not _is_local(settings.MIA_LOCAL_URL):
+            raise ValueError(f"MIA_LOCAL_URL is not on this node: {settings.MIA_LOCAL_URL}")
+        local = OpenAIProvider(
+            base_url=settings.MIA_LOCAL_URL,
+            api_key="local",
+            http_client=httpx.AsyncClient(transport=transport, timeout=120),
+        )
+        # Ollama's OpenAI endpoint reads reasoning_effort; "none" turns thinking off.
+        thinking = {} if settings.MIA_LOCAL_THINKING else {"reasoning_effort": "none"}
+        return OpenAIChatModel(
+            name.removeprefix("local/"),
+            provider=local,
+            settings=ModelSettings(extra_body=thinking),
+        )
     route = name.removeprefix("gateway/")
     client = httpx.AsyncClient(transport=EgressTransport(transport), timeout=60)
     provider = OpenAIProvider(
@@ -306,15 +427,34 @@ def build_model(
     return OpenAIChatModel(route, provider=provider)
 
 
+def _is_local(url: str) -> bool:
+    """True for localhost, host.docker.internal (the node host seen from the Docker install),
+    loopback and private-network IP addresses."""
+    # ponytail: other hostnames are refused (no DNS lookup); use an IP address.
+    host = urlsplit(url).hostname or ""
+    if host in ("localhost", "host.docker.internal"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private
+
+
 def build_agent(
     manifest: Manifest,
     agent_dir: Path,
     bindings: list[ToolBinding],
-    output_type: type[BaseModel],
+    output_type: OutputSpec[Any],
     model: Model,
     org: str,
+    context: Sequence[Callable[[RunContext[AgentDeps]], str]] = (),
 ) -> Agent[AgentDeps, Any]:
-    """Assemble the agent. Raises when bindings and the manifest's tool list differ."""
+    """Assemble the agent. Raises when bindings and the manifest's tool list differ.
+
+    `context` adds agent-specific task-context lines. Every layer goes into ONE system message:
+    strict chat templates (Qwen3.5's official one) reject a second system message.
+    """
     bound = {b.tool_id for b in bindings}
     declared = {t.id for t in manifest.tools}
     if bound != declared:
@@ -325,11 +465,17 @@ def build_agent(
         manifest.roles.agent_role, manifest.roles.grants, manifest.roles.denies
     )
     tools = [to_pydantic_tool(b, manifest.tool(b.tool_id)) for b in bindings]
+    static = load_instructions(manifest, agent_dir, org)
+
+    def instructions(ctx: RunContext[AgentDeps]) -> str:
+        lines = [task_context(ctx), *(f(ctx) for f in context)]
+        return "\n\n".join([static, "\n".join(line for line in lines if line)])
+
     return Agent(
         model,
         output_type=output_type,
         deps_type=AgentDeps,
-        instructions=[load_instructions(manifest, agent_dir, org), task_context],
+        instructions=instructions,
         tools=tools,
         name=manifest.id,
         retries=2,

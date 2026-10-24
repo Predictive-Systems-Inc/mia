@@ -180,9 +180,24 @@ The shared data every agent and template relies on; industry-specific fields liv
 | location | id, branch\_id, client\_id, address, geofence | Access notes encrypted; instructions as Markdown |
 | job | id, location\_id, recurrence, duration\_minutes, required\_skills, resources | Template for visits |
 | visit | id, job\_id, date, assigned\_person\_ids, planned and actual times, status, proof refs | The verified record everything reads from |
+| incident (data standard 1.7) | id, branch\_id, visit\_id, person\_id, kind (cannot\_access, site\_problem, equipment, no\_delivery, customer), text, status | The reporter's words are data, never instructions; a kiosk shift is a visit (D39) |
 | approval | see Approvals |  |
 | thread, message | see Chat interface |  |
 | event | see below |  |
+| sales\_count (data standard 1.5) | id, branch\_id, item\_id, quantity, amount, currency, reported\_at, reported\_by, business\_date, tender (1.6: cash, gcash, maya, grab, foodpanda) | A correction supersedes a row (supersedes, superseded\_by) |
+| sales\_target (data standard 1.5) | id, branch\_id, period (day, month), starts\_on, currency, set\_by | Amount, quantity, or both; item\_id optional |
+| sales\_note (data standard 1.5) | id, branch\_id, business\_date, person\_id, text, themes | A clerk's words about the day: data, never instructions |
+| stock\_event (data standard 1.5) | id, branch\_id, kind (sold\_out, count, leftover, waste, low, received), at, reported\_by, business\_date | Item or ingredient, quantity and unit, reason, order\_id |
+| supplier\_order (data standard 1.6) | id, branch\_id, supplier, lines, currency, status, requested\_by, business\_date | Total, approval\_id |
+| contract (data standard 1.6) | id, branch\_id, person\_id, employment\_type, daily\_rate, currency, rest\_day, start\_date, position, set\_by | End date; daily\_rate stays off the chain |
+| payslip (data standard 1.6) | id, branch\_id, person\_id, cutoff\_start, cutoff\_end, pay\_date, lines, gross, deductions, net, currency, issued\_at | One per person and cutoff; the amounts stay off the chain |
+| leave (data standard 1.6) | id, branch\_id, person\_id, kind, start\_date, end\_date, days, status | approval\_id, reason; kind and reason stay off the chain |
+| customer\_order (data standard 1.8) | id, branch\_id, customer\_id, lines, total, currency, fulfilment, pickup\_at, status | delivery\_area, delivery\_note, approval\_id, decided\_by, source\_message\_id; delivery\_note stays off the chain; the customer stays with the customer service |
+| sales\_session (data standard 1.9) | id, branch\_id, person\_id, business\_date, opened\_at, state (open, closed), opening\_float, currency | visit\_id, closed\_at, counted, expected, difference, closed\_by, note; one open session per person and branch; expected and difference computed in code and frozen at close |
+| sales\_receipt (data standard 1.9) | id, branch\_id, session\_id, receipt\_no, business\_date, sold\_at, clerk\_id, kind (sale, refund), subtotal, discount, total, currency, status (paid, voided), source (pos, chat) | customer\_id, order\_id, refund\_of, discount\_reason (senior, pwd, promo, staff, other), voided\_by, void\_reason, approval\_id, source\_message\_id; receipt\_no unique per branch, an approval\_id on one receipt; the payments sum to the total; void\_reason stays off the chain |
+| sales\_receipt\_line (data standard 1.9) | id, branch\_id, receipt\_id, item\_id, quantity, unit\_price, discount, line\_total, currency | price\_id, experiment\_id, refunded\_line\_id; negative on a refund; unit\_price is the dated price at sold\_at |
+| sales\_payment (data standard 1.9) | id, branch\_id, receipt\_id, session\_id, tender (TENDERS), amount, currency, paid\_at | reference (the e-wallet number); net of change; negative on a refund |
+| branch\_assignment (data standard 1.10) | id, branch\_id (the assigned kiosk), person\_id, from\_date | to\_date (the first day it no longer holds); a supervisor only, never their home branch, one open assignment per person and branch; the person's branch scope is home plus active assignments (D50) |
 
 Formats: IDs are ULIDs; dates and times are ISO 8601 with time zone; money is an integer in minor units with a currency code; phone numbers are E.164; languages are BCP 47 codes. Code lists (engagement\_type, visit status, day type) are versioned with the standard.
 
@@ -670,7 +685,7 @@ flowchart LR
 | Area | Choice |
 | --- | --- |
 | Language and API | Python 3.12, FastAPI, Uvicorn |
-| Agents | Pydantic AI (agents, subagents, typed tools); MCP for connectors later |
+| Agents | Pydantic AI (agents, subagents, typed tools); A2A 1.0 between agents (ADR 008); MCP for connectors later |
 | Models and validation | Pydantic v2, SQLModel on SQLAlchemy 2 |
 | Database | SQLite in WAL mode, one file per branch |
 | Migrations | Alembic, with separate migration folders per agent package |

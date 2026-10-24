@@ -10,18 +10,21 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from sqlmodel import Session, select
 
+from mia.api.deps import DbSession, direct_loopback
 from mia.channels import outbox, registry
 from mia.channels.base import ChannelAdapter, InboundMessage, StatusUpdate
 from mia.channels.inbound import handle_inbound
-from mia.chat.router import DbSession
 from mia.core import events, store
 from mia.core.models import Actor, ChannelInbound, Principal
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 
 
-def get_adapter(channel_id: str) -> ChannelAdapter:
-    """The registered and enabled adapter for the path's channel id, else 404."""
+def get_adapter(channel_id: str, request: Request) -> ChannelAdapter:
+    """The registered and enabled adapter for the path's channel id, else 404. The sim channel's
+    secret is public, so it answers only a direct loopback request (ADR 021)."""
+    if channel_id == "sim" and not direct_loopback(request):
+        raise HTTPException(404, "unknown channel")
     if channel_id not in {a.channel_id for a in registry.enabled()}:
         raise HTTPException(404, "unknown channel")
     return registry.get(channel_id)

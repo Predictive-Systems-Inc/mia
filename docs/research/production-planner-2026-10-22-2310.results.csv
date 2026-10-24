@@ -1,0 +1,25 @@
+message,lang,half,intent,predicted,confidence,score,missing
+plan tmrw,en,short,plan,plan,1.0,right,
+add 1 batch ube,en,short,change_plan,change_plan,1.0,right,
+less classic 2 batch,en,short,change_plan,clarify,0.83,ask,item
+plan ok go,en,short,confirm_plan,clarify,0.99,ask,date
+batch sheet sp,en,short,batch_sheet,batch_sheet,0.7,right,
+batch2 cl 45 ok 3 burnt,en,short,record_batch,record_batch,0.98,right,
+recipe ube 36 pcs 2kg flour,en,short,set_recipe,clarify,0.98,ask,recipe
+delivered mall,en,short,delivered,clarify,0.58,ask,
+whats coming to mall,en,short,dispatch,clarify,0.41,ask,
+capacity 200 cl dec 24,en,short,capacity,capacity,0.94,wrong,
+ube 2,en,short,ask,clarify,0.35,ask,unit
+done,en,short,ask,clarify,0.55,ask,
+ano lutuin bukas,fil,short,plan,plan,0.98,right,
+dagdag 1 batch se,fil,short,change_plan,change_plan,0.78,right,
+bawas ube 1 batch,fil,short,change_plan,change_plan,0.89,right,
+sige go na plano,fil,short,confirm_plan,clarify,0.82,ask,date
+ilang itlog para sa cl,fil,short,batch_sheet,batch_sheet,0.83,right,
+batch1 sp 40 ok 2 sunog,fil,short,record_batch,record_batch,0.91,right,
+recipe se 36 piraso 45 min,fil,short,set_recipe,clarify,0.73,ask,recipe
+hatid na sa street po,fil,short,delivered,clarify,0.59,ask,
+ano dadalhin samin bukas,fil,short,dispatch,dispatch,0.87,right,
+kaya ba 150 ube sab,fil,short,capacity,clarify,0.12,ask,
+classic 3,fil,short,ask,clarify,0.45,ask,unit
+ok na po,fil,short,ask,clarify,0.87,ask,date

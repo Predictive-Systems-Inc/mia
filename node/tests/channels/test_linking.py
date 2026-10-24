@@ -11,8 +11,8 @@ from mia.core import people
 from mia.core.db import utcnow
 from mia.core.models import (
     Actor,
+    AuthCode,
     ChannelIdentity,
-    ChannelLinkCode,
     Message,
     Person,
     Thread,
@@ -32,7 +32,7 @@ def test_code_is_six_digits_and_stored_only_as_hmac(
 ) -> None:
     code = _code(session, people["Juha"], people["Sanna"])
     assert len(code) == 6 and code.isdigit()
-    row = session.exec(select(ChannelLinkCode)).one()
+    row = session.exec(select(AuthCode)).one()
     assert code not in row.code_hmac and len(row.code_hmac) == 64
     assert row.created_by == people["Sanna"].id
 
@@ -126,6 +126,7 @@ def test_no_node_secret_refuses_to_create_codes(
     from mia.settings import get_settings
 
     monkeypatch.setenv("MIA_NODE_SECRET", "")
+    monkeypatch.delenv("MIA_MASTER_KEY_FILE")  # a key file would do instead (ADR 011)
     get_settings.cache_clear()
     with pytest.raises(linking.LinkingError):
         _code(session, people["Juha"], people["Sanna"])

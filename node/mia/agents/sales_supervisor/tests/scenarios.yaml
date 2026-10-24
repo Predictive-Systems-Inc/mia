@@ -1,0 +1,65 @@
+# Sales supervisor chat scenarios (run by tests/evals/test_sales_supervisor_scenarios.py with
+# MIA_DECIDER=jev). Each scenario: who sends it (first name of a seeded Ferino's person),
+# optional setup messages in the same thread, the message, and the expected tool calls in order.
+# `status` is ok (the tool ran), denied, invalid or approval_required. `args` must be a subset
+# of the tool input. `tools: []` means Mia answers without calling any tool. `reply_contains`
+# lists exact fragments the user must get (item names and counts), not wording. Ana, Marites
+# and Rosa read Filipino, so the replies are in Filipino whatever the message's language.
+
+- id: en_counts_codes
+  as: Ana
+  message: "3 sp 5 cl"
+  tools: [{tool: record_counts, status: ok}]
+  reply_contains: ["3 Special", "5 Classic"]
+
+- id: fil_counts_names
+  as: Ana
+  message: "12 ube na ang nabenta"
+  tools: [{tool: record_counts, status: ok}]
+  reply_contains: ["12 Ube"]
+
+- id: en_correction
+  as: Ana
+  setup: ["3 special"]
+  message: "4 special not 3"
+  tools: [{tool: correct_count, status: ok, args: {quantity: 4}}]
+  reply_contains: ["4 Special"]
+
+- id: fil_correction
+  as: Ana
+  setup: ["3 special"]
+  message: "4 pala ang special, hindi 3"
+  tools: [{tool: correct_count, status: ok, args: {quantity: 4}}]
+  reply_contains: ["4 Special"]
+
+- id: en_how_are_we_doing
+  as: Ana
+  message: "how are we doing today"
+  tools: [{tool: today, status: ok}]
+  reply_contains: ["Mall kiosk"]
+
+- id: fil_how_are_we_doing
+  as: Marites
+  message: "kumusta ang benta natin ngayon?"
+  tools: [{tool: today, status: ok}]
+  reply_contains: ["Mall kiosk"]
+
+- id: en_target_owner
+  as: Rosa
+  message: "target today 3,500"
+  tools: [{tool: set_target, status: ok, args: {period: day, amount: 350000}}]
+
+- id: en_target_clerk_denied
+  as: Ana
+  message: "set today's target to 5,000"
+  tools: [{tool: set_target, status: denied}]
+
+- id: en_best_day
+  as: Rosa
+  message: "best day this month?"
+  tools: [{tool: period_report, status: ok}]
+
+- id: fil_hello
+  as: Ana
+  message: "hello po"
+  tools: []

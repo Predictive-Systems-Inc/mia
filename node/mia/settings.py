@@ -20,7 +20,32 @@ class Settings(BaseSettings):
     MIA_MODEL: str = "test"
     MIA_GATEWAY_URL: str = "http://localhost:4000/v1"
     MIA_GATEWAY_KEY: str = ""
+    # The model that turns a sales report question into a report form (teach-Mia 4c, D49):
+    # empty means MIA_MODEL when that is a gateway/ route, else the step is off; `test` is the
+    # deterministic fake. Capped at US$10 a month of usage_cloud_requests.
+    MIA_REPORT_MODEL: str = ""
+    # OpenAI-compatible server on this machine or network (Ollama) for MIA_MODEL=local/<model>.
+    MIA_LOCAL_URL: str = "http://localhost:11434/v1"
+    # Thinking (reasoning) on local models: off by default because it makes every turn slow on
+    # small hardware; turn on when the evals show it helps a given model.
+    MIA_LOCAL_THINKING: bool = False
+    # Role skill models (docs/superpowers/specs/2026-10-06-skill-models-design.md): built
+    # packages, and harvested learning candidates. Both stay on the node, never in git.
+    MIA_MODELS_DIR: Path = Field(default=Path("data/models"))
+    MIA_LEARNING_DIR: Path = Field(default=Path("data/learning"))
+    # Photos and files people send as proof of work (visit.proof_refs point into it).
+    MIA_MEDIA_DIR: Path = Field(default=Path("data/media"))
     MIA_EGRESS_LEVEL: EgressLevel = "pseudonymised"
+    # Who picks the shift supervisor's tool: the Pydantic AI agent, or Jev (spec 2026-10-17-jev-decider;
+    # synthetic and demo data only under D18).
+    MIA_DECIDER: Literal["agent", "jev"] = "agent"
+    MIA_TYPESAFE_URL: str = "https://api.typesafe.ai/v1/systemone"
+    MIA_TYPESAFE_KEY: str = ""
+    MIA_JEV_MODEL: str = "jev-1.13.0"  # pinned, so measurements compare
+    # The sales supervisor's action question (D42): one choice, or a yes-or-no per action.
+    MIA_SALES_QUESTION: Literal["choice", "nouls"] = "choice"
+    # Who hears about Jev outages (spec 2026-10-18); empty: the log only.
+    MIA_DEVELOPER_PERSON_ID: str = ""
     MIA_ORG: str = "demo"
     MIA_TICK_SECONDS: int = 30
     MIA_GEOCODER: str = "digitransit"
@@ -29,12 +54,22 @@ class Settings(BaseSettings):
     # Channels (ADR 007). MIA_NODE_SECRET keys link-code HMACs; MIA_PUBLIC_URL builds app links.
     MIA_NODE_SECRET: str = ""
     MIA_PUBLIC_URL: str = "http://localhost:8000"
+    # Authentication (ADR 011). The master key file (mia keys init) derives every subkey;
+    # without it MIA_NODE_SECRET is the key, so invites made before it keep working.
+    MIA_MASTER_KEY_FILE: Path | None = None
+    MIA_AUTH_MODE: Literal["required", "dev"] = "required"
+    # The sim channel's webhook secret (dev mode only, ADR 021); empty keeps the public default.
+    MIA_SIM_SECRET: str = ""
+    # Peers allowed to set CF-Connecting-IP (the cloudflared container), comma separated.
+    MIA_TRUSTED_PROXIES: str = ""
     MIA_WA_TOKEN: str = ""
     MIA_WA_APP_SECRET: str = ""
     MIA_WA_VERIFY_TOKEN: str = ""
     MIA_WA_PHONE_NUMBER_ID: str = ""
     MIA_WA_NUMBER: str = ""
-    MIA_WA_GRAPH_URL: str = "https://graph.facebook.com/v21.0"
+    MIA_WA_GRAPH_URL: str = "https://graph.facebook.com/v26.0"
+    # Template languages approved in this number's WhatsApp Manager; no other is ever sent.
+    MIA_WA_TEMPLATE_LANGS: str = "fi,en"
 
     @property
     def db_url(self) -> str:

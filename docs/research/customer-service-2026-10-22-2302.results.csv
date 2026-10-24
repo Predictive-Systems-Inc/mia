@@ -1,0 +1,25 @@
+message,lang,half,intent,predicted,confidence,score,missing
+open now,en,short,hours,hours,0.98,right,
+what time u close,en,short,hours,hours,1.0,right,
+how much ube,en,short,prices,prices,0.89,right,
+menu pls,en,short,prices,prices,1.0,right,
+order 10 classic pickup 3pm,en,short,place_order,place_order,1.0,right,
+is my order ready,en,short,order_status,order_status,1.0,right,
+deliver to marikina,en,short,delivery_area,clarify,0.58,ask,
+bibingka was cold,en,short,complaint,complaint,1.0,right,
+cancel my order pls,en,short,cancel_order,cancel_order,1.0,right,
+pickups today,en,short,staff_orders_today,staff_orders_today,0.84,right,
+10 ube,en,short,ask,clarify,0.5,ask,pickup_time
+tmrw 3pm,en,short,ask,clarify,0.43,ask,items
+open pa kau ngayon,fil,short,hours,hours,0.99,right,
+hm po ung special,fil,short,prices,clarify,0.53,ask,
+pa order 12 cl bukas,fil,short,place_order,clarify,0.99,ask,pickup_time
+ready na order ko,fil,short,order_status,order_status,0.89,right,
+may deliver sa pasig,fil,short,delivery_area,delivery_area,0.96,right,
+kulang order ko 2,fil,short,complaint,complaint,0.99,right,
+cancel ko na po,fil,short,cancel_order,cancel_order,1.0,right,
+english pls,fil,short,language_switch,language_switch,1.0,right,
+may pickup ba today,fil,short,staff_orders_today,staff_orders_today,0.9,right,
+ready na kay mila,fil,short,staff_mark_ready,staff_mark_ready,0.93,right,
+pano po,fil,short,ask,clarify,0.47,ask,
+yung order,fil,short,ask,clarify,0.39,ask,

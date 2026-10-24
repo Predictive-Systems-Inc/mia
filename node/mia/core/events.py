@@ -7,6 +7,8 @@ previous hash plus the canonical JSON of the row, so any edit breaks verify_chai
 
 import hashlib
 import json
+import re
+from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy import DDL, event, text
@@ -53,18 +55,105 @@ def compute_hash(prev_hash: str, ev: Event) -> str:
     return hashlib.sha256((prev_hash + _payload(ev)).encode()).hexdigest()
 
 
-def _last_hash(session: Session) -> str:
-    # Take the write lock before reading: pysqlite runs SELECTs outside a transaction until the
-    # first write, so two writers could otherwise read the same hash and fork the chain. A
-    # zero-row UPDATE starts the write transaction (waiting up to busy_timeout) and changes nothing.
+def write_lock(session: Session) -> None:
+    """Take SQLite's write lock now (rule 11). pysqlite runs SELECTs outside a transaction
+    until the first write, so code that reads a value and writes based on it must lock first.
+    A zero-row UPDATE starts the write transaction (waiting up to busy_timeout), changes
+    nothing, and keeps the events table append-only."""
     session.execute(text("UPDATE events SET id = id WHERE 0"))
+
+
+def _last_hash(session: Session) -> str:
+    write_lock(session)  # two writers could otherwise read the same hash and fork the chain
     last = session.exec(select(Event.hash).order_by(col(Event.id).desc()).limit(1)).first()
     return last or GENESIS_HASH
 
 
-def snapshot(row: SQLModel | None) -> dict[str, Any] | None:
-    """JSON-safe copy of a row for before/after values."""
-    return None if row is None else row.model_dump(mode="json")
+REDACTED = "<redacted>"
+
+PH_MOBILE = re.compile(r"639\d{9}")  # E.164 digits without the plus
+DIGIT_RUN = re.compile(r"\d+")
+PHONE_GAP = re.compile(r"[\s().-]+")  # what may stand between the digit groups of a number
+MAX_GROUPS = 12  # a mobile has at most 12 digits, so at most 12 digit groups
+
+
+def ph_mobile(text: str) -> str | None:
+    """A Philippine mobile number as E.164 digits without the plus (639171234567) from
+    09171234567, +63 917 123 4567, 639171234567 or 9171234567; None for any other shape or a
+    character other than digits, spaces, + . - ( ). The one normaliser of the node."""
+    if re.search(r"[^\d\s+().-]", text):
+        return None
+    digits = re.sub(r"\D", "", text)
+    if digits.startswith("09"):
+        digits = "63" + digits[1:]
+    elif digits.startswith("9"):
+        digits = "63" + digits
+    return digits if PH_MOBILE.fullmatch(digits) else None
+
+
+def _wordy(text: str, i: int) -> bool:
+    return 0 <= i < len(text) and (text[i].isalpha() or text[i] == "_")
+
+
+def phone_candidates(text: str) -> list[tuple[int, int]]:
+    """The (start, end) spans of every Philippine mobile number in the text: runs of digit
+    groups with only spaces . - ( ) between them (a group touching a letter, as in an id, is
+    no part of one), cut from the left to the longest stretch ph_mobile accepts, a leading + or
+    ( included. Whatever ph_mobile accepts is found; amounts, dates and landlines are not."""
+    runs: list[list[tuple[int, int]]] = []
+    for m in DIGIT_RUN.finditer(text):
+        if _wordy(text, m.start() - 1) or _wordy(text, m.end()):
+            continue
+        if runs and PHONE_GAP.fullmatch(text[runs[-1][-1][1] : m.start()]):
+            runs[-1].append(m.span())
+        else:
+            runs.append([m.span()])
+    spans: list[tuple[int, int]] = []
+    for run in runs:
+        i = 0
+        while i < len(run):
+            for j in range(min(len(run), i + MAX_GROUPS) - 1, i - 1, -1):
+                start, end = run[i][0], run[j][1]
+                while start > 0 and text[start - 1] in "+(":
+                    start -= 1
+                if ph_mobile(text[start:end]):
+                    spans.append((start, end))
+                    i = j
+                    break
+            i += 1
+    return spans
+
+
+def mask_phones(text: str, keep_last: int = 4) -> str:
+    """The text with every phone_candidates span replaced by "<number ...4567>" (its last
+    `keep_last` digits), or by "<number>" with keep_last=0; without one it is unchanged."""
+    for start, end in reversed(phone_candidates(text)):
+        last = re.sub(r"\D", "", text[start:end])[-keep_last:] if keep_last > 0 else ""
+        shown = f"<number ...{last}>" if last else "<number>"
+        text = text[:start] + shown + text[end:]
+    return text
+
+
+def mask_value(value: Any, keep_last: int = 4) -> Any:
+    """A copy of a JSON value with mask_phones applied to every string in it (dict keys stay)."""
+    if isinstance(value, str):
+        return mask_phones(value, keep_last)
+    if isinstance(value, list):
+        return [mask_value(v, keep_last) for v in value]
+    if isinstance(value, dict):
+        return {k: mask_value(v, keep_last) for k, v in value.items()}
+    return value
+
+
+def snapshot(row: SQLModel | None, redact: Iterable[str] = ()) -> dict[str, Any] | None:
+    """JSON-safe copy of a row for before/after values. Fields named in the model's
+    `__redact__` and in `redact` are replaced by "<redacted>" so secrets never enter events
+    (emit masks every mobile number)."""
+    if row is None:
+        return None
+    data = row.model_dump(mode="json")
+    hidden = set(getattr(row, "__redact__", ())) | set(redact)
+    return {k: (REDACTED if k in hidden and v is not None else v) for k, v in data.items()}
 
 
 def emit(
@@ -78,7 +167,9 @@ def emit(
     tool_call_id: str | None = None,
     approval_id: str | None = None,
 ) -> Event:
-    """Append one event, chained to the previous one, in the caller's transaction."""
+    """Append one event, chained to the previous one, in the caller's transaction. Every
+    mobile number in `before` and `after` is masked to "<number>" before the hash (the chain
+    is never rewritable and needs no digit of one; the live rows keep them)."""
     if isinstance(entity, tuple):
         entity_type, entity_id = entity
     else:
@@ -92,8 +183,8 @@ def emit(
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,
-        before=before,
-        after=after,
+        before=mask_value(before, keep_last=0),
+        after=mask_value(after, keep_last=0),
         tool_call_id=tool_call_id,
         approval_id=approval_id,
         prev_hash="",

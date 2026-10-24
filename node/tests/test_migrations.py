@@ -1,8 +1,10 @@
 """Alembic migrations create exactly the tables in the models, plus the event triggers."""
 
+import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
+from alembic.util import CommandError
 from sqlalchemy import inspect, text
 
 from mia.cli import _alembic_config
@@ -33,27 +35,25 @@ def test_downgrade_removes_everything() -> None:
         assert set(inspect(conn).get_table_names()) == {"alembic_version"}
 
 
-def test_upgrade_from_1_0_keeps_employee_data() -> None:
-    """Availability and work limits move from the cleaning template to core with their rows."""
-    cfg = _alembic_config()
-    command.upgrade(cfg, "0001")
-    rows = {
-        "organisation": "('O', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'Org', 'FI', 'fi')",
-        "branch": "('B', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'O', 'Hki', 'Europe/Helsinki')",
-        "person": "('P', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'B', 'Pia', 'active', "
-        "'[\"staff\"]', '[]', 'employee', 'fi')",
-        "cleaning_availability": "('A', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'B', 'P', 0, '06:00', '20:00')",
-        "cleaning_work_limits": "('W', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'B', 'P', 600, 2400)",
-    }
+def test_a_database_from_before_the_squash_fails_loudly() -> None:
+    """Revisions 0001 to 0008 were squashed (ADR 014); a database still stamped with one of them
+    must be rebuilt, not silently taken as current."""
     with get_engine().begin() as conn:
-        for table, values in rows.items():
-            conn.execute(text(f"INSERT INTO {table} VALUES {values}"))
-    command.upgrade(cfg, "head")
+        conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        conn.execute(text("INSERT INTO alembic_version VALUES ('0001')"))
+    with pytest.raises(CommandError):
+        command.upgrade(_alembic_config(), "head")
+
+
+def test_the_price_and_experiment_ids_are_foreign_keys() -> None:
+    command.upgrade(_alembic_config(), "head")
     with get_engine().connect() as conn:
-        assert conn.execute(text('SELECT start, "end" FROM availability')).one() == (
-            "06:00",
-            "20:00",
-        )
-        assert conn.execute(text("SELECT max_weekly_minutes FROM work_limits")).scalar() == 2400
-        person = conn.execute(text("SELECT home_address, accepts_calls FROM person")).one()
-        assert person == ("", 1)
+        found = {
+            table: {
+                c for fk in inspect(conn).get_foreign_keys(table) for c in fk["constrained_columns"]
+            }
+            for table in ("branch_manager_experiments", "retail_item_prices", "retail_closures")
+        }
+    assert {"approval_id", "proposed_by", "decided_by"} <= found["branch_manager_experiments"]
+    assert {"approval_id", "set_by"} <= found["retail_item_prices"]
+    assert found["retail_closures"] == {"branch_id", "set_by"}

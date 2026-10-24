@@ -1,0 +1,31 @@
+# Public data for the shift supervisor's classifier (step 3 of the training skill, 2026-10-12).
+# Rules: docs/superpowers/specs/2026-10-06-skill-models-design.md and the skill's guidelines.md.
+# Nothing here is used until its licence line is confirmed against the source and the developer
+# approves it at Gate 1 (approved_by stays empty until then). Public data never enters test.
+datasets:
+  - name: MASSIVE (Amazon)
+    source: https://github.com/alexa/massive
+    version: "1.1"
+    licence: CC BY 4.0
+    use: intermediate
+    mapping: {}
+    notes: >-
+      60 intents in 51 languages including Finnish; none of them is a shift supervisor intent, so the
+      use is intermediate training for general intent sense in Finnish and English, not labels.
+      Confirm the licence of the 1.1 release before use.
+  - name: CLINC150 (out-of-scope queries)
+    source: https://github.com/clinc/oos-eval
+    version: "2019"
+    licence: CC BY 3.0
+    use: other
+    mapping: {oos: other}
+    notes: >-
+      Only the out-of-scope split, mapped to `other`, English only. Confirm the licence file in
+      the repository; the paper's data card names CC BY 3.0.
+rejected:
+  - name: BANKING77
+    reason: fine-grained banking intents, none near the shift supervisor's; its value is as a benchmark, not as data.
+  - name: Finnish chat corpora found on hubs without a licence line
+    reason: licence cannot be confirmed (guidelines.md, never).
+  - name: Any dataset of real WhatsApp or SMS messages
+    reason: real personal data not published for this use (guidelines.md, never).

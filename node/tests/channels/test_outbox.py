@@ -2,6 +2,8 @@
 
 import asyncio
 import datetime as dt
+import hashlib
+import json
 
 import httpx
 import pytest
@@ -12,6 +14,7 @@ from mia.channels.service import deliver
 from mia.channels.simulator import SimAdapter
 from mia.channels.transport import ChannelBlocked, ChannelTransport
 from mia.chat.blocks import TextBlock
+from mia.core import keys
 from mia.core.db import utcnow
 from mia.core.models import Actor, ChannelOutbox, Event, Person
 from tests.channels.conftest import LinkFn
@@ -82,13 +85,45 @@ def test_channel_transport_refuses_requests_outside_an_outbox_send() -> None:
 
 
 def test_tick_runs_cover_escalation_and_sends_the_outbox(
-    session: Session, people: dict[str, Person], sim: SimAdapter, link: LinkFn
+    session: Session,
+    people: dict[str, Person],
+    sim: SimAdapter,
+    link: LinkFn,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from mia.agents.shift_supervisor import alerts
     from mia.api.main import run_due_work
 
+    monkeypatch.setattr(alerts, "run_due", lambda _session, _now: 0)  # the clock decides alerts
     _queue(session, people["Juha"], link)
-    advanced, sent = asyncio.run(run_due_work())
-    assert (advanced, sent) == (0, 1)
+    assert asyncio.run(run_due_work()) == (0, 1)
+    assert len(sim.sent) == 1
+
+
+def test_an_alert_that_falls_due_is_sent_in_the_same_round(
+    session: Session,
+    people: dict[str, Person],
+    sim: SimAdapter,
+    link: LinkFn,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mia.agents.shift_supervisor import alerts
+    from mia.api.main import run_due_work
+
+    link(people["Juha"], ADDR, last_inbound_at=utcnow())
+
+    def one_alert(alert_session: Session, _now: dt.datetime) -> int:
+        deliver(
+            alert_session,
+            people["Juha"],
+            [TextBlock(text="Alert")],
+            Actor.system(people["Juha"].branch_id),
+            urgent=True,
+        )
+        return 1
+
+    monkeypatch.setattr(alerts, "run_due", one_alert)
+    assert asyncio.run(run_due_work()) == (1, 1)
     assert len(sim.sent) == 1
 
 
@@ -146,3 +181,24 @@ def test_stale_on_demand_messages_expire_instead_of_being_sent(
     assert asyncio.run(outbox.send_due(utcnow(), on_demand_for=ADDR)) == 0
     session.refresh(row)
     assert row.status == "expired" and sim.sent == []
+
+
+def _digest_of(body: dict[str, object]) -> str:
+    return json.dumps(body, sort_keys=True)
+
+
+def test_the_payload_hash_is_keyed_never_a_plain_sha256(
+    session: Session, people: dict[str, Person], sim: SimAdapter, link: LinkFn
+) -> None:
+    """A fixed reply text leaves only the number unknown, so a plain hash of the body (which
+    holds the address) could be brute-forced back to it."""
+    _queue(session, people["Juha"], link)
+    asyncio.run(outbox.send_due(utcnow()))
+    asyncio.run(outbox.send_direct("sim", ADDR, [TextBlock(text="Hei")], "fi"))
+    sent = session.exec(select(Event).where(Event.action == "channel.sent")).all()
+    assert len(sent) == 2 and len(sim.sent) == 2
+    for event, payload in zip(sent, sim.sent, strict=True):
+        body = _digest_of(payload.body)
+        assert event.after is not None
+        assert event.after["payload_hash"] != hashlib.sha256(body.encode()).hexdigest()
+        assert event.after["payload_hash"] == keys.code_hmac(body)

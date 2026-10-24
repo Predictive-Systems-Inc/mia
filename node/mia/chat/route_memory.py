@@ -1,0 +1,200 @@
+"""What people chose when Mia asked "Is this about": exact repeats are routed by code before
+any Jev call (spec 2026-10-18-router-follow-up, decision 4b). The rules (`learned`) are pure;
+`remember` writes the tap event and `recall` reads the branch's events, both in the caller's
+session. Only agent ids are learned, never text as a rule (rule 8)."""
+
+import datetime as dt
+import re
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+
+from sqlmodel import Session, col, select
+
+from mia.agents.base import AgentDeps
+from mia.core import events
+from mia.core.models import Actor, Event, Message, Thread
+
+CHOSEN = "chat.route_chosen"
+FORGOTTEN = "chat.route_forgotten"
+WINDOW = dt.timedelta(days=90)
+UNDO_WINDOW = dt.timedelta(hours=1)
+MIN_TAPS = 2
+
+_SPACES = re.compile(r"\s+")
+_DIGITS = re.compile(r"\d+")
+
+
+def key_of(text: str) -> str:
+    """The memory key of a message: casefolded, one space between words, trailing punctuation
+    dropped, every number replaced by # (so each day's counts share one key)."""
+    key = _SPACES.sub(" ", text.casefold()).strip().rstrip(".!?,;:").strip()
+    return _DIGITS.sub("#", key)
+
+
+@dataclass(frozen=True)
+class Tap:
+    """One chat.route_chosen event: a person tapped agent_id for this key."""
+
+    key: str
+    agent_id: str
+    at: dt.datetime
+    thread_id: str
+    event_id: str
+
+
+@dataclass(frozen=True)
+class Switch:
+    """One chat.agent_switched event: the thread moved away from from_agent."""
+
+    from_agent: str
+    at: dt.datetime
+    thread_id: str
+
+
+def _undone(tap: Tap, switches: Sequence[Switch]) -> bool:
+    """True when a switch away from the tapped agent follows the tap within UNDO_WINDOW in the
+    same thread, on any message (the clerk's correction is usually a new message). The same
+    rule as learning/harvest._route_undone."""
+    return any(
+        s.thread_id == tap.thread_id
+        and s.from_agent == tap.agent_id
+        and dt.timedelta(0) <= s.at - tap.at <= UNDO_WINDOW
+        for s in switches
+    )
+
+
+def _counts(tap: Tap, now: dt.datetime, forgotten: Mapping[str, dt.datetime]) -> bool:
+    """True when a tap is inside WINDOW and was not forgotten after it happened."""
+    if now - tap.at > WINDOW:
+        return False
+    forgot_at = forgotten.get(tap.key)
+    return forgot_at is None or forgot_at <= tap.at
+
+
+def learned(
+    taps: Sequence[Tap],
+    switches: Sequence[Switch],
+    forgotten: Mapping[str, dt.datetime],
+    now: dt.datetime,
+) -> dict[str, str]:
+    """Key to agent id for every key with at least MIN_TAPS taps for one agent and none for
+    another, counting only taps inside WINDOW, not forgotten after they happened, and not
+    undone by a switch away within UNDO_WINDOW in the same thread."""
+    votes: dict[str, Counter[str]] = {}
+    for tap in taps:
+        if not _counts(tap, now, forgotten) or _undone(tap, switches):
+            continue
+        votes.setdefault(tap.key, Counter())[tap.agent_id] += 1
+    return {
+        key: next(iter(c))
+        for key, c in votes.items()
+        if len(c) == 1 and next(iter(c.values())) >= MIN_TAPS
+    }
+
+
+def remember(
+    session: Session,
+    deps: AgentDeps,
+    thread: Thread,
+    original_message_id: str | None,
+    agent_id: str,
+    picked: str | None,
+    confidence: float | None,
+    options: list[str],
+) -> None:
+    """Emits chat.route_chosen for a tap in the caller's transaction (it commits nothing). The
+    event carries the message's key, not its text. No event when the original message is
+    unknown: there is nothing to learn from."""
+    message = session.get(Message, original_message_id) if original_message_id else None
+    if message is None:
+        return
+    after = {
+        "original_message_id": message.id,
+        "agent_id": agent_id,
+        "picked": picked,
+        "confidence": confidence,
+        "options": options,
+        "lang": deps.lang,
+        "key": key_of(message.text),
+    }
+    events.emit(session, CHOSEN, ("thread", thread.id), None, after, deps.actor)
+
+
+def _branch_events(
+    session: Session, branch_id: str, action: str, now: dt.datetime
+) -> Sequence[Event]:
+    """The branch's events of this action inside WINDOW (older ones cannot change `learned`:
+    their taps no longer count, and switches and forgets act only on later taps)."""
+    return session.exec(
+        select(Event)
+        .where(Event.action == action)
+        .where(Event.branch_id == branch_id)
+        .where(col(Event.timestamp) >= now - WINDOW)
+    ).all()
+
+
+def _switches(session: Session, branch_id: str, now: dt.datetime) -> list[Switch]:
+    return [
+        Switch(str(a["from"]), ev.timestamp, ev.entity_id)
+        for ev in _branch_events(session, branch_id, "chat.agent_switched", now)
+        if (a := ev.after or {}).get("from")
+    ]
+
+
+def _taps(session: Session, branch_id: str, now: dt.datetime) -> list[Tap]:
+    return [
+        Tap(str(a["key"]), str(a["agent_id"]), ev.timestamp, ev.entity_id, ev.id)
+        for ev in _branch_events(session, branch_id, CHOSEN, now)
+        if (a := ev.after or {}).get("key") and a.get("agent_id")
+    ]
+
+
+def _forgotten(session: Session, branch_id: str, now: dt.datetime) -> dict[str, dt.datetime]:
+    forgotten: dict[str, dt.datetime] = {}
+    for ev in _branch_events(session, branch_id, FORGOTTEN, now):
+        key = str((ev.after or {}).get("key"))
+        forgotten[key] = max(forgotten.get(key, ev.timestamp), ev.timestamp)
+    return forgotten
+
+
+def recall(session: Session, branch_id: str, now: dt.datetime) -> dict[str, str]:
+    """The branch's learned keys (key to agent id) by the rules of `learned`. Reads only;
+    sync, so call it through asyncio.to_thread (rule 12)."""
+    # ponytail: a scan of the branch's route events per message; cache or index when a branch
+    # passes thousands of taps.
+    return learned(
+        _taps(session, branch_id, now),
+        _switches(session, branch_id, now),
+        _forgotten(session, branch_id, now),
+        now,
+    )
+
+
+def counts(session: Session, branch_id: str, now: dt.datetime) -> dict[tuple[str, str], int]:
+    """(key, agent id) to the taps that count toward learning, with the same filtering as
+    `learned` (inside WINDOW, not forgotten, not undone). Reads only."""
+    switches, forgotten = _switches(session, branch_id, now), _forgotten(session, branch_id, now)
+    live = Counter(
+        (t.key, t.agent_id)
+        for t in _taps(session, branch_id, now)
+        if _counts(t, now, forgotten) and not _undone(t, switches)
+    )
+    return dict(live)
+
+
+def forget(
+    session: Session, branch_id: str, text: str, actor: Actor, now: dt.datetime
+) -> str | None:
+    """Emits chat.route_forgotten for the key of `text` (a message or a printed key) so it is
+    not learned until MIN_TAPS new taps, and commits. Returns the key, or None with nothing
+    emitted when no agent is learned for it."""
+    key = key_of(text)
+    agent_id = recall(session, branch_id, now).get(key)
+    if agent_id is None:
+        return None
+    events.emit(
+        session, FORGOTTEN, ("branch", branch_id), None, {"key": key, "agent_id": agent_id}, actor
+    )
+    session.commit()
+    return key

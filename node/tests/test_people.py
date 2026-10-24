@@ -15,8 +15,37 @@ def test_add_person_creates_row_and_event(session: Session, branch: Branch) -> N
     session.commit()
 
     assert session.get(Person, person.id) is not None
-    event = session.exec(select(Event).where(Event.entity_id == person.id)).one()
-    assert (event.action, event.actor_id) == ("person.created", "system")
+    rows = session.exec(select(Event).where(Event.entity_id == person.id)).all()
+    assert [(e.action, e.actor_id) for e in rows] == [
+        ("person.created", "system"),
+        ("person.language_chosen", "system"),
+    ]
+
+
+def test_add_person_with_an_unknown_language_is_not_chosen(
+    session: Session, branch: Branch
+) -> None:
+    person = people.add_person(
+        session,
+        Actor.system(branch.id),
+        branch_id=branch.id,
+        name="Ana Cruz",
+        roles=["staff"],
+        language="en",
+        language_known=False,
+    )
+    rows = session.exec(select(Event).where(Event.entity_id == person.id)).all()
+    assert [e.action for e in rows] == ["person.created"]
+
+
+def test_set_language_rejects_an_unknown_code(session: Session, branch: Branch) -> None:
+    actor = Actor.system(branch.id)
+    person = people.add_person(
+        session, actor, branch_id=branch.id, name="Aada", roles=["staff"], language="fi"
+    )
+    with pytest.raises(ValueError):
+        people.set_language(session, actor, person, "xx")
+    assert person.language == "fi"
 
 
 @pytest.mark.parametrize(

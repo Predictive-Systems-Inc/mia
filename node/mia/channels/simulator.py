@@ -8,7 +8,7 @@ import hashlib
 import hmac
 import json
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from typing import Any
 
 from mia.channels.base import (
     ChannelCapabilities,
@@ -17,8 +17,10 @@ from mia.channels.base import (
     InboundMessage,
     StatusUpdate,
     TemplateCall,
+    coordinates,
 )
 from mia.channels.render import ButtonsPart, ListPart, RenderedPart
+from mia.core.db import utcnow
 from mia.core.ids import new_id
 
 
@@ -29,6 +31,13 @@ def hub_signature_ok(secret: str, headers: Mapping[str, str], body: bytes) -> bo
         return False
     expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(given.removeprefix("sha256="), expected)
+
+
+def _point(m: dict[str, Any]) -> tuple[float, float] | tuple[None, None]:
+    where = m.get("location")
+    if not isinstance(where, list) or len(where) != 2:
+        return None, None
+    return coordinates(where[0], where[1])
 
 
 class SimAdapter:
@@ -44,14 +53,15 @@ class SimAdapter:
     def __init__(
         self,
         capabilities: ChannelCapabilities | None = None,
-        secret: str = "sim-secret",
+        secret: str | None = None,
         *,
         on_demand: bool = False,
     ) -> None:
         from mia.channels.whatsapp.adapter import CAPABILITIES  # same limits as WhatsApp
 
         self.capabilities = capabilities or CAPABILITIES
-        self.secret = secret
+        self.secret = secret or "sim-secret"  # public default: registered in dev mode only
+        self.media: dict[str, bytes] = {}  # media id -> bytes, for fetch_media
         self.sent: list[ChannelPayload] = []
         self.fail_next: str | None = None
         self.on_demand = on_demand
@@ -77,9 +87,16 @@ class SimAdapter:
                     address=m["from"],
                     channel_message_id=m["id"],
                     text=m.get("text") or "",
+                    name=m.get("name"),
                     button=m.get("button"),
+                    context_id=m.get("context") if m.get("button") else None,
                     has_media=bool(m.get("media")),
-                    received_at=datetime.now(UTC),
+                    media_id=m["media"] if isinstance(m.get("media"), str) else None,
+                    media_kind="image" if m.get("media") else None,
+                    lat=_point(m)[0],
+                    lon=_point(m)[1],
+                    picked_place=bool(m.get("place")),
+                    received_at=utcnow(),
                 )
             )
         for s in data.get("statuses", []):
@@ -119,10 +136,15 @@ class SimAdapter:
             channel=self.channel_id, address=address, body={"kind": "template", **call.model_dump()}
         )
 
+    async def fetch_media(self, media_id: str) -> bytes | None:
+        """The bytes registered in `media` for the id (None when there are none)."""
+        return self.media.get(media_id)
+
     async def send(self, payload: ChannelPayload) -> DeliveryResult:
         """Record the payload; fail with `fail_next` once if set."""
         if self.fail_next is not None:
             code, self.fail_next = self.fail_next, None
             return DeliveryResult(ok=False, error_code=code)
-        self.sent.append(payload)
-        return DeliveryResult(ok=True, channel_message_id=new_id())
+        message_id = new_id()
+        self.sent.append(payload.model_copy(update={"message_id": message_id}))
+        return DeliveryResult(ok=True, channel_message_id=message_id)

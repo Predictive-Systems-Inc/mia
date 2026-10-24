@@ -1,0 +1,239 @@
+"""Offline shape of the router eval set: every gated language covers every agent and group,
+and the tuning and gate halves are balanced. No model is called."""
+
+import json
+from collections import Counter, defaultdict
+from itertools import combinations
+from pathlib import Path
+
+import pytest
+
+from mia.agents.registry import AGENTS
+from tests.evals.cases import HEADER, header, read
+from tests.evals.router_cases import CASES, GATED_LANGS, PENDING, REPORTED_LANGS, ROUTED, Case
+
+
+def _grouped(cases: list[Case]) -> dict[tuple[str, str], list[Case]]:
+    groups: dict[tuple[str, str], list[Case]] = defaultdict(list)
+    for c in cases:
+        groups[(c.lang, c.group)].append(c)
+    return groups
+
+
+def test_every_gated_language_covers_every_agent_and_group() -> None:
+    for lang in GATED_LANGS:
+        single = [c for c in CASES if c.lang == lang and c.group == "single"]
+        by_agent = Counter(c.expected for c in single)
+        assert all(by_agent[a] >= 10 for a in AGENTS if a not in PENDING), (lang, by_agent)
+        assert sum(1 for c in CASES if c.lang == lang and c.group == "follow_up") >= 10
+        assert sum(1 for c in CASES if c.lang == lang and c.group == "switch") >= 10
+
+
+def test_reported_languages_have_single_cases() -> None:
+    for lang in REPORTED_LANGS:
+        assert sum(1 for c in CASES if c.lang == lang and c.group == "single") >= 30, lang
+
+
+def test_expected_values_are_agents_any_or_small_talk() -> None:
+    assert {c.expected for c in CASES} <= {*AGENTS, "any", "small_talk"}
+
+
+def test_context_cases_name_an_active_agent() -> None:
+    assert all(c.active in AGENTS for c in CASES if c.group != "single")
+
+
+def test_halves_are_balanced_per_language_and_group() -> None:
+    """Every language and group has a tune half of at least five; the fresh gate half has at
+    least five per gated language and group. The spent half grows with every gate run, so it
+    is not balanced against the tune half."""
+    for (lang, group), cases in _grouped(CASES).items():
+        halves = Counter(c.half for c in cases)
+        assert halves["tune"] >= 5, (lang, group, halves)
+        assert halves["gate"] >= 5 or lang not in GATED_LANGS, (lang, group, halves)
+
+
+def test_the_fresh_gate_half_covers_every_agent() -> None:
+    """Ten singles per agent per gated language (GATE_FERINOS_SEEDS), and the context rows."""
+    from tests.evals.test_router_eval import ROSTER
+
+    for lang in GATED_LANGS:
+        gate = [c for c in CASES if c.lang == lang and c.half == "gate"]
+        singles = Counter(c.expected for c in gate if c.group == "single")
+        assert singles == {a: 10 for a in ROSTER if a not in PENDING}, (lang, singles)
+        context = Counter((c.group, c.expected == "any") for c in gate if c.group != "single")
+        assert context == {("follow_up", True): 5, ("follow_up", False): 5, ("switch", False): 5}
+    assert not any(c.half == "gate" for c in CASES if c.lang not in GATED_LANGS)
+
+
+def test_no_fresh_text_was_ever_scored() -> None:
+    """No gate text (casefolded) is in any recorded router run, so the rerun reads fresh seeds."""
+    from tests.evals.test_router_eval import RESEARCH
+
+    # The spent runs, named (a later run's file scores the fresh rows).
+    spent = (
+        "2026-10-18",
+        "2026-10-19-0341",
+        "2026-10-19-0345",
+        "2026-10-19-run1",
+        "2026-10-19",
+        "2026-10-20-2050",
+        "2026-10-20-2121",
+        "2026-10-21-0113",
+        "2026-10-21-0301",
+        "2026-10-21-0749",
+    )
+    raws = [RESEARCH / f"router-{n}.raw.json" for n in spent]
+    assert raws
+    scored = {
+        r["text"].casefold().strip()
+        for path in raws
+        for r in json.loads(path.read_text(encoding="utf-8"))["results"]
+    }
+    gate = {c.text.casefold().strip() for c in CASES if c.half == "gate"}
+    assert not gate & scored, gate & scored
+
+
+def test_the_roster_is_the_full_ferinos_list() -> None:
+    """The router gate routes over all eight Ferino's agents, none pending; only a freshly
+    scaffolded agent (in PENDING) may be on the roster beside them."""
+    from mia.core import orgconfig
+    from tests.evals.test_router_eval import ROSTER
+
+    ferinos = set(orgconfig.load("ferinos").agents)
+    assert len(ferinos) == 8 and ferinos <= set(ROSTER) and not ferinos & PENDING
+    assert set(ROSTER) - ferinos <= PENDING
+
+
+def test_no_text_appears_in_both_halves() -> None:
+    """The tune, spent and fresh gate halves share no text (casefolded), and every language of
+    one seed falls in one half."""
+    halves: dict[str, set[str]] = defaultdict(set)
+    for c in CASES:
+        halves[c.half].add(c.text.casefold().strip())
+    for a, b in combinations(("tune", "spent", "gate"), 2):
+        assert not halves[a] & halves[b], (a, b, halves[a] & halves[b])
+
+
+def test_the_roster_is_every_agent_and_the_spent_half_is_never_run() -> None:
+    from tests.evals.test_router_eval import ROSTER, _selected
+
+    assert ROSTER == list(AGENTS)
+    assert {c.expected for c in CASES} - {"any", "small_talk"} <= set(ROSTER)
+    assert not any(c.half == "spent" for c in _selected(CASES))
+    assert not any(c.half == "spent" for c in _selected(CASES, "tune,gate,spent"))
+    assert {c.half for c in _selected(CASES, "gate")} == {"gate"}
+
+
+def test_gate_context_texts_are_not_singles() -> None:
+    """In the gate half a text belongs to one group only."""
+    gate = [c for c in CASES if c.half == "gate"]
+    singles = {c.text for c in gate if c.group == "single"}
+    assert not singles & {c.text for c in gate if c.group != "single"}
+
+
+def test_no_case_names_tagalog() -> None:
+    assert not any("tagalog" in c.text.casefold() for c in CASES)
+
+
+def test_small_talk_is_right_for_greetings_and_a_miss_for_real_messages() -> None:
+    from tests.evals.test_router_eval import _score
+
+    def r(kind: str, expected: str, agent: str = "sales_supervisor") -> str:
+        return _score({"kind": kind, "expected": expected, "agent": agent})
+
+    assert r("small_talk", "any") == "right"
+    assert r("small_talk", "small_talk") == "right"
+    assert r("small_talk", "sales_supervisor") == "small_talk"
+    assert r("chosen", "bookkeeper") == "wrong"
+    assert r("keep", "bookkeeper") == "other"
+
+
+def test_gated_summary_ignores_reported_languages_and_the_tune_half() -> None:
+    from tests.evals.test_router_eval import _gated
+
+    def row(lang: str, half: str, score: str, expected: str = "bookkeeper") -> dict[str, object]:
+        return {
+            "lang": lang,
+            "half": half,
+            "score": score,
+            "kind": "chosen",
+            "tokens": 0,
+            "expected": expected,
+        }
+
+    results = [row("en", "gate", "right")] * 10 + [row("fi", "gate", "wrong")] * 90
+    results += [row("en", "tune", "wrong")] * 5 + [row("en", "gate", "ask", "any")] * 2
+    gated = _gated(results)
+    assert gated["all"]["n"] == 12 and gated["all"]["wrong"] == 0
+    assert set(gated["by_language"]) == {"en"}
+    assert gated["by_language"]["en"]["right"] == 1.0  # greetings are reported apart
+    assert gated["any"]["n"] == 2 and gated["any"]["ask"] == 1.0
+
+
+def test_the_gate_is_the_d40_bar() -> None:
+    from tests.evals.gate import gate_failures
+
+    def gated(wrong: float, right: float, ask: float) -> dict[str, object]:
+        return {"all": {"wrong": wrong}, "by_language": {"en": {"right": right, "ask": ask}}}
+
+    assert gate_failures(gated(0.02, 0.80, 0.15)) == []
+    assert gate_failures(gated(0.021, 0.80, 0.15)) == ["wrong 0.021"]
+
+
+def test_the_raw_report_is_named_by_local_minute_and_never_overwritten(tmp_path: Path) -> None:
+    import datetime as dt
+
+    from tests.evals.test_router_eval import _report_path
+
+    now = dt.datetime(2026, 10, 19, 23, 5, tzinfo=dt.timezone(dt.timedelta(hours=8)))
+    path = _report_path(now, tmp_path)
+    assert path == tmp_path / "router-2026-10-19-2305.raw.json"  # local date, not UTC (15:05)
+    path.write_text("{}")
+    with pytest.raises(FileExistsError, match="router-2026-10-19-2305"):
+        _report_path(now, tmp_path)
+
+
+def test_short_cash_routes_to_the_bookkeeper() -> None:
+    """Q108 in the 21 Oct (second) gate half, spent in router-2026-10-21-0301: "kulang ang cash"
+    is the bookkeeper's and LPG out the inventory manager's, and the shift supervisor's
+    description says so ("not ... stock, cash")."""
+    from mia.agents.shift_supervisor.turn import SPEC
+
+    gate = {(c.expected, c.text) for c in CASES if c.half == "spent"}
+    assert {
+        ("bookkeeper", "kulang ang cash ngayong gabi"),
+        ("inventory_manager", "ubos na ang LPG"),
+    } <= gate
+    contrast = SPEC.router_description.split("; not ")[1]
+    assert "cash" in contrast and "stock" in contrast
+
+
+def test_kiosk_stock_and_counts_stay_off_the_planner() -> None:
+    """The 21 Oct (third) gate half, spent in router-2026-10-21-0749, asks kiosk stock and a
+    commissary receipt of the inventory manager and counts of the sales supervisor, and the
+    planner's description ends on that contrast."""
+    from mia.agents.production_planner.turn import SPEC
+
+    gate = {(c.expected, c.text) for c in CASES if c.half == "spent"}
+    assert {
+        ("inventory_manager", "received 40 classic from the commissary"),
+        ("inventory_manager", "how many trays of classic are left at the Mall kiosk?"),
+        ("sales_supervisor", "count for the stall: 9 special, 4 cheese overload"),
+    } <= gate
+    assert SPEC.router_description.endswith("not kiosk stock, not sales counts.")
+
+
+def test_the_csv_has_the_shared_header_and_routed_names_its_agents() -> None:
+    """router.csv's header is the shared one and every row parses; ROUTED (which the scaffold
+    reads) is the agents with cases."""
+    assert header("router") == HEADER and len(read("router")) == len(CASES)
+    assert {c.expected for c in CASES} - {"any", "small_talk"} == set(ROUTED)
+
+
+def test_the_short_half_has_en_and_fil_rows_for_every_agent() -> None:
+    """MIA_EVAL_HALVES=short measures the router: about six short rows per language per agent."""
+    short = [c for c in CASES if c.half == "short"]
+    for agent in ROUTED:
+        for lang in GATED_LANGS:
+            assert len([c for c in short if (c.expected, c.lang) == (agent, lang)]) >= 6
+    assert ("shift_supervisor", "here na") in {(c.expected, c.text) for c in short}

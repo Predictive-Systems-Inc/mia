@@ -1,0 +1,8 @@
+# Mia's local Qwen. Create once: ollama create qwen3.5-mia -f qwen3.5-mia.Modelfile
+# num_ctx: Ollama's default 4096 tokens silently cuts Mia's prompt (instructions, tool schemas,
+# history). Sampling: the library defaults (temperature 1, presence_penalty 1.5) suit free
+# writing; tool calls need low temperature and no penalty on repeating names and arguments.
+FROM qwen3.5:9b
+PARAMETER num_ctx 16384
+PARAMETER temperature 0.3
+PARAMETER presence_penalty 0

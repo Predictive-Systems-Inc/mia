@@ -1,0 +1,3284 @@
+# Generated from docs/capabilities.md; do not edit. Regenerate from node/ with:
+#   uv run python -m tests.evals.intents
+# Labels are these ids, the conversation ids of mia/learning/catalogue/conversation.yaml
+# (D30) and `other` (out of scope, injection attempts). Role codes, risk,
+# sensitivity and process are explained in the legend of docs/capabilities.md.
+intents:
+- id: shift_supervisor.report_absence
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Can't come / late
+  description: Staff member says they cannot work (sick, other reason), will be late, or must leave early
+  roles:
+  - cleaner
+  - supervisor
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p (sc if health details)
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.absence_scope
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Which shifts I miss
+  description: Answer to which visits a just-reported absence covers (whole day, morning, afternoon)
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.my_visits
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Show my shifts
+  description: Ask about own visits, shifts or schedule; supervisors may ask about someone else's
+  roles:
+  - cleaner
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.find_cover
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Find cover
+  description: Supervisor asks who could take over a visit or shift
+  roles:
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.assign
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Assign cover
+  description: Supervisor names whom to assign as cover after candidates were shown
+  roles:
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: 'instr.; rule break: admin or owner'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.cover_reply
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Answer cover request
+  description: Cleaner accepts or declines a cover request sent to them
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.missed_check_in
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: null
+  description: 'No check-in some minutes after a visit starts: ask the cleaner, alert the supervisor'
+  roles: []
+  triggers:
+  - event
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.unstaffed_visits
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: null
+  description: Daily check for tomorrow's visits without a cleaner
+  roles: []
+  triggers:
+  - sched
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.daily_plan
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: null
+  description: Evening message to each cleaner with tomorrow's visits
+  roles: []
+  triggers:
+  - sched
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.check_in
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: I've arrived
+  description: Cleaner says they arrived at the site (or shares location)
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  - event
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.check_out
+  agent: shift_supervisor
+  process: Service-to-Cash
+  label_en: I'm done here
+  description: Cleaner says the visit is finished and they are leaving
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  - event
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.cannot_access_site
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Can't get in
+  description: Cleaner is at a site and cannot get in physically (locked door, no key, wrong door code,
+    alarm). Logging in to Mia is admin.reset_login
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.site_problem
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Problem at the site
+  description: Site conditions stop or change the work (no water or power, renovation, event, client still
+    there)
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.visit_details
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Job details
+  description: 'Ask practical details of a visit: address, door code, where things are, special instructions'
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.checklist
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: My checklist
+  description: Ask for or tick off the visit checklist
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.send_photos
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Send photos
+  description: Send before or after photos as proof of work
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'
+- id: shift_supervisor.extra_time
+  agent: shift_supervisor
+  process: Service-to-Cash
+  label_en: Need more time
+  description: Ask to stay longer than planned to finish the job
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: supervisor
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: shift_supervisor.extra_work_on_site
+  agent: shift_supervisor
+  process: Service-to-Cash
+  label_en: Client wants extra
+  description: Client on site asked the cleaner for extra work not in the order
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: supervisor (priced by code)
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: shift_supervisor.swap_shift
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Swap a shift
+  description: Cleaner proposes to swap a visit with a named colleague
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: supervisor
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: shift_supervisor.offer_shifts
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: I want more shifts
+  description: Cleaner says they want more hours or can pick up extra visits
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: shift_supervisor.set_availability
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Set when I can work
+  description: Set recurring availability or unavailability (no Tuesdays, only mornings, holiday dates)
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: shift_supervisor.who_is_working
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Who's working
+  description: 'Staffing status: who works where today, is site X covered'
+  roles:
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: shift_supervisor.reschedule_visit
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Move a visit
+  description: Office moves a visit to another time or date
+  roles:
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: client notice via client service
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: shift_supervisor.add_visit
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Add a visit
+  description: Office adds a one-off visit to the schedule
+  roles:
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: shift_supervisor.plan_roster
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Plan the roster
+  description: Build next week's or month's roster from agreements (code plans, supervisor publishes)
+  roles:
+  - supervisor
+  - office
+  triggers:
+  - msg
+  - sched
+  risk: write
+  sensitivity: p
+  approval: supervisor publishes
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: shift_supervisor.route_plan
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Plan the route
+  description: Order a day's visits into an efficient route
+  roles:
+  - supervisor
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: shift_supervisor.key_location
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Where's the key
+  description: Where is the key or access card for a site, who has it
+  roles:
+  - cleaner
+  - supervisor
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: shift_supervisor.key_handover
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Key handed over
+  description: Record a key or card given to or returned by someone
+  roles:
+  - cleaner
+  - supervisor
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: shift_supervisor.lost_key
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Lost a key
+  description: A physical key, card or remote for a client site is lost. A lost phone, codes or documents
+    with data is site_manager.data_breach
+  roles:
+  - cleaner
+  - supervisor
+  triggers:
+  - msg
+  risk: external
+  sensitivity: n
+  approval: office (client notice)
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: shift_supervisor.book_vehicle
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: Book the van
+  description: Ask to use a company car or van for visits
+  roles:
+  - cleaner
+  - supervisor
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: supervisor
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: shift_supervisor.directions
+  agent: shift_supervisor
+  process: Contract-to-Service
+  label_en: How to get there
+  description: How to get to a company site or visit, parking, public transport there. Directions anywhere
+    else are conversation.oos_directions_transport
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.book_cleaning
+  agent: client_service
+  process: Contract-to-Service
+  label_en: Book a cleaning
+  description: Existing client books an extra or one-off cleaning within their agreement or price list
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.change_booking
+  agent: client_service
+  process: Contract-to-Service
+  label_en: Change a booking
+  description: Client moves a booked visit to another day or time
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.cancel_booking
+  agent: client_service
+  process: Contract-to-Service
+  label_en: Cancel a visit
+  description: Client cancels one visit (late cancellation fee by code)
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: 'fee: office'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.pause_service
+  agent: client_service
+  process: Contract-to-Service
+  label_en: Pause cleaning
+  description: Client pauses the recurring service for a period (holiday, renovation)
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: office
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.visit_status
+  agent: client_service
+  process: Contract-to-Service
+  label_en: Is cleaner coming
+  description: Client asks whether or when the cleaner is coming, or whether the visit was done
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.special_instructions
+  agent: client_service
+  process: Contract-to-Service
+  label_en: Leave instructions
+  description: Client leaves instructions for coming visits (skip a room, extra attention somewhere)
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.add_extra_task
+  agent: client_service
+  process: Service-to-Cash
+  label_en: Add an extra task
+  description: Client adds a priced extra to a booked visit (oven, windows, fridge)
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.cleaner_preference
+  agent: client_service
+  process: Contract-to-Service
+  label_en: Choose my cleaner
+  description: Client asks for the same cleaner, or not to send a particular one
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: supervisor
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.complaint
+  agent: client_service
+  process: Contract-to-Service
+  label_en: Make a complaint
+  description: Client complains about the quality of a visit
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.request_reclean
+  agent: client_service
+  process: Contract-to-Service
+  label_en: Redo the cleaning
+  description: Client asks for the job to be redone
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: supervisor (free or charged)
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.missing_item
+  agent: client_service
+  process: Contract-to-Service
+  label_en: Something's missing
+  description: Client says something is missing or was moved after a visit
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: owner informed
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.service_notice
+  agent: client_service
+  process: Contract-to-Service
+  label_en: null
+  description: Tell the client about a change (other cleaner, delay, cancelled visit)
+  roles: []
+  triggers:
+  - event
+  risk: external
+  sensitivity: p
+  approval: office
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.visit_report
+  agent: client_service
+  process: Contract-to-Service
+  label_en: null
+  description: Send the client a visit report with checklist and photos
+  roles: []
+  triggers:
+  - event
+  risk: external
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: client_service.satisfaction_survey
+  agent: client_service
+  process: Contract-to-Service
+  label_en: null
+  description: Ask for a rating after visits
+  roles: []
+  triggers:
+  - sched
+  risk: external
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: sales.new_enquiry
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Get cleaning service
+  description: A prospect asks about getting cleaning services (first contact)
+  roles:
+  - lead
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.request_quote
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Get a quote
+  description: Lead or client asks for a price offer for a described scope
+  roles:
+  - lead
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.book_site_survey
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Book a site visit
+  description: Arrange a site visit to measure and scope before quoting
+  roles:
+  - lead
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.record_survey
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Save survey results
+  description: Record survey results (areas, rooms, floor types, frequency)
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.calculate_quote
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Work out a price
+  description: Calculate a price for a scope (code calculates)
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.send_quote
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Send a quote
+  description: Send a quote to the lead
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: external
+  sensitivity: p
+  approval: owner (prices)
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.quote_follow_up
+  agent: sales
+  process: Lead-to-Contract
+  label_en: null
+  description: Follow up quotes with no answer
+  roles: []
+  triggers:
+  - sched
+  risk: external
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.lead_status
+  agent: sales
+  process: Lead-to-Contract
+  label_en: My quote status
+  description: Lead asks what happened to their quote or enquiry
+  roles:
+  - lead
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.accept_quote
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Accept the quote
+  description: Lead accepts the quote and wants to start
+  roles:
+  - lead
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: owner signs contract
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.negotiate_price
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Ask for a discount
+  description: Lead or client asks for a discount or better price
+  roles:
+  - lead
+  - client
+  triggers:
+  - msg
+  risk: money
+  sensitivity: n
+  approval: owner
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.decline_quote
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Decline the quote
+  description: Lead says no thanks to the quote
+  roles:
+  - lead
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.draft_contract
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Draft a contract
+  description: Draft the service agreement from an accepted quote
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: owner signs
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.contract_change
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Change my contract
+  description: Change scope, frequency or price of an existing agreement
+  roles:
+  - client
+  - office
+  triggers:
+  - msg
+  risk: money
+  sensitivity: n
+  approval: owner
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.terminate_contract
+  agent: sales
+  process: Lead-to-Contract
+  label_en: End my contract
+  description: Client wants to end the whole service agreement
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: owner decides
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.renewal_due
+  agent: sales
+  process: Lead-to-Contract
+  label_en: null
+  description: Agreement end date approaching
+  roles: []
+  triggers:
+  - sched
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.index_increase
+  agent: sales
+  process: Lead-to-Contract
+  label_en: null
+  description: Annual index price increase per agreement clause (code calculates, notice to client)
+  roles: []
+  triggers:
+  - sched
+  risk: money
+  sensitivity: n
+  approval: owner
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.pipeline
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Sales pipeline
+  description: Office asks about open leads, quotes and win rate
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.mark_lost
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Mark lead lost
+  description: Record a lead as lost, with the reason
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: sales.tender
+  agent: sales
+  process: Lead-to-Contract
+  label_en: Prepare a tender
+  description: Prepare a bid for a public or corporate tender (Hilma, PhilGEPS)
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: external
+  sensitivity: n
+  approval: owner
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: marketing.draft_post
+  agent: marketing
+  process: Lead-to-Contract
+  label_en: Write a post
+  description: Draft a social media post
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: marketing.publish_post
+  agent: marketing
+  process: Lead-to-Contract
+  label_en: Publish a post
+  description: Publish an approved marketing post (offers, news, before and after photos). A job vacancy
+    is recruiter.publish_job_ad
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: external
+  sensitivity: n
+  approval: owner
+  legal_effect: false
+  system_of_record: Social
+  country: both
+  phase: 3
+  built: 'no'
+- id: marketing.campaign
+  agent: marketing
+  process: Lead-to-Contract
+  label_en: Plan a campaign
+  description: Plan a campaign or special offer
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: money
+  sensitivity: n
+  approval: owner
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: marketing.new_review
+  agent: marketing
+  process: Lead-to-Contract
+  label_en: null
+  description: A new online review arrived
+  roles: []
+  triggers:
+  - event
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Social
+  country: both
+  phase: 3
+  built: 'no'
+- id: marketing.reply_review
+  agent: marketing
+  process: Lead-to-Contract
+  label_en: Reply to a review
+  description: Draft a reply to an online review
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: external
+  sensitivity: p
+  approval: owner
+  legal_effect: false
+  system_of_record: Social
+  country: both
+  phase: 3
+  built: 'no'
+- id: marketing.newsletter
+  agent: marketing
+  process: Lead-to-Contract
+  label_en: Write a newsletter
+  description: Draft an email newsletter to clients who consented
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: external
+  sensitivity: p
+  approval: owner
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: marketing.website_update
+  agent: marketing
+  process: Lead-to-Contract
+  label_en: Update the website
+  description: Change website text, photos or prices
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: external
+  sensitivity: n
+  approval: owner
+  legal_effect: false
+  system_of_record: Social
+  country: both
+  phase: 3
+  built: 'no'
+- id: marketing.referral
+  agent: marketing
+  process: Lead-to-Contract
+  label_en: Refer a friend
+  description: Client recommends a friend or asks about the referral bonus
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: money
+  sensitivity: p
+  approval: office
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: marketing.unsubscribe
+  agent: marketing
+  process: Lead-to-Contract
+  label_en: Stop marketing
+  description: Stop marketing messages to me
+  roles:
+  - client
+  - lead
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: marketing.results
+  agent: marketing
+  process: Lead-to-Contract
+  label_en: Marketing results
+  description: How campaigns and posts performed
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.draft_job_ad
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: Write a job ad
+  description: Draft a job advertisement
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.publish_job_ad
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: Publish a job ad
+  description: Publish a job vacancy (ad or hiring post) on job boards, the website or social media
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: external
+  sensitivity: n
+  approval: owner
+  legal_effect: false
+  system_of_record: Jobs
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.apply
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: Apply for a job
+  description: 'Someone applies for a job: says they want to apply, sends a CV or application. Questions
+    about working here are conversation.kb_jobs'
+  roles:
+  - applicant
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.application_status
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: My application
+  description: Applicant asks how their application is going
+  roles:
+  - applicant
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.screening
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: null
+  description: Ask the screening questions (right to work, availability, licence) after an application
+  roles: []
+  triggers:
+  - event
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.schedule_interview
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: Book an interview
+  description: Arrange a job interview
+  roles:
+  - office
+  - applicant
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.reschedule_interview
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: Move my interview
+  description: Applicant asks to move their interview
+  roles:
+  - applicant
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.withdraw_application
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: Withdraw application
+  description: Applicant withdraws
+  roles:
+  - applicant
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.interview_notes
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: Interview notes
+  description: Record interview notes and a score
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.make_offer
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: Make a job offer
+  description: Draft a job offer
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: external
+  sensitivity: p
+  approval: owner
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.reject_applicant
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: Reject applicant
+  description: Send a rejection
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: external
+  sensitivity: p
+  approval: owner
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.reference_check
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: Check references
+  description: Contact referees, with the applicant's consent
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: external
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.candidates
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: See applicants
+  description: How many applicants and where they are in the process
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: recruiter.retention_purge
+  agent: recruiter
+  process: Hire-to-Retire
+  label_en: null
+  description: Delete applicant data after the retention period
+  roles: []
+  triggers:
+  - sched
+  risk: delete
+  sensitivity: p
+  approval: admin
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: hr.onboard_employee
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Onboard new hire
+  description: Start onboarding a new hire (contract, tax card, bank details, IDs, induction)
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: sc
+  approval: owner signs contract
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.submit_document
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Send a document
+  description: Employee sends a document (tax card, ID, work permit, certificate, TIN, SSS number)
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: sc
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.document_expiring
+  agent: hr
+  process: Hire-to-Retire
+  label_en: null
+  description: Work permit, ID, hygiene passport or safety card about to expire
+  roles: []
+  triggers:
+  - sched
+  risk: write
+  sensitivity: sc
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.update_details
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Update my details
+  description: Employee changes address, phone, emergency contact or bank account
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: 'bank account: office confirms'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.request_time_off
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Ask for time off
+  description: Ask for vacation, unpaid leave or a day off in advance
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: supervisor
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.time_off_balance
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Holiday days left
+  description: How many holiday or leave days are left
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Payroll
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.sick_note
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Sick note
+  description: Send a sick note or medical certificate, or ask about one already sent. Rules on certificates
+    are conversation.kb_sick_leave_rules
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: sc
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.family_leave
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Family leave
+  description: Maternity, paternity, parental or other family leave
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: sc
+  approval: owner
+  legal_effect: true
+  system_of_record: Payroll
+  country: both
+  phase: 3
+  built: 'no'
+- id: hr.my_hours
+  agent: hr
+  process: Hire-to-Retire
+  label_en: My hours
+  description: Hours worked in a period, timesheet, overtime
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.correct_timesheet
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Fix my hours
+  description: Fix own recorded hours (forgot to check out, wrong times)
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: supervisor
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.approve_timesheets
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Approve timesheets
+  description: Supervisor approves the period's timesheets
+  roles:
+  - supervisor
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: 'SoD: not own hours'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.payslip
+  agent: hr
+  process: Hire-to-Retire
+  label_en: My payslip
+  description: Where is my payslip, or why is my pay different
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Payroll
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.salary_advance
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Salary advance
+  description: Ask for an advance on salary (cash advance, vale)
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: money
+  sensitivity: p
+  approval: owner
+  legal_effect: false
+  system_of_record: Payroll
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.prepare_payroll
+  agent: hr
+  process: Hire-to-Retire
+  label_en: null
+  description: Export hours, supplements and allowances to payroll at cut-off (code calculates)
+  roles: []
+  triggers:
+  - sched
+  risk: money
+  sensitivity: p
+  approval: 'SoD: accountant prepares, owner approves'
+  legal_effect: false
+  system_of_record: Payroll
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.thirteenth_month
+  agent: hr
+  process: Hire-to-Retire
+  label_en: null
+  description: 13th-month pay calculation, paid by 24 December
+  roles: []
+  triggers:
+  - sched
+  risk: money
+  sensitivity: p
+  approval: owner
+  legal_effect: true
+  system_of_record: Payroll
+  country: PH
+  phase: 2
+  built: 'no'
+- id: hr.statutory_contributions
+  agent: hr
+  process: Hire-to-Retire
+  label_en: null
+  description: Monthly SSS, PhilHealth and Pag-IBIG reports and remittances
+  roles: []
+  triggers:
+  - sched
+  risk: external
+  sensitivity: p
+  approval: accountant
+  legal_effect: true
+  system_of_record: Auth
+  country: PH
+  phase: 2
+  built: 'no'
+- id: hr.contribution_question
+  agent: hr
+  process: Hire-to-Retire
+  label_en: My contributions
+  description: Employee asks whether SSS, PhilHealth or Pag-IBIG contributions were paid
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Payroll
+  country: PH
+  phase: 2
+  built: 'no'
+- id: hr.incomes_register
+  agent: hr
+  process: Hire-to-Retire
+  label_en: null
+  description: Report wages to the Incomes Register within five days of payment
+  roles: []
+  triggers:
+  - sched
+  risk: external
+  sensitivity: p
+  approval: accountant
+  legal_effect: true
+  system_of_record: Auth
+  country: FI
+  phase: 2
+  built: 'no'
+- id: hr.employment_certificate
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Work certificate
+  description: Ask for a certificate of employment
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: office
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.resign
+  agent: hr
+  process: Hire-to-Retire
+  label_en: I want to quit
+  description: Employee says they are quitting or gives notice
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: owner acknowledges
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.terminate_employment
+  agent: hr
+  process: Hire-to-Retire
+  label_en: End employment
+  description: Office wants to end someone's employment
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: owner decides
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: hr.disciplinary
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Give a warning
+  description: Warning or disciplinary note for an employee
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: owner
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: hr.workplace_complaint
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Raise a complaint
+  description: Employee raises a workplace complaint that is not harassment (unfair treatment, workload,
+    conflict with a colleague, fair scheduling). Harassment is conversation.harassment_report; questions
+    about rules are conversation.kb_*
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: owner only
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.offboard_employee
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Offboard someone
+  description: Run the whole leaver process for a named person (keys back, access removed, final pay,
+    exit checklist). Only the record is admin.archive_record; only Mia access is admin.remove_access
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: owner
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: hr.occupational_health
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Occupational health
+  description: Occupational health care appointment or question
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: read
+  sensitivity: sc
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: FI
+  phase: 3
+  built: 'no'
+- id: hr.work_injury_claim
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Injury claim
+  description: Statutory accident insurance or ECC claim after a work injury
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: external
+  sensitivity: sc
+  approval: owner
+  legal_effect: true
+  system_of_record: Auth
+  country: both
+  phase: 3
+  built: 'no'
+- id: hr.training
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Training
+  description: Enrol someone in training or check who needs it (induction, hygiene passport, safety card).
+    Questions about courses are conversation.kb_training
+  roles:
+  - cleaner
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: hr.performance_review
+  agent: hr
+  process: Hire-to-Retire
+  label_en: Performance review
+  description: Schedule or record a performance review
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: bookkeeper.invoice_run
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: null
+  description: Month-end invoicing from completed visits (code calculates; Finvoice, BIR invoice)
+  roles: []
+  triggers:
+  - sched
+  risk: money
+  sensitivity: n
+  approval: 'SoD: accountant prepares, owner approves'
+  legal_effect: true
+  system_of_record: Acct
+  country: both
+  phase: 2
+  built: 'no'
+- id: bookkeeper.create_invoice
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: Make an invoice
+  description: Make a one-off invoice
+  roles:
+  - office
+  - accountant
+  triggers:
+  - msg
+  risk: money
+  sensitivity: n
+  approval: owner
+  legal_effect: true
+  system_of_record: Acct
+  country: both
+  phase: 2
+  built: 'no'
+- id: bookkeeper.invoice_question
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: Question on invoice
+  description: Client asks what an invoice or a line on it is for
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Acct
+  country: both
+  phase: 2
+  built: 'no'
+- id: bookkeeper.invoice_copy
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: Invoice copy
+  description: Client asks for a copy of an invoice or an official receipt
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Acct
+  country: both
+  phase: 2
+  built: 'no'
+- id: bookkeeper.dispute_invoice
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: Invoice is wrong
+  description: Client says an invoice is wrong and will not pay it as is
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Acct
+  country: both
+  phase: 2
+  built: 'no'
+- id: bookkeeper.payment_notice
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: I've paid
+  description: Client says they have paid or sends proof of payment
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Acct
+  country: both
+  phase: 2
+  built: 'no'
+- id: bookkeeper.payment_received
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: null
+  description: A bank payment was matched to an invoice
+  roles: []
+  triggers:
+  - event
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Bank
+  country: both
+  phase: 2
+  built: 'no'
+- id: bookkeeper.payment_reminder
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: null
+  description: Overdue reminders and collection (Interest Act fees, collection agency)
+  roles: []
+  triggers:
+  - sched
+  risk: external
+  sensitivity: n
+  approval: 'collection: owner'
+  legal_effect: true
+  system_of_record: Acct
+  country: both
+  phase: 2
+  built: 'no'
+- id: bookkeeper.payment_plan
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: Pay later
+  description: Client asks to pay later or in instalments
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: money
+  sensitivity: n
+  approval: owner
+  legal_effect: true
+  system_of_record: Acct
+  country: both
+  phase: 2
+  built: 'no'
+- id: bookkeeper.credit_note
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: Make a credit note
+  description: Credit all or part of an invoice
+  roles:
+  - office
+  - accountant
+  triggers:
+  - msg
+  risk: money
+  sensitivity: n
+  approval: 'SoD: preparer is not approver'
+  legal_effect: true
+  system_of_record: Acct
+  country: both
+  phase: 2
+  built: 'no'
+- id: bookkeeper.receivables
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: Who owes us
+  description: Who owes us money, what is overdue
+  roles:
+  - office
+  - accountant
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Acct
+  country: both
+  phase: 2
+  built: 'no'
+- id: bookkeeper.expense_claim
+  agent: bookkeeper
+  process: Procure-to-Pay
+  label_en: Claim an expense
+  description: Employee claims back a specific amount spent for work (receipt). Questions about the rules
+    are conversation.kb_expenses_travel
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: money
+  sensitivity: p
+  approval: supervisor
+  legal_effect: false
+  system_of_record: Acct
+  country: both
+  phase: 2
+  built: 'no'
+- id: bookkeeper.mileage_claim
+  agent: bookkeeper
+  process: Procure-to-Pay
+  label_en: Claim mileage
+  description: Employee claims kilometres driven with their own vehicle. Questions about rates and rules
+    are conversation.kb_expenses_travel
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: money
+  sensitivity: p
+  approval: supervisor
+  legal_effect: false
+  system_of_record: Payroll
+  country: both
+  phase: 2
+  built: 'no'
+- id: bookkeeper.supplier_invoice
+  agent: bookkeeper
+  process: Procure-to-Pay
+  label_en: null
+  description: Supplier invoice received; match to order and delivery
+  roles: []
+  triggers:
+  - event
+  risk: money
+  sensitivity: n
+  approval: 'SoD: approver is not the orderer'
+  legal_effect: false
+  system_of_record: Acct
+  country: both
+  phase: 3
+  built: 'no'
+- id: bookkeeper.approve_supplier_invoice
+  agent: bookkeeper
+  process: Procure-to-Pay
+  label_en: Approve a bill
+  description: Approve or question a supplier invoice
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: money
+  sensitivity: n
+  approval: 'SoD: approver is not the orderer'
+  legal_effect: false
+  system_of_record: Acct
+  country: both
+  phase: 3
+  built: 'no'
+- id: bookkeeper.pay_suppliers
+  agent: bookkeeper
+  process: Procure-to-Pay
+  label_en: null
+  description: Prepare the supplier payment batch (a person pays in the bank)
+  roles: []
+  triggers:
+  - sched
+  risk: money
+  sensitivity: n
+  approval: owner
+  legal_effect: false
+  system_of_record: Bank
+  country: both
+  phase: 3
+  built: 'no'
+- id: bookkeeper.withholding_certificate
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: Tax certificate
+  description: Client asks for or sends a withholding tax certificate (BIR 2307)
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Acct
+  country: PH
+  phase: 3
+  built: 'no'
+- id: bookkeeper.household_deduction_statement
+  agent: bookkeeper
+  process: Service-to-Cash
+  label_en: Tax credit statement
+  description: Client asks for the yearly labour-cost statement of their invoices for the household tax
+    deduction (kotitalousvähennys). How the deduction works is conversation.kb_household_tax_deduction
+  roles:
+  - client
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Acct
+  country: FI
+  phase: 2
+  built: 'no'
+- id: bookkeeper.vat_report
+  agent: bookkeeper
+  process: Record-to-Report
+  label_en: null
+  description: VAT return (OmaVero; BIR 2550Q) through the accounting system
+  roles: []
+  triggers:
+  - sched
+  risk: external
+  sensitivity: n
+  approval: accountant
+  legal_effect: true
+  system_of_record: Auth
+  country: both
+  phase: 3
+  built: 'no'
+- id: bookkeeper.month_end_close
+  agent: bookkeeper
+  process: Record-to-Report
+  label_en: Close the month
+  description: Reconcile bank, accruals and open items at month end
+  roles:
+  - accountant
+  triggers:
+  - msg
+  - sched
+  risk: write
+  sensitivity: n
+  approval: accountant
+  legal_effect: false
+  system_of_record: Acct
+  country: both
+  phase: 3
+  built: 'no'
+- id: bookkeeper.cash_position
+  agent: bookkeeper
+  process: Record-to-Report
+  label_en: Cash position
+  description: How much money we have, cash flow outlook
+  roles:
+  - office
+  - accountant
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Bank
+  country: both
+  phase: 3
+  built: 'no'
+- id: bookkeeper.annual_accounts
+  agent: bookkeeper
+  process: Record-to-Report
+  label_en: Year-end accounts
+  description: Year-end support for the financial statements and tax return
+  roles:
+  - accountant
+  triggers:
+  - msg
+  - sched
+  risk: external
+  sensitivity: n
+  approval: owner signs
+  legal_effect: true
+  system_of_record: Acct
+  country: both
+  phase: 3
+  built: 'no'
+- id: purchaser.low_supplies
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: Supplies running low
+  description: Supplies are running low or out at a site or in the van
+  roles:
+  - cleaner
+  - supervisor
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: purchaser.request_supplies
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: Order supplies
+  description: Ask for specific items or equipment to be ordered
+  roles:
+  - cleaner
+  - supervisor
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: supervisor above limit
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: purchaser.purchase_order
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: Place an order
+  description: Office places an order with a supplier
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: money
+  sensitivity: n
+  approval: owner above limit; SoD
+  legal_effect: true
+  system_of_record: Acct
+  country: both
+  phase: 3
+  built: 'no'
+- id: purchaser.delivery_status
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: Where's my order
+  description: When will an order arrive
+  roles:
+  - cleaner
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: purchaser.receive_delivery
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: Delivery arrived
+  description: Record that an order arrived (complete, short, damaged)
+  roles:
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: purchaser.stock_level
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: Check stock
+  description: How much of an item is in stock
+  roles:
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: purchaser.reorder_alert
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: null
+  description: Stock below the minimum
+  roles: []
+  triggers:
+  - event
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: purchaser.broken_equipment
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: Equipment broken
+  description: Equipment is broken or not working (vacuum, scrubber, trolley) and is not dangerous now.
+    Equipment that is dangerous now (sparks, smoke, hot water leak, unsafe ladder) is conversation.hazard_report
+  roles:
+  - cleaner
+  - supervisor
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: purchaser.reserve_equipment
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: Reserve equipment
+  description: Reserve shared equipment for a job
+  roles:
+  - supervisor
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: purchaser.equipment_service_due
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: null
+  description: Equipment maintenance or inspection due
+  roles: []
+  triggers:
+  - sched
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: purchaser.vehicle_problem
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: Car or van problem
+  description: Problem with a company vehicle (breakdown, warning light, accident damage)
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: purchaser.vehicle_service_due
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: null
+  description: Vehicle service, inspection or registration due
+  roles: []
+  triggers:
+  - sched
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: purchaser.traffic_fine
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: Got a fine
+  description: Parking ticket or traffic fine received for a company vehicle
+  roles:
+  - cleaner
+  triggers:
+  - msg
+  risk: money
+  sensitivity: p
+  approval: owner
+  legal_effect: true
+  system_of_record: Acct
+  country: both
+  phase: 3
+  built: 'no'
+- id: purchaser.add_subcontractor
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: Add subcontractor
+  description: Add a subcontractor with the required checks (Contractor's Liability Act; DOLE D.O. 174)
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: owner
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: purchaser.contractor_checks_due
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: null
+  description: Yearly Contractor's Liability Act documents due again
+  roles: []
+  triggers:
+  - sched
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: true
+  system_of_record: Mia
+  country: FI
+  phase: 3
+  built: 'no'
+- id: purchaser.order_subcontract
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: Hire subcontractor
+  description: Order a job from a subcontractor (windows, carpets)
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: money
+  sensitivity: n
+  approval: owner
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: purchaser.compare_suppliers
+  agent: purchaser
+  process: Procure-to-Pay
+  label_en: Compare suppliers
+  description: Find a better price or another supplier for an item
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: site_manager.report_injury
+  agent: site_manager
+  process: Contract-to-Service
+  label_en: I got hurt
+  description: A supervisor or the office reports that a staff member was injured at work (accident record,
+    insurance). The injured person's own message is conversation.injury_minor or conversation.emergency
+  roles:
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: sc
+  approval: '-'
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: site_manager.report_damage
+  agent: site_manager
+  process: Contract-to-Service
+  label_en: I broke something
+  description: Property at a site was damaged or broken, reported by the staff member or claimed by the
+    client (compensation follows). General insurance questions are conversation.kb_insurance_damages
+  roles:
+  - cleaner
+  - client
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: owner (insurance)
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: site_manager.site_inspection
+  agent: site_manager
+  process: Contract-to-Service
+  label_en: Site inspection
+  description: Supervisor records a quality inspection of a site (INSTA 800)
+  roles:
+  - supervisor
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: site_manager.schedule_inspections
+  agent: site_manager
+  process: Contract-to-Service
+  label_en: null
+  description: Plan quality inspections across sites
+  roles: []
+  triggers:
+  - sched
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: site_manager.complaint_follow_up
+  agent: site_manager
+  process: Contract-to-Service
+  label_en: null
+  description: Corrective action after a client complaint
+  roles: []
+  triggers:
+  - event
+  risk: write
+  sensitivity: p
+  approval: supervisor
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: site_manager.quality_scores
+  agent: site_manager
+  process: Contract-to-Service
+  label_en: Quality scores
+  description: Quality scores and complaints per site, cleaner or period
+  roles:
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: site_manager.company_permits_due
+  agent: site_manager
+  process: Record-to-Report
+  label_en: null
+  description: Company insurance, permits and registrations due for renewal (business permit, BIR, trade
+    register)
+  roles: []
+  triggers:
+  - sched
+  risk: write
+  sensitivity: n
+  approval: owner
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: site_manager.data_breach
+  agent: site_manager
+  process: platform
+  label_en: Data leak
+  description: 'Possible data breach: lost or stolen phone or papers with data, codes or personal data
+    sent to the wrong person. A lost physical key alone is shift_supervisor.lost_key'
+  roles:
+  - cleaner
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: owner (72 h notice to authority)
+  legal_effect: true
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: site_manager.audit_trail
+  agent: site_manager
+  process: platform
+  label_en: Who changed what
+  description: Who changed what and when (event log)
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.add_client
+  agent: admin
+  process: Lead-to-Contract
+  label_en: Add a client
+  description: Create a new client record
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.update_client
+  agent: admin
+  process: Lead-to-Contract
+  label_en: Edit a client
+  description: 'Change a client''s master data: name, contact persons, phone, email, address and billing
+    details (invoice address, e-invoice, VAT or TIN, references), from the client or the office'
+  roles:
+  - client
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.add_site
+  agent: admin
+  process: Contract-to-Service
+  label_en: Add a site
+  description: Add a site or location to a client
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.update_site
+  agent: admin
+  process: Contract-to-Service
+  label_en: Edit a site
+  description: 'Change a site''s details: address, area, access (door codes, keys, alarm, opening hours),
+    checklist, from the client, supervisor or office'
+  roles:
+  - client
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.add_employee
+  agent: admin
+  process: Hire-to-Retire
+  label_en: Add an employee
+  description: Create an employee record
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.update_employee
+  agent: admin
+  process: Hire-to-Retire
+  label_en: Edit an employee
+  description: Change an employee's role, contract hours, work limits or skills
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: owner
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.archive_record
+  agent: admin
+  process: Record-to-Report
+  label_en: Archive a record
+  description: Archive or delete one client, site or employee record. Starting the whole leaver process
+    is hr.offboard_employee
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: delete
+  sensitivity: p
+  approval: admin
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.price_list
+  agent: admin
+  process: Lead-to-Contract
+  label_en: Change prices
+  description: Change service prices in the price list
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: money
+  sensitivity: n
+  approval: owner
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.invite_user
+  agent: admin
+  process: platform
+  label_en: Invite to Mia
+  description: Give someone access to Mia
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'no'
+- id: admin.change_role
+  agent: admin
+  process: platform
+  label_en: Change access
+  description: Change what someone may do in Mia (role, permissions)
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: 'owner; SoD: not own role'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'no'
+- id: admin.remove_access
+  agent: admin
+  process: platform
+  label_en: Remove access
+  description: Remove someone's access to Mia, nothing else
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'no'
+- id: admin.reset_login
+  agent: admin
+  process: platform
+  label_en: Can't log in
+  description: 'Cannot log in to Mia: locked out of the app, forgot PIN or password, new phone or SIM.
+    A locked site door is shift_supervisor.cannot_access_site'
+  roles:
+  - cleaner
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: admin
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'no'
+- id: admin.pending_approvals
+  agent: admin
+  process: platform
+  label_en: My approvals
+  description: Show approvals waiting for me (decided in the app, never by the agent)
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: part
+- id: admin.agent_settings
+  agent: admin
+  process: platform
+  label_en: Agent settings
+  description: Change an agent's organisation instructions or settings
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: owner
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.branch_settings
+  agent: admin
+  process: platform
+  label_en: Branch settings
+  description: 'Branch settings: opening hours, public holidays, time zone'
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: n
+  approval: owner
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.system_status
+  agent: admin
+  process: platform
+  label_en: Is Mia OK
+  description: Is Mia working, are backups and channels OK
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: part
+- id: admin.operations_report
+  agent: admin
+  process: Record-to-Report
+  label_en: Operations report
+  description: Visits done, hours, absences, cover for a period
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.absence_report
+  agent: admin
+  process: Record-to-Report
+  label_en: Absence report
+  description: Sickness absence rate and patterns
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: sc
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.profitability_report
+  agent: admin
+  process: Record-to-Report
+  label_en: Profit report
+  description: Margin per client, site or service
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Acct
+  country: both
+  phase: 3
+  built: 'no'
+- id: admin.revenue_report
+  agent: admin
+  process: Record-to-Report
+  label_en: Revenue report
+  description: Sales and revenue for a period, compared
+  roles:
+  - office
+  - accountant
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Acct
+  country: both
+  phase: 3
+  built: 'no'
+- id: admin.headcount_report
+  agent: admin
+  process: Record-to-Report
+  label_en: Staff report
+  description: Staff numbers, hires, leavers, turnover
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: admin.weekly_summary
+  agent: admin
+  process: Record-to-Report
+  label_en: null
+  description: Weekly summary to the owner
+  roles: []
+  triggers:
+  - sched
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.export_data
+  agent: admin
+  process: Record-to-Report
+  label_en: Export to Excel
+  description: Export a list or report to a spreadsheet
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 2
+  built: 'no'
+- id: admin.staffing_forecast
+  agent: admin
+  process: Record-to-Report
+  label_en: Staffing forecast
+  description: How many staff hours next month needs
+  roles:
+  - office
+  triggers:
+  - msg
+  risk: read
+  sensitivity: n
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 3
+  built: 'no'
+- id: admin.who_am_i
+  agent: admin
+  process: platform
+  label_en: My account
+  description: Which account or role am I using
+  roles:
+  - accountant
+  - applicant
+  - cleaner
+  - client
+  - lead
+  - office
+  - supervisor
+  triggers:
+  - msg
+  risk: read
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'no'
+- id: admin.link_account
+  agent: admin
+  process: platform
+  label_en: Link WhatsApp
+  description: Link this WhatsApp number with a code or invite
+  roles:
+  - cleaner
+  - supervisor
+  - office
+  triggers:
+  - msg
+  risk: write
+  sensitivity: p
+  approval: '-'
+  legal_effect: false
+  system_of_record: Mia
+  country: both
+  phase: 1
+  built: 'yes'

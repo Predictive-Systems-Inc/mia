@@ -89,3 +89,359 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
 - Changes the Phase 1 plan: outside channels move from deferred to in scope. Cloud model access
   through core/egress.py stays; that is the model gateway, not Mia Cloud.
 - First channel: WhatsApp (WhatsApp Business Platform), following the spec build order.
+
+## D14: Agents follow the A2A standard
+- Decision: agent-to-agent communication follows A2A (Agent2Agent) 1.0. Mia agents publish
+  signed Agent Cards and accept A2A tasks; AG-UI stays for apps, MCP for connectors, channel
+  adapters for messaging apps. See ADR 008.
+
+## D15: (answers the AG-UI thread id question) Thread ids stay ULIDs
+- Decision: chat thread ids stay ULIDs (rule 10), also when an AG-UI client starts a thread with
+  its own threadId. AG-UI's threadId is an opaque string, so Mia's apps send a ULID; other ids
+  are rejected. No external-id column and no data standard change.
+
+## D16: Agents are human roles; processes are for design and testing
+- Decision: every agent is a hired role that mirrors a human job in the client's departments
+  (dispatcher, client service, bookkeeper, recruiter and so on), with a job description, its own
+  RBAC role and approvers. End-to-end processes (Lead-to-Contract, Contract-to-Service,
+  Service-to-Cash, Hire-to-Retire, Procure-to-Pay, Record-to-Report) are how workflows are
+  designed and tested across those agents; a process is never an agent. See docs/plan.md.
+
+## D17: (answers Q10 to Q16) Authentication as designed
+- Decision: accept docs/superpowers/specs/2026-10-05-authentication-design.md and ADR 011:
+  data standard 1.3 adds auth_credentials, auth_devices, auth_sessions and auth_clients and
+  renames channel_link_codes and channel_link_attempts to auth_codes and auth_attempts (Q10);
+  no email in Phase 1, admin resets and `mia auth reset` for a locked-out owner (Q11); A2A clients
+  act only as themselves, a claimed on_behalf_of is logged, not used (Q12); one 6-digit PIN as the
+  step-up for money, external and delete approvals (Q13); staff codes over WhatsApp, no SMS
+  provider until needed (Q14); standard library only, webauthn later for passkeys (Q15); MFA
+  required for owner, admin and accountant and offered to supervisors, office sessions 12 h idle
+  and 7 days at most, staff 30 days idle and 90 days at most (Q16).
+
+## D18: Phase 1 runs a local model only
+- Decision: real Hype data is handled by Gemma 4 12B on Ollama on the node; no cloud model route
+  for real data in Phase 1. Cloud models are used for development and as the distillation
+  teacher, with synthetic or demo data only. The pilot starts when the evaluation suite passes
+  its target with the local model (85% on Oct 5; target 95%).
+
+## D19: Node hardware for Hype
+- Decision: an Apple Silicon Mac mini with 24 GB or more of unified memory, on site.
+
+## D20: No cleaner mobile app in Phase 1
+- Decision: cleaners work over WhatsApp: chat, absences, cover, check-in and check-out by
+  location share, checklists with interactive lists and buttons, photos as media messages. The
+  office uses the web app. Changes the proposal (an app was promised); agree it with Hype first.
+
+## D21: Service agreements in the data standard
+- Decision: add service agreements in Sprint 1 (client, sites, scope, frequency, price per visit
+  or per square metre, index clause, start and end, versions), linked to the jobs and visits they
+  generate. Master data with an owner; changes need approval.
+
+## D22: A turn stops after 8 model calls
+- Decision: a chat turn may make at most 8 model requests. On the cap the user gets a short
+  translated reply that a supervisor will follow up, and the event is logged.
+
+## D23: Restore tests are recorded; the tunnel exposes only webhooks before login
+- Decision: `mia restore-test --record` writes each restore test as an event through a service
+  function. Until authentication is built, the Cloudflare Tunnel publishes only the channel
+  webhook paths.
+
+## D24: The plan lists all necessary work, not an hour budget
+- Decision: hour estimates are not a constraint; docs/plan.md includes all work Phase 1 needs.
+
+## D25: (amends D20) The mobile app is a separate project; Mia focuses on chat
+- Decision: the cleaner and office apps are built as a separate project. This repository
+  focuses on the chat interface: the web chat over AG-UI and messaging channels (WhatsApp).
+  Field work in Phase 1 stays over WhatsApp as in D20.
+
+## D26: Language is a separate layer; the core is measured in English
+- Decision: messages are translated to English before the model and replies translated back,
+  by a separate, measurable translation layer. Intents, tools and evaluations are defined and
+  measured in English first; translation quality is measured on its own. Revisit if the
+  translation layer costs more accuracy than a multilingual model loses.
+- Note (role skill models): understanding uses the multilingual encoder; translation applies
+  only to free-text replies, pending the bake-off.
+
+## D27: (refines D18) Where learning happens is the owner's choice
+- Decision: retraining and label review run on the node by default. An owner may choose cloud
+  training and review (stronger models, GPUs) in the organisation settings, if the data
+  processing agreement covers it and the egress level allows it. The training set then leaves
+  only through the egress component, pseudonymised with stricter scrubbing (identifying free
+  text dropped), processed in the EU, not kept after the job; only the trained model returns.
+  D18 still holds for answering: real messages are handled by the local model.
+
+## D28: Role classifier in chat: regex fallback, one routing step, original text on clarify
+- Decision A: the dispatcher keeps the regex classifier's hint (including the injection line)
+  as a fallback whenever the role model gives no confident intent (no package, low band, other).
+  A confident role-model intent replaces the regex hint; an injection is flagged as data in both
+  cases.
+- Decision B: the web chat over AG-UI and the /chat endpoint share one classify-and-route step.
+  For emergency, template and "Did you mean" routes the AG-UI run sends the reply as one
+  assistant text message (options as text lines) and finishes without running the agent.
+- Decision C: when a person taps a "Did you mean" option, the agent runs on the original
+  message (found through original_message_id) with the chosen intent as a hint, not on the
+  button label. A chosen template conversation intent gets its template reply instead.
+
+## D29: Role skill models and their dependencies
+- Decision: build docs/superpowers/specs/2026-10-06-skill-models-design.md; onnxruntime and
+  tokenizers become node dependencies and training libraries an optional `learning` group
+  (ADR 013).
+- Approval: the dependency approval required by CLAUDE.md was given on 2026-10-06 by the Fable
+  decision agent on the owner's behalf (the owner asked for Fable to decide while asleep).
+- Reasons: onnxruntime (MIT) runs the role classifier on the node CPU in about 20 ms; tokenizers
+  (Apache 2.0) is the encoder's tokenizer at inference without PyTorch on the node; group
+  `learning` is torch (BSD), transformers (Apache 2.0), onnx (Apache 2.0) and accelerate
+  (Apache 2.0) for training and ONNX export, installed only where training runs.
+- Approved with six changes: transformers>=5,<6; onnxruntime>=1.22 and tokenizers>=0.22; mypy
+  ignore_missing_imports for onnxruntime; an architecture test that mia/skills never imports
+  huggingface_hub, and HF_HUB_OFFLINE=1 by default at node startup; a sha256 field on ModelCard
+  artifacts (lands in Tasks 14 and 15); a uv index so torch uses CPU wheels on Linux.
+- Footprint: installing tokenizers pulls huggingface-hub (with hf-xet, fsspec, tqdm, typer, rich) into the node install, and onnxruntime adds numpy and protobuf; the architecture test and HF_HUB_OFFLINE keep the node from fetching.
+
+## D30: (answers Q18) Roles site_manager and admin; no chat role
+- Decision: two roles join the roster. `site_manager` (Site manager) supports site quality,
+  safety and compliance work and keeps the human supervisor in charge of decisions; it is not
+  the human role `supervisor` (S), which stays as is. `admin` (Admin) owns master data, users and
+  access, administration and management reporting. The proposed ids quality.* and office.*
+  become site_manager.* and admin.*.
+- No chat role: generic conversation is handled by Mia itself for every role through the shared
+  conversation catalogue (node/mia/learning/catalogue/conversation.yaml), which every role
+  inherits. The chat.* intents map as: greeting, thanks, help and change_language keep their
+  names under conversation.*; talk_to_human -> conversation.request_human; cancel ->
+  conversation.undo; clarify -> conversation.confusion; request_status ->
+  conversation.are_you_there; app_feedback -> conversation.feedback_about_mia;
+  privacy_question -> conversation.privacy_what_do_you_know; who_am_i and link_account ->
+  admin.who_am_i and admin.link_account (account and access).
+- One intent per message: site_manager.emergency, report_hazard, work_instructions and
+  privacy_request merge into conversation.emergency, hazard_report, kb_cleaning_howto and
+  privacy_rights_request (first contact by Mia, follow-up by the site manager); report_injury
+  and chemical_safety stay separate because they cover more than injury_minor and
+  kb_chemical_safety (serious and supervisor-reported injuries; exposures that already happened).
+- Addendum (6 Oct 2026): one message, one label, because the classifier sees text and not the
+  sender. (1) Questions about rules or company knowledge are the shared conversation kb_*
+  intents. (2) Doing something stays with the role intent, which keeps only action messages.
+  (3) The same message separated only by sender role is one intent with one owner (client
+  details: admin.update_client; site access: admin.update_site; damage: site_manager.report_damage).
+  report_injury keeps only reports about someone else; chemical_safety is split into the
+  conversation intents. Review: docs/research/intent-overlap-review-2026-10-06.md.
+- Consequences: docs/capabilities.md lists no chat area; intents.jsonl is relabelled; the
+  classification eval accepts conversation.* ids as labels beside the catalogue ids and `other`.
+
+## D31: Conversation intents merged after the embedding overlap review
+- Context: the overlap review (docs/research/overlap-report-conversation.md and
+  docs/research/intent-overlap-reference.md) showed conversation intents that one message could
+  fairly get either of. One message, one label (D30): the owner decided on 2026-10-07 to merge
+  five groups, so the catalogue goes from 93 to 87 conversation intents.
+
+  | Removed | Survives as | Handling |
+  | --- | --- | --- |
+  | conversation.compliment | conversation.thanks | template (one reply fits both) |
+  | conversation.rephrase_simpler | conversation.confusion | template |
+  | conversation.kb_surface_care, conversation.kb_chemical_safety | conversation.kb_cleaning_howto | kb_cleaning |
+  | conversation.self_harm_risk | conversation.distress | emergency |
+  | conversation.personal_threat | conversation.emergency | emergency |
+
+- Merges among intents with the same handling cost nothing at runtime: the reply was the same
+  either way, and the classifier no longer has to split one meaning in two. The removed intents'
+  examples and records moved to the survivor; survivor descriptions cover both.
+- distress now runs the emergency script (crisis line, 112 or 911, supervisor told) by the
+  owner's decision, so stress and despair get the stronger script rather than risk a missed
+  self-harm message; distress joins safety_ids(). Exposures that already happened stay
+  conversation.chemical_exposure.
+- Kept apart, descriptions sharpened with one clause each saying what the other intent is not:
+  goodbye / thanks, goodbye / greeting, the laughter pairs (affirm, greeting, emoji_only),
+  kb_expenses_travel / kb_payment_invoicing and kb_household_tax_deduction / tax_personal_advice.
+- Consequences: i18n drops conversation.compliment and its label, and the thanks and confusion
+  replies are reworded to fit both meanings; intents.jsonl relabels 42 records; the merged pairs
+  move to "## Merged (D31)" in the overlap reference so recall is not measured on them.
+- Addendum (2026-10-08): the owner keeps distress merged with the emergency handling after
+  seeing the script it triggers; a later layer will split distress from self-harm risk. The
+  merged confusion intent keeps rephrase_simpler's model_brief handling (the model rephrases
+  its last answer), not the template, so "say it more simply" still works; its template
+  reply key is removed.
+
+## D32: Embedding overlap review and the three-contender bake-off
+- Context: the D30 review found overlapping intents by reading. The embedding review
+  (docs/superpowers/specs/2026-10-06-embedding-review-design.md) measures it, and a bake-off tests
+  whether embedding classifiers can match the fine-tuned encoder.
+- Decision: the default embedding model is intfloat/multilingual-e5-small; no new dependency
+  (transformers, torch and numpy from the learning group). `mia skills overlap` is a ranked review
+  aid, not a gate: owner-judged precision 6/10 at the top 10, recall@40/80/120 = 0.39/0.46/0.57
+  against 46 reference pairs (docs/research/overlap-calibration-2026-10-06.md). The trained
+  classifier's confusion list is the authoritative overlap signal. `mia skills bakeoff <role>`
+  trains the encoder, nearest-examples and contrastive contenders; the winner is the gate passer
+  with the best macro F1, then coverage, and the encoder only for roles with slots. Nothing is
+  promoted by the bake-off; Gate 2 and `promote` stay with the developer.
+- Consequences: the skill and guidelines carry the "same action?" test; the reviewer lists suspect
+  labels and paraphrases and never relabels; nothing is merged automatically.
+
+## D33: Authentication built as designed
+- Context: ADR 011 and D17 fixed the design; the build is plan 2026-10-12-authentication.md.
+- Decision: data standard 1.3 is in effect (auth_credentials, auth_devices, auth_sessions,
+  auth_clients; channel_link_codes and channel_link_attempts renamed auth_codes and
+  auth_attempts). Deviations from the spec text, each for a rule: refresh rotations are events
+  (rule 1); failure records commit before the error is raised (lockouts must accumulate);
+  limits also apply per subject whatever the IP; a reset revokes the old credentials, not only
+  the sessions; the token endpoint needs no form dependency. `MIA_AUTH_MODE=dev` is for
+  development only. Passkeys (`webauthn`) and SMS still need approval before they are built.
+- Consequences: `mia auth bootstrap` is the first login on a server; the `mia_login_code`
+  WhatsApp template must be approved before staff can sign in by phone; the master key file is
+  part of the install and of the recovery copy.
+
+## D34: Scheduling core built on the assumptions Q19 to Q22
+- Context: plan item 4 (Sprint 2); docs/superpowers/specs/2026-10-12-scheduling-core-design.md.
+- Decision: visits are generated 28 days ahead from the job recurrence (DAILY, WEEKLY with
+  BYDAY, INTERVAL, UNTIL; no dependency), one per (job, date); a new visit copies the last
+  same-weekday assignment when eligible (no job field, Q21); the office assigns under the
+  dispatcher's eligibility rules, and a rule-breaking assignment is an approval
+  `schedule.assignment_override` for admin or owner, app only (Q22); check-in opens two hours
+  before the planned start and closes four hours after the planned end; the inbox lists the
+  approvals the person's roles (with inheritance) may decide. The schedule board is the apps
+  project's (Q19). Timesheets wait for Q20 because they change the data standard.
+- Consequences: `mia schedule generate` and the daily ticker keep visits ahead; supervisors get
+  `data:core.visit write`, staff `write_own` for their own check-in and check-out. Skills are a
+  hard rule in the office assignment path (an override approval) but stay a ranking factor in
+  the dispatcher's cover flow, where the supervisor's instruction is the approval (D1). Check-in
+  and check-out are per visit, as the visit status is; per-person times belong to timesheets
+  (Q20), so on a two-person visit the second cleaner cannot check in once the first has.
+
+## D35: customer_service talks to the public outside the people table (Q67)
+- Context: every inbound channel message had to come from a linked Person; customer_service
+  serves customers on Messenger, Viber and WhatsApp who are not staff. The owner approved the
+  Q67 design on 19 October 2026.
+- Decision: a customer is not a Person. An agent-owned table customer_service_customers keyed
+  by the channel address (platform and id) holds the name the customer gives, the language and
+  the branch whose public number was messaged (one public number per branch). The agent acts
+  as its own actor on behalf of the address and may call only customer_service.* tools: reads of
+  the menu, prices, hours, delivery areas and the customer's own order status (risk none), and
+  place_order (money), which drafts an order in customer_service_orders and asks the branch's
+  clerk or supervisor to confirm through approvals. No staff tool ever runs for a customer, no
+  linking to a Person from the customer flow, every customer message is data (rule 8), the
+  auth.py address limits apply, deposits are out of v1.
+- Consequences: a new inbound branch for public numbers in channels/inbound.py with its own
+  tests (negative tests: a customer cannot reach a staff agent or tool); customer orders stay
+  agent-owned until the production_planner or the sales_supervisor reads them, then promotion
+  with an ADR (the Q39 precedent). Sell-out answers ("may bibingka pa ba") wait for data
+  standard 1.5, since they would make customer_service a second reader of
+  inventory_manager_stock_events.
+
+## D36: Data standard 1.5, the sales and stock tables are shared (Q39, Q53; ADR 017)
+- Context: the branch_manager, the bookkeeper and customer_service will read the sales counts,
+  targets and notes and the stock events, which were agent-owned (rule 9). The owner decided on
+  19 October 2026.
+- Decision: `sales_supervisor_counts`, `sales_supervisor_targets`, `sales_supervisor_notes` and
+  `inventory_manager_stock_events` become the core tables `sales_counts`, `sales_targets`,
+  `sales_notes` and `stock_events` in mia/core/models.py (data standard 1.5), with the same
+  fields, indexes and foreign keys. `inventory_manager_orders` stays agent-owned (one reader so
+  far); the HR tables (Q59) are not part of this promotion.
+- Consequences: `0000_initial` is edited in place (no candidate release yet, rule 14) and dev
+  databases are rebuilt; the rbac data resources take the table names with no role gaining a
+  right (the admin wildcards on the old prefixes became explicit grants); old event rows keep
+  the old entity types (rule 2). The branch_manager and the bookkeeper may now be built, and
+  customer_service may read `stock_events` for sell-out answers (D35).
+
+## D37: Dated prices per branch, and the owner decides their own money request (Q73, Q77)
+- Context: the branch manager's price and promo experiments need a price history, and the
+  approvals core never lets a requester decide their own request, which blocks a one-owner
+  shop when the owner types a price change. Asked on 20 October 2026; the owner answered both.
+- Decision: the retail template gains `retail_item_prices` (a dated price per branch and item;
+  `retail_items.price` stays the default) and `retail_items.components` (a bundle's item ids);
+  sales counts are priced at the price in force on their business date. The owner's own typed
+  money request is the decision: an approval row is still created, and the requester may decide
+  it only when they hold the owner role in that branch and complete the PIN step-up; every
+  other requester still waits for another approver. Price experiments are proposed only from a
+  curated catalogue of proven pricing strategies (data rows with sources, like the tips), each
+  proposal naming its strategy, its rationale and its guard rails; the model never invents a
+  price or a strategy.
+- Consequences: a template migration (0000_initial edited in place), one new rule in
+  core/approvals.decide with negative tests (a supervisor still cannot self-approve; an owner
+  of another branch cannot), the strategy catalogue as `branch_manager_strategies` rows seeded
+  with sources, and a cost floor per item (`retail_items.cost`, nullable) so no strategy prices
+  below cost. Recorded in the branch manager spec (section 13) and plan.
+- Note (20 Oct 2026, the branch manager's fix wave): the rule is a money rule. It reaches only
+  requests with a money, external or delete risk (approvals.request records it in
+  `evidence["risk"]`); an owner's own cover override, leave or other request still waits for
+  another approver. `mia decide` passes no step-up for the requester's own request, so from the
+  shell an owner's own request is refused (the shell was trusted for it before this branch; it
+  still decides other people's requests, ADR 011).
+
+## D38: The bookkeeper, data standard 1.6, no utang, VAT (Q84 to Q87)
+- Context: the bookkeeper matches settlements and payouts to sales, needs supplier spend and
+  payroll for profit, and the catalogue lists utang. Asked on 20 October 2026; the owner
+  answered all four.
+- Decision: data standard 1.6: `sales_counts` gains `tender` (cash, gcash, maya, grab,
+  foodpanda; default cash, the clerk says it when it is not cash); `inventory_manager_orders`
+  moves to core as `supplier_orders`; the HR officer's `hr_officer_contracts`, `_payslips` and
+  `_leave` move to core as `contracts`, `payslips`, `leave` with their redactions and own-row
+  rules kept, the bookkeeper reading payslip totals per branch and month only (owner and admin,
+  never a supervisor, never per person). No utang in v1 (neither staff advances nor suki credit;
+  Q57 stays closed for now). Ferino's tax regime is VAT at 12 percent, computed in code from
+  the sales journal and receipts with a VAT amount; the dated table keeps the 3 percent
+  percentage tax for other shops.
+- Consequences: one migration edit (0000_initial), ADR 018, the rights-equality test extended
+  to the promoted tables, the sales supervisor's count parser reads a tender word, the inventory
+  and HR agents' imports move; the bookkeeper spec (docs/superpowers/specs/2026-10-20-bookkeeper-design.md)
+  and plan follow.
+
+## D39: The production planner and the retail shift supervisor (Q91, Q92, Q96, Q102, Q103)
+- Context: two more agents for Ferino's were specified on 21 October 2026 (docs/superpowers/specs/2026-10-21-production-planner-design.md and 2026-10-21-shift-supervisor-retail-design.md); each needs a data standard or security answer before its first task. The owner answered the same day.
+- Decision: data standard 1.7: customer orders move to core as `customer_orders` with the same fields and redaction (customers stay with customer_service); the commissary is a third Branch of Ferino's named in `production_planner.commissary` (no branch column); the planner's agent role reads the served kiosks' sales counts and stock events while no person gains a cross-branch right (the commissary head reads plan rows, a kiosk supervisor their own dispatch). Kiosk shifts are Visits (the branch is the site, one visit per clerk per shift) and incidents gain the kinds equipment, no_delivery and customer; a clerk of one kiosk may cover the other kiosk's shift within one organisation (branch scoping widened for cover only, with negative tests). The retail shift supervisor is the same package with a template switch, not a sibling agent id (rule 15). Build order after the bookkeeper: the retail shift copy, then the production planner.
+- Consequences: ADR 019 (orders), the incident kinds in the data standard, the cover eligibility fix for roles that only inherit staff, Availability and WorkLimit rows in the retail seed, cover reading approved leave; both plans written while the bookkeeper builds.
+- Consequence (21 Oct 2026, numbering): the incident kinds took data standard 1.7 and ADR 019, so customer orders are data standard 1.8, ADR 020 (docs/adr/020-data-standard-1-8-customer-orders.md).
+
+## D40: The gate bar for machine-drafted languages (Q40)
+- Context: every agent's decider gate fails the 80 / 15 line in the machine-drafted languages while wrong stays near 2%; docs/research/2026-10-21-q40-threshold-study.md rescored every recorded gate half at lower bars without a model call and showed a lower threshold buys asks with wrongs. The owner decided on 21 October 2026.
+- Decision: wrong at most 2% everywhere (hard) and the decider threshold stays 0.6. For a language whose strings are machine drafts (Q28 to Q35: ceb, ilo, hil, war, bcl, pam, pag) the gate accepts right at least 65% and ask at most 30%; en and fil keep right at least 80% and ask at most 15%. A rerun needs fresh seeds.
+- Consequences: node/tests/evals/gate.py applies the per-language bar (DRAFTED, RIGHT_MIN, ASK_MAX) and test_gate.py pins it. A language leaves the relaxed set (back to the full bar) when its Q28 to Q35 entry is answered by a native review. Each recorded gate report carries a dated D40 reading; the numbers and verdicts above it are unchanged.
+
+## D41: English and Filipino are the primary gate metric (Q40, after the D40 reruns)
+- Context: seven fresh-seed reruns on 21 October 2026 (docs/research/2026-10-21-d40-reruns.md) read right 90% in en and 78% in fil with wrong at 0.2% and 1.2%, while the four regional drafts sit near 70% right with asks of 30 to 45%; the owner said en and fil are what matters most and asked that they be the primary metric.
+- Decision: the merge gate asserts en and fil at the full bar (wrong at most 2%, right at least 80%, ask at most 15%, per language, plus wrong at most 2% overall). The machine-drafted languages (D40's list) are measured and reported under D40's relaxed bar in every gate report but do not block a merge until their native review lands (Q28 to Q35), when each joins the asserted set at the full bar.
+- Consequences: node/tests/evals/gate.py returns blocking failures for en, fil and the overall wrong line, and a separate reported list for the drafted languages that every harness prints; test_gate.py pins both. Tuning work is aimed at fil asks first (the tune halves only, never a gate half); a rerun still needs fresh seeds.
+
+## D42: Short messages and clear questions for Jev; the long sets become a fine-tuning corpus (after the 21 Oct reruns)
+- Context: the fresh eval sets are long, Claude-written sentences translated from English seeds, while kiosk staff text short, abbreviated, mixed Filipino and English ("5 ube na lang", "cash 12450", "late 10m", "sarado bukas"); tuning action descriptions against those sets moved asks by a few rows per run, inside run-to-run noise. The owner said the samples are too long for text messages, that they can stay for fine-tuning a small model, and that Jev needs a clear question to classify.
+- Decision: the synthetic eval sets under node/tests/evals are kept as a corpus for a later small-model fine-tune (the local gemma route), not as the Jev yardstick. Jev is judged on a short-message set: a handful of abbreviated en and fil messages per agent, with one hard rule, no wrong write (rule 7 guards and their tests stay the merge condition). The work on Jev is the question itself: instructions that describe the sender and the message shape, option texts that name the short ways staff say each action, and the question design (one choice versus a yes-or-no per action) tested on the short set. No more large synthetic sets, no threshold tuning, no gate reruns on fresh seeds unless the owner asks. The regional languages (ceb, hil, war, bcl, ilo, pam, pag) are out of scope for this work: the owner said the dialects are not important; the focus is English and Filipino in text-message form. Their strings stay as drafts (Q28 to Q35) and their gate readings stay reported, never asserted. Later the same day the owner removed the dialect rows from the eval sets altogether ("its slowing our test run. keep only filipino, finnish and english"): every eval CSV holds en, fil and fi rows only (fi where a set already had Finnish rows); the regional rows stay in git history; the product i18n modules are untouched. The eval content lives in one CSV per agent (intent, message, lang, half, role, args) under node/tests/evals/cases, the cases modules are loaders, and each run also writes a results CSV so any model can be scored on classification from the same file.
+- Consequences: D40 and D41 stay as the reading of the recorded runs; the gate harnesses stay for the corpus but are not rerun; the short half of each agent's CSV under node/tests/evals/cases (MIA_EVAL_HALVES=short through that agent's harness) is the Jev measurement; the real staff messages from the local test become the labelled set when the feedback loop lands (Q116).
+
+## D43: Sales operations tables, data standard 1.9 (Q118)
+- Context: the owner asked for a full end-to-end sales operation and for sales tables from an ERP schema; the Odoo 17.0 models were extracted into docs/reference/odoo-schema and docs/superpowers/specs/2026-10-22-sales-operations-design.md maps pos.session, pos.order, pos.order.line and pos.payment onto Ferino's. The owner answered the four questions on 22 October 2026.
+- Decision: the four tables `sales_sessions`, `sales_receipts`, `sales_receipt_lines` and `sales_payments` join the data standard now as core tables (1.9), before any till writes them. A session is one clerk's shift at a kiosk (two sessions a day at the Mall kiosk, each with its own opening float and closing count). A void needs head staff's approval and a refund the owner's or admin's, both money risk through the approval card. Both sources are supported and chosen per kiosk: a per-branch setting names counts or receipts as the source of a day's sales; the day's sales by item and tender is one query over whichever source the kiosk uses, never both for one day; Ferino's kiosks start on counts.
+- Consequences: ADR 022, STANDARD_VERSION 1.9, 0000_initial edited in place and dev databases rebuilt, the shared-rights table and the rule 9 guard updated, no existing table changed; the receipt-writing tools arrive with the till or a receipt entry path, the void and refund approvals with them; today's clerks and reports are unchanged.
+
+## D44: Test in English first; the Filipino wording waits for native review (Q28)
+- Context: on 22 October 2026, after the receipts plan and the phones page (/sim) landed, the owner read Mia's Filipino replies and said "The filipino of AI is off. Lets keep and test english first." Replies follow each person's chosen language (ADR 016) and Ferino's seed sets every staff member to fil.
+- Decision: the Filipino strings stay as they are (no rewrite now; their native review is Q28) and the local test runs in English: the phones page gets a language switch per phone and for all phones, the runbook tells the owner to set all phones to English once per fresh database, and new Filipino wording is not polished until a native speaker reviews it. The customer phone keeps following the language the customer writes in.
+- Consequences: the English strings are the ones judged in the staff test; the Filipino eval rows and gates keep running as they are (D41, D42) but their wording is not the measure of the product until Q28; the owner's feedback on Filipino wording is collected during the English test and handed to the native reviewer in one batch.
+
+## D45: A confident router may hand over; open report questions go to a hosted model (Q128, Q129)
+- Context: on 23 October 2026 the owner answered two open questions. Q128: a sales message right after another agent's reply ("3 ube 2 classic cash" after a check-in reply) stayed with that agent under the hand-over rule. Q129: which model handles open report questions ("benta last week per item") and proposes phrases from unrecognised messages.
+- Decision: Q128, the router may switch away from the active agent when it is confident another of the person's agents fits better; the active agent keeps unclear messages (the switch notice and `chat.agent_switched` as today). Q129, a hosted model through the egress point handles open report questions and the nightly phrase proposals, with names and numbers masked (pseudonymised, as for Jev); it fills a fixed report form and proposes phrases, code computes every figure and a person approves every phrase (rule 7).
+- Consequences: the hand-over rule in the chat router changes with tests for both directions; the teach-Mia spec gains phase 1c (report questions) and its phase 2 is unblocked on the model; the hosted model is a new external service recorded in the egress allowlist with its purpose, and who approves phrases in production stays the owner or an admin (the spec's default) until the owner says otherwise.
+
+## D46: The Mall kiosk takes receipts (23 Oct 2026)
+- Context: the receipts day passed end to end with the real classifier on a scratch copy (check-in opens the drawer, receipts by text, the ring-up question with the total, a void approved by head staff from the approvals inbox, the closing count to the peso, the owner's report from receipts); the owner was asked whether to switch.
+- Decision: yes. Ferino's Mall kiosk records sales as receipts from 23 October 2026 with a PHP 1,000.00 opening float (settings.yaml `sales.receipts_from` and `sales.opening_float`); the Street stall stays on counts.
+- Consequences: clerks at the Mall kiosk ring up each sale in the chat (the chat is the till, Q119); voids go to head staff and refunds to the owner or an admin; a count typed there is asked as a receipt; the tests keep Ferino's on counts unless a test asks for receipts (conftest `_counts_only`).
+
+## D47: Staff confirm customer orders with buttons in the chat (24 Oct 2026)
+- Context: a customer order (customer_service.place_order) reached clerks only as an app link: its card carries the customer's name and number, so channels rendered it as "You have a message in the Mia app with personal details", and the order was a money approval, which is app_only with a fresh PIN step-up (D37). Clerks at a kiosk work from their phones, so an order waited until someone opened the app. The owner decided on 24 October 2026 that staff confirm customer orders with buttons in the chat, not only in the app.
+- Decision: a customer-order approval may be decided from the chat. place_order keeps `approval: always` and gains `approval_channel: chat`; it is no longer a money risk (nothing is paid in the chat, the customer pays at pickup), so the approval is created with channel `chat`. The order message goes as plain text with Confirm and Decline buttons to whoever got the card before: the active clerks and supervisors of the order's branch. It shows the items, the pickup time, the customer's first name only and the number masked to its last four digits; the text stays out of the event log. A tap decides through approvals.decide with channel chat and the tapping person as the actor: an approver role at the approval's branch, never the requester, no step-up. The first tap wins, the others asked are told who decided, a later tap changes nothing. Money, external-money and delete approvals stay app-only with a fresh PIN: request() still forces those risks to app_only and decide refuses any other channel for them.
+- Consequences: ADR 023. ToolSpec gains `approval_channel` (any or chat) and the guard passes it to approvals.request; notify can name the approval a message asks about and keep a plain-text message out of the log; the inbound channel handler decides an order tap before any chat turn and the customer service's staff turn does the same for a tap in the app; the app decide route is unchanged. A channel tap decides only the order of the message it was made on (the WhatsApp context id, resolved through the outbox to the message and its approval); a tap without it and typed text equal to a label decide nothing and point to the app; the app's own tap refuses while more than one order asked of the person is open; the reply names the order; a chat approval never escalates (round 1 after the security review).
+
+## D48: The morning message carries a word of encouragement, not a quote (24 Oct 2026)
+- Context: the owner: "proverbs sound more like sermon than motivation... tips or words of encouragement would be enough."
+- Decision: the branch manager's morning message is yesterday's total, today's target, one tip and one short word of encouragement written for a kiosk clerk (en and fil, about 20 lines each, plain text-message register). No proverb, no sourced quote, no source line. Tip rows of kind cheer replace kind quote; the source column stays and is empty for them; rotation is calc.pick_tip as for tips. Supersedes the curated, source-named quote of the agents catalogue and Q75 for the morning message.
+- Consequences: i18n keys bm.morning* take {cheer} and no {source} (all ten languages); no data standard change.
+
+## D49: Report questions build their own report through the gateway (24 Oct 2026)
+- Context: the report-questions plan (docs/superpowers/plans/2026-10-24-report-questions.md, teach-Mia spec section 4c) asked which hosted model answers open report questions, whether clerks may ask, and a cost cap.
+- Decision: when no existing tool answers a report question, the gateway model (the configured `gateway/` route, MIA_REPORT_MODEL or MIA_MODEL; Better Labs LiteLLM, or OpenRouter in dev) creates the report: it fills the fixed report form, code validates and runs it, and the form is kept as a saved report that the same question reuses with no model call. "Create the tool" means this declarative report, never generated code: a new action that writes or moves money stays built and reviewed by a developer (rule 3). Clerks may ask report questions about their own kiosk only (never another kiosk, never staff pay); supervisors and up as today. Spending on the report model is capped at US$10 a month, measured from usage_cloud_requests; past the cap the step is off until the next month and the old reply stands.
+- Consequences: the plan's Task 1 gains a clerk scope (own branch only, the rbac read_own pattern), Task 2 a monthly cap check before each call, and saved reports are the reusable "tools" the owner asked for (listed in the Phrases drawer, exported to git).
+
+## D50: Supervisors work across their assigned kiosks; data standard 1.10 (24 Oct 2026)
+- Context: the owner, asked whether supervisors may compare kiosks: "Supervisors are assigned to multiple kiosk, they can see access on all their kiosks". A person has one home branch (branch_id) today.
+- Decision: a new core table of kiosk assignments (person, branch, from date, optional to date; data standard 1.10, ADR) records the extra kiosks a supervisor is assigned to; the home branch stays. A supervisor reads sales, counts, receipts, cash counts, stock and reports for every kiosk they are assigned to (and compares them), gets their alerts and approval cards, and may decide approvals there; never other kiosks, never pay or the books beyond today's rights. Clerks keep one kiosk. The owner or an admin assigns ("assign Jun to the Mall kiosk", or the seed); the report model gets the assigned kiosks.
+- Consequences: rbac's branch scope becomes the home branch plus active assignments; the shared-rights table, the rule 9 guard, 0000_initial (edited in place before the first candidate) and the seed change; Ferino's seed assigns Marites and Jun to both kiosks.
+
+- Answer (24 Oct 2026, the owner): an assigned supervisor also decides leave requests (which set paid days) for clerks at every kiosk they are assigned to, as well as voids, swaps and customer orders; refunds, large expenses and price changes stay with the owner or an admin.

@@ -1,13 +1,18 @@
 """The `mia` command: migrate, seed, serve, chat, decide, inbox, tick, geocode, person,
-invite, channels."""
+invite, channels, backup, verify-db, keys, auth, skills, agent, phrases, requests."""
 
 import argparse
 import asyncio
+import contextlib
+import datetime as dt
+import os
+from pathlib import Path
 
 from alembic.config import Config
 from sqlmodel import Session, col, select
 
 from mia.core.models import Person
+from mia.i18n import SUPPORTED
 from mia.settings import NODE_DIR, get_settings
 
 
@@ -29,22 +34,72 @@ def migrate(_args: argparse.Namespace) -> int:
 
 
 def seed(_args: argparse.Namespace) -> int:
+    from importlib import import_module
+
+    from mia.core import orgconfig
     from mia.core.db import session_scope
-    from mia.templates.cleaning.seed import is_seeded
-    from mia.templates.cleaning.seed import seed as run_seed
+
+    template_seed = import_module(f"mia.templates.{orgconfig.load().template}.seed")
 
     with session_scope() as session:
-        if is_seeded(session):
+        if template_seed.is_seeded(session):
             print("already seeded; delete the database file to start over")
             return 0
-        branch = run_seed(session)
+        branch = template_seed.seed(session)
     print(f"seeded demo branch {branch.name} ({branch.id})")
+    return 0
+
+
+def import_data(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from mia.core import events
+    from mia.core.db import session_scope
+    from mia.core.models import Actor, Branch
+    from mia.templates.cleaning import importer
+    from mia.templates.cleaning.seed import is_seeded
+
+    path = Path(args.file)
+    try:
+        data = importer.parse(path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError) as exc:
+        raise SystemExit(f"{path}: {exc}") from exc
+    with session_scope() as session:
+        try:
+            if not is_seeded(session):
+                branch = importer.bootstrap(session, data)
+            else:
+                found = session.get(Branch, _only_branch_id(session, args.branch))
+                if found is None:
+                    raise SystemExit(f"no branch {args.branch}")
+                branch = found
+            counts = importer.load(session, data, branch)
+        except ValueError as exc:
+            session.rollback()
+            raise SystemExit(f"{path}: {exc}") from exc
+        events.emit(
+            session,
+            "data.imported",
+            ("branch", branch.id),
+            None,
+            {**counts.model_dump(), "file": path.name},
+            Actor.system(branch.id),
+        )
+    print(
+        f"imported into {branch.name}: {counts.people} person(s), {counts.clients} client(s), "
+        f"{counts.locations} location(s), {counts.jobs} job(s)"
+    )
     return 0
 
 
 def serve(args: argparse.Namespace) -> int:
     import uvicorn
 
+    from mia.api.deps import check_mode
+
+    check_mode(get_settings())
+    # The node never downloads models (ADR 013); training processes do not go through serve.
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
     uvicorn.run("mia.api.main:app", host=args.host, port=args.port, reload=args.reload)
     return 0
 
@@ -64,7 +119,7 @@ def _find_person(session: Session, who: str | None) -> Person:
 
 
 def chat(args: argparse.Namespace) -> int:
-    from mia.agents.dispatcher.agent import get_agent
+    from mia.agents.shift_supervisor.agent import get_agent
     from mia.chat.service import run_turn
     from mia.core.db import session_scope
 
@@ -81,18 +136,43 @@ def chat(args: argparse.Namespace) -> int:
 
 
 def decide(args: argparse.Namespace) -> int:
+    """Decide an approval as a person. Prints "refused: <reason>" and returns 1 when a rule
+    refuses it (an owner's own request too: the shell is no PIN step-up, D37), the permission
+    check fails, or the handler refuses (the request is then closed as expired with the
+    reason, as the API does)."""
+    from mia.agents.registry import load_roles
     from mia.core import approvals
-    from mia.core.db import session_scope
-    from mia.core.models import Actor
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor, Approval
+    from mia.core.rbac import PermissionDenied
 
+    load_roles()  # a handler re-runs an agent's tool outside any turn
     with session_scope() as session:
         person = _find_person(session, args.as_person)
+        actor = Actor.person(person)
+        asked = session.get(Approval, args.approval_id)
+        own = asked is not None and bool(actor.ids & approvals.requester_ids(asked))
         try:
+            # Shell access is full access: the CLI counts as a fresh step-up (ADR 011), except
+            # for the requester's own request: D37 needs a PIN the shell never takes.
             row = approvals.decide(
-                session, args.approval_id, Actor.person(person), args.outcome, args.reason
+                session,
+                args.approval_id,
+                actor,
+                args.outcome,
+                args.reason,
+                stepped_up_at=None if own else utcnow(),
             )
-        except approvals.ApprovalError as exc:
+        except (approvals.ApprovalError, PermissionDenied) as exc:
+            session.rollback()
             print(f"refused: {exc}")
+            return 1
+        except LookupError as exc:
+            reason = str(getattr(exc, "reason", None) or exc)
+            session.rollback()
+            with contextlib.suppress(approvals.ApprovalError):  # no open request to close
+                approvals.close_refused(session, args.approval_id, actor, reason)
+            print(f"refused: {reason}")
             return 1
     print(f"approval {row.id}: {row.status} by {person.name}")
     return 0
@@ -119,7 +199,7 @@ def inbox(args: argparse.Namespace) -> int:
                 {
                     "thread_id": row.thread_id,
                     "message_id": row.id,
-                    "agent_id": "dispatcher",
+                    "agent_id": row.agent_id or "",
                     "blocks": row.blocks,
                 }
             )
@@ -128,8 +208,11 @@ def inbox(args: argparse.Namespace) -> int:
 
 
 def tick(_args: argparse.Namespace) -> int:
+    """One round of due work, as the server's ticker runs it (the agent roles loaded first)."""
+    from mia.agents.registry import load_roles
     from mia.api.main import run_due_work
 
+    load_roles()  # due work runs agents' tools outside any turn, as `serve` loads them
     advanced, sent = asyncio.run(run_due_work())
     print(f"advanced {advanced} cover request(s), sent {sent} channel message(s)")
     return 0
@@ -169,6 +252,16 @@ def _only_branch_id(session: Session, branch_id: str | None) -> str:
     return branches[0].id
 
 
+def _first_branch_id(session: Session) -> str:
+    """The first branch's id (the system actor's branch for node-wide commands)."""
+    from mia.core.models import Branch
+
+    found = session.exec(select(Branch.id).order_by(col(Branch.id))).first()
+    if found is None:
+        raise SystemExit("no branch: run mia seed or mia import first")
+    return found
+
+
 def person_add(args: argparse.Namespace) -> int:
     from mia.core import people
     from mia.core.db import session_scope
@@ -184,10 +277,118 @@ def person_add(args: argparse.Namespace) -> int:
                 name=args.name,
                 roles=args.roles,
                 language=args.lang,
+                language_known=not args.ask_language,
             )
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
         print(f"added {person.name} ({person.id})")
+    return 0
+
+
+def agent_scaffold(args: argparse.Namespace) -> int:
+    from mia.agents import scaffold
+
+    try:
+        written = scaffold.run(
+            NODE_DIR.parent,
+            args.agent_id,
+            label_en=args.label_en,
+            label_fi=args.label_fi,
+            roles=args.roles,
+            description=args.description,
+            force=args.force,
+            say=print,
+        )
+    except (ValueError, FileExistsError, RuntimeError) as exc:
+        raise SystemExit(str(exc)) from exc
+    for path in written:
+        print(path.relative_to(NODE_DIR.parent))
+    return 0
+
+
+def learned(args: argparse.Namespace) -> int:
+    from mia.chat import route_memory
+    from mia.core.db import session_scope, utcnow
+    from mia.i18n import t
+
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        now = utcnow()
+        keys = route_memory.recall(session, branch_id, now)
+        counted = route_memory.counts(session, branch_id, now)
+        for key, agent in sorted(keys.items()):
+            print(t("cli.learned.row", "en", agent=agent, route=key, count=counted[(key, agent)]))
+        if not keys:
+            print(t("cli.learned.none", "en"))
+    return 0
+
+
+def forget(args: argparse.Namespace) -> int:
+    from mia.chat import route_memory
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor
+    from mia.i18n import t
+
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        key = route_memory.forget(session, branch_id, args.key, Actor.system(branch_id), utcnow())
+    print(t("cli.forgotten", "en", route=key) if key else t("cli.learned.none", "en"))
+    return 0
+
+
+def phrases_export(args: argparse.Namespace) -> int:
+    from mia.chat import phrases
+    from mia.core.db import session_scope
+    from mia.i18n import t
+
+    folder = Path(args.cases) if args.cases else NODE_DIR / "tests" / "evals" / "cases"
+    with session_scope() as session:
+        added = phrases.export_rows(session, folder)
+    print(t("cli.phrases.exported", "en", count=added))
+    return 0
+
+
+def phrases_import(args: argparse.Namespace) -> int:
+    from mia.chat import phrases
+    from mia.core.db import session_scope
+    from mia.i18n import t
+
+    with session_scope() as session:
+        if args.every_branch:
+            branch_id = args.branch or _first_branch_id(session)
+        else:
+            branch_id = _only_branch_id(session, args.branch)
+        taught = phrases.import_rows(session, Path(args.dir), branch_id, every=args.every_branch)
+    print(t("cli.phrases.imported", "en", count=taught))
+    return 0
+
+
+def requests_export(args: argparse.Namespace) -> int:
+    from mia.chat import features
+    from mia.core.db import session_scope
+
+    with session_scope() as session:
+        text = features.export_csv(session)
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+    else:
+        print(text, end="")
+    return 0
+
+
+def requests_status(args: argparse.Namespace) -> int:
+    from mia.chat import features
+    from mia.core.db import session_scope
+    from mia.core.models import Actor
+    from mia.i18n import t
+
+    with session_scope() as session:
+        actor = Actor.system(_first_branch_id(session))
+        try:
+            g = features.set_status(session, args.id, args.status, actor)
+        except (LookupError, ValueError) as exc:
+            raise SystemExit(str(exc)) from exc
+    print(t("cli.requests.row", "en", id=g.id, status=g.status, count=g.count, text=g.text))
     return 0
 
 
@@ -236,12 +437,15 @@ def channels_sim(args: argparse.Namespace) -> int:
     from mia.channels import outbox, registry
     from mia.channels.base import InboundMessage
     from mia.channels.inbound import handle_inbound
+    from mia.channels.setup import SIM_DEV_ONLY
     from mia.channels.simulator import SimAdapter
     from mia.core import store
     from mia.core.db import session_scope, utcnow
     from mia.core.ids import new_id
     from mia.core.models import Actor, ChannelInbound, Principal
 
+    if get_settings().MIA_AUTH_MODE != "dev":
+        raise SystemExit(SIM_DEV_ONLY)
     sim = registry.get("sim")
     if not isinstance(sim, SimAdapter) or sim not in registry.enabled():
         raise SystemExit("the sim channel is off: set channels.sim.enabled in the org settings")
@@ -288,6 +492,280 @@ def channels_sim(args: argparse.Namespace) -> int:
     return 0
 
 
+def backup(args: argparse.Namespace) -> int:
+    """Write a consistent copy of the live database to a new file (SQLite online backup, safe
+    while the node runs). Never overwrites an existing file."""
+    import sqlite3
+    from contextlib import closing
+    from pathlib import Path
+
+    src_path, dest = get_settings().MIA_DB_PATH, Path(args.dest)
+    if not src_path.is_file():
+        raise SystemExit(f"no database at {src_path}")
+    if dest.exists():
+        raise SystemExit(f"{dest} exists; choose a new file name")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(src_path)) as src, closing(sqlite3.connect(dest)) as out:
+        src.backup(out)
+    print(f"backup written: {dest}")
+    return 0
+
+
+def verify_db(args: argparse.Namespace) -> int:
+    """Check a database copy (a Litestream restore or a `mia backup` file) without changing it:
+    SQLite integrity, the events hash chain, the migration revision and row counts per table.
+    Returns 0 only when the file opens, integrity is ok and the chain verifies."""
+    from pathlib import Path
+
+    from sqlalchemy import create_engine, inspect
+    from sqlalchemy.exc import DatabaseError
+
+    from mia.core.events import verify_chain
+
+    path = Path(args.path)
+    if not path.is_file():
+        print(f"FAILED: no database at {path}")
+        return 1
+    engine = create_engine(f"sqlite:///file:{path.resolve()}?mode=ro&uri=true")
+    try:
+        with engine.connect() as conn:
+            integrity = conn.exec_driver_sql("PRAGMA integrity_check").scalar()
+            tables = sorted(inspect(conn).get_table_names())
+            counts = {
+                t: conn.exec_driver_sql(f'SELECT count(*) FROM "{t}"').scalar() for t in tables
+            }
+            revision = (
+                conn.exec_driver_sql("SELECT version_num FROM alembic_version").scalar()
+                if "alembic_version" in tables
+                else None
+            )
+        with Session(engine) as session:
+            chain = "events" in tables and verify_chain(session)
+    except DatabaseError as exc:
+        print(f"FAILED: cannot read {path}: {exc.orig}")
+        return 1
+    finally:
+        engine.dispose()
+    print(f"database: {path}")
+    print(f"integrity: {integrity}")
+    print(f"migration: {revision or 'none'}")
+    print(f"events chain: {'intact' if chain else 'BROKEN or missing'}")
+    for table, n in counts.items():
+        print(f"  {table}: {n}")
+    ok = integrity == "ok" and chain
+    print("OK: restore verified" if ok else "FAILED: restore is not usable")
+    return 0 if ok else 1
+
+
+def _enrol_link(code: str) -> str:
+    return f"{get_settings().MIA_PUBLIC_URL.rstrip('/')}/auth/enrol/{code}"
+
+
+def billing_export(args: argparse.Namespace) -> int:
+    import sys
+
+    from mia.core import billing, events
+    from mia.core.db import session_scope
+    from mia.core.models import Actor
+
+    try:
+        year, month = (int(x) for x in args.month.split("-"))
+        dt.date(year, month, 1)
+    except ValueError as exc:
+        raise SystemExit("--month must be YYYY-MM") from exc
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        rows = billing.summary(session, branch_id, year, month)
+        if args.out:
+            with open(args.out, "w", encoding="utf-8", newline="") as f:
+                billing.write_csv(rows, f)
+        else:
+            billing.write_csv(rows, sys.stdout)
+        events.emit(
+            session,
+            "billing.exported",
+            ("billing", f"{year}-{month:02d}"),
+            None,
+            {"month": f"{year}-{month:02d}", "rows": len(rows)},
+            Actor.system(branch_id),
+        )
+    print(
+        f"exported {len(rows)} row(s) for {year}-{month:02d}"
+        + (f" to {args.out}" if args.out else "")
+    )
+    return 0
+
+
+def payroll_export(args: argparse.Namespace) -> int:
+    import sys
+
+    from mia.agents.shift_supervisor import timesheets
+    from mia.core import events
+    from mia.core.db import session_scope
+    from mia.core.models import Actor
+
+    try:
+        start, end = dt.date.fromisoformat(args.start), dt.date.fromisoformat(args.end)
+    except ValueError as exc:
+        raise SystemExit("--from and --to must be YYYY-MM-DD") from exc
+    if end < start:
+        raise SystemExit("--to must not be before --from")
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        rows = timesheets.payroll_rows(session, branch_id, start, end)
+        if args.out:
+            with open(args.out, "w", encoding="utf-8", newline="") as f:
+                timesheets.write_csv(rows, f)
+        else:
+            timesheets.write_csv(rows, sys.stdout)
+        events.emit(
+            session,
+            "payroll.exported",
+            ("payroll", f"{start.isoformat()}_{end.isoformat()}"),
+            None,
+            {"from": start.isoformat(), "to": end.isoformat(), "rows": len(rows)},
+            Actor.system(branch_id),
+        )
+    print(
+        f"exported {len(rows)} row(s) for {start.isoformat()} to {end.isoformat()}"
+        + (f" to {args.out}" if args.out else "")
+    )
+    return 0
+
+
+def schedule_generate(args: argparse.Namespace) -> int:
+    from mia.core import scheduling
+    from mia.core.db import session_scope
+    from mia.core.models import Actor, Branch
+
+    with session_scope() as session:
+        branch = session.get(Branch, _only_branch_id(session, args.branch))
+        assert branch is not None
+        new = scheduling.generate(session, Actor.system(branch.id), branch, days=args.days)
+    print(f"generated {len(new)} visit(s) for the next {args.days} days")
+    return 0
+
+
+def auth_bootstrap(args: argparse.Namespace) -> int:
+    from mia.core import auth, people
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor, Person
+
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        rows = session.exec(select(Person).where(Person.branch_id == branch_id)).all()
+        owners = [p for p in rows if "owner" in p.roles and p.status == "active"]
+        able = [p for p in owners if auth.credential(session, p.id, "password") is not None]
+        if able:
+            print(f"an owner can already sign in ({able[0].name}); use `mia auth reset` instead")
+            return 1
+        actor = Actor.system(branch_id)
+        if owners:
+            person = owners[0]  # an owner without a login yet (a seeded or imported branch)
+        else:
+            person = people.add_person(
+                session,
+                actor,
+                branch_id=branch_id,
+                name=args.name or args.email.split("@")[0],
+                roles=["owner"],
+                language=args.lang,
+            )
+        code = auth.start_enrolment(session, actor, person, utcnow(), via="cli")
+    print(
+        f"owner {person.name}: set the password (email {args.email}) and TOTP through this "
+        f"link (24 hours, single use):\n  {_enrol_link(code)}"
+    )
+    return 0
+
+
+def auth_reset(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor
+
+    with session_scope() as session:
+        person = _match_one(session, args.name)
+        actor = Actor.system(person.branch_id)
+        code = auth.start_enrolment(session, actor, person, utcnow(), reason="reset", via="cli")
+    print(
+        f"sessions of {person.name} ended. Enrolment link (24 hours, single use):\n"
+        f"  {_enrol_link(code)}"
+    )
+    return 0
+
+
+def auth_link(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor
+
+    with session_scope() as session:
+        person = _match_one(session, args.name)
+        url = auth.send_login_link(session, Actor.system(person.branch_id), person, utcnow())
+    if url is None:
+        print(f"{person.name} has no active channel identity; send an invite first")
+        return 1
+    print(f"login link sent to {person.name} (10 minutes, single use): {url}")
+    return 0
+
+
+def auth_client_add(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor
+
+    with session_scope() as session:
+        branch_id = _only_branch_id(session, args.branch)
+        try:
+            row, secret = auth.create_client(
+                session, Actor.system(branch_id), args.name, args.roles, utcnow()
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+    print(f"client {row.name} registered. Shown once:\n  client_id: {row.client_id}")
+    print(f"  client_secret: {secret}")
+    return 0
+
+
+def auth_client_revoke(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+    from mia.core.models import Actor, AuthClient
+
+    with session_scope() as session:
+        row = session.exec(select(AuthClient).where(AuthClient.client_id == args.client_id)).first()
+        if row is None:
+            raise SystemExit(f"no client {args.client_id}")
+        auth.revoke_client(session, Actor.system(row.branch_id), row, utcnow())
+    print(f"client {args.client_id} revoked")
+    return 0
+
+
+def auth_unlock(args: argparse.Namespace) -> int:
+    from mia.core import auth
+    from mia.core.db import session_scope, utcnow
+
+    with session_scope() as session:
+        auth.unlock_login(session, args.login, utcnow())
+    print(f"{auth.normalise_login(args.login)} unlocked")
+    return 0
+
+
+def keys_init(args: argparse.Namespace) -> int:
+    from mia.core import keys
+
+    path = args.path or get_settings().MIA_MASTER_KEY_FILE
+    if path is None:
+        raise SystemExit("give a path or set MIA_MASTER_KEY_FILE")
+    try:
+        keys.generate(Path(path))
+    except keys.MasterKeyError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"master key written to {path} (mode 400). Back it up outside the data folder.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mia", description="Mia Node command line")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -295,6 +773,18 @@ def build_parser() -> argparse.ArgumentParser:
         func=migrate
     )
     sub.add_parser("seed", help="load demo data").set_defaults(func=seed)
+    p = sub.add_parser("import", help="people, clients, sites and jobs from a YAML file")
+    p.add_argument("file")
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=import_data)
+    p = sub.add_parser("backup", help="write a consistent copy of the database to a new file")
+    p.add_argument("dest")
+    p.set_defaults(func=backup)
+    p = sub.add_parser(
+        "verify-db", help="check a restored copy: integrity, events chain, row counts"
+    )
+    p.add_argument("path")
+    p.set_defaults(func=verify_db)
     p = sub.add_parser("serve", help="start the API and chat page")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8000)
@@ -337,9 +827,115 @@ def build_parser() -> argparse.ArgumentParser:
     p = person.add_parser("add", help="add a person")
     p.add_argument("name")
     p.add_argument("--role", dest="roles", action="append", required=True)
-    p.add_argument("--lang", default="fi", choices=["fi", "en"])
+    p.add_argument("--lang", default="fi", choices=SUPPORTED)
+    p.add_argument(
+        "--ask-language",
+        action="store_true",
+        help="leave the language unchosen: Mia asks it in the first chat (channel sign-up)",
+    )
     p.add_argument("--branch", help="branch id (default: the only branch)")
     p.set_defaults(func=person_add)
+    agent = sub.add_parser("agent", help="agent packages").add_subparsers(
+        dest="agent_command", required=True
+    )
+    p = agent.add_parser("scaffold", help="render a new agent package and wire it in")
+    p.add_argument("agent_id", help="snake_case job title, e.g. quality_officer")
+    p.add_argument("--label-en", required=True)
+    p.add_argument("--label-fi", required=True)
+    p.add_argument("--role", dest="roles", action="append", required=True)
+    p.add_argument("--description", default="", help="router description (a stub's by default)")
+    p.add_argument("--force", action="store_true", help="overwrite the rendered files")
+    p.set_defaults(func=agent_scaffold)
+    p = sub.add_parser("learned", help="routes Mia learned from 'Is this about' taps")
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=learned)
+    p = sub.add_parser("forget", help="forget one learned route (two new taps relearn it)")
+    p.add_argument("key")
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=forget)
+    ph = sub.add_parser("phrases", help="taught phrases (teach Mia)").add_subparsers(
+        dest="phrases_command", required=True
+    )
+    p = ph.add_parser("export", help="append taught phrases as short rows of the eval CSVs")
+    p.add_argument("--cases", help="the cases folder (default: node/tests/evals/cases)")
+    p.set_defaults(func=phrases_export)
+    p = ph.add_parser("import", help="replay the CSV rows marked taught as phrase.taught")
+    p.add_argument("dir")
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.add_argument("--every-branch", action="store_true", help="teach for every branch")
+    p.set_defaults(func=phrases_import)
+    rq = sub.add_parser("requests", help="feature requests").add_subparsers(
+        dest="requests_command", required=True
+    )
+    p = rq.add_parser("export", help="the requests grouped with counts and status, as CSV")
+    p.add_argument("--out", help="file path (default: stdout)")
+    p.set_defaults(func=requests_export)
+    p = rq.add_parser("status", help="mark a request planned, built or declined; tells askers")
+    p.add_argument("id")
+    p.add_argument("status", choices=("planned", "built", "declined"))
+    p.set_defaults(func=requests_status)
+    bill = sub.add_parser("billing", help="billing exports").add_subparsers(
+        dest="billing_command", required=True
+    )
+    p = bill.add_parser("export", help="completed work per client and site for a month, as CSV")
+    p.add_argument("--month", required=True, help="YYYY-MM")
+    p.add_argument("--out", help="file path (default: stdout)")
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=billing_export)
+    pay = sub.add_parser("payroll", help="payroll exports").add_subparsers(
+        dest="payroll_command", required=True
+    )
+    p = pay.add_parser("export", help="approved timesheets for a period, as CSV")
+    p.add_argument("--from", dest="start", required=True, help="YYYY-MM-DD")
+    p.add_argument("--to", dest="end", required=True, help="YYYY-MM-DD")
+    p.add_argument("--out", help="file path (default: stdout)")
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=payroll_export)
+    sched = sub.add_parser("schedule", help="visits and assignments").add_subparsers(
+        dest="schedule_command", required=True
+    )
+    p = sched.add_parser("generate", help="create the missing visits from the job recurrences")
+    p.add_argument("--days", type=int, default=28)
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=schedule_generate)
+    auth_p = sub.add_parser("auth", help="authentication").add_subparsers(
+        dest="auth_command", required=True
+    )
+    p = auth_p.add_parser("bootstrap", help="create the first owner and print an enrolment link")
+    p.add_argument("--email", required=True)
+    p.add_argument("--name")
+    p.add_argument("--lang", default="fi", choices=SUPPORTED)
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=auth_bootstrap)
+    p = auth_p.add_parser("reset", help="end a person's sessions and print an enrolment link")
+    p.add_argument("name")
+    p.set_defaults(func=auth_reset)
+    p = auth_p.add_parser("link", help="send a one-time login link to a person's WhatsApp")
+    p.add_argument("name")
+    p.set_defaults(func=auth_link)
+    clients = auth_p.add_parser("client", help="outside agents and services").add_subparsers(
+        dest="client_command", required=True
+    )
+    p = clients.add_parser("add", help="register a client; prints its credentials once")
+    p.add_argument("name")
+    p.add_argument("--role", dest="roles", action="append", required=True)
+    p.add_argument("--branch", help="branch id (default: the only branch)")
+    p.set_defaults(func=auth_client_add)
+    p = clients.add_parser("revoke", help="revoke a client and its tokens")
+    p.add_argument("client_id")
+    p.set_defaults(func=auth_client_revoke)
+    p = auth_p.add_parser("unlock", help="clear the lockout of a login")
+    p.add_argument("login")
+    p.set_defaults(func=auth_unlock)
+    keys_p = sub.add_parser("keys", help="key material").add_subparsers(
+        dest="keys_command", required=True
+    )
+    p = keys_p.add_parser("init", help="create the master key file")
+    p.add_argument("path", nargs="?")
+    p.set_defaults(func=keys_init)
+    from mia.learning.commands import register as register_skills
+
+    register_skills(sub)
     return parser
 
 

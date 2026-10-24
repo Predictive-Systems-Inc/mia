@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mia phones (dev)</title>
+<style>
+  :root { --bg:#f6f7f9; --panel:#fff; --ink:#1b1f24; --muted:#667085; --line:#e4e7ec;
+          --accent:#2f6fed; --mine:#e8f0fe; --ok:#1f8a4c; --bad:#c0362c; --frame:#1b1f24; }
+  * { box-sizing: border-box; }
+  html, body { height:100%; }
+  body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--ink);
+         display:flex; flex-direction:column; }
+  header { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; padding:10px 16px;
+           background:var(--panel); border-bottom:1px solid var(--line); flex:none; }
+  header h1 { font-size:16px; margin:0; }
+  header .note { color:var(--muted); font-size:12px; margin-left:auto; }
+  button, input { font:inherit; }
+  .group { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
+  .group b { font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; margin-right:2px; }
+  .toggle { border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:16px;
+            padding:2px 10px; cursor:pointer; font-size:13px; }
+  .toggle.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .langs { display:flex; gap:4px; align-items:center; margin-top:4px; font-size:12px; }
+  .langs .toggle { padding:0 8px; font-size:12px; }
+  .langs select { font-size:12px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+  .clock { display:flex; gap:4px; align-items:center; flex-wrap:wrap; font-size:13px; }
+  .clock output { font-variant-numeric:tabular-nums; font-weight:600; padding:2px 8px; border-radius:10px; }
+  .clock.shifted output { background:#fff3d6; color:#8a5a00; border:1px solid #e0a800; }
+  .clock input { font-size:13px; border:1px solid var(--line); border-radius:8px; padding:1px 4px; }
+  .clock button { border:1px solid var(--line); background:#fff; border-radius:12px; padding:0 8px; font-size:12px; cursor:pointer; }
+  .tick { border:0; border-radius:10px; background:var(--accent); color:#fff; padding:4px 12px; cursor:pointer; }
+  /* the phones row is its own scroll area under the header, so the header never covers a phone */
+  main { flex:1; min-height:0; overflow:auto; display:flex; gap:20px; padding:20px 16px; align-items:flex-start; }
+  .empty { color:var(--muted); padding:40px 16px; text-align:center; }
+  .phone { flex:0 0 360px; height:720px; max-height:100%; min-height:480px; border:10px solid var(--frame); border-radius:36px; background:var(--bg);
+           display:flex; flex-direction:column; overflow:hidden; position:relative; }
+  .bar { background:var(--panel); border-bottom:1px solid var(--line); padding:8px 14px; }
+  .bar .name { font-weight:600; display:flex; justify-content:space-between; gap:8px; }
+  .bar .meta { font-size:12px; color:var(--muted); }
+  .bar button { border:1px solid var(--accent); color:var(--accent); background:#fff; border-radius:12px;
+                padding:0 10px; font-size:12px; cursor:pointer; }
+  .thread { flex:1; overflow-y:auto; padding:10px; }
+  .msg { margin:8px 0; display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
+  .msg.me { align-items:flex-end; }
+  .bubble { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:6px 10px;
+            max-width:85%; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .me .bubble { background:var(--mine); }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; max-width:85%; }
+  .chips button, .actions button { border:1px solid var(--accent); color:var(--accent); background:#fff;
+            border-radius:16px; padding:2px 10px; cursor:pointer; font-size:13px; }
+  .card { background:var(--panel); border:1px solid var(--accent); border-radius:12px; padding:8px 10px; max-width:85%; }
+  .card h3 { margin:0 0 4px; font-size:13px; }
+  .card dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:13px; }
+  .card dt { color:var(--muted); }
+  .card dd { margin:0; }
+  .status { font-size:12px; color:var(--muted); margin:4px 0; }
+  .actions { display:flex; gap:8px; margin-top:6px; }
+  .actions .approve { background:var(--ok); border-color:var(--ok); color:#fff; }
+  .actions .reject { border-color:var(--bad); color:var(--bad); }
+  .sys { color:var(--muted); font-size:12px; text-align:center; margin:6px 0; }
+  form { display:flex; gap:6px; padding:8px; background:var(--panel); border-top:1px solid var(--line); }
+  form input { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--line); border-radius:10px; }
+  form button { padding:8px 12px; border:0; border-radius:10px; background:var(--accent); color:#fff; }
+  .drawer { position:absolute; inset:0; background:var(--bg); display:flex; flex-direction:column; z-index:1; }
+  .drawer[hidden] { display:none; }
+  .drawer .list { flex:1; overflow-y:auto; padding:10px; }
+  .teach { border:1px dashed var(--muted) !important; color:var(--muted) !important; font-size:12px !important; }
+  .panel { position:fixed; top:0; right:0; bottom:0; width:min(520px, 100%); background:var(--panel);
+           border-left:1px solid var(--line); box-shadow:-4px 0 16px rgba(0,0,0,.08); z-index:2;
+           display:flex; flex-direction:column; }
+  .panel[hidden] { display:none; }
+  .panel .list { flex:1; overflow-y:auto; padding:10px 16px; }
+  .panel table { width:100%; border-collapse:collapse; font-size:13px; }
+  .panel td, .panel th { text-align:left; border-bottom:1px solid var(--line); padding:4px; vertical-align:top; }
+  .picker h3 { font-size:13px; margin:10px 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mia phones</h1>
+  <div id="chips" class="group"></div>
+  <span class="group"><b>All phones</b><button class="toggle" data-all="en">English</button><button class="toggle" data-all="fil">Filipino</button></span>
+  <span class="clock" id="clock" title="The node's clock (dev only, in memory). Setting it runs nothing; Tick now runs due work at that time. Moving back puts events out of order in this database.">
+    <b>Node time</b><output id="now">...</output>
+    <input type="datetime-local" id="at" step="60"><button data-set>Set</button>
+    <button data-add="15">+15 min</button><button data-add="60">+1 h</button>
+    <button data-next>Next day 08:00</button><button data-reset>Real time</button>
+    <small style="color:var(--muted)">Set runs nothing (Tick now does). Back in time = events out of order.</small>
+  </span>
+  <button class="tick" id="tick">Tick now</button>
+  <button class="toggle" id="phrases">Phrases</button>
+  <button class="toggle" id="requests">Requests</button>
+  <span class="note" id="note">Loading...</span>
+</header>
+<main id="phones"></main>
+<aside class="panel" id="panel" hidden></aside>
+<script>
+const ORDER = ["owner", "admin", "supervisor", "clerk", "staff"];
+const CAP = 200;  // messages kept per address in localStorage
+const store = {
+  get(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } },
+  set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private window */ } },
+};
+let people = [];                                   // /sim/phones plus the customer phones
+let on = new Set(store.get("mia.sim.on", []));     // phone ids switched on
+const customers = store.get("mia.sim.customers", []);
+const threads = {};                                // address -> [{me, body}]
+const views = {};                                  // phone id -> {box, thread, busy}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function thread(address) { return threads[address] ??= store.get(`mia.sim.thread.${address}`, []); }
+function keep(address, entry) {
+  const t = thread(address);
+  t.push(entry);
+  if (t.length > CAP) t.splice(0, t.length - CAP);
+  store.set(`mia.sim.thread.${address}`, t);
+}
+function groupOf(p) { return p.customer ? "customer" : ORDER.find(r => p.roles.includes(r)) || p.roles[0] || "staff"; }
+
+function drawChips() {
+  const box = document.getElementById("chips");
+  box.replaceChildren();
+  for (const g of [...ORDER, ...new Set(people.map(groupOf).filter(g => !ORDER.includes(g) && g !== "customer")), "customer"]) {
+    const members = people.filter(p => groupOf(p) === g);
+    if (!members.length && g !== "customer") continue;
+    const span = el("span", "group");
+    span.append(el("b", null, g));
+    for (const p of members) {
+      const b = el("button", "toggle" + (on.has(p.person_id) ? " on" : ""), p.name);
+      b.title = p.address ? `${p.roles.join(", ")} ${p.address}` : `${p.roles.join(", ")} (no phone yet)`;
+      b.onclick = () => toggle(p);
+      span.append(b);
+    }
+    if (g === "customer") {
+      const add = el("button", "toggle", "+ customer");
+      add.onclick = addCustomer;
+      span.append(add);
+    }
+    box.append(span);
+  }
+}
+
+async function toggle(p) {
+  if (on.has(p.person_id)) { on.delete(p.person_id); }
+  else {
+    if (!p.address) {
+      const res = await fetch("/sim/phones", {
+        method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({person_id: p.person_id}),
+      });
+      if (!res.ok) { alert(`No phone for ${p.name}: ${res.status} ${await res.text()}`); return; }
+      p.address = (await res.json()).address;
+    }
+    on.add(p.person_id);
+  }
+  store.set("mia.sim.on", [...on]);
+  drawChips();
+  drawPhones();
+}
+
+function addCustomer() {
+  const name = prompt("Customer name", "Customer");
+  if (!name) return;
+  const n = String(customers.length + 1).padStart(2, "0");
+  const address = (prompt("Number (digits, as WhatsApp sends it)", `6391712345${n}`) || "").replace(/\D/g, "");
+  if (!address) return;
+  const c = {person_id: `customer:${address}`, name, roles: ["customer"], branch: "", address, customer: true};
+  customers.push(c);
+  store.set("mia.sim.customers", customers);
+  people.push(c);
+  toggle(c);
+}
+
+// Reply language (person.language): en and fil as chips, the other supported ones in a list.
+const MAIN_LANGS = ["en", "fil"];
+const OTHER_LANGS = ["ceb", "ilo", "hil", "war", "bcl", "pam", "pag", "fi"];
+async function setLanguage(p, language) {
+  const res = await fetch(`/sim/phones/${p.person_id}/language`, {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({language}),
+  });
+  if (!res.ok) { alert(`Language not set for ${p.name}: ${res.status}`); return false; }
+  p.language = (await res.json()).language;
+  if (views[p.person_id]) drawLangs(views[p.person_id]);
+  return true;
+}
+function drawLangs(v) {
+  const p = v.p;
+  v.langs.replaceChildren(el("span", "status", "Replies in"));
+  for (const code of MAIN_LANGS) {
+    const b = el("button", "toggle" + (p.language === code ? " on" : ""), code);
+    b.onclick = () => setLanguage(p, code);
+    v.langs.append(b);
+  }
+  const sel = el("select");
+  sel.append(el("option", null, MAIN_LANGS.includes(p.language) ? "other" : p.language));
+  sel.firstChild.value = "";
+  for (const code of OTHER_LANGS) { const o = el("option", null, code); o.value = code; sel.append(o); }
+  sel.onchange = () => { if (sel.value) setLanguage(p, sel.value); };
+  v.langs.append(sel);
+}
+for (const b of document.querySelectorAll("[data-all]")) {
+  b.onclick = async () => {
+    const note = document.getElementById("note");
+    const staff = people.filter(p => !p.customer);
+    let done = 0;
+    for (const p of staff) done += await setLanguage(p, b.dataset.all);
+    note.textContent = `${done} of ${staff.length} people now reply in ${b.textContent}.`;
+  };
+}
+
+function drawPhones() {
+  const main = document.getElementById("phones");
+  const shown = people.filter(p => on.has(p.person_id) && p.address);
+  for (const id of Object.keys(views)) {
+    if (!shown.some(p => p.person_id === id)) { views[id].box.remove(); delete views[id]; }
+  }
+  for (const p of shown) if (!views[p.person_id]) main.append(makePhone(p));
+  for (const p of shown) main.append(views[p.person_id].box);  // keep the chip order
+  if (!shown.length) main.replaceChildren(el("div", "empty", "Switch a phone on with a chip above."));
+  else main.querySelector(".empty")?.remove();
+}
+
+function makePhone(p) {
+  const box = el("div", "phone");
+  const bar = el("div", "bar");
+  const name = el("div", "name");
+  name.append(el("span", null, p.name));
+  const v = {box, busy: false, p};
+  if (!p.customer) {
+    const app = el("button", null, "App");
+    app.onclick = () => openDrawer(v);
+    const ask = el("button", null, "Request a feature");
+    ask.onclick = () => requestFeature(v, null);
+    name.append(ask, app);
+  }
+  bar.append(name, el("div", "meta", `${p.roles.join(", ")}${p.branch ? " . " + p.branch : ""} . ${p.address}`));
+  if (!p.customer) { v.langs = el("div", "langs"); bar.append(v.langs); drawLangs(v); }
+  const list = el("div", "thread");
+  v.thread = list;
+  const form = el("form");
+  const input = el("input");
+  input.placeholder = "Message Mia";
+  input.autocomplete = "off";
+  form.append(input, el("button", null, "Send"));
+  form.onsubmit = e => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (text) { input.value = ""; send(v, text, null); }
+  };
+  v.drawer = el("div", "drawer");
+  v.drawer.hidden = true;
+  box.append(bar, list, form, v.drawer);
+  views[p.person_id] = v;
+  for (const entry of thread(p.address)) list.append(render(v, entry));
+  list.scrollTop = list.scrollHeight;
+  return box;
+}
+
+function render(v, entry) {
+  const b = entry.body;
+  const box = el("div", "msg" + (entry.me ? " me" : ""));
+  if (entry.me) { box.append(el("div", "bubble", b.text)); return box; }
+  if (b.kind === "template" && b.name === "mia_new_message") {
+    // WhatsApp's 24-hour notice: any reply reopens the window and releases the held messages.
+    box.append(el("div", "bubble", "New message from Mia. Reply to see it."));
+    const chips = el("div", "chips");
+    const c = el("button", null, "Show");
+    c.onclick = () => send(v, "ok", null);
+    chips.append(c);
+    box.append(chips);
+    return box;
+  }
+  if (b.kind === "template") {
+    const card = el("div", "card");
+    card.append(el("h3", null, `Template ${b.name} (${b.lang})`));
+    if (b.params?.length) card.append(el("div", null, b.params.map((x, i) => `${i + 1}. ${x}`).join("\n")));
+    box.append(card);
+  } else if (b.text) {
+    box.append(el("div", "bubble", b.text));
+  }
+  const options = b.kind === "list" ? b.rows : b.buttons;
+  if (options?.length) {
+    const chips = el("div", "chips");
+    if (b.kind === "list" && b.button) chips.append(el("span", "status", b.button));
+    for (const opt of options) {
+      const c = el("button", null, opt);
+      c.onclick = () => send(v, opt, opt, b.id);  // the tapped message's id, as WhatsApp's context
+      chips.append(c);
+    }
+    box.append(chips);
+  }
+  if (!v.p.customer && entry.asked) {
+    const chips = el("div", "chips");
+    const c = el("button", "teach", "Teach");
+    c.title = `Teach what "${entry.asked}" means`;
+    c.onclick = () => openTeach(v, entry.asked);
+    chips.append(c);
+    box.append(chips);
+  }
+  return box;
+}
+
+function show(v, entry) {
+  if (!entry.me && v.asked) entry.asked = v.asked;  // the typed message this reply answers
+  keep(v.p.address, entry);
+  v.thread.append(render(v, entry));
+  v.thread.scrollTop = v.thread.scrollHeight;
+}
+
+async function send(v, text, button, context) {
+  if (!button) v.asked = text;
+  show(v, {me: true, body: {text}});
+  const wait = el("div", "sys", "Mia is typing...");
+  v.thread.append(wait);
+  v.busy = true;
+  try {
+    const res = await fetch("/sim/messages", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({address: v.p.address, text: button ? "" : text, button, context: button ? context : null, name: v.p.customer ? v.p.name : null}),
+    });
+    if (!res.ok) { wait.textContent = `Error ${res.status}: ${(await res.text()).slice(0, 160)}`; return; }
+    wait.remove();
+    for (const body of await res.json()) show(v, {me: false, body});
+  } finally { v.busy = false; }
+}
+
+async function poll(v) {
+  if (v.busy) return;
+  v.busy = true;
+  try {
+    const res = await fetch(`/sim/messages?address=${encodeURIComponent(v.p.address)}`);
+    if (res.ok) for (const body of await res.json()) show(v, {me: false, body});
+  } catch { /* the node restarted; the next poll tries again */ }
+  finally { v.busy = false; }
+}
+setInterval(() => { for (const v of Object.values(views)) poll(v); drawClock(); }, 2000);
+
+// The test clock (dev only): the node's local time, shown amber with "test time" while shifted.
+let nodeNow = null;  // "YYYY-MM-DDTHH:MM" in the organisation's zone
+async function drawClock(res) {
+  try { res ??= await fetch("/sim/clock"); } catch { return; }
+  const box = document.getElementById("clock");
+  if (!res.ok) { document.getElementById("now").textContent = `clock: ${res.status}`; return; }
+  const c = await res.json();
+  nodeNow = c.now.slice(0, 16);
+  const day = new Date(nodeNow + ":00").toLocaleDateString("en", {weekday: "short"});
+  document.getElementById("now").textContent = `${day} ${nodeNow.replace("T", " ")}${c.shifted ? " (test time)" : ""}`;
+  box.classList.toggle("shifted", c.shifted);
+}
+async function setClock(body) {
+  drawClock(await fetch("/sim/clock", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}));
+}
+function local(d) {  // a Date read as wall-clock parts, back to "YYYY-MM-DDTHH:MM"
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+// Wall-clock arithmetic on the node's local time; the browser's zone only does the carrying.
+document.querySelector("[data-set]").onclick = () => { const at = document.getElementById("at").value; if (at) setClock({at}); };
+for (const b of document.querySelectorAll("[data-add]")) {
+  b.onclick = () => { if (!nodeNow) return; const d = new Date(nodeNow + ":00"); d.setMinutes(d.getMinutes() + Number(b.dataset.add)); setClock({at: local(d)}); };
+}
+document.querySelector("[data-next]").onclick = () => {
+  if (!nodeNow) return;
+  const d = new Date(nodeNow + ":00"); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0);
+  setClock({at: local(d)});
+};
+document.querySelector("[data-reset]").onclick = () => setClock({reset: true});
+
+// The App drawer: the person's approvals inbox (/approvals), decided as in index.html.
+async function openDrawer(v) {
+  const d = v.drawer;
+  d.replaceChildren();
+  d.hidden = false;
+  const bar = el("div", "bar");
+  const name = el("div", "name");
+  const close = el("button", null, "Close");
+  close.onclick = () => { d.hidden = true; };
+  name.append(el("span", null, `${v.p.name}: approvals`), close);
+  bar.append(name);
+  const list = el("div", "list");
+  d.append(bar, list);
+  // The approvals inbox: every approval this person may decide (a void or refund card arrives as
+  // text on the phone, so it is not among the chat's approval_card blocks).
+  const res = await fetch("/approvals", {headers: {"X-Mia-Actor": v.p.person_id}});
+  if (!res.ok) { list.append(el("div", "sys", `No app for this person (${res.status}).`)); return; }
+  const cards = (await res.json()).filter(a => a.status === "pending").map(a => ({
+    title: a.summary, approval_id: a.id, status: a.status,
+    fields: Object.entries(a.evidence || {})
+      .filter(([k, x]) => ["amount", "receipt_no", "reason"].includes(k) && x !== null && x !== "")
+      .map(([k, x]) => ({label: k.replace("_", " "), value: String(x)})),
+  }));
+  if (!cards.length) list.append(el("div", "sys", "No approvals waiting."));
+  for (const block of cards) list.append(renderCard(v, block, list));
+}
+
+function renderCard(v, block, list) {
+  const card = el("div", "card");
+  card.style.marginBottom = "8px";
+  card.append(el("h3", null, block.title));
+  if (block.subtitle) card.append(el("div", "status", block.subtitle));
+  if (block.summary) card.append(el("div", null, block.summary));
+  const dl = el("dl");
+  for (const f of block.fields || []) dl.append(el("dt", null, f.label), el("dd", null, f.value));
+  card.append(dl);
+  const status = el("div", "status", `Status: ${block.status}`);
+  const actions = el("div", "actions");
+  for (const [label, outcome, cls] of [["Approve", "approved", "approve"], ["Reject", "rejected", "reject"]]) {
+    const b = el("button", cls, label);
+    b.onclick = () => decide(v, block.approval_id, outcome, status);
+    actions.append(b);
+  }
+  card.append(status, actions);
+  return card;
+}
+
+async function decide(v, id, outcome, statusEl) {
+  const headers = {"Content-Type": "application/json", "X-Mia-Actor": v.p.person_id};
+  let res = await fetch(`/approvals/${id}/decide`, {method: "POST", headers, body: JSON.stringify({outcome})});
+  let body = await res.json();
+  if (res.status === 403 && body.detail === "step_up_required") {
+    const pin = window.prompt("Enter your PIN to decide this approval");
+    if (!pin) { statusEl.textContent = "Cancelled."; return; }
+    const up = await fetch("/auth/stepup", {method: "POST", headers, body: JSON.stringify({pin})});
+    if (!up.ok) { statusEl.textContent = "Wrong PIN."; return; }
+    res = await fetch(`/approvals/${id}/decide`, {method: "POST", headers, body: JSON.stringify({outcome})});
+    body = await res.json();
+  }
+  statusEl.textContent = res.ok ? `Status: ${body.status} (by ${v.p.name})` : `Not allowed: ${body.detail}`;
+}
+
+// Teach Mia (dev only): the phone owner's teachable actions for a message, or a feature request.
+function drawerShell(v, title) {
+  const d = v.drawer;
+  d.replaceChildren();
+  d.hidden = false;
+  const bar = el("div", "bar");
+  const name = el("div", "name");
+  const close = el("button", null, "Close");
+  close.onclick = () => { d.hidden = true; };
+  name.append(el("span", null, title), close);
+  bar.append(name);
+  const list = el("div", "list picker");
+  d.append(bar, list);
+  return list;
+}
+
+async function openTeach(v, asked) {
+  const list = drawerShell(v, `Teach: "${asked}"`);
+  const res = await fetch(`/sim/phones/${v.p.person_id}/teach`);
+  if (!res.ok) { list.append(el("div", "sys", `No agents (${res.status}).`)); return; }
+  for (const agent of await res.json()) {
+    list.append(el("h3", null, agent.label));
+    const chips = el("div", "chips");
+    for (const a of agent.actions) {
+      const b = el("button", null, a.label);
+      b.onclick = () => teach(v, asked, agent.agent_id, a.action);
+      chips.append(b);
+    }
+    if (!agent.actions.length) chips.append(el("span", "status", "Nothing teachable."));
+    list.append(chips);
+  }
+  list.append(el("h3", null, "None of these"));
+  const cant = el("button", null, "Mia can't do this yet");
+  cant.onclick = () => requestFeature(v, asked);
+  const chips = el("div", "chips");
+  chips.append(cant);
+  list.append(chips);
+}
+
+async function teach(v, asked, agent_id, action) {
+  const res = await fetch("/sim/teach", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({person_id: v.p.person_id, text: asked, agent_id, action}),
+  });
+  if (!res.ok) { alert(`Not taught: ${res.status} ${await res.text()}`); return; }
+  const out = await res.json();
+  v.drawer.hidden = true;
+  document.getElementById("note").textContent = `Taught "${out.key}" (phrasebook v${out.version}).`;
+  send(v, asked, null);  // the taught answer, at once
+}
+
+async function requestFeature(v, failed) {
+  const text = prompt(failed ? `What should Mia do with "${failed}"? (one line)` : "What should Mia be able to do?", failed || "");
+  if (!text) return;
+  const res = await fetch("/sim/requests", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({person_id: v.p.person_id, text, failed_text: failed}),
+  });
+  v.drawer.hidden = true;
+  document.getElementById("note").textContent = res.ok ? `Feature request recorded for ${v.p.name}.` : `Request failed (${res.status}).`;
+}
+
+function panelShell(title) {
+  const panel = document.getElementById("panel");
+  panel.replaceChildren();
+  panel.hidden = false;
+  const bar = el("div", "bar");
+  const name = el("div", "name");
+  const close = el("button", null, "Close");
+  close.onclick = () => { panel.hidden = true; };
+  name.append(el("span", null, title), close);
+  bar.append(name);
+  const list = el("div", "list");
+  panel.append(bar, list);
+  return list;
+}
+
+function table(heads, rows) {
+  const t = el("table");
+  const tr = el("tr");
+  for (const h of heads) tr.append(el("th", null, h));
+  t.append(tr);
+  for (const cells of rows) {
+    const r = el("tr");
+    for (const c of cells) { const td = el("td"); td.append(c instanceof Node ? c : document.createTextNode(String(c))); r.append(td); }
+    t.append(r);
+  }
+  return t;
+}
+
+async function openPhrases() {
+  const list = panelShell("Phrases");
+  const res = await fetch("/sim/phrases");
+  if (!res.ok) { list.append(el("div", "sys", `No phrases (${res.status}).`)); return; }
+  const book = await res.json();
+  const versions = Object.entries(book.versions).map(([b, v]) => `${b} v${v}`).join(", ");
+  list.append(el("div", "status", `Phrasebook versions: ${versions}. Taught phrases outrank Did you mean taps; a phrase picks the action only for a read, and only an owner's or admin's taught phrase is an example for Jev.`));
+  if (!book.phrases.length) { list.append(el("div", "sys", "No phrases yet: use Teach under a reply.")); return; }
+  list.append(table(["Text", "Agent", "Action", "Source", "Branch", ""], book.phrases.map(p => {
+    const b = el("button", null, "Retire");
+    b.onclick = async () => {
+      await fetch("/sim/phrases/retire", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({key: p.key, branch_id: p.branch_id})});
+      openPhrases();
+    };
+    const source = p.taught ? "taught" : `${p.taps} taps, confidence ${p.confidence}`;
+    return [p.text, p.agent_id, p.action, source, p.branch, b];
+  })));
+  if (!(book.reports || []).length) return;
+  list.append(el("div", "status", "Saved reports: the same question runs its form again with no model call."));
+  list.append(table(["Text", "Report", "Branch", ""], book.reports.map(r => {
+    const b = el("button", null, "Retire");
+    b.onclick = async () => {
+      await fetch("/sim/reports/retire", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({key: r.key, branch_id: r.branch_id})});
+      openPhrases();
+    };
+    const f = r.form;
+    const when = f.period || `${f.start} to ${f.end}`;
+    const words = [f.measure, when, f.group_by !== "none" ? `per ${f.group_by}` : "", f.compare_to !== "none" ? `vs ${f.compare_to}` : ""];
+    return [r.text, words.filter(Boolean).join(", "), r.branch, b];
+  })));
+}
+
+async function openRequests() {
+  const list = panelShell("Feature requests");
+  const res = await fetch("/sim/requests");
+  if (!res.ok) { list.append(el("div", "sys", `No requests (${res.status}).`)); return; }
+  const rows = await res.json();
+  list.append(el("div", "status", "Mark a status with: uv run mia requests status ID planned|built|declined"));
+  if (!rows.length) { list.append(el("div", "sys", "No requests yet.")); return; }
+  list.append(table(["Request", "Asked", "Status", "Failed messages", "Id"], rows.map(r => [r.text, r.count, r.status, r.failed.join(" | "), r.id])));
+}
+document.getElementById("phrases").onclick = openPhrases;
+document.getElementById("requests").onclick = openRequests;
+
+document.getElementById("tick").onclick = async () => {
+  const note = document.getElementById("note");
+  const res = await fetch("/sim/tick", {method: "POST"});
+  const out = res.ok ? await res.json() : null;
+  note.textContent = out ? `Tick: ${out.advanced} advanced, ${out.queued} queued for phones, ${out.sent} sent.` : `Tick failed (${res.status}).`;
+};
+
+async function init() {
+  const note = document.getElementById("note");
+  const health = await (await fetch("/health")).json();
+  note.textContent = `Auth mode: ${health.auth_mode}. Sim channel, dev and loopback only.`;
+  const res = await fetch("/sim/phones");
+  if (!res.ok) { note.textContent = `No phones (${res.status}): dev mode on loopback only.`; return; }
+  people = [...await res.json(), ...customers];
+  const known = new Set(people.map(p => p.person_id));
+  on = new Set([...on].filter(id => known.has(id)));
+  drawChips();
+  drawPhones();
+  drawClock();
+}
+init();
+</script>
+</body>
+</html>

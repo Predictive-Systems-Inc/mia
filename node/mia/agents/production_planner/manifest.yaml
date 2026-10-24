@@ -1,0 +1,65 @@
+id: production_planner
+name: "Production Planner"
+version: 0.1.0
+standard_version: "1.10"
+job_description: job.md
+instructions: {base: prompts/base.md}
+roles:
+  agent_role: agent.production_planner
+  # The served kiosks' counts, stock and confirmed orders are read with read_all by the agent
+  # alone (D39, Q96); no human role gains a cross-branch right.
+  grants:
+    - data:sales_counts:read
+    - data:sales_counts:read_all
+    - data:sales_receipts:read
+    - data:sales_receipts:read_all
+    - data:sales_receipt_lines:read
+    - data:sales_receipt_lines:read_all
+    - data:sales_payments:read
+    - data:sales_payments:read_all
+    - data:stock_events:read
+    - data:stock_events:read_all
+    - data:customer_orders:read
+    - data:customer_orders:read_all
+    - data:retail_items:read
+    - data:retail_ingredients:read
+    - data:retail_branch_hours:read
+    - data:core.person:read
+    - data:core.branch:read
+    - data:production_planner_recipes:read
+    - data:production_planner_recipes:write
+    - data:production_planner_recipes:read_all
+    - data:production_planner_recipes:write_all
+    - data:production_planner_plans:read
+    - data:production_planner_plans:write
+    - data:production_planner_plans:read_all
+    - data:production_planner_plans:write_all
+    - data:production_planner_batches:read
+    - data:production_planner_batches:write
+    - data:production_planner_batches:read_all
+    - data:production_planner_batches:write_all
+    - data:production_planner_dispatches:read
+    - data:production_planner_dispatches:write
+    - data:production_planner_dispatches:read_all
+    - data:production_planner_dispatches:write_all
+    - tool:production_planner.plan:execute
+    - tool:production_planner.change_plan:execute
+    - tool:production_planner.confirm_plan:execute
+    - tool:production_planner.batch_sheet:execute
+    - tool:production_planner.set_recipe:execute
+    - tool:production_planner.record_batch:execute
+    - tool:production_planner.dispatch_list:execute
+    - tool:production_planner.confirm_delivery:execute
+    - tool:production_planner.capacity:execute
+  denies: [tool:*:approve]
+tools:
+  - {id: production_planner.plan, kind: agent, risk: read, approval: never, reads: [production_planner_plans, production_planner_recipes]}
+  - {id: production_planner.change_plan, kind: agent, risk: write_internal, approval: never, reads: [production_planner_plans, production_planner_recipes], writes: [production_planner_plans]}
+  - {id: production_planner.confirm_plan, kind: agent, risk: write_internal, approval: never, reads: [production_planner_plans, production_planner_recipes], writes: [production_planner_plans]}
+  - {id: production_planner.batch_sheet, kind: agent, risk: read, approval: never, reads: [production_planner_recipes, production_planner_plans, retail_ingredients, retail_items]}
+  - {id: production_planner.set_recipe, kind: agent, risk: write_internal, approval: never, reads: [production_planner_recipes, retail_items, retail_ingredients], writes: [production_planner_recipes]}
+  - {id: production_planner.record_batch, kind: agent, risk: write_internal, approval: never, reads: [production_planner_plans, production_planner_recipes, production_planner_batches, retail_items, core.person], writes: [production_planner_batches, production_planner_dispatches]}
+  - {id: production_planner.dispatch_list, kind: agent, risk: read, approval: never, reads: [production_planner_dispatches]}
+  - {id: production_planner.confirm_delivery, kind: agent, risk: write_internal, approval: never, reads: [production_planner_dispatches], writes: [production_planner_dispatches]}
+  - {id: production_planner.capacity, kind: agent, risk: read, approval: never, reads: [production_planner_recipes, production_planner_plans]}
+tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

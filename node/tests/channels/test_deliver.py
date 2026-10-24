@@ -13,7 +13,7 @@ from mia.channels.simulator import SimAdapter
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.chat.channels import notify
 from mia.core.db import utcnow
-from mia.core.models import Actor, ChannelOutbox, Message, Person
+from mia.core.models import Actor, ChannelOutbox, Event, Message, Person
 from tests.channels.conftest import LinkFn
 
 HKI = ZoneInfo("Europe/Helsinki")
@@ -169,8 +169,42 @@ def test_notify_keeps_the_app_copy_and_delivers(
         juha,
         [TextBlock(text="Hei")],
         Actor.system(juha.branch_id),
-        "dispatcher",
+        "shift_supervisor",
         urgent=True,
     )
-    assert session.exec(select(Message).where(Message.text == "Hei")).one()
+    message = session.exec(select(Message).where(Message.text == "Hei")).one()
     assert len(_rows(session)) == 1
+    event = session.exec(select(Event).where(Event.entity_id == message.id)).one()
+    assert event.action == "notification.sent" and event.after and event.after["text"] == "Hei"
+
+
+def test_a_sensitive_block_redacts_the_notification_event(
+    session: Session, people: dict[str, Person]
+) -> None:
+    """notify() redacts by the same rule as deliver(): one sensitive block is enough."""
+    from mia.chat.blocks import CardBlock, CardField
+
+    juha = people["Juha"]
+    card = CardBlock(
+        title="Kamppi", fields=[CardField(label="Access", value="Door 4711")], sensitive=True
+    )
+    message = notify(session, juha, [card], Actor.system(juha.branch_id), "shift_supervisor")
+    assert "4711" in str(message.blocks)
+    event = session.exec(select(Event).where(Event.entity_id == message.id)).one()
+    assert event.after and event.after["blocks"] == "<redacted>" and "4711" not in str(event.after)
+
+
+def test_deliver_marks_a_sensitive_block_itself(
+    session: Session, sim: SimAdapter, people: dict[str, Person], link: LinkFn
+) -> None:
+    """Every caller gets the guarantee: a sensitive block becomes the app link in deliver()."""
+    from mia.chat.blocks import CardBlock, CardField
+
+    juha = people["Juha"]
+    link(juha, "358401234567", last_inbound_at=utcnow())
+    card = CardBlock(
+        title="Kamppi", fields=[CardField(label="Access", value="Door 4711")], sensitive=True
+    )
+    rows = deliver(session, juha, [card], Actor.person(juha), urgent=True)
+    assert rows and all("4711" not in str(r.payload) for r in rows)
+    assert any("http" in str(r.payload) for r in rows)

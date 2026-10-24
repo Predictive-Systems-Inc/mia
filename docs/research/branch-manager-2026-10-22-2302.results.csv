@@ -1,0 +1,25 @@
+message,lang,half,intent,predicted,confidence,score,missing
+how is ana doing,en,short,coaching_who,coaching_who,0.96,right,
+who needs coaching,en,short,coaching_who,coaching_who,1.0,right,
+tips to sell more sp,en,short,how_to_sell,how_to_sell,0.98,right,
+try classic 49 1 wk,en,short,propose_experiment,propose_experiment,0.64,right,
+hows the promo,en,short,experiment_status,experiment_status,1.0,right,
+keep new price,en,short,decide_experiment_result,decide_experiment_result,0.93,right,
+classic 48 from monday,en,short,change_price,change_price,0.86,right,
+use ch for overload,en,short,set_short_code,clarify,0.5,ask,code
+week numbers pls,en,short,weekly_summary,weekly_summary,0.99,right,
+this month vs last,en,short,monthly_letter,monthly_letter,0.99,right,
+classic 48,en,short,ask,clarify,0.73,ask,date
+ube price,en,short,ask,clarify,0.4,ask,
+kmusta benta ni liza,fil,short,coaching_who,clarify,0.54,ask,
+sino mahina sa team,fil,short,coaching_who,coaching_who,1.0,right,
+pano mabenta ube,fil,short,how_to_sell,clarify,0.52,ask,
+subukan 45 sp ngayong linggo,fil,short,propose_experiment,propose_experiment,0.92,right,
+ok ba yung test,fil,short,experiment_status,reply_only,0.61,wrong,
+balik sa dati presyo,fil,short,decide_experiment_result,decide_experiment_result,0.89,right,
+gawing 52 se simula lunes,fil,short,change_price,change_price,0.93,right,
+gawin bx code ng box,fil,short,set_short_code,clarify,0.38,ask,
+benta ngayong linggo vs target,fil,short,weekly_summary,weekly_summary,1.0,right,
+report ng buwan pls,fil,short,monthly_letter,monthly_letter,1.0,right,
+sp 45,fil,short,ask,clarify,0.44,ask,date
+presyo,fil,short,ask,clarify,0.44,ask,

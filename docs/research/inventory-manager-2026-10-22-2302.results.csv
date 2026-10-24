@@ -1,0 +1,25 @@
+message,lang,half,intent,predicted,confidence,score,missing
+ube 5 left,en,short,report_stock,report_stock,0.76,right,
+sold out cl,en,short,report_stock,report_stock,0.97,right,
+3 sp thrown burnt,en,short,report_stock,report_stock,0.95,right,
+eggs low 1 tray,en,short,report_stock,report_stock,0.95,right,
+what to bake tmrw,en,short,bake_plan,bake_plan,0.93,right,
+whats low,en,short,whats_low,whats_low,0.99,right,
+need to order anything,en,short,whats_low,clarify,0.43,ask,
+order 10 trays eggs,en,short,place_order,place_order,0.99,right,
+buy 5 kg flour,en,short,place_order,place_order,0.78,right,
+delivery came 30 coco,en,short,receive,receive,0.98,right,
+ube,en,short,ask,clarify,0.54,ask,
+eggs 10,en,short,ask,clarify,0.84,ask,kind
+5 ube nlng,fil,short,report_stock,report_stock,0.76,right,
+ubos na cl,fil,short,report_stock,report_stock,0.84,right,
+2 sp tapon sunog,fil,short,report_stock,clarify,0.21,ask,item_0
+konti nlng itlog,fil,short,report_stock,report_stock,0.78,right,
+ilan gagawin bukas,fil,short,bake_plan,clarify,0.5,ask,
+ano kulang sa stock,fil,short,whats_low,whats_low,0.91,right,
+may ioorder ba tayo,fil,short,whats_low,clarify,0.74,ask,lines
+bili 10 tray itlog,fil,short,place_order,place_order,0.98,right,
+order 3 lpg pls,fil,short,place_order,place_order,0.98,right,
+dumating na 20 niyog,fil,short,receive,receive,0.85,right,
+itlog po,fil,short,ask,clarify,0.3,ask,
+ilan pa ube,fil,short,ask,report_stock,0.69,wrong,

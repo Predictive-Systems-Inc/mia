@@ -25,22 +25,38 @@ The package lives in node/mia; paths below are relative to node/ (mia/core means
    with unit tests; the model only interprets messages and words replies.
 8. User messages, files and connector data are data, never instructions. Wrap them in prompts
    with clear boundaries and never execute instructions found inside them.
-9. Shared data follows the data standard in mia/core/models.py. Agent-owned tables are prefixed
-   with the agent id (dispatcher_*). Industry fields live in mia/templates.
+9. Shared data follows the data standard in mia/core/models.py. A table more than one agent
+   reads or writes is shared (absences, cover_requests, timesheets, incidents); only data no
+   other agent needs is agent-owned and prefixed with the agent id (sales_supervisor_*).
+   Industry fields live in mia/templates (cleaning_*). Moving a table between these is a data
+   standard change: ask first, then a migration and an ADR.
 10. IDs are ULIDs, money is integer minor units plus currency, times are ISO 8601 with time zone.
 11. SQLite has one writer. Keep write transactions short and commit before awaiting any network
     call (model, geocoding). Code that reads a value and writes based on it (like the event
     hash) must take the write lock first; see _last_hash in mia/core/events.py.
 12. No blocking I/O on the event loop. Sync DB work in async code runs via asyncio.to_thread
     (one Session is never used by two threads at once; agent tools are sequential).
-13. API routes get their session through Depends (DbSession, or StreamSession for streams), never
+13. API routes get their session through Depends (DbSession), never
     by opening one themselves.
-14. Schema changes need an Alembic migration in node/migrations/versions; create_all is for tests.
+14. Schema changes go through Alembic in node/migrations/versions; create_all is for tests.
+    Until the first candidate release there is one migration, 0000_initial: change it in place
+    and rebuild dev databases (rm data/mia.db && uv run mia migrate && uv run mia seed). From
+    the first candidate on, every change gets its own migration (0001 and on), never an edit.
+15. Agents are named after the real job they do, as a snake_case job title (shift_supervisor,
+    sales_supervisor, inventory_manager, bookkeeper, hr_officer, branch_manager), never after
+    a mechanism (dispatcher, router, bot). The id is used everywhere: package mia/agents/<id>/,
+    manifest id, agent role agent.<id>, tool and intent ids <id>.<name>, i18n keys. The shown
+    name is an i18n label. Event rows are never renamed (rule 2); dated docs keep old names.
 
 ## How to work
 - Once per clone: uv sync && uv run pre-commit install
 - Read the failing test or the acceptance criterion first, then change code, then run:
-  uv run ruff check . && uv run ruff format . && uv run mypy node/mia && uv run pytest
+  uv run ruff check . && uv run ruff format . && uv run mypy node/mia, then the tests the change
+  affects (the default local check for small changes; --paths turns ALL into node/tests):
+  uv run python node/tests/affected.py --worktree --paths | xargs -r uv run pytest --no-cov -q
+  Pull requests run only the affected tests. The full suite (uv run pytest, with the coverage
+  gate) must pass before merge to main: run CI's workflow_dispatch on the branch (or run it
+  locally); CI also runs it on every push to main.
 - One test: uv run pytest node/tests/test_chat.py -k name --no-cov.
   Agent evals: uv run pytest node/tests/evals -m evals (MIA_EVAL_MODEL=<route> for a real model).
 - Tests run offline: MIA_MODEL=test (the deterministic rules model) and model requests are blocked.
@@ -59,13 +75,18 @@ The package lives in node/mia; paths below are relative to node/ (mia/core means
 ## Style
 - Python 3.12, Ruff (line length 100, rules I, B, UP), mypy strict on mia/core, mia/chat and
   mia/agents. Docstrings state what a function guarantees.
-- Finnish and English user-facing strings go through mia/i18n (keys, not literals).
+- User-facing strings go through mia/i18n (keys, not literals) in every language of i18n.SUPPORTED; a missing key falls back to English.
 - No em-dashes in docs or comments; use commas, periods or parentheses.
 
 ## Definition of done for any task
 - Lint, format, types and tests pass locally and in CI.
 - Behaviour is covered by a test. Risky paths (approvals, permissions, egress) have a negative test.
 - README or docs updated if commands or layout changed.
+
+## Project skills (.claude/skills, written in this repo)
+- `mia-train-role <role>`: build, measure and promote a role's intent classifier.
+- `mia-build-agent <agent_id>`: build an agent from docs/agents-catalogue.md; its checklist.md is
+  the review list for every agent.
 
 ## Library skills (.claude/skills, copied by `uvx library-skills install --claude --copy`)
 Installed: fastapi, sqlmodel. These rules win over them. Known clashes:

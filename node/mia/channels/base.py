@@ -4,6 +4,7 @@ Agents and services never see channel formats: they hand Mia blocks to channels.
 renders them with channels.render and passes the result to the adapter.
 """
 
+import math
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Protocol
@@ -32,9 +33,32 @@ class InboundMessage(BaseModel):
     address: str
     channel_message_id: str
     text: str = ""
+    name: str | None = None  # the profile name the channel gives (kept on a customer row only)
     button: str | None = None  # label of a tapped button or list row
+    context_id: str | None = None  # the channel's id of the message a tapped button is on
     has_media: bool = False
+    media_id: str | None = None  # the channel's id of the attachment, for fetch_media
+    media_kind: str | None = None  # image, document, video, audio
+    # A shared location (check-in or check-out by location share): finite, in range, both or
+    # neither; `picked_place` when the person sent a chosen place rather than where they are.
+    lat: float | None = Field(default=None, ge=-90, le=90, allow_inf_nan=False)
+    lon: float | None = Field(default=None, ge=-180, le=180, allow_inf_nan=False)
+    picked_place: bool = False
     received_at: datetime
+
+
+def coordinates(lat: Any, lon: Any) -> tuple[float, float] | tuple[None, None]:
+    """A (lat, lon) pair from channel data, or (None, None) unless both are finite numbers in
+    range (a crafted payload never reaches the fence check)."""
+    pair = []
+    for value, limit in ((lat, 90.0), (lon, 180.0)):
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            return None, None
+        number = float(value)
+        if not math.isfinite(number) or abs(number) > limit:
+            return None, None
+        pair.append(number)
+    return pair[0], pair[1]
 
 
 class StatusUpdate(BaseModel):
@@ -61,6 +85,7 @@ class ChannelPayload(BaseModel):
     channel: str
     address: str
     body: dict[str, Any]
+    message_id: str | None = None  # the channel's id once sent (the sim keeps it for its phones)
 
 
 class DeliveryResult(BaseModel):
@@ -95,6 +120,10 @@ class ChannelAdapter(Protocol):
 
     def render_template(self, address: str, call: TemplateCall) -> ChannelPayload:
         """The payload for a registered template. Raises ValueError for unknown templates."""
+        ...
+
+    async def fetch_media(self, media_id: str) -> bytes | None:
+        """The bytes of an attachment, through the channel transport; None when it fails."""
         ...
 
     async def send(self, payload: ChannelPayload) -> DeliveryResult:

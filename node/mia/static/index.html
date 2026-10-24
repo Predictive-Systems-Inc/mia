@@ -39,14 +39,37 @@
          background:var(--panel); border-top:1px solid var(--line); }
   form input { flex:1; padding:10px 12px; border:1px solid var(--line); border-radius:10px; }
   form button { padding:10px 16px; border:0; border-radius:10px; background:var(--accent); color:#fff; }
+  details { max-width:960px; margin:8px auto; padding:0 16px; }
+  details table { width:100%; border-collapse:collapse; font-size:13px; background:var(--panel); }
+  details td, details th { border-bottom:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; }
+  .chip { display:inline-block; border:1px solid var(--line); border-radius:12px; padding:0 8px; margin:1px; }
+  .chip button { border:0; background:none; color:var(--bad); cursor:pointer; padding:0 2px; }
+  .row-tools { display:flex; gap:4px; }
+  .row-tools select { max-width:160px; }
+  .unfilled td { background:#fff4f2; }
+  .summary-box h3 { font-size:14px; margin:10px 0 4px; }
+  .summary-box ul { margin:0; padding-left:18px; font-size:13px; }
 </style>
 </head>
 <body>
 <header>
   <h1>Mia</h1>
-  <label>Acting as <select id="actor"></select></label>
-  <span class="note">Dev page. Actor is sent as X-Mia-Actor (no real login yet).</span>
+  <label id="actor-label">Acting as <select id="actor"></select></label>
+  <span class="note" id="note">Dev page. Actor is sent as X-Mia-Actor. <a href="/sim">Phones on screen</a></span>
+  <button id="feature" type="button">Request a feature</button>
+  <a href="#" id="logout" hidden>Sign out</a>
 </header>
+<form id="login" hidden>
+  <input id="email" type="email" placeholder="Email" autocomplete="username" required>
+  <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
+  <input id="code" placeholder="Code" autocomplete="one-time-code" hidden>
+  <button>Sign in</button>
+</form>
+<details id="board"><summary>Schedule board (the week)</summary>
+  <table id="week-table"></table>
+  <div class="sys" id="board-note"></div>
+</details>
+<details id="summary"><summary>Supervisor summary</summary><div class="summary-box" id="summary-box"></div></details>
 <main id="log"></main>
 <form id="send">
   <input id="text" autocomplete="off" placeholder="Message Mia, e.g. Olen kipeä huomenna." required>
@@ -57,6 +80,12 @@ const log = document.getElementById("log");
 const actorSel = document.getElementById("actor");
 const threads = {};  // actor id -> thread id
 let people = [];
+let dev = true;      // MIA_AUTH_MODE=dev: the actor picker and the X-Mia-Actor header
+let me = null;       // /auth/me in required mode
+const WEB = {"X-Mia-Client": "web"};
+
+function authHeaders() { return dev ? {"X-Mia-Actor": actorSel.value} : {}; }
+function actorId() { return dev ? actorSel.value : (me ? me.person_id : ""); }
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -66,7 +95,7 @@ function el(tag, cls, text) {
 }
 function scroll() { window.scrollTo(0, document.body.scrollHeight); }
 function sys(text) { log.append(el("div", "sys", text)); scroll(); }
-function actorName() { return actorSel.selectedOptions[0]?.textContent || ""; }
+function actorName() { return dev ? (actorSel.selectedOptions[0]?.textContent || "") : (me?.name || ""); }
 
 async function loadPeople() {
   const res = await fetch("/persons");
@@ -84,9 +113,9 @@ actorSel.addEventListener("change", () => { sys(`Now acting as ${actorName()}`);
 // Proactive messages (cover requests, updates) for the acting person.
 const seen = new Set();
 async function poll() {
-  const actor = actorSel.value;
+  const actor = actorId();
   if (!actor) return;
-  const res = await fetch("/notifications", {headers: {"X-Mia-Actor": actor}});
+  const res = await fetch("/notifications", {headers: authHeaders()});
   if (!res.ok) return;
   for (const n of await res.json()) {
     if (seen.has(n.id)) continue;
@@ -149,18 +178,30 @@ function renderBlocks(container, blocks, bubble) {
 }
 
 async function decide(id, outcome, statusEl) {
-  const res = await fetch(`/approvals/${id}/decide`, {
+  let res = await fetch(`/approvals/${id}/decide`, {
     method: "POST",
-    headers: {"Content-Type": "application/json", "X-Mia-Actor": actorSel.value},
+    headers: {"Content-Type": "application/json", ...authHeaders()},
     body: JSON.stringify({outcome}),
   });
-  const body = await res.json();
+  let body = await res.json();
+  if (res.status === 403 && body.detail === "step_up_required") {
+    const pin = window.prompt("Enter your PIN to decide this approval");
+    if (!pin) { sys("Cancelled."); return; }
+    const up = await fetch("/auth/stepup", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({pin}),
+    });
+    if (!up.ok) { sys("Wrong PIN."); return; }
+    res = await fetch(`/approvals/${id}/decide`, {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({outcome}),
+    });
+    body = await res.json();
+  }
   if (res.ok) { statusEl.textContent = `Status: ${body.status} (by ${actorName()})`; sys(`Approval ${body.status}.`); }
   else { sys(`Not allowed: ${body.detail}`); }
 }
 
 async function send(text) {
-  const actor = actorSel.value;
+  const actor = actorId();
   const mine = el("div", "msg user");
   mine.append(el("div", "who", actorName()), el("div", "bubble", text));
   log.append(mine);
@@ -171,7 +212,7 @@ async function send(text) {
   scroll();
   const res = await fetch("/chat/stream", {
     method: "POST",
-    headers: {"Content-Type": "application/json", "X-Mia-Actor": actor},
+    headers: {"Content-Type": "application/json", ...authHeaders()},
     body: JSON.stringify({text, thread_id: threads[actor] || null}),
   });
   if (!res.ok) { bubble.textContent = `Error ${res.status}: ${await res.text()}`; return; }
@@ -201,7 +242,178 @@ document.getElementById("send").addEventListener("submit", e => {
   const text = input.value.trim();
   if (text) { input.value = ""; send(text); }
 });
-loadPeople();
+// Required mode: a login form (cookies, no header); dev mode: the actor picker.
+const loginForm = document.getElementById("login");
+async function showMe() {
+  const res = await fetch("/auth/me");
+  if (!res.ok) { loginForm.hidden = false; return false; }
+  me = await res.json();
+  loginForm.hidden = true;
+  document.getElementById("note").textContent = `Signed in as ${me.name} (${me.roles.join(", ")})`;
+  document.getElementById("logout").hidden = false;
+  poll();
+  return true;
+}
+loginForm.addEventListener("submit", async e => {
+  e.preventDefault();
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+  const codeEl = document.getElementById("code");
+  let res;
+  if (loginForm.dataset.mfa) {
+    res = await fetch("/auth/mfa", {
+      method: "POST", headers: {"Content-Type": "application/json", ...WEB},
+      body: JSON.stringify({mfa_token: loginForm.dataset.mfa, code: codeEl.value}),
+    });
+  } else {
+    res = await fetch("/auth/login", {
+      method: "POST", headers: {"Content-Type": "application/json", ...WEB},
+      body: JSON.stringify({email, password}),
+    });
+  }
+  if (!res.ok) { sys("Sign-in failed."); return; }
+  const body = await res.json();
+  if (body.mfa_required) { loginForm.dataset.mfa = body.mfa_token; codeEl.hidden = false; codeEl.focus(); return; }
+  delete loginForm.dataset.mfa;
+  if (body.enrol) sys("Enrol an authenticator first (POST /auth/mfa/enrol).");
+  showMe();
+});
+document.getElementById("logout").addEventListener("click", async e => {
+  e.preventDefault();
+  await fetch("/auth/logout", {method: "POST", headers: {"Content-Type": "application/json"}});
+  location.reload();
+});
+// The schedule board: the signed-in person's visits (staff) or the branch's (office roles),
+// with assignment controls when /schedule/people answers (office roles only). The board and
+// the dashboard proper belong to the apps project (Q19); this is the node's own view of them.
+async function post(path, body) {
+  const headers = {"Content-Type": "application/json", ...authHeaders(), ...WEB};
+  return fetch(path, {method: "POST", headers, body: body === undefined ? undefined : JSON.stringify(body)});
+}
+async function loadBoard() {
+  const table = document.getElementById("week-table");
+  const note = document.getElementById("board-note");
+  table.replaceChildren();
+  note.textContent = "";
+  const [res, who] = await Promise.all([
+    fetch("/schedule", {headers: authHeaders()}),
+    fetch("/schedule/people", {headers: authHeaders()}),
+  ]);
+  if (!res.ok) { note.textContent = `No schedule (${res.status}).`; return; }
+  const staff = who.ok ? await who.json() : null;
+  const head = el("tr");
+  for (const h of ["When", "Job", "Site", "Assigned", "Status", staff ? "Assign" : ""]) head.append(el("th", null, h));
+  table.append(head);
+  for (const v of await res.json()) {
+    const tr = el("tr", v.status === "unfilled" ? "unfilled" : null);
+    const when = `${v.date} ${v.start.slice(11, 16)}–${v.end.slice(11, 16)}`;
+    tr.append(el("td", null, when), el("td", null, v.job), el("td", null, v.location));
+    const assigned = el("td");
+    for (const a of v.assignees) {
+      const chip = el("span", "chip", a.name);
+      if (staff) {
+        const x = el("button", null, "×");
+        x.title = "Unassign";
+        x.onclick = async () => {
+          const r = await post(`/visits/${v.id}/unassign`, {person_id: a.id});
+          note.textContent = r.ok ? "" : `Unassign failed (${r.status}).`;
+          loadBoard();
+        };
+        chip.append(x);
+      }
+      assigned.append(chip);
+    }
+    tr.append(assigned, el("td", null, v.status));
+    if (staff) {
+      const tools = el("div", "row-tools");
+      const sel = el("select");
+      for (const p of staff) { const o = el("option", null, p.name); o.value = p.id; sel.append(o); }
+      const b = el("button", null, "Assign");
+      b.onclick = async () => {
+        const r = await post(`/visits/${v.id}/assign`, {person_id: sel.value, add: v.assignees.length > 0});
+        const out = r.ok ? await r.json() : null;
+        note.textContent = !r.ok ? `Assign failed (${r.status}): ${(await r.text()).slice(0, 120)}`
+          : out.approval_id ? `Needs approval ${out.approval_id}: ${out.reasons.join(", ")}` : "";
+        loadBoard();
+      };
+      tools.append(sel, b);
+      const td = el("td"); td.append(tools); tr.append(td);
+    }
+    table.append(tr);
+  }
+}
+document.getElementById("board").addEventListener("toggle", e => { if (e.target.open) loadBoard(); });
+
+// The supervisor summary: unfilled visits, late check-ins, check-ins outside a fence, open
+// site problems (resolve) and timesheet drafts (approve). Staff get 403 and an empty panel.
+async function loadSummary() {
+  const box = document.getElementById("summary-box");
+  box.replaceChildren();
+  const res = await fetch("/supervisor/summary", {headers: authHeaders()});
+  if (!res.ok) { box.append(el("div", "sys", `Office roles only (${res.status}).`)); return; }
+  const s = await res.json();
+  const section = (title, items, render) => {
+    box.append(el("h3", null, `${title} (${items.length})`));
+    const ul = el("ul");
+    for (const it of items) ul.append(render(it));
+    box.append(ul);
+  };
+  const visit = v => el("li", null, `${v.date} ${v.start.slice(11, 16)} ${v.location}: ${v.assignees.map(a => a.name).join(", ") || "nobody"}`);
+  section("Unfilled this week", s.unfilled, visit);
+  section("Late check-ins today", s.late_check_ins, visit);
+  section("Outside the fence today", s.outside_fence, f => el("li", null, `${f.person} ${f.kind} ${f.distance_m} m from ${f.visit.location} (${f.reason})`));
+  section("Open site problems", s.open_problems, p => {
+    const li = el("li", null, `${p.location}: ${p.text} (${p.person}) `);
+    const b = el("button", null, "Resolve");
+    b.onclick = async () => {
+      const r = await post(`/problems/${p.id}/resolve`);
+      if (!r.ok) li.append(el("span", "sys", ` ${(await r.text()).slice(0, 80)}`));
+      else loadSummary();
+    };
+    li.append(b);
+    return li;
+  });
+  box.append(el("h3", null, `Pending approvals: ${s.pending_approvals}`));
+  const ts = await fetch("/timesheets", {headers: authHeaders()});
+  if (!ts.ok) return;
+  const drafts = (await ts.json()).filter(t => t.status === "draft");
+  section("Timesheet drafts", drafts, t => {
+    const li = el("li", null, `${t.date} ${t.person} ${t.location} ${t.minutes} min (${t.source}) `);
+    const b = el("button", null, "Approve");
+    b.onclick = async () => {
+      const r = await post(`/timesheets/${t.id}/approve`);
+      if (!r.ok) li.append(el("span", "sys", ` ${(await r.text()).slice(0, 80)}`));
+      else loadSummary();
+    };
+    li.append(b);
+    return li;
+  });
+}
+document.getElementById("summary").addEventListener("toggle", e => { if (e.target.open) loadSummary(); });
+actorSel.addEventListener("change", () => {
+  if (document.getElementById("board").open) loadBoard();
+  if (document.getElementById("summary").open) loadSummary();
+});
+
+async function init() {
+  const health = await (await fetch("/health")).json();
+  dev = health.auth_mode === "dev";
+  if (dev) { loadPeople(); return; }
+  document.getElementById("actor-label").hidden = true;
+  document.getElementById("note").textContent = "";
+  showMe();
+}
+init();
+// Request a feature (spec teach-mia 4b): for every signed-in person, kept on the node.
+document.getElementById("feature").onclick = async () => {
+  const text = prompt("What should Mia be able to do?");
+  if (!text) return;
+  const res = await fetch("/feature-requests", {
+    method: "POST", headers: {"Content-Type": "application/json", ...authHeaders()},
+    body: JSON.stringify({text}),
+  });
+  alert(res.ok ? "Thanks, your request was recorded." : `Not sent (${res.status}).`);
+};
 </script>
 </body>
 </html>

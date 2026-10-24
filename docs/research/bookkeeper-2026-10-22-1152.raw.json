@@ -1,0 +1,618 @@
+{
+ "gated": {
+  "all": {
+   "n": 0,
+   "right": 0.0,
+   "wrong": 0.0,
+   "ask": 0.0,
+   "other": 0.0
+  },
+  "by_language": {}
+ },
+ "results": [
+  {
+   "i": 0,
+   "lang": "en",
+   "scenario": "short",
+   "text": "cash count 9870",
+   "expected_action": "cash_count",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 987000
+   },
+   "action": "cash_count",
+   "error": null,
+   "missing": null,
+   "args": {
+    "counted": 987000,
+    "business_date": null,
+    "source_message_id": null
+   },
+   "raw_action": "cash_count",
+   "confidence": 0.96,
+   "seconds": 0.7177021249663085,
+   "tokens": 3182,
+   "score": "right"
+  },
+  {
+   "i": 1,
+   "lang": "en",
+   "scenario": "short",
+   "text": "drawer 15200 closing",
+   "expected_action": "cash_count",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 1520000
+   },
+   "action": "cash_count",
+   "error": null,
+   "missing": null,
+   "args": {
+    "counted": 1520000,
+    "business_date": null,
+    "source_message_id": null
+   },
+   "raw_action": "cash_count",
+   "confidence": 0.82,
+   "seconds": 0.42393120797351,
+   "tokens": 3185,
+   "score": "right"
+  },
+  {
+   "i": 2,
+   "lang": "en",
+   "scenario": "short",
+   "text": "gcash 3210 yday",
+   "expected_action": "settlement",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 321000
+   },
+   "action": "settlement",
+   "error": null,
+   "missing": null,
+   "args": {
+    "provider": "gcash",
+    "amount": 321000,
+    "start": "2026-11-02",
+    "end": "2026-11-02"
+   },
+   "raw_action": "settlement",
+   "confidence": 0.78,
+   "seconds": 0.44084870896767825,
+   "tokens": 3096,
+   "score": "right"
+  },
+  {
+   "i": 3,
+   "lang": "en",
+   "scenario": "short",
+   "text": "maya in 1850",
+   "expected_action": "settlement",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 185000
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "provider": "maya",
+    "amount": 185000,
+    "start": "2026-11-02",
+    "end": "2026-11-02"
+   },
+   "raw_action": "settlement",
+   "confidence": 0.28,
+   "seconds": 0.41654104099143296,
+   "tokens": 3091,
+   "score": "ask"
+  },
+  {
+   "i": 4,
+   "lang": "en",
+   "scenario": "short",
+   "text": "grab payout 8900",
+   "expected_action": "payout",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 890000
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "provider": "grab",
+    "amount": 890000,
+    "start": "2026-10-26",
+    "end": "2026-11-01"
+   },
+   "raw_action": "payout",
+   "confidence": 0.58,
+   "seconds": 0.5932047500973567,
+   "tokens": 3084,
+   "score": "ask"
+  },
+  {
+   "i": 5,
+   "lang": "en",
+   "scenario": "short",
+   "text": "foodpanda sent 4300",
+   "expected_action": "payout",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 430000
+   },
+   "action": "payout",
+   "error": null,
+   "missing": null,
+   "args": {
+    "provider": "foodpanda",
+    "amount": 430000,
+    "start": "2026-10-26",
+    "end": "2026-11-01"
+   },
+   "raw_action": "payout",
+   "confidence": 0.66,
+   "seconds": 0.30862845794763416,
+   "tokens": 3098,
+   "score": "right"
+  },
+  {
+   "i": 6,
+   "lang": "en",
+   "scenario": "short",
+   "text": "paid electric 2300",
+   "expected_action": "expense",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 230000
+   },
+   "action": "expense",
+   "error": null,
+   "missing": null,
+   "args": {
+    "category": "utilities",
+    "amount": 230000,
+    "vat_amount": null,
+    "receipt_no": null,
+    "source": "cash"
+   },
+   "raw_action": "expense",
+   "confidence": 0.98,
+   "seconds": 0.3111086250282824,
+   "tokens": 3180,
+   "score": "right"
+  },
+  {
+   "i": 7,
+   "lang": "en",
+   "scenario": "short",
+   "text": "petty 150 ice",
+   "expected_action": "petty_cash",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 15000
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "kind": "spend",
+    "amount": 15000,
+    "category": "supplies"
+   },
+   "raw_action": "petty_cash",
+   "confidence": 0.13,
+   "seconds": 0.34228412492666394,
+   "tokens": 3182,
+   "score": "ask"
+  },
+  {
+   "i": 8,
+   "lang": "en",
+   "scenario": "short",
+   "text": "deposited 20000 bdo",
+   "expected_action": "deposit",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 2000000
+   },
+   "action": "deposit",
+   "error": null,
+   "missing": null,
+   "args": {
+    "bank": "bdo",
+    "amount": 2000000,
+    "reference": null
+   },
+   "raw_action": "deposit",
+   "confidence": 0.96,
+   "seconds": 0.34538370789960027,
+   "tokens": 3000,
+   "score": "right"
+  },
+  {
+   "i": 9,
+   "lang": "en",
+   "scenario": "short",
+   "text": "petty cash left",
+   "expected_action": "balances",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "balances",
+   "error": null,
+   "missing": null,
+   "args": {},
+   "raw_action": "balances",
+   "confidence": 0.99,
+   "seconds": 0.31749525002669543,
+   "tokens": 3141,
+   "score": "right"
+  },
+  {
+   "i": 10,
+   "lang": "en",
+   "scenario": "short",
+   "text": "12450",
+   "expected_action": "ask",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 1245000
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {},
+   "raw_action": "clarify",
+   "confidence": 0.44,
+   "seconds": 0.3834577089874074,
+   "tokens": 3184,
+   "score": "ask"
+  },
+  {
+   "i": 11,
+   "lang": "en",
+   "scenario": "short",
+   "text": "gcash",
+   "expected_action": "ask",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {},
+   "raw_action": "clarify",
+   "confidence": 0.57,
+   "seconds": 0.43374720797874033,
+   "tokens": 3054,
+   "score": "ask"
+  },
+  {
+   "i": 12,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "bilang pera 11300",
+   "expected_action": "cash_count",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 1130000
+   },
+   "action": "cash_count",
+   "error": null,
+   "missing": null,
+   "args": {
+    "counted": 1130000,
+    "business_date": null,
+    "source_message_id": null
+   },
+   "raw_action": "cash_count",
+   "confidence": 0.8,
+   "seconds": 0.4001178750768304,
+   "tokens": 3187,
+   "score": "right"
+  },
+  {
+   "i": 13,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "closing 13250 po",
+   "expected_action": "cash_count",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 1325000
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "kind": "other"
+   },
+   "raw_action": "reply_only",
+   "confidence": 0.32,
+   "seconds": 0.393519917037338,
+   "tokens": 3187,
+   "score": "ask"
+  },
+  {
+   "i": 14,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "pasok gcash 2780 kahapon",
+   "expected_action": "settlement",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 278000
+   },
+   "action": "settlement",
+   "error": null,
+   "missing": null,
+   "args": {
+    "provider": "gcash",
+    "amount": 278000,
+    "start": "2026-11-02",
+    "end": "2026-11-02"
+   },
+   "raw_action": "settlement",
+   "confidence": 0.8,
+   "seconds": 0.35990866692736745,
+   "tokens": 3139,
+   "score": "right"
+  },
+  {
+   "i": 15,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "nag remit grab 7650",
+   "expected_action": "payout",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 765000
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "provider": "grab",
+    "amount": 765000,
+    "start": "2026-10-26",
+    "end": "2026-11-01"
+   },
+   "raw_action": "payout",
+   "confidence": 0.38,
+   "seconds": 0.35929066699463874,
+   "tokens": 3083,
+   "score": "ask"
+  },
+  {
+   "i": 16,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "bayad kuryente 2100",
+   "expected_action": "expense",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 210000
+   },
+   "action": "expense",
+   "error": null,
+   "missing": null,
+   "args": {
+    "category": "utilities",
+    "amount": 210000,
+    "vat_amount": null,
+    "receipt_no": null,
+    "source": "cash"
+   },
+   "raw_action": "expense",
+   "confidence": 0.96,
+   "seconds": 0.35693841706961393,
+   "tokens": 3183,
+   "score": "right"
+  },
+  {
+   "i": 17,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "bayad sa tubero 800",
+   "expected_action": "expense",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 80000
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "category": "utilities",
+    "amount": 80000,
+    "vat_amount": null,
+    "receipt_no": null,
+    "source": "cash"
+   },
+   "raw_action": "expense",
+   "confidence": 0.49,
+   "seconds": 0.33675699995364994,
+   "tokens": 3180,
+   "score": "ask"
+  },
+  {
+   "i": 18,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "petty 200 pamasahe",
+   "expected_action": "petty_cash",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 20000
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "kind": "spend",
+    "amount": 20000,
+    "category": "transport"
+   },
+   "raw_action": "petty_cash",
+   "confidence": 0.49,
+   "seconds": 0.33524816599674523,
+   "tokens": 3182,
+   "score": "ask"
+  },
+  {
+   "i": 19,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "dagdag petty 1000",
+   "expected_action": "petty_cash",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 100000
+   },
+   "action": "petty_cash",
+   "error": null,
+   "missing": null,
+   "args": {
+    "kind": "refill",
+    "amount": 100000,
+    "category": "supplies"
+   },
+   "raw_action": "petty_cash",
+   "confidence": 1.0,
+   "seconds": 0.3755727499956265,
+   "tokens": 3185,
+   "score": "right"
+  },
+  {
+   "i": 20,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "deposito 15000 bpi",
+   "expected_action": "deposit",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 1500000
+   },
+   "action": "deposit",
+   "error": null,
+   "missing": null,
+   "args": {
+    "bank": "bpi",
+    "amount": 1500000,
+    "reference": null
+   },
+   "raw_action": "deposit",
+   "confidence": 0.96,
+   "seconds": 0.3800783340120688,
+   "tokens": 2998,
+   "score": "right"
+  },
+  {
+   "i": 21,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "kita ng oktubre",
+   "expected_action": "profit",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {
+    "month": "2026-10-01"
+   },
+   "raw_action": "profit",
+   "confidence": 0.48,
+   "seconds": 0.36665279197040945,
+   "tokens": 3143,
+   "score": "ask"
+  },
+  {
+   "i": 22,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "3200 kahapon",
+   "expected_action": "ask",
+   "role": "supervisor",
+   "previous": "",
+   "half": "short",
+   "expected": {
+    "amount": 320000
+   },
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {},
+   "raw_action": "clarify",
+   "confidence": 0.39,
+   "seconds": 0.425811207969673,
+   "tokens": 3225,
+   "score": "ask"
+  },
+  {
+   "i": 23,
+   "lang": "fil",
+   "scenario": "short",
+   "text": "bayad na",
+   "expected_action": "ask",
+   "role": "owner",
+   "previous": "",
+   "half": "short",
+   "expected": {},
+   "action": "clarify",
+   "error": null,
+   "missing": null,
+   "args": {},
+   "raw_action": "clarify",
+   "confidence": 0.44,
+   "seconds": 0.3473698749439791,
+   "tokens": 3142,
+   "score": "ask"
+  }
+ ]
+}

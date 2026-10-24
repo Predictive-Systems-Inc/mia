@@ -4,7 +4,7 @@ Local-first AI ERP for businesses that run on shifts. One Mia Node per client br
 built with Pydantic AI, data in SQLite on the client's own server.
 
 This repository holds the first milestone (docs/brief.md): the node skeleton, the coding
-harness, and a basic dispatcher agent you can chat with.
+harness, and a basic shift supervisor agent you can chat with.
 
 ## Quick start
 
@@ -15,7 +15,9 @@ uv sync
 cp .env.example .env        # MIA_MODEL=test needs no API key
 uv run mia migrate          # creates data/mia.db
 uv run mia seed             # demo cleaning company in Helsinki
+                            # (or MIA_ORG=ferinos uv run mia seed: the retail bibingka demo)
 uv run mia serve            # chat page at http://localhost:8000/
+                            # phones on screen at http://localhost:8000/sim (dev mode)
 uv run pytest               # unit tests, no network, 80% coverage floor on mia/core
 ```
 
@@ -55,22 +57,71 @@ uv run mia chat "Show me Maria's visits." --as Juha
 | --- | --- |
 | `uv run mia migrate` | Create or upgrade the SQLite database (Alembic) |
 | `uv run mia seed` | Load demo data (once, on an empty database) |
-| `uv run mia serve` | FastAPI on port 8000: chat page `/`, `/health`, `/chat`, `/chat/stream`, `/ag-ui`, `/notifications`, `/approvals/{id}/decide`, `/channels/{id}/webhook` |
+| `uv run mia import FILE.yaml` | Real master data (people, clients, sites, jobs) from a YAML file; re-runnable, names are the key (docs/rollout.md) |
+| `uv run mia serve` | FastAPI on port 8000: chat page `/`, `/health`, `/chat`, `/chat/stream`, `/ag-ui` (plus `/ag-ui/connect` to catch up and `/ag-ui/stop`), `/notifications`, `/approvals/{id}/decide`, `/channels/{id}/webhook` |
 | `uv run mia chat "..." [--as NAME] [--thread ID]` | One chat turn from the terminal |
-| `uv run mia decide ID approved\|rejected --as NAME` | Decide an approval (stand-in for the inbox) |
+| `uv run mia decide ID approved\|rejected --as NAME` | Decide an approval (stand-in for the inbox; never the person's own request, D37) |
+| `uv run mia billing export --month YYYY-MM [--out FILE]` | Completed work per client and site for a month, as CSV |
+| `uv run mia schedule generate [--days N]` | Create the missing visits from the job recurrences (the node also does this daily) |
+| `uv run mia keys init [PATH]` | Create the master key file (ADR 011) |
+| `uv run mia auth bootstrap --email EMAIL` | First owner: prints an enrolment link (password and TOTP) |
+| `uv run mia auth reset NAME` / `unlock LOGIN` / `link NAME` | Recovery: new enrolment link, clear a lockout, send a login link over WhatsApp |
+| `uv run mia auth client add NAME --role ROLE` / `revoke ID` | Client credentials for outside agents and services |
 | `uv run mia inbox --as NAME` | Show messages Mia sent to a person |
-| `uv run mia tick` | Advance due cover confirmations and send the channel outbox once (`mia serve` does this every 30 s) |
-| `uv run mia person add NAME --role staff [--lang fi]` | Add a person |
+| `uv run mia tick` | Run each agent's due work, retry deferred turns and send the channel outbox once (`mia serve` does this every 30 s; a turn is claimed under the write lock, so running both is safe) |
+| `uv run mia learned [--branch ID]` | List the routes Mia learned from "Is this about" taps (agent, key, taps counted) |
+| `uv run mia forget KEY [--branch ID]` | Forget one learned route (two new taps learn it again) |
+| `uv run mia phrases export [--cases DIR]` / `import DIR [--branch ID] [--every-branch]` | Append taught phrases as short rows of the eval CSVs (`extra` `"taught": true`, left out of each set's counts); replay those rows as `phrase.taught` at one branch (default: the only one) or every branch |
+| `uv run mia requests export [--out FILE]` / `status ID planned\|built\|declined` | Feature requests grouped with counts and status, as CSV; mark a request's status (its askers are told) |
+| `uv run mia person add NAME --role staff [--lang fi] [--ask-language]` | Add a person (`--ask-language`: Mia asks their language in the first chat) |
+| `uv run mia agent scaffold ID --label-en "..." --label-fi "..." --role ROLE [--description "..."] [--force]` | Render a new agent package (a Jev turn that greets) and wire it into the registry, labels, policy, schema and docs/layout.md; refuses to overwrite without `--force`; a stub keeps its router description |
 | `uv run mia invite NAME [--as SUPERVISOR]` | One-time WhatsApp invite link for a person (needs `MIA_NODE_SECRET`) |
 | `uv run mia channels sim "..." --from NUMBER` | Message Mia as a phone on the simulated channel (try `LINK <code>` first) |
 | `uv run mia geocode` | Geocode home bases and sites without coordinates (needs `MIA_GEOCODER_KEY`) |
+| `uv run mia backup FILE` | Consistent copy of the database to a new file (safe while serving) |
+| `uv run mia verify-db FILE` | Check a restored copy: integrity, events hash chain, row counts |
+| `uv run mia skills generate ROLE --model ROUTE --split train\|test` | Teacher-model generation per coverage cell (role skill models) |
+| `uv run mia skills translate --lang fi\|fil --model ROUTE [--limit N]` | The intent eval set in another language, translated from the English records (a `local/` model sends nothing off the node) |
 | `uv run pytest` | Unit tests |
-| `uv run pytest node/tests/evals -m evals` | Dispatcher evaluation suite (33 scenarios, 5 runs each) |
+| `uv run pytest node/tests/evals -m evals` | Shift supervisor evaluation suite (41 scenarios, 5 runs each; `MIA_EVAL_SUITE=tests/scenarios_en.yaml` for English only) |
+| `MIA_EVAL_MODEL=local/<model> uv run pytest node/tests/evals/test_intent_classification.py -m evals -s` | English intent classification over docs/capabilities.md (held-out split; `MIA_EVAL_INTENT_SPLIT=all`, `MIA_EVAL_REPORT=file.json`) |
+| `MIA_DECIDER=jev MIA_EVAL_RUNS=1 uv run pytest node/tests/evals/test_shift_supervisor_evals.py -m evals -s` | The shift supervisor suite through Jev (spec docs/superpowers/specs/2026-10-17-jev-decider-design.md; needs `MIA_TYPESAFE_KEY`, demo data only) |
+| `uv run pytest node/tests/evals/test_jev_action_eval.py -m evals -s` | Jev's action choice on the intent set (`MIA_EVAL_INTENT_SPLIT`, `MIA_EVAL_INTENT_LANG`, `MIA_EVAL_REPORT`; skips without `MIA_TYPESAFE_KEY`) |
+| `MIA_TYPESAFE_KEY=... uv run pytest node/tests/evals/test_router_eval.py -m evals -s` | The agent router through real Jev over the eight Ferino's agents in English, Filipino and Finnish (the cases in `node/tests/evals/cases/router.csv`; prints the table, writes the raw json and a results CSV under `docs/research/`; skips without `MIA_TYPESAFE_KEY`) |
+| `MIA_DECIDER=jev uv run pytest node/tests/evals/test_sales_supervisor_evals.py -m evals -s` | The sales supervisor's Jev decider over the messages in `node/tests/evals/cases/sales_supervisor.csv` in English and Filipino (`MIA_EVAL_HALVES` picks tune, gate or short; the gate bar is D41, the short half asserts no wrong write; writes the raw json and a results CSV under `docs/research/`; needs `MIA_TYPESAFE_KEY`) |
+| `MIA_DECIDER=jev uv run pytest node/tests/evals/test_sales_supervisor_scenarios.py -m evals -s` | The sales supervisor's chat scenarios (agents/sales_supervisor/tests/scenarios.yaml) through real Jev on the Ferino's demo |
 | `uv run ruff check . && uv run ruff format --check . && uv run mypy node/mia` | Lint and types |
 | `uv run pre-commit install` | Run ruff, mypy and detect-secrets on every commit |
 
-The actor for HTTP calls is the `X-Mia-Actor: <person id>` header. There is no real login yet;
-do not expose a node built from this milestone to a network.
+In `MIA_AUTH_MODE=dev` the actor for HTTP calls is the `X-Mia-Actor: <person id>` header, honoured
+from loopback only; a server runs `required` (ADR 011, see Authentication below). To try the
+Ferino's agents locally, and for what a staff phone test on a server needs, see
+docs/testing-ferinos.md.
+
+## Role skill models
+
+Each agent role can have its own multilingual intent classifier (docs/superpowers/specs/2026-10-06-skill-models-design.md).
+In Claude Code run `/mia-train-role <role>`; it plans the role, researches public data, generates and reviews
+messages, then runs:
+
+    uv run mia skills validate <role>    # data checks
+    uv run mia skills split <role>       # train and dev from reviewed.jsonl
+    uv sync --group learning && uv run mia skills train <role>   # train, calibrate, evaluate, package
+    uv run mia skills promote <role> <version> --signed-by "Name"
+    uv run mia skills harvest <role>     # on the node: clarification choices to candidates
+    uv run mia skills generate <role> --model ROUTE --split train|test   # teacher generation
+    uv run mia skills overlap <role>     # ranked overlap review of intents (learning group)
+    uv run mia skills bakeoff <role>     # train encoder, knn, contrastive; compare; promotes nothing
+
+Harvested candidates stay in `MIA_LEARNING_DIR/<role>/candidates.jsonl` on the node. If a stale
+Hugging Face token gives 401 errors when training, set `HF_HUB_DISABLE_IMPLICIT_TOKEN=1`.
+
+## Building a new agent
+
+`/mia-build-agent <agent_id>` (a Claude Code skill in `.claude/skills/mia-build-agent`) carries a
+job title from `docs/agents-catalogue.md` to a reviewed, gated agent: data standard check, spec,
+plan, `uv run mia agent scaffold`, the subagent-driven build with the review checklist, and the
+eval gates.
 
 ## Messaging channels
 
@@ -85,19 +136,205 @@ uv run mia channels sim "Olen kipeä huomenna." --from 358401234567
 
 For the real WhatsApp number, follow docs/whatsapp-setup.md.
 
+## Authentication
+
+Every request carries a verified actor (ADR 011, docs/superpowers/specs/2026-10-05-authentication-design.md).
+`MIA_AUTH_MODE=dev` (the `.env.example` default) keeps the `X-Mia-Actor` header for local
+development and the chat page's actor picker; it works only from localhost and the node refuses
+to start in dev mode with a public URL. A server runs `required`.
+
+- Office users: `POST /auth/login` (email, password), then `POST /auth/mfa` with a TOTP or
+  recovery code. Owner, admin and accountant must enrol an authenticator (`/auth/mfa/enrol`,
+  `/auth/mfa/confirm`) before they get past the enrolment session. Web clients send
+  `X-Mia-Client: web` and get HttpOnly cookies; others get bearer tokens with a rotating refresh
+  token (`/auth/refresh`).
+- Staff: `POST /auth/otp/start` sends a 6-digit code to the linked WhatsApp number;
+  `POST /auth/otp/verify` binds the phone (a device secret, shown once) and signs in;
+  `POST /auth/device` signs in again on that phone. A one-time login link (`mia auth link`)
+  opens the web app from WhatsApp.
+- Risky approvals (money, external, delete) need a 6-digit PIN entered in the last five minutes:
+  `POST /auth/pin` to set it, `POST /auth/stepup` before deciding; the API answers 403
+  `step_up_required` otherwise.
+- Outside agents and services: `mia auth client add` and `POST /auth/token`
+  (client credentials, one-hour bearer tokens); clients never hold `approve`.
+- Keys: `mia keys init` writes the master key (mode 400); subkeys come from HKDF. Without a key
+  file, `MIA_NODE_SECRET` keys the one-time codes, so old invites keep working.
+
+## Scheduling
+
+Visits come from each job's recurrence rule (`FREQ=DAILY` or `FREQ=WEEKLY;BYDAY=..`, optional
+`INTERVAL` and `UNTIL`), generated 28 days ahead once a day and by `mia schedule generate`.
+A new visit copies the last assignment on the same weekday when that person is still eligible,
+otherwise it is `unfilled`. Eligibility is code, the same rules the shift supervisor uses for cover:
+availability, absences, double booking, daily and weekly hour limits, skills.
+
+- `GET /schedule?start=&person_id=&location_id=`: seven days of visits (staff see their own);
+  `GET /schedule/people` lists the branch's people for the office. The dev page's "Schedule
+  board" assigns and unassigns from the week table, and its "Supervisor summary" panel shows
+  the summary, resolves site problems and approves timesheet drafts.
+- `POST /visits/{id}/assign {person_id, add}` and `/unassign`: the office assigns; a
+  rule-breaking assignment creates an approval (`schedule.assignment_override`, admin or owner,
+  app only with a PIN) and the visit changes only when it is approved.
+- `POST /visits/{id}/check-in` and `/check-out`: the cleaner on their own visit (from two
+  hours before the start), or the office for them.
+- `GET /approvals`: the inbox, the approvals the signed-in person may decide.
+- `GET /timesheets`, `POST /timesheets/{id}/correct` and `/approve`: drafts built from completed
+  visits (actual times after a check-out), corrected by the person or the office, approved by a
+  supervisor who did not enter them. `mia payroll export --from --to` writes the approved rows
+  as CSV; the ticker alerts a missing check-out and overtime.
+- Over chat, a cleaner checks in ("Olen perillä"), asks the door code, gets the checklist
+  ("Mikä on tarkistuslista?") and ticks items with the quick replies ("Tehty: Empty bins"),
+  reports a problem ("En pääse sisään"), sends a photo as proof of work (saved under
+  `MIA_MEDIA_DIR`, referenced on the visit) and checks out ("Valmis, lähden nyt"). A shared
+  location checks in (or out, during the visit); one outside the site's geofence, or a chosen
+  place rather than the phone's position, is flagged for the supervisors, not rejected. The
+  coordinates are used once and never stored.
+- `GET /supervisor/summary`: unfilled visits this week, today's late check-ins, today's
+  check-ins and check-outs outside the site's geofence, open site
+  problems (a cleaner's "en pääse sisään" or "no water" over chat tells the supervisors at
+  once) and the number of pending approvals; `POST /problems/{id}/resolve` closes a problem.
+
+The schedule board belongs to the office app (Q19); timesheets wait for Q20.
+
+The ticker also sends three alerts, each once (the marker is an event): a cleaner who has not
+checked in 15 minutes after the planned start is asked, and the supervisors told; from 15:00
+local the supervisors get a card of tomorrow's visits without a cleaner; from 17:00 each cleaner
+gets a card of tomorrow's visits. The times are organisation settings (`alerts:` in
+`node/config/org/<org>/settings.yaml`).
+
+## Installing on a server
+
+Docker Compose runs the node with Litestream backup (and optionally a Cloudflare Tunnel) on one
+server. Install, backups, restore test and updates: deploy/install.md.
+
+```
+cp .env.example deploy/.env      # then edit; secrets stay in this file
+cd deploy && docker compose build && docker compose up -d --wait
+./restore-test.sh                # restores the latest backup and verifies it
+```
+
 ## Using a real model
 
-Set `MIA_MODEL=gateway/<route>`, `MIA_GATEWAY_URL` and `MIA_GATEWAY_KEY` in `.env`. No code
-changes: requests go through the egress component, which pseudonymises person names, writes
-`egress_log` and meters `usage_cloud_requests`. `MIA_EGRESS_LEVEL=none` blocks cloud requests.
-To evaluate a real model: `MIA_EVAL_MODEL=gateway/<route> uv run pytest node/tests/evals -m evals`.
+Two kinds of model, chosen with `MIA_MODEL` in `.env`; no code changes:
+- Cloud: `MIA_MODEL=gateway/<route>` with `MIA_GATEWAY_URL` and `MIA_GATEWAY_KEY` (any
+  OpenAI-compatible endpoint, for example OpenRouter `https://openrouter.ai/api/v1`). Requests go
+  through the egress component, which pseudonymises person names, writes `egress_log` and meters
+  `usage_cloud_requests`. `MIA_EGRESS_LEVEL=none` blocks them.
+- Local: `MIA_MODEL=local/<model>` with `MIA_LOCAL_URL` (default Ollama,
+  `http://localhost:11434/v1`). Nothing leaves the node, so egress is skipped and it works with
+  `MIA_EGRESS_LEVEL=none`. The URL must be localhost or a private IP address.
+
+Sales report questions no existing read answers ("benta last week per item") go to
+`MIA_REPORT_MODEL` (empty: `MIA_MODEL` when it is a `gateway/<route>`, else the step is off and the
+old reply stands). The model only fills a fixed report form or asks one clarifying question; code
+checks permissions and sums every figure. The request goes through egress with purpose
+`sales_supervisor.report`, and spending is capped at US$10 a month, summed from
+`usage_cloud_requests` tokens priced per model in `PRICES_USD_PER_MTOK` (node/mia/agents/sales_supervisor/report_model.py; update it when the route or its price changes; an unknown model counts at a mid-size model's price). `MIA_REPORT_MODEL=test` is a
+deterministic fake for tests.
+Supervisors, the owner and admins can tap Save as a report; the same question then runs the saved
+form with no model call (rbac is checked again for whoever asks). An owner or admin withdraws one
+in the chat with `remove report <the question>` or through `GET /reports` and
+`POST /reports/retire`.
+
+Jev (TypeSafe, `MIA_TYPESAFE_KEY`): `MIA_DECIDER=jev` turns on both the shift supervisor's Jev
+decider and the agent router; otherwise a person with several agents stays on the active one or
+is asked. The sales supervisor answers only with `MIA_DECIDER=jev` (it has no LLM agent; without
+Jev it replies that it is unavailable). `mia person add --ask-language` adds a person whose
+language Mia asks in their first chat (channel sign-up); `--lang` takes any supported language.
+
+The inventory manager hears what the shop has: sell-outs with their time, counts left,
+leftovers and waste (a reason asked with buttons), low ingredients with an offer to draft an
+order, tomorrow's bake plan, what is low, supplier orders (a `risk: money` tool, approved by the
+owner on a card) and deliveries received. Like the sales supervisor it answers only with
+`MIA_DECIDER=jev`. Its decider eval (the messages in `node/tests/evals/cases/`, English and Filipino, gated on the
+gate half at the Q40 bar):
+`MIA_DECIDER=jev uv run pytest node/tests/evals/test_inventory_manager_evals.py -m evals -s`
+(needs `MIA_TYPESAFE_KEY`; writes `docs/research/inventory-manager-<date>-<HHMM>.raw.json`).
+
+The HR officer answers a person's own pay and leave questions: hours worked in a cutoff or
+month, the next payday, the 13th month so far, the SSS, PhilHealth and Pag-IBIG shares of the
+last payslip, leave requests (approved by head staff on a card) and the leave balance, holiday
+pay, a payslip sent again and, for the owner, a certificate of employment text. It answers
+only with `MIA_DECIDER=jev`. Its decider eval (the messages in `node/tests/evals/cases/`, English and Filipino, gated on
+the gate half at the Q40 bar):
+`MIA_DECIDER=jev MIA_ORG=ferinos uv run pytest node/tests/evals/test_hr_officer_evals.py -m evals -s`
+(needs `MIA_TYPESAFE_KEY`; writes `docs/research/hr-officer-<date>-<HHMM>.raw.json`). The
+contribution tables in `agents/hr_officer/ph.py` are written from memory and must be checked
+with an accountant before a real payslip (Q61); the 2026 holiday list in
+`config/org/ferinos/holidays.yaml` is a draft to verify (Q62).
+
+The customer service answers the shop's customers on WhatsApp (and the simulator): a sender who
+is not a linked person gets the customer turn instead of "this number is for staff". It answers
+whether the shop is open, prices, delivery areas and fees, drafts pickup and delivery orders
+that a clerk or supervisor confirms on a card, gives the status of the customer's own order,
+logs complaints and cancels an order not yet ready. Staff ask it for the day's customer orders
+and mark an order ready or picked up. It answers only with `MIA_DECIDER=jev`. Its decider eval
+(the messages in `node/tests/evals/cases/customer_service.csv`, English and Filipino, a customer side and a staff side, gated on the fresh
+gate half at the Q40 bar; `MIA_EVAL_HALVES=tune` runs the tune half only):
+`MIA_DECIDER=jev uv run pytest node/tests/evals/test_customer_service_evals.py -m evals -s`
+(needs `MIA_TYPESAFE_KEY`; writes `docs/research/customer-service-<date>-<HHMM>.raw.json`).
+
+The branch manager coaches the sales staff: a morning message to each clerk on shift (yesterday
+against the target, one tip, one quote with its source), cheers for a met target or a personal
+best and a kind nudge after three misses; for the owner and head staff, per-clerk coaching, tips
+from the branch's own notes then the curated list, price, promo and bundle experiments from a
+catalogue of pricing strategies, a price change on a date (both behind the owner's approval),
+short codes, the weekly summary and the monthly numbers letter. It answers only with
+`MIA_DECIDER=jev`. Its decider eval (the messages in `node/tests/evals/cases/`, English and Filipino, gated on the gate
+half at the Q40 bar; `MIA_EVAL_HALVES=tune` or `gate` runs one half):
+`MIA_DECIDER=jev uv run pytest node/tests/evals/test_branch_manager_evals.py -m evals -s`
+(needs `MIA_TYPESAFE_KEY`; writes `docs/research/branch-manager-<date>-<HHMM>.raw.json`).
+
+The bookkeeper keeps the money straight for head staff and the owner: the closing cash count
+against the day's cash sales (short or over beyond the threshold tells the owner), GCash and Maya
+settlements and Grab and Foodpanda payouts matched with their fees and commissions, expenses by
+category with the receipt number and VAT amount (above the owner's limit through the approval
+card), petty cash, bank deposits, the petty and undeposited cash balances, the BIR sales
+journal, the quarterly VAT figure and the monthly profit per branch with payroll as payslip
+totals (owner and admin only). Every amount is typed and parsed by code; utang is not built in
+v1. It answers only with `MIA_DECIDER=jev`. Its decider eval (684 synthetic messages in six
+languages, gated on the gate half at the Q40 bar; `MIA_EVAL_HALVES=tune` or `gate` runs one
+half): `MIA_DECIDER=jev uv run pytest node/tests/evals/test_bookkeeper_evals.py -m evals -s`
+(needs `MIA_TYPESAFE_KEY`; writes `docs/research/bookkeeper-<date>-<HHMM>.raw.json`). The tax
+table in `agents/bookkeeper/tax.py` is written from memory and must be checked with an
+accountant before a real filing (Q97).
+
+The shift supervisor also runs a kiosk chain (`template: retail`, D39): the same agent sets the
+week's roster from the owner's pattern, checks clerks in and out at the counter, records late
+and sick, finds cover from the other kiosk, swaps shifts, corrects a forgotten check-out, reports
+a broken stove, a missed delivery or a customer at the counter, sends the weekly roster on Sunday
+and closes a kiosk for a day. For a retail organisation it answers only with `MIA_DECIDER=jev`.
+Its decider eval (the messages in `node/tests/evals/cases/`, English and Filipino, gated on the gate half at the D41
+bar; `MIA_EVAL_HALVES=tune` or `gate` runs one half):
+`MIA_DECIDER=jev uv run pytest node/tests/evals/test_shift_retail_evals.py -m evals -s`
+(needs `MIA_TYPESAFE_KEY`; writes `docs/research/shift-supervisor-retail-<date>-<HHMM>.raw.json`).
+
+The production planner plans the commissary's baking for the kiosks it serves: at 14:00 the head
+gets tomorrow's draft plan (per item the batches and pieces and the split per kiosk, from the
+same-weekday forecast, confirmed customer orders and leftovers) and confirms it with "ok"; the
+head changes a line within the free oven minutes, asks for an item's batch sheet (ingredients
+and cost per batch and per piece) and reports each batch's good pieces and waste; the owner
+enters recipes and asks the oven capacity for a date; the dispatch list per kiosk goes to the
+head and the driver, the driver confirms each delivery, a kiosk supervisor reads their own
+kiosk's list, and an hour after a kiosk opens a short receipt is flagged to the head and the
+owner. Every number is read and worked out by code. It answers only with `MIA_DECIDER=jev`. Its
+decider eval (the messages in `node/tests/evals/cases/`, English and Filipino, gated on the gate half at the D41 bar;
+`MIA_EVAL_HALVES=tune` or `gate` runs one half):
+`MIA_DECIDER=jev uv run pytest node/tests/evals/test_production_planner_evals.py -m evals -s`
+(needs `MIA_TYPESAFE_KEY`; writes `docs/research/production-planner-<date>-<HHMM>.raw.json`).
+
+To evaluate a model: `MIA_EVAL_MODEL=gateway/<route>` or `local/<model>`, then
+`uv run pytest node/tests/evals -m evals`.
+
+Rolling out at a client: docs/rollout.md (install, keys, master data import, linking the phones, the first week).
 
 ## Documents
 - docs/spec.md: Mia Agent Manifest Specification v0.1
 - docs/plan.md: Phase 1 build plan (Hype Siivous)
 - docs/brief.md: initial build brief (this milestone)
 - docs/layout.md: repository layout
-- docs/adr/: architecture decision records (001 stack, 002 data standard, 003 tool risk and approval, 004 model routing and egress, 005 data standard 1.1 and cover confirmation)
+- docs/adr/: architecture decision records (001 stack, 002 data standard, 003 tool risk and approval, 004 model routing and egress, 005 data standard 1.1 and cover confirmation, 010 install and backup)
+- deploy/install.md: install, backup, restore and update a node
 - docs/questions.md and docs/decisions.md: clarification loop between the coding agent and the product owner
 - docs/ideas.md: ideas outside this milestone's scope
 
