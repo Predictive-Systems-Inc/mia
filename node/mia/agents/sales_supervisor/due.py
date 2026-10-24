@@ -108,6 +108,20 @@ def _clerks(session: Session, branch_id: str, day: dt.date) -> list[Person]:
     return [p for p in clerks if p.id in on_shift]
 
 
+def _on_shift(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Person]:
+    """Active clerks whose shift (a visit's actual times, else planned) covers the reminder time,
+    half an hour before the day's closing. Empty when nobody is on shift then."""
+    closes = retail_hours.at(branch, hours, day, closing=True)
+    when = closes - HALF_HOUR
+    stmt = select(Visit).where(Visit.branch_id == branch.id).where(Visit.date == day)
+    on_shift: set[str] = set()
+    for v in session.exec(stmt):
+        start, end = v.actual_start or v.planned_start, v.actual_end or v.planned_end
+        if v.status != "cancelled" and start <= when < end:
+            on_shift.update(v.assigned_person_ids)
+    return [p for p in alerts._people(session, branch.id, "clerk") if p.id in on_shift]
+
+
 def _day_total(session: Session, branch_id: str, day: dt.date) -> int | None:
     """The day's sales amount from its one source (sales.day_sales), None with no sales rows."""
     items = sales.day_sales(session, branch_id, day).by_item
@@ -148,11 +162,12 @@ def _remind(session: Session, branch: Branch, hours: Hours, day: dt.date) -> lis
     if sales.source_of(branch, day) == "receipts":
         return []  # clerks ring up receipts: there is no count to remind of
     reported = _reporters(session, branch.id, day)
-    return [
-        _text(session, branch, p, t("sales.reminder", p.language))
-        for p in _clerks(session, branch.id, day)
-        if p.id not in reported
-    ]
+    clerks = _on_shift(session, branch, hours, day)
+    if clerks:
+        people = [p for p in clerks if p.id not in reported]
+    else:  # nobody on shift at the reminder time: the supervisors are asked instead
+        people = [] if reported else alerts.supervisors(session, branch.id)
+    return [_text(session, branch, p, t("sales.reminder", p.language)) for p in people]
 
 
 def _missing(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Message]:

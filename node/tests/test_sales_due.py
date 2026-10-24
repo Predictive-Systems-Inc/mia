@@ -186,6 +186,44 @@ def test_reminder_only_to_clerks_on_shift_when_visits_exist(
     assert len(_notes(session, people["Ana"])) == 1 and _notes(session, people["Liza"]) == []
 
 
+def _stall_reminders(session: Session, people: dict[str, Person]) -> dict[str, int]:
+    """How many closing reminders Pao and Jun (Street stall) got."""
+    words = {t("sales.reminder", lang) for lang in ("en", "fil", "ceb")}
+    return {
+        n: len([m for m in _notes(session, people[n]) if m.text in words]) for n in ("Pao", "Jun")
+    }
+
+
+def test_reminder_skips_a_clerk_off_duty_and_asks_the_supervisor(
+    session: Session, ferinos: Ferinos, manila_at: At
+) -> None:
+    _, people = ferinos  # Pao's shift is 06:00 to 15:00, the stall closes 19:00
+    due.run_due(session, manila_at(18, 35))
+    assert _stall_reminders(session, people) == {"Pao": 0, "Jun": 1}
+
+
+def test_reminder_goes_to_the_clerk_on_shift_not_the_supervisor(
+    session: Session, ferinos: Ferinos, manila_at: At
+) -> None:
+    stall, people = ferinos
+    at = manila_at(18, 35)
+    stmt = select(Visit).where(Visit.branch_id == _stall(session).id).where(Visit.date == at.date())
+    (visit,) = session.exec(stmt).all()
+    store.update(session, visit, {"planned_end": at.replace(hour=19)}, Actor.system(stall.id))
+    session.commit()
+    due.run_due(session, at)
+    assert _stall_reminders(session, people) == {"Pao": 1, "Jun": 0}
+
+
+def test_reminder_sends_nothing_once_counts_are_in(
+    session: Session, ferinos: Ferinos, manila_at: At
+) -> None:
+    _, people = ferinos
+    _report(session, people["Pao"])
+    due.run_due(session, manila_at(18, 35))
+    assert _stall_reminders(session, people) == {"Pao": 0, "Jun": 0}
+
+
 @pytest.fixture
 def quiet_sim(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """The sim channel on, quiet hours 18:00 to 06:00 (undone before ferinos clears the cache)."""
@@ -208,15 +246,15 @@ def test_reminder_waits_for_quiet_hours(
     session: Session, ferinos: Ferinos, manila_at: At, quiet_sim: None
 ) -> None:
     _, people = ferinos
-    pao = people["Pao"]
+    liza = people["Liza"]  # on shift 13:00 to 21:00
     identity = ChannelIdentity(
-        branch_id=pao.branch_id, person_id=pao.id, channel="sim", address="639171234567"
+        branch_id=liza.branch_id, person_id=liza.id, channel="sim", address="639171234567"
     )
-    store.insert(session, identity, Actor.person(pao), action="channel.linked")
+    store.insert(session, identity, Actor.person(liza), action="channel.linked")
     session.commit()
-    at = manila_at(18, 35)  # the stall closes 19:00
+    at = manila_at(20, 35)  # the kiosk closes 21:00
     assert due.run_due(session, at) > 0
-    stmt = select(ChannelOutbox).where(ChannelOutbox.person_id == pao.id)
+    stmt = select(ChannelOutbox).where(ChannelOutbox.person_id == liza.id)
     (row,) = [r for r in session.exec(stmt) if r.status == "queued"]
     morning = (at + dt.timedelta(days=1)).replace(hour=6, minute=0)
     assert row.send_after == morning.astimezone(dt.UTC)
