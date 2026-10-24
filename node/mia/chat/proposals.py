@@ -14,6 +14,7 @@ without a person. The keys are data between <message> markers (rule 8).
 import asyncio
 import contextlib
 import datetime as dt
+import functools
 import html
 import json
 import logging
@@ -53,7 +54,12 @@ REJECTED = "phrase.proposal_rejected"
 RAN = "phrase.proposals_ran"  # marker: the branch's nightly run for one business date
 APPROVERS = ["owner", "admin"]
 MAX_KEYS = 50
-MIN_COUNT = 2  # occurrences of a key in the day (1 in dev mode)
+MIN_COUNT = 2  # distinct senders of a key in the day (1 in dev mode)
+MAX_CARDS = MAX_REQUESTS = 5  # per branch per night
+# A key made only of these words is a reply, never a phrase (yes, no, thanks; en and fil).
+REPLY_WORDS = frozenset(
+    {"yes", "no", "ok", "okay", "oo", "opo", "hindi", "sige", "salamat", "thanks", "thank", "you"}
+)
 QUIET = dt.timedelta(days=30)  # a rejected key, or one sent to the backlog, rests this long
 TTL = dt.timedelta(days=7)
 AFTER_CLOSE = dt.timedelta(hours=1)
@@ -65,6 +71,7 @@ CARD, APPROVE, REJECT = (
     "phrases.proposal.reject",
 )
 CLOSED, IN_APP = "phrases.proposal.closed", "phrases.proposal.decide_in_app"
+SUMMARY = "phrases.proposal.summary"
 TAPPED = {
     t(k, lang).casefold(): o for k, o in ((APPROVE, "approved"), (REJECT, "rejected")) for lang in SUPPORTED
 }  # fmt: skip
@@ -209,8 +216,9 @@ def _resting(session: Session, branch_id: str, now: dt.datetime) -> set[str]:
         a = ev.after or {}
         if a.get("branch_id") != branch_id:
             continue
-        if ev.action == REJECTED:
-            out.add(str(a.get("key")))
+        if ev.action == REJECTED:  # the key is in the rejected approval's evidence only
+            rejected = session.get(Approval, ev.approval_id or "")
+            out.add(str(rejected.evidence.get("key")) if rejected else "")
         elif a.get("source") == PURPOSE:
             out.add(str(a.get("message_key")))
     pending = session.exec(
@@ -221,10 +229,25 @@ def _resting(session: Session, branch_id: str, now: dt.datetime) -> set[str]:
     }
 
 
+@functools.cache
+def _labels() -> frozenset[str]:
+    """Every button label of every agent (its actions' labels and the shared buttons) in
+    every language, as keys."""
+    found = {a.label_key for g in AGENTS for a in phrases.actions_of(g).values() if a.label_key}
+    found |= {APPROVE, REJECT, "clarify.something_else", "feature.ask"}
+    found |= {"cs.staff.confirm", "cs.staff.decline"}
+    return frozenset(key_of(t(k, lang)) for k in found for lang in SUPPORTED)
+
+
+def _reply(key: str) -> bool:
+    """True for a key made only of reply words, or equal to a button label."""
+    return set(key.split()) <= REPLY_WORDS or key in _labels()
+
+
 def unrecognised(session: Session, branch: Branch, day: dt.date, now: dt.datetime) -> list[Asked]:
     """The branch's unrecognised keys from the day's local midnight to now, most frequent
-    first, at most MAX_KEYS: at least MIN_COUNT times (once in dev mode), not in the
-    phrasebook, not resting; each with the teachable actions of its senders' agents. Reads
+    first, at most MAX_KEYS: from at least MIN_COUNT distinct senders (one in dev mode), not
+    in the phrasebook, not resting, not a reply (_reply); each with the teachable actions of its senders' agents. Reads
     only."""
     start = dt.datetime.combine(day, dt.time(), ZoneInfo(branch.timezone))
     rows = session.exec(
@@ -242,7 +265,11 @@ def unrecognised(session: Session, branch: Branch, day: dt.date, now: dt.datetim
         senders.setdefault(key, set()).add(str((ev.after or {}).get("person_id")))
     least = 1 if get_settings().MIA_AUTH_MODE == "dev" else MIN_COUNT
     skip = set(phrases.phrasebook(session, branch.id)[1]) | _resting(session, branch.id, now)
-    keys = [k for k, n in counts.items() if n >= least and k not in skip and phrases.has_letter(k)]
+    keys = [
+        k
+        for k in counts
+        if len(senders[k]) >= least and k not in skip and phrases.has_letter(k) and not _reply(k)
+    ]
     out = []
     for key in sorted(keys, key=lambda k: -counts[k])[:MAX_KEYS]:
         agents: dict[str, dict[str, str]] = {}
@@ -289,26 +316,36 @@ def _card(session: Session, branch: Branch, key: str, agent_id: str, action: str
 
     system = Actor.system(where)
     evidence = {"key": key, "agent_id": agent_id, "action": action, "branch_id": branch.id}
+    summary = t(
+        SUMMARY,
+        "en",
+        action=_label(agent_id, action, "en"),
+        agent=t(AGENTS[agent_id].label_key, "en"),
+    )
     approval = approvals.request(
-        session, PROPOSAL, ("phrase", key), card("en"), system, APPROVERS, "chat",
+        session, PROPOSAL, ("branch", branch.id), summary, system, APPROVERS, "chat",
         evidence=evidence, ttl=TTL, escalate_to=[], branch_id=where,
     )  # fmt: skip
     for person in people:
         lang = person.language or "en"
         buttons = QuickRepliesBlock(options=[t(APPROVE, lang), t(REJECT, lang)])
         blocks: list[Block] = [TextBlock(text=card(lang)), buttons]
-        notify(session, person, blocks, system, agent_id, approval_id=approval.id)
+        notify(  # the card's text stays in the approver's thread, off the chain
+            session, person, blocks, system, agent_id, approval_id=approval.id, redact_log=True
+        )
     return True
 
 
-def _feature(session: Session, branch: Branch, key: str, note: str) -> None:
-    """A missing capability as a feature request from no person (the backlog export)."""
-    wanted = note.strip()[: features.MAX_TEXT]
+def _feature(session: Session, branch: Branch, key: str) -> None:
+    """A missing capability as a feature request from no person (the backlog export), with a
+    fixed text naming the key: never the model's note, and its own group key, so a status
+    change never tells a real asker model-written words."""
+    wanted = f"Unrecognised: '{key}'"[: features.MAX_TEXT]
     after = {
         "text": wanted,
         "key": key_of(wanted),
         "failed_message_id": None,
-        "failed_text": key,
+        "failed_text": None,
         "person_id": None,
         "role": "",
         "branch_id": branch.id,
@@ -323,10 +360,12 @@ def _feature(session: Session, branch: Branch, key: str, note: str) -> None:
 
 def apply(session: Session, branch: Branch, asked: list[Asked], answer: Answer) -> int:
     """Each valid pick as a card, each missing capability as a feature request, one per
-    message (the first valid one); a pick outside code's lists is dropped and logged. In the
-    caller's transaction; returns how many were made."""
+    message (the first valid one), at most MAX_CARDS cards and MAX_REQUESTS requests; a pick
+    outside code's lists is dropped and logged. In the caller's transaction; returns how many
+    were made."""
     offer = {i: {g: set(acts) for g, acts in a.agents.items()} for i, a in enumerate(asked)}
     made: set[int] = set()
+    cards = requests = 0
     for raw in answer.proposals:
         try:
             p = Proposal.model_validate(raw.model_dump(), context={"offer": offer})
@@ -337,9 +376,16 @@ def apply(session: Session, branch: Branch, asked: list[Asked], answer: Answer) 
             continue
         key = asked[p.message].key
         if p.missing is not None:
-            _feature(session, branch, key, p.missing)
-        elif not (p.agent_id and p.action and _card(session, branch, key, p.agent_id, p.action)):
+            if requests >= MAX_REQUESTS:
+                continue
+            _feature(session, branch, key)
+            requests += 1
+        elif cards >= MAX_CARDS or not (
+            p.agent_id and p.action and _card(session, branch, key, p.agent_id, p.action)
+        ):
             continue
+        else:
+            cards += 1
         made.add(p.message)
     return len(made)
 
@@ -348,7 +394,9 @@ def _prepare(
     session: Session, branch_id: str, now: dt.datetime
 ) -> tuple[Branch, dt.date, list[Asked]] | None:
     """The branch's keys when its nightly run is due and not run yet for the date; marks the
-    run (also with no keys, so a tick never scans twice) and commits."""
+    run (also with no keys, so a tick never scans twice) and commits. Reads and marks under
+    the write lock (rule 11: two ticks never both pass)."""
+    events.write_lock(session)
     branch = session.get(Branch, branch_id)
     day = _due(session, branch, now) if branch else None
     if branch is None or day is None or alerts._marked(session, RAN, branch.id, day):
@@ -452,29 +500,28 @@ def decide_tap(
 
 
 def _approve(session: Session, approval: Approval, decider: Actor) -> None:
-    """Teach the proposed phrase at its branch with the approver as the teacher (their roles,
-    so an owner's or admin's phrase may become an example). A target no longer teachable
-    raises LookupError (the caller closes the request)."""
+    """Teach the proposed phrase at its branch with the approver as the teacher and no roles,
+    so a proposed phrase routes but never becomes a decider example (staff words). A target
+    no longer teachable raises LookupError (the caller closes the request)."""
     ev = approval.evidence
     person = session.get(Person, decider.person_id or "")
-    roles = person.roles if person else decider.principal.roles
     lang = person.language if person else "en"
     try:
         phrases.teach(
             session, decider, ev["branch_id"], ev["key"], ev["agent_id"], ev["action"],
-            lang=lang, roles=roles,
+            lang=lang, roles=(),
         )  # fmt: skip
     except phrases.TeachError as exc:
         raise LookupError(str(exc)) from exc
 
 
 def _reject(session: Session, approval: Approval, decider: Actor) -> None:
-    """phrase.proposal_rejected: the key rests for QUIET at its branch."""
+    """phrase.proposal_rejected with a neutral text (the key stays in the approval's
+    evidence): the key rests for QUIET at its branch."""
     ev = approval.evidence
-    after = {k: ev.get(k) for k in ("key", "agent_id", "action", "branch_id")}
-    events.emit(
-        session, REJECTED, ("phrase", str(ev["key"])), None, after, decider, approval_id=approval.id
-    )
+    after = {k: ev.get(k) for k in ("agent_id", "action", "branch_id")}
+    after["text"] = "phrase proposal rejected"
+    events.emit(session, REJECTED, approval, None, after, decider, approval_id=approval.id)
 
 
 approvals.register_handler(PROPOSAL, _approve)

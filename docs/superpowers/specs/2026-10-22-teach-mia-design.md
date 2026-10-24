@@ -253,6 +253,24 @@ is a `feature.requested` row (source `phrases.propose`), not `capability.request
 shares report_model's US$10 monthly cap. A branch with no owner or admin of its own sends the
 card to the organisation's first branch that has one.
 
+Round 1 (security review of 83d7731): a key needs two distinct senders (one in dev mode); a
+night makes at most five cards and five feature requests per branch; keys made only of reply
+words (yes, no, ok, oo, opo, hindi, sige, salamat, thanks, thank you) or equal to any button
+label in the ten languages are skipped; the card's text is redacted in its notification.sent
+event, the approval's summary and `phrase.proposal_rejected` are neutral (the key stays in the
+approval's evidence); a proposal-taught phrase carries no roles, so it routes but never becomes
+a decider example; a missing capability is filed as "Unrecognised: '<key>'", never the model's
+note; the nightly marker is read and written under the write lock; an in-app Approve with
+several proposals open points to "Pending approvals" (the app chat sends no message id yet).
+
+Known limits (no code yet):
+- L2: with no owner or admin at a branch, the organisation's first branch with one decides and
+  teaches the phrase there, so that branch's people see the other branch's staff words, and an
+  assigned supervisor (D50) never gets the card. This matches today's admin rights.
+- L3: pseudonymisation covers people whose home branch is the branch only; assigned
+  supervisors, owners homed elsewhere, customers and email addresses leave in clear inside
+  keys, and the restored answer can hold real names (the same as for Jev).
+
 ## 6. Version control
 
 - Runtime: events, append-only, each with actor and time; version = event count; rollback =

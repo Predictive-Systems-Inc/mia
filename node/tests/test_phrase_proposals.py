@@ -71,6 +71,12 @@ def _say(session: Session, person: Person, text: str, times: int = 1) -> None:
         session.commit()
 
 
+def _two(session: Session, staff: dict[str, Person], text: str) -> None:
+    """`text` unrecognised once each from two clerks (two distinct senders)."""
+    _say(session, staff["Ana"], text)
+    _say(session, staff["Liza"], text)
+
+
 def _night(session: Session, shop: Shop, days: int = 0, **kw: Any) -> int:
     shop.pin(22, 30, days)  # the Mall kiosk closes at 21:00
     return asyncio.run(proposals.propose(session, shop.kiosk.id, db.utcnow(), **kw))
@@ -130,8 +136,8 @@ def test_the_night_proposes_a_repeated_key_and_not_a_single_one(
     session: Session, rs_en: Ferinos, rs_shop: Shop, model: list[dict[int, str]]
 ) -> None:
     ana = rs_en[1]["Ana"]
-    _say(session, ana, "total benta", 2)
-    _say(session, ana, "magkano ube")
+    _two(session, rs_en[1], "total benta")
+    _say(session, ana, "magkano ube", 2)  # one sender, twice: never enough
     assert _night(session, rs_shop) == 1
     assert model == [{0: "total benta"}]
     (card,) = _open(session)
@@ -159,7 +165,7 @@ def test_nothing_before_closing_and_off_without_a_route(
     monkeypatch: pytest.MonkeyPatch, session: Session, rs_en: Ferinos, rs_shop: Shop,
     model: list[dict[int, str]],
 ) -> None:  # fmt: skip
-    _say(session, rs_en[1]["Ana"], "total benta", 2)
+    _two(session, rs_en[1], "total benta")
     rs_shop.pin(20, 0)
     assert asyncio.run(proposals.propose(session, rs_shop.kiosk.id, db.utcnow())) == 0
     _route(monkeypatch, "")
@@ -180,7 +186,7 @@ def test_a_proposal_outside_the_lists_is_dropped(
     ]
     answer = Answer.model_construct(proposals=[Proposal.model_construct(**b) for b in bad])
     monkeypatch.setattr(proposals, "_fake_answer", lambda m, o: answer)
-    _say(session, rs_en[1]["Ana"], "total benta", 2)
+    _two(session, rs_en[1], "total benta")
     assert _night(session, rs_shop) == 0
     assert _open(session) == [] and not features.groups(session)
     with pytest.raises(ValueError):
@@ -197,7 +203,7 @@ def test_the_card_reaches_owner_and_admin_only(
         language="en",
     )  # fmt: skip
     session.commit()
-    _say(session, staff["Ana"], "total benta", 2)
+    _two(session, staff, "total benta")
     _night(session, rs_shop)
     (card,) = _open(session)
     sent = session.exec(select(Event).where(Event.approval_id == card.id)).all()
@@ -216,14 +222,15 @@ def test_approve_teaches_and_the_next_message_routes_by_it(
     session: Session, rs_en: Ferinos, rs_shop: Shop, model: list[dict[int, str]]
 ) -> None:
     rosa = rs_en[1]["Rosa"]
-    _say(session, rs_en[1]["Ana"], "total benta", 2)
+    _two(session, rs_en[1], "total benta")
     _night(session, rs_shop)
     rs_shop.pin(8, 0, 1)
     reply = _turn(session, rosa, "Approve")
     label = t("intent.sales_supervisor.sales_today", "en")
     assert reply.text() == t("phrases.proposal.taught", "en", phrase="total benta", action=label)
     (taught,) = session.exec(select(Event).where(Event.action == phrases.TAUGHT)).all()
-    assert taught.actor_id == rosa.id and (taught.after or {})["roles"] == ["owner"]
+    assert taught.actor_id == rosa.id and (taught.after or {})["roles"] == []
+    assert phrases.examples(phrases.entries(session, rosa.branch_id), SALES.id) == {}
     assert _open(session)[0].status == "approved"
     routed = _turn(session, rosa, "Total benta")
     assert routed.agent_id == SALES.id
@@ -233,8 +240,8 @@ def test_approve_teaches_and_the_next_message_routes_by_it(
 def test_reject_rests_the_key_for_30_days(
     session: Session, rs_en: Ferinos, rs_shop: Shop, model: list[dict[int, str]]
 ) -> None:
-    rosa, ana = rs_en[1]["Rosa"], rs_en[1]["Ana"]
-    _say(session, ana, "total benta", 2)
+    rosa = rs_en[1]["Rosa"]
+    _two(session, rs_en[1], "total benta")
     _night(session, rs_shop)
     reply = _turn(session, rosa, "Reject")
     assert reply.text() == t("phrases.proposal.rejected", "en", phrase="total benta")
@@ -242,7 +249,7 @@ def test_reject_rests_the_key_for_30_days(
     assert not session.exec(select(Event).where(Event.action == phrases.TAUGHT)).all()
     for days, made in ((1, 0), (31, 1)):
         rs_shop.pin(10, 0, days)
-        _say(session, ana, "total benta", 2)
+        _two(session, rs_en[1], "total benta")
         assert _night(session, rs_shop, days) == made
     assert len(_open(session)) == 2
 
@@ -253,11 +260,11 @@ def test_a_missing_capability_becomes_a_feature_request(
 ) -> None:  # fmt: skip
     answer = Answer(proposals=[Proposal(message=0, missing="Print a price list")])
     monkeypatch.setattr(proposals, "_fake_answer", lambda m, o: answer)
-    _say(session, rs_en[1]["Ana"], "print presyo", 2)
+    _two(session, rs_en[1], "print presyo")
     assert _night(session, rs_shop) == 1
     assert _open(session) == []
     (group,) = features.groups(session)
-    assert (group.text, group.failed) == ("Print a price list", ["print presyo"])
+    assert (group.text, group.failed) == ("Unrecognised: 'print presyo'", [])  # never the note
 
 
 def test_the_cap_stops_the_nightly_call(
@@ -265,7 +272,7 @@ def test_the_cap_stops_the_nightly_call(
 ) -> None:
     """D49: the proposals count in the report questions' US$10 a month."""
     _spent(session, rs_en[1]["Rosa"], 1000, "USD", dt.datetime(2026, 10, 2, tzinfo=dt.UTC))
-    _say(session, rs_en[1]["Ana"], "total benta", 2)
+    _two(session, rs_en[1], "total benta")
     assert _night(session, rs_shop) == 0 and model == []
     assert session.exec(select(Event).where(Event.action == report_model.CAPPED)).one()
 
@@ -274,7 +281,7 @@ def test_a_clerk_cannot_approve(
     session: Session, rs_en: Ferinos, rs_shop: Shop, model: list[dict[int, str]]
 ) -> None:
     ana = rs_en[1]["Ana"]
-    _say(session, ana, "total benta", 2)
+    _two(session, rs_en[1], "total benta")
     _night(session, rs_shop)
     (card,) = _open(session)
     with pytest.raises(approvals.ApprovalError):
@@ -293,7 +300,8 @@ def test_the_request_leaves_only_through_egress_with_its_purpose(
 ) -> None:
     _route(monkeypatch, "gateway/report")
     net = Gateway({"proposals": [TODAY]})
-    _say(session, rs_en[1]["Rosa"], "Ana total benta", 2)
+    _say(session, rs_en[1]["Rosa"], "Ana total benta")
+    _say(session, rs_en[1]["Marites"], "Ana total benta")
     with models.override_allow_model_requests(True):
         assert _night(session, rs_shop, transport=httpx.MockTransport(net)) == 1
     (body,) = net.bodies
@@ -304,3 +312,71 @@ def test_the_request_leaves_only_through_egress_with_its_purpose(
     assert usage.task == "phrases.propose"
     ran = session.exec(select(Event).where(Event.action == proposals.RAN)).one()
     assert (ran.after or {})["date"] == RS_TODAY.isoformat()
+
+
+# ---- round 1 (security review of 83d7731) --------------------------------------------------
+
+
+def test_a_night_makes_at_most_five_cards_and_five_feature_requests(
+    monkeypatch: pytest.MonkeyPatch, session: Session, rs_en: Ferinos, rs_shop: Shop,
+    model: list[dict[int, str]],
+) -> None:  # fmt: skip
+    def answer(messages: dict[int, str], offer: dict[str, Any]) -> Answer:
+        cards = [Proposal(**{**TODAY, "message": i}) for i in messages if i % 2 == 0]
+        notes = [Proposal(message=i, missing="something") for i in messages if i % 2]
+        return Answer(proposals=cards + notes)
+
+    monkeypatch.setattr(proposals, "_fake_answer", answer)
+    for word in ("alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf"):
+        for n in ("una", "ikalawa"):
+            _two(session, rs_en[1], f"{word} {n}")
+    assert _night(session, rs_shop) == 10
+    assert len(_open(session)) == 5 and len(features.groups(session)) == 5
+
+
+def test_the_card_text_stays_off_the_chain(
+    session: Session, rs_en: Ferinos, rs_shop: Shop, model: list[dict[int, str]]
+) -> None:
+    _two(session, rs_en[1], "total benta")
+    _night(session, rs_shop)
+    (card,) = _open(session)
+    assert "total benta" not in card.summary and card.evidence["key"] == "total benta"
+    sent = session.exec(select(Event).where(Event.action == "notification.sent")).all()
+    assert sent and all("total benta" not in json.dumps(e.after) for e in sent)
+    _turn(session, rs_en[1]["Rosa"], "Reject")
+    rejected = session.exec(select(Event).where(Event.action == proposals.REJECTED)).one()
+    assert "total benta" not in json.dumps(rejected.after)
+
+
+def test_reply_words_and_button_labels_are_never_proposed(
+    session: Session, rs_en: Ferinos, rs_shop: Shop, model: list[dict[int, str]]
+) -> None:
+    for text in ("ok", "Thank you!", "oo sige", t("intent.sales_supervisor.sales_today", "fil")):
+        _two(session, rs_en[1], text)
+    _two(session, rs_en[1], "total benta")
+    assert _night(session, rs_shop) == 1 and model == [{0: "total benta"}]
+
+
+def test_the_nightly_run_takes_the_write_lock_first(
+    monkeypatch: pytest.MonkeyPatch, session: Session, rs_en: Ferinos, rs_shop: Shop,
+    model: list[dict[int, str]],
+) -> None:  # fmt: skip
+    """Rule 11: two ticks never both pass the marker (mia tick, the sim endpoint, the loop)."""
+    order: list[str] = []
+    monkeypatch.setattr(proposals.events, "write_lock", lambda s: order.append("lock"))
+    real = proposals.alerts._marked
+    monkeypatch.setattr(proposals.alerts, "_marked", lambda *a: order.append("read") or real(*a))
+    rs_shop.pin(22, 30)
+    proposals._prepare(session, rs_shop.kiosk.id, db.utcnow())
+    assert order[:2] == ["lock", "read"]
+
+
+def test_an_app_tap_with_several_open_names_the_approvals_inbox(
+    session: Session, rs_en: Ferinos, rs_shop: Shop, model: list[dict[int, str]]
+) -> None:
+    _two(session, rs_en[1], "total benta")
+    _two(session, rs_en[1], "magkano kita")
+    assert _night(session, rs_shop) == 2
+    reply = _turn(session, rs_en[1]["Rosa"], "Approve")
+    assert "Pending approvals" in reply.text()
+    assert all(a.status == "pending" for a in _open(session))
