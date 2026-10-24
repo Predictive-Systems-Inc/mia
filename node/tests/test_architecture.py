@@ -205,7 +205,8 @@ def test_core_imports_a_template_only_where_allowed() -> None:
 
 def test_agent_tables_carry_the_agent_prefix_and_shared_tables_live_in_core() -> None:
     """Rule 9: a table defined in mia/agents/<id>/ is prefixed <id>_; the shared sales and
-    stock tables (data standard 1.5) and the sales operations tables (1.9) are defined in
+    stock tables (data standard 1.5), the sales operations tables (1.9) and the kiosk assignments
+    (1.10) are defined in
     mia/core/models.py."""
     from sqlmodel import SQLModel
 
@@ -220,7 +221,8 @@ def test_agent_tables_carry_the_agent_prefix_and_shared_tables_live_in_core() ->
     assert offenders == []
     shared = ("sales_counts", "sales_targets", "sales_notes", "stock_events", "customer_orders")
     sales = ("sales_sessions", "sales_receipts", "sales_receipt_lines", "sales_payments")  # 1.9
-    for name in (*shared, *sales, "supplier_orders", "contracts", "payslips", "leave"):
+    core = ("supplier_orders", "contracts", "payslips", "leave", "branch_assignments")  # 1.10
+    for name in (*shared, *sales, *core):
         assert homes.get(name) == "mia.core.models", name
 
 

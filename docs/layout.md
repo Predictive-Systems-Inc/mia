@@ -25,7 +25,9 @@ mia/
                             sales tenders, supplier orders, contracts, payslips and leave (1.6),
                             the kiosk incident kinds (1.7), customer orders (1.8), sales
                             (1.9: sessions, receipts, lines and payments, their services and
-                            day_sales over a kiosk's one source; ADR 022),
+                            day_sales over a kiosk's one source; ADR 022), assignments
+                            (1.10: a supervisor's extra kiosks and the one branch scope,
+                            branches_of; ADR 024),
                             geocoding (pluggable providers), orgconfig (organisation settings),
                             keys (master key, HKDF, scrypt, TOTP), auth (sessions, codes,
                             credentials, devices, clients; ADR 011), scheduling (recurrence,

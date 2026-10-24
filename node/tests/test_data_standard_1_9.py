@@ -19,7 +19,6 @@ from mia.cli import _alembic_config
 from mia.core import approvals, db, orgconfig, sales, store
 from mia.core.db import get_engine
 from mia.core.models import (
-    STANDARD_VERSION,
     TENDERS,
     Actor,
     Branch,
@@ -109,9 +108,8 @@ def written(session: Session) -> tuple[int, int, int, int]:
     )
 
 
-def test_the_standard_is_1_9_and_the_four_tables_are_core() -> None:
+def test_the_four_tables_are_core() -> None:
     models = (SalesSession, SalesReceipt, SalesReceiptLine, SalesPayment)
-    assert STANDARD_VERSION == "1.9"
     assert tuple(m.__tablename__ for m in models) == TABLES
     assert {m.__module__ for m in models} == {"mia.core.models"}
     assert SalesReceipt.__redact__ == frozenset({"void_reason"})

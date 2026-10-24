@@ -305,6 +305,13 @@ p, admin, *, data:branch_manager_*, write_all, allow
 p, admin, *, tool:branch_manager.add_person, execute, allow
 p, admin, *, tool:branch_manager.set_phone, execute, allow
 
+# admin: a supervisor's extra kiosks (D50, data standard 1.10); only the owner or an admin assigns
+p, admin, *, tool:branch_manager.assign_kiosk, execute, allow
+p, admin, *, data:branch_assignments, read, allow
+p, admin, *, data:branch_assignments, write, allow
+p, admin, *, data:branch_assignments, read_all, allow
+p, admin, *, data:branch_assignments, write_all, allow
+
 # supervisor (head staff): the closing count, settlements, payouts, expenses, petty cash, deposits
 # and balances of their branch; an expense over the limit waits for the owner; owner and admin
 # inherit

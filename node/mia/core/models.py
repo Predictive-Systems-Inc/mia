@@ -17,7 +17,7 @@ from mia.core import db
 from mia.core.db import TZDateTime
 from mia.core.ids import new_id
 
-STANDARD_VERSION = "1.9"
+STANDARD_VERSION = "1.10"
 
 
 def _now() -> datetime:
@@ -82,6 +82,28 @@ class Person(BranchScoped, table=True):
     home_lat: float | None = None
     home_lon: float | None = None
     accepts_calls: bool = True
+
+
+class BranchAssignment(BranchScoped, table=True):
+    """An extra branch a supervisor works at beside their home branch (data standard 1.10,
+    ADR 024, D50). branch_id is the assigned branch. Active from from_date to the day before
+    to_date (open while to_date is None). At most one open assignment per person and branch (a
+    partial unique index)."""
+
+    __tablename__: ClassVar[str] = "branch_assignments"
+    __table_args__ = (
+        Index(
+            "ux_branch_assignments_open",
+            "person_id",
+            "branch_id",
+            unique=True,
+            sqlite_where=text("to_date IS NULL"),
+        ),
+    )
+
+    person_id: str = Field(foreign_key="person.id", index=True)
+    from_date: dt.date
+    to_date: dt.date | None = None
 
 
 class Availability(BranchScoped, table=True):

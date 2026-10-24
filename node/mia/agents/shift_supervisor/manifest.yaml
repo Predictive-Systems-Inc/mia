@@ -1,7 +1,7 @@
 id: shift_supervisor
 name: Shift Supervisor
 version: 0.1.0
-standard_version: "1.9"
+standard_version: "1.10"
 job_description: job.md
 instructions: {base: prompts/base.md, org_overrides: {allowed: true, locked_topics: [approvals, permissions]}}
 models: {classifier: rules, route: default}
