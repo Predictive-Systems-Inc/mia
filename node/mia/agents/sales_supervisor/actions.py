@@ -239,6 +239,7 @@ class Query:
     receipt_no: str | None = None  # the receipt a void or refund names (parsing.strip_receipt)
     names_item: bool = False  # a word of the message (receipt number stripped) is a menu token
     receipt_word: bool = False  # the message says resibo, receipt, rcpt or r (RECEIPT_WORDS)
+    counts_only: bool = False  # the message is only counts (count_shaped), read by code
 
 
 def _periods(lang: str) -> dict[str, str]:
@@ -407,6 +408,7 @@ def build_query(
         receipt_no=base.receipt_no,
         names_item=any(w in menu for w in base.text.casefold().split()),
         receipt_word=receipt_word,
+        counts_only=count_shaped(session, deps.branch.id, message),
     )
 
 

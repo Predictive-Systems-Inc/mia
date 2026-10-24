@@ -232,6 +232,15 @@ def _parse(answers: dict[str, Any], q: Query) -> Decision:
         }
         decision = shared.parse(forced, q, actions=ACTIONS, args=_args)
         return decision.model_copy(update={"raw_action": str(top.get("choice", ""))})
+    if q.source == "receipts" and q.counts_only and q.tender and isinstance(top, dict):
+        # only counts and one tender on a receipts kiosk ("2 classic 1 special gcash"): code
+        # knows it is a sale, so it is the ring-up question (without a tender the tender
+        # question or Did you mean stays as it was) (record_receipt; _for_kiosk asks to confirm
+        # without a receipt word), never a Did you mean between a sale and a correction
+        converted = converted or not q.receipt_word  # code decided it: ask before ringing
+        confidence = max(float(top.get("confidence", 0)), THRESHOLD)
+        top = {**top, "choice": "record_receipt", "confidence": confidence}
+        answers = {**answers, "action": {**top, "probabilities": {"record_receipt": confidence}}}
     picks = {"sales_period", "report_sales", "record_receipt"}
     choice = top.get("choice") if isinstance(top, dict) else None
     if choice in picks and breakdown_of(q.message) and (choice == "sales_period" or not q.groups):

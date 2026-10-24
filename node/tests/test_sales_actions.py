@@ -300,6 +300,29 @@ def test_a_breakdown_word_settles_a_doubtful_period_pick() -> None:
     assert _parse(typed, counts).action != "sales_period"  # counts typed: never the read
 
 
+def test_only_counts_on_a_receipts_kiosk_is_the_ring_up_question() -> None:
+    """Live 24 Oct: '2 classic 1 special gcash' got Did you mean (a sale or a correction);
+    code knows the message is only counts, so a receipts kiosk asks to ring it up."""
+    import dataclasses
+
+    answers = {
+        "action": {
+            "choice": "correct_sales",
+            "confidence": 0.41,
+            "probabilities": {"correct_sales": 0.41, "record_receipt": 0.38},
+        },
+        "item_0": {"choice": "i2", "confidence": 0.9},
+        "item_1": {"choice": "i1", "confidence": 0.9},
+    }
+    q = dataclasses.replace(
+        query("2 cl 1 sp gcash"), source="receipts", counts_only=True, tender="gcash"
+    )
+    d = _parse(answers, q)
+    assert d.action == "record_receipt" and d.args.get("confirm") is True
+    other = dataclasses.replace(q, counts_only=False)
+    assert _parse(answers, other).action != "record_receipt"  # not only counts: Jev's pick
+
+
 def test_without_a_negation_jevs_pick_stands() -> None:
     d = _parsed("3 special 5 classic", "report_sales")
     assert d.action == "report_sales" and len(d.args["items"]) == 2
