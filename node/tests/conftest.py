@@ -52,6 +52,7 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     """Every test gets its own database file and the test model."""
     monkeypatch.setenv("MIA_DB_PATH", str(tmp_path / "mia.db"))
     monkeypatch.setenv("MIA_MODEL", "test")
+    monkeypatch.setenv("MIA_REPORT_MODEL", "")  # the report step off unless a test sets it
     monkeypatch.setenv("MIA_EGRESS_LEVEL", "pseudonymised")
     if not os.environ.get("MIA_EVAL_MODEL"):  # real evals keep the real gateway from the env
         monkeypatch.setenv("MIA_GATEWAY_KEY", "test-key")

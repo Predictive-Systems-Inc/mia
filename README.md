@@ -224,6 +224,14 @@ Two kinds of model, chosen with `MIA_MODEL` in `.env`; no code changes:
   `http://localhost:11434/v1`). Nothing leaves the node, so egress is skipped and it works with
   `MIA_EGRESS_LEVEL=none`. The URL must be localhost or a private IP address.
 
+Sales report questions no existing read answers ("benta last week per item") go to
+`MIA_REPORT_MODEL` (empty: `MIA_MODEL` when it is a `gateway/<route>`, else the step is off and the
+old reply stands). The model only fills a fixed report form or asks one clarifying question; code
+checks permissions and sums every figure. The request goes through egress with purpose
+`sales_supervisor.report`, and spending is capped at US$10 a month, summed from
+`usage_cloud_requests` (costs in EUR are converted at a fixed rate). `MIA_REPORT_MODEL=test` is a
+deterministic fake for tests.
+
 Jev (TypeSafe, `MIA_TYPESAFE_KEY`): `MIA_DECIDER=jev` turns on both the shift supervisor's Jev
 decider and the agent router; otherwise a person with several agents stays on the active one or
 is asked. The sales supervisor answers only with `MIA_DECIDER=jev` (it has no LLM agent; without

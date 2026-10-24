@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     MIA_MODEL: str = "test"
     MIA_GATEWAY_URL: str = "http://localhost:4000/v1"
     MIA_GATEWAY_KEY: str = ""
+    # The model that turns a sales report question into a report form (teach-Mia 4c, D49):
+    # empty means MIA_MODEL when that is a gateway/ route, else the step is off; `test` is the
+    # deterministic fake. Capped at US$10 a month of usage_cloud_requests.
+    MIA_REPORT_MODEL: str = ""
     # OpenAI-compatible server on this machine or network (Ollama) for MIA_MODEL=local/<model>.
     MIA_LOCAL_URL: str = "http://localhost:11434/v1"
     # Thinking (reasoning) on local models: off by default because it makes every turn slow on
