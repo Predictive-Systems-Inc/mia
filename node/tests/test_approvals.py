@@ -498,3 +498,34 @@ def test_an_expiry_at_the_decision_survives_a_raising_reject_handler(
         approvals.decide(session, late.id, Actor.person(people["Helena"]), "approved")
     session.rollback()  # the caller rolls the handler back
     assert session.get(Approval, late.id).status == "expired"
+
+
+def test_a_refund_is_never_decided_from_the_chat(
+    session: Session, people: dict[str, Person]
+) -> None:
+    """D47: only a chat approval (a customer order) takes a chat decision; a money approval
+    such as sales.refund stays app-only even with a fresh step-up."""
+    row = approvals.request(
+        session,
+        "sales.refund",
+        ("sales_receipts", "R1"),
+        "refund",
+        Actor.person(people["Sanna"]),
+        ["owner"],
+        "chat",  # a caller cannot ask for chat on a money request
+        risk="money",
+    )
+    assert row.channel == "app_only"
+    with pytest.raises(ApprovalError, match="Mia app"):
+        approvals.decide(
+            session,
+            row.id,
+            Actor.person(people["Helena"]),
+            "approved",
+            channel="chat",
+            aal="aal1",
+            stepped_up_at=utcnow(),
+        )
+    assert row.status == "pending"
+    refused = session.exec(select(Event).where(Event.action == "approval.refused")).one()
+    assert refused.approval_id == row.id

@@ -178,8 +178,10 @@ def test_a_normal_day_at_the_mall_kiosk(day: Day, session: Session) -> None:
     classic = _item(session, "Classic")
     assert order.lines == [{"item_id": classic.id, "quantity": 10, "unit_price": classic.price}]
     assert order.total == 10 * classic.price
-    card = t("cs.staff.order_waiting", FIL, who="Mila (0101)")
-    assert day.told("Marites", CS, step=ordered) == [card]
+    asked = t(
+        "cs.staff.new_order", FIL, items="10 Classic", time="18:00", name="Mila", last4="0101"
+    )
+    assert day.told("Marites", CS, step=ordered) == [asked]
     assert order.approval_id is not None
     marites = Actor.person(day.people["Marites"])
     approvals.decide(session, order.approval_id, marites, "approved", stepped_up_at=db.utcnow())

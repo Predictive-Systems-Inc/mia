@@ -4,7 +4,7 @@ Guarantees: nobody decides a request they made or triggered (checked on principa
 on_behalf_of and evidence["triggered_by"]), except an owner of the approval's branch deciding
 their own money, external or delete request with a fresh PIN step-up (D37); agents never
 decide; the decider must hold one of the approver roles; app_only approvals are decided only in
-the authenticated app; every request and decision is written to the events log; approved
+the authenticated app, never from the chat (a `chat` approval, D47, takes a chat tap); every request and decision is written to the events log; approved
 requests run their handler and rejected ones their reject handler, in the decision's transaction.
 """
 
@@ -84,7 +84,8 @@ def request(
 ) -> Approval:
     """Create a pending approval at `branch_id` (default the requester's branch), the branch
     whose people may decide it (decide's scope); a requester still never decides their own.
-    Money, external and delete risks are forced to app_only and recorded as evidence["risk"]
+    Money, external and delete risks are forced to app_only (whatever `channel` asks, so never
+    `chat`, D47) and recorded as evidence["risk"]
     (the approvals table has no risk column; D37 reads it). It expires at `expires_at` when
     given, else `ttl` from now. A timed-out request escalates once to `escalate_to` (default
     owner); `escalate_to=[]` expires it at the deadline instead."""

@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy import text as sql
 from sqlmodel import Session, col, select
 
-from mia.agents.customer_service import public
+from mia.agents.customer_service import public, tools
 from mia.agents.shift_supervisor.agent import get_agent
 from mia.channels import linking, outbox, registry, transport
 from mia.channels.base import InboundMessage
@@ -107,6 +107,11 @@ def _begin(session: Session, inbound_id: str, now: dt.datetime) -> _Step | None:
     outbox.release_held(session, identity)
     if msg.button and msg.button.strip().casefold() in SHOW_LABELS:
         _finish(session, row, "done")  # the new-message notice's button only releases held
+        return _Step(person=person)
+    tapped = tools.decide_tap(session, person, msg.button) if msg.button else None
+    if tapped is not None:  # an order's Confirm or Decline (D47), decided without a chat turn
+        deliver(session, person, [TextBlock(text=tapped)], Actor.person(person), urgent=True)
+        _finish(session, row, "done")
         return _Step(person=person)
     if msg.has_media and msg.media_id:
         return _Step(person=person, media=msg)

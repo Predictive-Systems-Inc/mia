@@ -7,25 +7,29 @@ customer's row is checked with that row's customer_id as the owner, so the custo
 read_own and write_own allow only their own rows; another customer's row is an rbac deny (the
 agent principal holds the plain grants). Staff tools take AgentDeps and see only their branch.
 
-Orders go through the approvals guard: place_order is risk money with `approval: always`. Its
+Orders go through the approvals guard: place_order has `approval: always` and
+`approval_channel: chat` (D47; no money risk, the customer pays at pickup). Its
 precheck (_order_precheck) refuses unknown or inactive items, too many items, a time outside
 the opening hours and an area not configured, before anything is asked; then the guard creates
 the approval (evidence: the tool call id and the validated input with the code-made order_id)
 and stops. The caller then runs record_waiting, which writes the order `waiting` only for that
-pending approval and shows the clerks and supervisors its card. A clerk, supervisor, owner or
-admin decides it in the app; apply_order_approval re-reads the waiting row (the approval's own,
+pending approval and sends the clerks and supervisors its message with Confirm and Decline
+buttons. A clerk, supervisor, owner or admin of the branch decides it with a tap (decide_tap)
+or in the app; apply_order_approval re-reads the waiting row (the approval's own,
 items still active) and confirms it, apply_order_rejection rejects it, and each queues the
 customer's reply. Both find the customer by the approval's on_behalf_of, never a Person.
 
 Refusals raise LookupError(reason), so call_tool answers `invalid` with the reason.
 """
 
+import contextlib
 import datetime as dt
 from collections.abc import Callable
 from typing import Literal
 from zoneinfo import ZoneInfo
 
 from pydantic import AwareDatetime, BaseModel, Field
+from sqlalchemy import text as sql_text
 from sqlmodel import Session, col, or_, select
 
 from mia.agents.base import AgentDeps, ToolBinding
@@ -33,11 +37,10 @@ from mia.agents.customer_service import MANIFEST, calc, public
 from mia.agents.customer_service.actions import STAFF_ORDER_STATUSES, open_orders
 from mia.agents.customer_service.models import Complaint, Customer
 from mia.agents.customer_service.public import CustomerDeps
-from mia.chat.blocks import ApprovalCardBlock, Block, CardField, TextBlock
+from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.chat.channels import notify
 from mia.core import approvals, db, orgconfig, store
-from mia.core.models import Actor, Approval, Branch, CustomerOrder, Person
-from mia.core.money import format_money
+from mia.core.models import Actor, Approval, Branch, CustomerOrder, Event, Message, Person, Thread
 from mia.core.rbac import Resource, get_rbac
 from mia.i18n import SUPPORTED, t
 from mia.templates.retail import hours as shop_hours
@@ -51,9 +54,21 @@ COMPLAINTS = Resource(kind="data", name=Complaint.__tablename__)
 ITEMS = Resource(kind="data", name=RetailItem.__tablename__)
 HOURS = Resource(kind="data", name=RetailBranchHours.__tablename__)
 CANCELLABLE = ("waiting", "confirmed")
+OPEN = ("pending", "escalated")
 SHOWN = ("waiting", "confirmed", "ready", "picked_up")  # the statuses order_status reports
 REJECT_REASONS = ("closed", "sold_out", "too_large")  # else the customer reads `other`
 STAFF_ROLES = {"clerk", "supervisor"}
+CONFIRM, DECLINE = "cs.staff.confirm", "cs.staff.decline"  # the order message's buttons (D47)
+TAPPED = {
+    t(k, lang).casefold(): o
+    for k, o in ((CONFIRM, "approved"), (DECLINE, "rejected"))
+    for lang in SUPPORTED
+}
+DONE = {  # outcome: (told after the tap, told on a later tap)
+    "approved": ("cs.staff.confirmed_by", "cs.staff.already_confirmed"),
+    "rejected": ("cs.staff.declined_by", "cs.staff.already_declined"),
+}
+RECENT = 20  # how far back a tap looks for the message whose buttons it answers
 
 
 # ---- shared helpers -----------------------------------------------------------------------
@@ -119,12 +134,24 @@ def _tell_staff(
     roles: set[str],
     words: Callable[[str], list[Block]],
     actor: Actor,
+    asks: str | None = None,
 ) -> None:
-    """A sensitive notification (a customer's first name and number digits) to each active
-    person of the branch holding one of the roles, worded in their language."""
+    """A notification with a customer's first name and number digits to each active person of
+    the branch holding one of the roles, worded in their language: sensitive (an app link on
+    channels), or, when it asks for the approval `asks` (D47), plain text with its buttons on
+    channels; either way the text stays out of the event log."""
     for person in _staff(session, branch_id, roles):
         blocks = words(person.language or "en")
-        notify(session, person, blocks, actor, MANIFEST.id, sensitive=True)
+        notify(
+            session,
+            person,
+            blocks,
+            actor,
+            MANIFEST.id,
+            sensitive=asks is None,
+            redact_log=True,
+            approval_id=asks,
+        )
 
 
 def _local(when: dt.datetime, branch: Branch) -> str:
@@ -287,29 +314,22 @@ def place_order(deps: CustomerDeps, args: PlaceOrderInput, tool_call_id: str) ->
     return StatusOutput(order_id=row.id, status=row.status)
 
 
-def _order_card(
+def _order_ask(
     session: Session, order: CustomerOrder, customer: Customer, branch: Branch, lang: str
 ) -> list[Block]:
-    """The clerks' and supervisors' approval card: items, total, pickup time, the customer's
-    first name and the last four digits of their number."""
+    """The staff's order message (D47): items, pickup time, the customer's first name and the
+    last four digits of their number, with the Confirm and Decline buttons."""
     names = {i.id: i.name for i in session.exec(select(RetailItem)).all()}
     items = ", ".join(f"{ln['quantity']} {names.get(ln['item_id'], '?')}" for ln in order.lines)
-    who = _who(customer)
-    card = ApprovalCardBlock(
-        approval_id=order.approval_id or "",
-        title=t("cs.staff.order_title", lang),
-        summary=who,
-        fields=[
-            CardField(label=t("cs.field.items", lang), value=items),
-            CardField(
-                label=t("cs.field.total", lang),
-                value=format_money(order.total, order.currency, lang),
-            ),
-            CardField(label=t("cs.field.pickup", lang), value=_local(order.pickup_at, branch)),
-            CardField(label=t("cs.field.customer", lang), value=who),
-        ],
+    text = t(
+        "cs.staff.new_order",
+        lang,
+        items=items,
+        time=_local(order.pickup_at, branch),
+        name=_first_name(customer),
+        last4=calc.last_four(customer.address),
     )
-    return [TextBlock(text=t("cs.staff.order_waiting", lang, who=who)), card]
+    return [TextBlock(text=text), QuickRepliesBlock(options=[t(CONFIRM, lang), t(DECLINE, lang)])]
 
 
 def record_waiting(deps: CustomerDeps, args: PlaceOrderInput, approval_id: str) -> CustomerOrder:
@@ -365,9 +385,9 @@ def record_waiting(deps: CustomerDeps, args: PlaceOrderInput, approval_id: str) 
     )
 
     def words(lang: str) -> list[Block]:
-        return _order_card(session, order, customer, branch, lang)
+        return _order_ask(session, order, customer, branch, lang)
 
-    _tell_staff(session, customer.branch_id, STAFF_ROLES, words, deps.actor)
+    _tell_staff(session, customer.branch_id, STAFF_ROLES, words, deps.actor, asks=approval.id)
     return order
 
 
@@ -701,6 +721,96 @@ def close_undecided(session: Session, branch: Branch, now: dt.datetime) -> int:
         _reject(session, order, customer, actor, "other", None)
         count += 1
     return count
+
+
+# ---- the order buttons in the chat (D47) --------------------------------------------------
+
+
+def _buttons(message: Message) -> list[str]:
+    return [o for b in message.blocks if b.get("type") == "quick_replies" for o in b["options"]]
+
+
+def _tapped_order(session: Session, person: Person, label: str) -> Approval | None:
+    """The chat-decided place_order approval asked by the person's latest message with
+    buttons, when `label` is one of them; None otherwise (another message's button)."""
+    rows = session.exec(
+        select(Message)
+        .join(Thread, col(Thread.id) == col(Message.thread_id))
+        .where(Thread.person_id == person.id)
+        .where(Message.role != "user")
+        .order_by(col(Message.id).desc())
+        .limit(RECENT)  # ponytail: a tap answers a recent message, older buttons go the chat way
+    ).all()
+    last = next((m for m in rows if _buttons(m)), None)
+    if last is None or label.strip().casefold() not in {b.casefold() for b in _buttons(last)}:
+        return None
+    asked = session.exec(
+        select(Event).where(Event.action == "notification.sent").where(Event.entity_id == last.id)
+    ).first()
+    approval = session.get(Approval, asked.approval_id) if asked and asked.approval_id else None
+    ours = approval is not None and approval.type == PLACE_ORDER and approval.channel == "chat"
+    return approval if ours else None
+
+
+def _first(session: Session, person_id: str | None) -> str:
+    person = session.get(Person, person_id or "")
+    return person.name.split()[0] if person and person.name else "?"
+
+
+def _asked(session: Session, approval_id: str) -> list[Person]:
+    """Everyone the approval's order message went to."""
+    sent = select(Event.entity_id).where(
+        Event.action == "notification.sent", Event.approval_id == approval_id
+    )
+    return list(
+        session.exec(
+            select(Person)
+            .join(Thread, col(Thread.person_id) == col(Person.id))
+            .join(Message, col(Message.thread_id) == col(Thread.id))
+            .where(col(Message.id).in_(sent))
+            .distinct()
+        )
+    )
+
+
+def decide_tap(session: Session, person: Person, label: str) -> str | None:
+    """A Confirm or Decline tap on the order message (D47), decided through approvals.decide
+    with channel chat and the tapping person as the actor (their approver role and branch
+    checked there, no step-up). Returns the reply for the tapper: decided by them (the others
+    asked are told the same), already decided by someone (nothing changes, the first tap
+    wins), expired, closed, or not allowed. None when the label is no order button of the
+    person's latest message with buttons. Commits the caller's work before deciding, and
+    reads the status under the write lock (rule 11)."""
+    outcome = TAPPED.get(label.strip().casefold())
+    approval = _tapped_order(session, person, label) if outcome else None
+    if approval is None or outcome is None:
+        return None
+    lang, approval_id = person.language or "en", approval.id
+    session.commit()  # a refused handler rolls back only the decision
+    session.execute(sql_text(f"UPDATE {Approval.__tablename__} SET id = id WHERE 0"))
+    approval = session.get(Approval, approval_id, populate_existing=True)
+    assert approval is not None
+    if approval.status in DONE:
+        return t(DONE[approval.status][1], lang, name=_first(session, approval.decided_by))
+    actor = Actor.person(person)
+    try:
+        approvals.decide(session, approval_id, actor, outcome, channel="chat", aal="aal1")
+    except (approvals.ApprovalError, LookupError) as exc:
+        if isinstance(exc, LookupError):  # the handler refused: the row changed (the app's 409)
+            session.rollback()
+            with contextlib.suppress(approvals.ApprovalError):
+                approvals.close_refused(session, approval_id, actor, str(exc))
+        approval = session.get(Approval, approval_id, populate_existing=True)
+        status = approval.status if approval else "expired"
+        if status == "expired":
+            return t("cs.staff.order_expired", lang)
+        return t("cs.staff.order_closed" if status not in OPEN else "denied.generic", lang)
+    name = _first(session, person.id)
+    for other in _asked(session, approval_id):
+        if other.id != person.id:
+            text = t(DONE[outcome][0], other.language or "en", name=name)
+            notify(session, other, [TextBlock(text=text)], actor, MANIFEST.id, urgent=True)
+    return t(DONE[outcome][0], lang, name=name)
 
 
 approvals.register_handler(PLACE_ORDER, apply_order_approval)

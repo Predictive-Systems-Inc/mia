@@ -333,13 +333,6 @@ def notifications(session: Session, person: Person) -> list[Message]:
     )
 
 
-def card_to(session: Session, person: Person) -> dict[str, Any]:
-    cards = [b for m in notifications(session, person) for b in m.blocks]
-    found = [b for b in cards if b.get("type") == "approval_card"]
-    assert found
-    return found[0]
-
-
 def decide_last(
     client: TestClient,
     sim: SimAdapter,
@@ -405,9 +398,8 @@ def test_an_order_waits_for_staff(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     assert order(client, sim, monkeypatch) == [t("cs.order_waiting", "fil", time="10:00")]
-    assert (
-        new_order(session).status == "waiting" and card_to(session, shop.people["Ana"])["summary"]
-    )
+    asked = [m.text for m in notifications(session, shop.people["Ana"])]
+    assert new_order(session).status == "waiting" and asked[0].startswith("Bagong order")
 
 
 def test_the_order_id_is_made_by_code_never_taken_from_the_decision(
@@ -890,3 +882,173 @@ def test_the_first_budget_hold_of_an_hour_alarms_the_owner_once(
     assert told.count(alarm) == 1
     marks = session.exec(select(Event).where(Event.action == f"{MANIFEST.id}.budget_alarm")).all()
     assert len(marks) == 1
+
+
+# ---- staff confirm or decline an order with buttons in the chat (D47) ------------------------
+
+ANA_ADDR, MARITES_ADDR, PAO_ADDR = "+639170000301", "+639170000302", "+639170000303"
+
+
+@pytest.fixture
+def staff(shop: Shop, link: LinkFn) -> dict[str, Person]:
+    """Ana (clerk) and Marites (supervisor) of the Mall kiosk and Pao (clerk of the other
+    branch) linked on sim, their windows open."""
+    now = approvals.utcnow()
+    for name, address in (("Ana", ANA_ADDR), ("Marites", MARITES_ADDR), ("Pao", PAO_ADDR)):
+        link(shop.people[name], address, last_inbound_at=now)
+    return shop.people
+
+
+def mila_orders(client: TestClient, sim: SimAdapter, monkeypatch: pytest.MonkeyPatch) -> None:
+    answer(monkeypatch, "place_order", day="d0", time="t0")
+    say(client, sim, ORDER_TEXT, name="Mila Santos")
+
+
+def tap(client: TestClient, sim: SimAdapter, address: str, label: str) -> list[str]:
+    """A button tap from the address; the texts sent to it because of it."""
+    before = len(texts_at(sim, address))
+    m = {"from": address, "id": new_id(), "text": "", "button": label}
+    assert post(client, sim, json.dumps({"messages": [m]}).encode()) == 200
+    return texts_at(sim, address)[before:]
+
+
+CONFIRM, DECLINE = t("cs.staff.confirm", "fil"), t("cs.staff.decline", "fil")
+
+
+def test_staff_get_the_order_as_text_with_buttons_and_a_masked_number(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mila_orders(client, sim, monkeypatch)
+    text = t(
+        "cs.staff.new_order", "fil", items="10 Classic", time="10:00", name="Mila", last4="0199"
+    )
+    for address in (ANA_ADDR, MARITES_ADDR):
+        sent = [p.body for p in sim.sent if p.address == address]
+        assert sent == [{"kind": "buttons", "text": text, "buttons": [CONFIRM, DECLINE]}]
+    assert not [p for p in sim.sent if p.address == PAO_ADDR]  # the other branch is not asked
+    assert one(session, Approval).channel == "chat"
+    full = ADDR.lstrip("+")[-10:]  # the number without its country code
+    payloads = json.dumps([p.body for p in sim.sent if p.address != ADDR])
+    chain = json.dumps([e.model_dump(mode="json") for e in session.exec(select(Event))])
+    assert full not in payloads and full not in chain
+    assert "Mila" not in chain  # the first name is shown on the phone, never logged
+
+
+def test_ana_confirms_from_her_phone_and_marites_is_told(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mila_orders(client, sim, monkeypatch)
+    assert tap(client, sim, ANA_ADDR, CONFIRM) == [t("cs.staff.confirmed_by", "fil", name="Ana")]
+    ana = staff["Ana"]
+    approval = one(session, Approval)
+    assert (approval.status, approval.decided_by) == ("approved", ana.id)
+    assert (new_order(session).status, new_order(session).decided_by) == ("confirmed", ana.id)
+    decided = session.exec(select(Event).where(Event.action == "approval.approved")).one()
+    assert decided.actor_id == ana.id
+    asyncio.run(public.send_pending(db.utcnow()))
+    assert texts_to(sim)[-1] == t("cs.order_confirmed", "fil", time="10:00")
+    assert texts_at(sim, MARITES_ADDR)[-1] == t("cs.staff.confirmed_by", "fil", name="Ana")
+    # the second tap changes nothing
+    again = tap(client, sim, MARITES_ADDR, CONFIRM)
+    assert again == [t("cs.staff.already_confirmed", "fil", name="Ana")]
+    assert len(session.exec(select(Event).where(Event.action == "approval.approved")).all()) == 1
+    assert one(session, Approval).decided_by == ana.id
+
+
+def test_a_decline_from_the_phone_sends_the_refusal(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mila_orders(client, sim, monkeypatch)
+    assert tap(client, sim, MARITES_ADDR, DECLINE) == [
+        t("cs.staff.declined_by", "fil", name="Marites")
+    ]
+    assert (one(session, Approval).status, new_order(session).status) == ("rejected", "rejected")
+    asyncio.run(public.send_pending(db.utcnow()))
+    assert texts_to(sim)[-1] == t("cs.order_rejected.other", "fil", time="10:00")
+    assert texts_at(sim, ANA_ADDR)[-1] == t("cs.staff.declined_by", "fil", name="Marites")
+    assert tap(client, sim, ANA_ADDR, CONFIRM) == [
+        t("cs.staff.already_declined", "fil", name="Marites")
+    ]
+    assert new_order(session).status == "rejected"
+
+
+def test_an_expired_order_says_so(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mila_orders(client, sim, monkeypatch)
+    approval = one(session, Approval)
+    due = {"expires_at": db.utcnow(), "escalate_to": []}  # no escalation: it expires
+    store.update(session, approval, due, Actor.system(approval.branch_id))
+    session.commit()
+    assert tap(client, sim, ANA_ADDR, CONFIRM) == [t("cs.staff.order_expired", "fil")]
+    assert one(session, Approval).status == "expired"
+
+
+def test_a_stranger_or_another_branch_cannot_decide_from_the_chat(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mila_orders(client, sim, monkeypatch)
+    answer(monkeypatch, "greeting")
+    tap(client, sim, "+639170000777", CONFIRM)  # an unlinked phone: the customer turn
+    approval = one(session, Approval)
+    pao = Actor.person(staff["Pao"])
+    with pytest.raises(approvals.ApprovalError):
+        approvals.decide(session, approval.id, pao, "approved", channel="chat", aal="aal1")
+    assert (one(session, Approval).status, new_order(session).status) == ("pending", "waiting")
+
+
+def test_the_app_decide_route_still_confirms_an_order(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mila_orders(client, sim, monkeypatch)
+    approval = one(session, Approval)
+    res = client.post(
+        f"/approvals/{approval.id}/decide",
+        json={"outcome": "approved"},
+        headers={"X-Mia-Actor": staff["Ana"].id},
+    )
+    assert res.status_code == 200, res.text
+    assert new_order(session).status == "confirmed"
+
+
+def test_a_tap_on_the_buttons_in_the_app_decides_too(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mia.chat.service import run_turn
+
+    mila_orders(client, sim, monkeypatch)
+    ana = staff["Ana"]
+    thread_id = notifications(session, ana)[0].thread_id
+    reply = asyncio.run(run_turn(session, None, ana, CONFIRM, thread_id))
+    session.commit()
+    texts = [b.text for b in reply.blocks if isinstance(b, TextBlock)]
+    assert texts == [t("cs.staff.confirmed_by", "fil", name="Ana")]
+    assert new_order(session).status == "confirmed"

@@ -20,7 +20,6 @@ from mia.agents.customer_service.tools import (
     PlaceOrderInput,
     PricesInput,
 )
-from mia.chat.blocks import ApprovalCardBlock
 from mia.core import approvals, orgconfig, store
 from mia.core.approvals import ApprovalError
 from mia.core.ids import new_id
@@ -400,7 +399,7 @@ def test_reject_tells_the_customer_the_reason(cs: Shop, session: Session) -> Non
     assert last_out(session).text == t("cs.order_rejected.sold_out", "fil", time="16:00")
 
 
-def test_a_waiting_order_shows_staff_its_card(cs: Shop, session: Session) -> None:
+def test_a_waiting_order_asks_staff_with_buttons(cs: Shop, session: Session) -> None:
     a = waiting(cs, session)
     order = order_of(a)
     assert (order.status, order.total) == ("waiting", 10 * classic(session).price)
@@ -408,9 +407,10 @@ def test_a_waiting_order_shows_staff_its_card(cs: Shop, session: Session) -> Non
     assert len(told) == 3  # Marites (supervisor), Ana and Liza (clerks) of the kiosk
     sent = session.exec(select(Event).where(Event.action == "notification.sent")).all()
     assert sent and all("Mila" not in str(e.after) for e in sent)
+    assert {e.approval_id for e in sent} == {a.id}  # a tap finds its approval here (D47)
+    buttons = [t("cs.staff.confirm", "fil"), t("cs.staff.decline", "fil")]
     blocks = [b for m in session.exec(select(Message)) for b in m.blocks]
-    card = ApprovalCardBlock.model_validate(next(b for b in blocks if b["type"] == "approval_card"))
-    assert (card.approval_id, card.summary) == (a.id, "Mila (0101)")
+    assert {"type": "quick_replies", "options": buttons} in blocks
 
 
 def test_customer_tools_answer_from_the_seed(cs: Shop, session: Session) -> None:

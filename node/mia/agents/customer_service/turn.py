@@ -168,8 +168,12 @@ async def _jev_turn(
 
 
 async def handle_turn(turn: Turn) -> ChatReply:
-    """A tapped button or Jev's decision worded by code; reply.unavailable without Jev."""
+    """An order's Confirm or Decline tap (D47, no Jev needed), a tapped button or Jev's
+    decision worded by code; reply.unavailable without Jev."""
     session, deps, thread = turn.session, turn.deps, turn.thread
+    tapped = await asyncio.to_thread(tools.decide_tap, session, deps.person, turn.text)
+    if tapped is not None:
+        return await asyncio.to_thread(reply_text, session, deps, thread, tapped)
     if get_settings().MIA_DECIDER != "jev":
         return await asyncio.to_thread(_unavailable, session, deps, thread)
     return await _jev_turn(session, deps, thread, turn.text, turn.ctx)

@@ -67,6 +67,9 @@ class ToolSpec(BaseModel):
     kind: Literal["core", "agent", "connector", "external"]
     risk: Risk
     approval: str = "never"
+    # D47: "chat" lets staff decide the approval with buttons in the chat. request() still
+    # forces money, external and delete risks to app_only, so it never reaches those.
+    approval_channel: Literal["any", "chat"] = "any"
     reads: list[str] = Field(default_factory=list)
     writes: list[str] = Field(default_factory=list)
     # Pay, hours or leave in the call: its tool.called event keeps only ids (SENSITIVE_KEEP).
@@ -252,6 +255,7 @@ def guard(
             summary or f"{spec.id} requested",
             deps.actor,
             deps.manifest.roles.approvers[spec.id],
+            spec.approval_channel,
             risk=spec.risk,
             evidence={"tool_call_id": tool_call_id}
             | ({"input": args.model_dump(mode="json")} if args is not None else {}),
