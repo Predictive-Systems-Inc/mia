@@ -505,6 +505,12 @@ def void_receipt(
     )
 
 
+def is_kiosk(session: Session, branch_id: str) -> bool:
+    """True when the branch sells (the retail template's is_shop: it has hours rows); a
+    commissary is no kiosk. Reads only."""
+    return retail_hours.is_shop(session, branch_id)
+
+
 def receipts(
     session: Session, actor: Actor, branch_id: str, business_date: dt.date
 ) -> list[SalesReceipt]:

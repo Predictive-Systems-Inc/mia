@@ -2,7 +2,7 @@
 
 from sqlmodel import Session
 
-from mia.core import store
+from mia.core import assignments, store
 from mia.core.models import Actor, Branch, Person
 from mia.i18n import SUPPORTED as LANGUAGES
 
@@ -53,13 +53,27 @@ def set_language(session: Session, actor: Actor, person: Person, language: str) 
     )
 
 
+def set_roles(session: Session, actor: Actor, person: Person, roles: list[str]) -> Person:
+    """Replace the person's roles and emit `person.roles_changed`; losing the supervisor role
+    first ends their open kiosk assignments (assignments.end_all, D50). Raises ValueError for
+    no roles or an unknown one, before anything is written."""
+    if not roles or any(r not in HUMAN_ROLES for r in roles):
+        raise ValueError(f"roles must be one or more of {', '.join(HUMAN_ROLES)}")
+    if assignments.ASSIGNABLE in person.roles and assignments.ASSIGNABLE not in roles:
+        assignments.end_all(session, actor, person)
+    return store.update(
+        session, person, {"roles": list(roles)}, actor, action="person.roles_changed"
+    )
+
+
 def deactivate(session: Session, actor: Actor, person: Person) -> Person:
-    """Mark a person inactive; revoke their devices, sessions and channel identities; emit
-    `person.deactivated`."""
+    """Mark a person inactive; end their open kiosk assignments (D50); revoke their devices,
+    sessions and channel identities; emit `person.deactivated`."""
     from mia.channels.linking import revoke_all  # channels depend on core, not the reverse
     from mia.core.auth import revoke_everything
     from mia.core.db import utcnow
 
+    assignments.end_all(session, actor, person)
     revoke_everything(session, actor, person, utcnow())
     revoke_all(session, actor, person)
     return store.update(session, person, {"status": "inactive"}, actor, action="person.deactivated")

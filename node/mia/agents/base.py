@@ -165,7 +165,10 @@ class AgentDeps:
 
     def kiosks(self) -> set[str]:
         """The branches the person reads without read_all (D50): deps.branch (a cover's
-        kiosk too), their home and their active assignments on deps.today."""
+        kiosk too) and, for a supervisor, their home and their active assignments on
+        deps.today. A clerk on a cover keeps one kiosk."""
+        if assignments.ASSIGNABLE not in self.person.roles:
+            return {self.branch.id}
         return {self.branch.id} | assignments.branches_of(self.session, self.person, self.today)
 
 

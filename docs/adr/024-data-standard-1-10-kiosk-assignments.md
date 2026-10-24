@@ -21,14 +21,18 @@ through read_all.
 - Services in mia/core/assignments.py, each write through store with an event: `assign`
   (`assignment.created`) and `unassign` (`assignment.ended`). Only the owner or an admin
   (write_all on `data:branch_assignments`). `assign` refuses a person without the supervisor
-  role (`not_supervisor`), a branch of another organisation, the person's home branch and a
-  duplicate open assignment; `unassign` refuses without an open one.
+  role (`not_supervisor`), a branch of another organisation, a branch that is no kiosk
+  (`not_a_kiosk`: the commissary sells nothing), the person's home branch and a duplicate open
+  assignment; `unassign` refuses without an open one. Deactivating a person or taking away
+  their supervisor role (`people.set_roles`) ends their open assignments through `unassign`,
+  so none comes back on reactivation.
 - One branch scope: `branches_of(session, person, day)` is the home branch plus the branches of
   the assignments active on that day (only while the person is an active supervisor);
   `actor_branches` applies it to an actor. The sales supervisor's, the bookkeeper's balances and
-  the inventory manager's branch checks (AgentDeps.kiosks), `sales.receipts`,
+  the inventory manager's branch checks (AgentDeps.kiosks: a clerk on a cover keeps one kiosk), `sales.receipts`,
   `approvals.decide`, the approvals inbox, the void card's recipients and
-  `alerts.supervisors` (alerts and morning messages) use it. A read of an assigned kiosk needs no
+  `alerts.supervisors` (alerts and morning messages; the owners' fallback for a branch without
+  a supervisor of its own stays) use it. A read of an assigned kiosk needs no
   read_all; "all" in a report or `today` is the supervisor's own kiosks. Writes, pay and the
   books (the sales journal, tax, profit) keep today's rights.
 - The branch manager's `assign_kiosk` tool and chat action (risk write_internal, approval

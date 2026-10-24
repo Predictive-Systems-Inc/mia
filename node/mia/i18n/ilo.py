@@ -401,6 +401,7 @@ STRINGS: dict[str, str | list[str]] = {
     "bm.assign.removed": "Saanen a naka-assign ni {name} iti {branch}.",
     "bm.assign.ask_kiosk": "Ania a kiosk? Kas pagarigan: Mall kiosk.",
     "bm.assign.not_supervisor": "Supervisor laeng ti mabalin nga i-assign iti sabali a kiosk. Maysa laeng a kiosk ni {name}.",
+    "bm.assign.not_a_kiosk": "Saan a kiosk ti {branch}: kiosk laeng ti mabalin nga i-assign.",
     "bm.assign.home_branch": "Bukodnan a kiosk ni {name} ti {branch}.",
     "bm.assign.already_assigned": "Naka-assignen ni {name} iti {branch}.",
     "bm.assign.not_assigned": "Saan a naka-assign ni {name} iti {branch}.",

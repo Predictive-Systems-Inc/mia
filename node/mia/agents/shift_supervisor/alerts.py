@@ -72,14 +72,15 @@ def _people(session: Session, branch_id: str, role: str) -> list[Person]:
 
 
 def supervisors(session: Session, branch_id: str) -> list[Person]:
-    """The branch's supervisors and the supervisors assigned to it today (D50), or its admins
-    and owners when it has none; each once."""
+    """The branch's own supervisors, or its admins and owners when it has none, then the
+    supervisors assigned to it today (D50: an assigned one never replaces the owners'
+    fallback); each once."""
     branch = session.get(Branch, branch_id)
     found = _people(session, branch_id, "supervisor")
-    if branch is not None:
-        found += assignments.assigned_to(session, branch_id, assignments.local_day(branch))
     if not found:
         found = _people(session, branch_id, "admin") + _people(session, branch_id, "owner")
+    if branch is not None:
+        found += assignments.assigned_to(session, branch_id, assignments.local_day(branch))
     seen: set[str] = set()
     out = []
     for p in found:

@@ -53,6 +53,7 @@ PERSON_REFUSALS = {
     "phone_set": "bm.person.phone_set",
     "phone_role": "bm.person.phone_role",
     "not_supervisor": "bm.assign.not_supervisor",
+    "not_a_kiosk": "bm.assign.not_a_kiosk",
     "home_branch": "bm.assign.home_branch",
     "already_assigned": "bm.assign.already_assigned",
     "not_assigned": "bm.assign.not_assigned",

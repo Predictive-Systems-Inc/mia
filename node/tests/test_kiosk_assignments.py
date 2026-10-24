@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 
 from mia.agents.base import AgentDeps, call_tool
 from mia.agents.bookkeeper import tools as bk_tools
+from mia.agents.inventory_manager import tools as inv_tools
 from mia.agents.sales_supervisor import MANIFEST as SS
 from mia.agents.sales_supervisor import report as report_form
 from mia.agents.sales_supervisor import tools as ss_tools
@@ -22,6 +23,7 @@ from mia.agents.sales_supervisor import turn as ss_turn
 from mia.agents.shift_supervisor import alerts
 from mia.cli import _alembic_config
 from mia.core import approvals, assignments, db, sales, store
+from mia.core import people as people_service
 from mia.core.assignments import AssignmentError
 from mia.core.db import get_engine
 from mia.core.models import (
@@ -346,3 +348,119 @@ def test_a_supervisor_may_not_assign_in_the_chat(
         "bm.not_allowed", marites.language
     )
     assert mall.id not in assignments.branches_of(session, nonoy, assignments.local_day(mall))
+
+
+# ---- round 1 (the security review) -------------------------------------------------------
+
+
+def _covering(session: Session, who: Person, at: Branch) -> AgentDeps:
+    """ss_deps moved to another kiosk, as at_visit does for a cover."""
+    return dataclasses.replace(ss_deps(session, who), branch=at)
+
+
+def test_a_clerk_on_a_cover_keeps_one_kiosk(session: Session, rs: Ferinos) -> None:
+    mall, people = rs
+    deps = _covering(session, people["Pao"], mall)  # Pao's home is the Street stall
+    assert deps.kiosks() == {mall.id}
+    args = ss_tools.TodayInput(branch_id=report_form.ALL)
+    assert _denied(call_tool(deps, SS_BINDINGS[f"{SS.id}.today"], args, "c"))
+    assert ss_turn._readable(session, deps) == ([mall], False)
+
+
+def test_only_a_kiosk_is_assignable(session: Session, rs: Ferinos) -> None:
+    _, people = rs
+    with pytest.raises(AssignmentError) as exc:
+        assignments.assign(
+            session, Actor.person(people["Rosa"]), people["Jun"], _commissary(session), RS_TODAY
+        )
+    assert exc.value.code == "not_a_kiosk"
+
+
+@pytest.mark.usefixtures("jev_on")
+def test_the_commissary_is_refused_in_the_chat(
+    session: Session, bm: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, people = bm
+    rosa, jun, kitchen = people["Rosa"], people["Jun"], _commissary(session)
+    _answers(monkeypatch, "assign_kiosk", [], supervisor=jun.id, branch=kitchen.id)
+    reply = _turn(session, rosa, "assign Jun to the Commissary")
+    assert reply == t("bm.assign.not_a_kiosk", rosa.language, name=jun.name, branch=kitchen.name)
+    assert kitchen.id not in assignments.branches_of(session, jun, assignments.local_day(kitchen))
+
+
+def test_owners_keep_the_fallback_alerts_beside_an_assigned_supervisor(
+    session: Session, rs: Ferinos
+) -> None:
+    _, people = rs
+    street = _street(session)
+    rosa = Actor.person(people["Rosa"])
+    dina = people_service.add_person(
+        session, rosa, branch_id=street.id, name="Dina", roles=["admin"], language="en"
+    )
+    people_service.set_roles(session, rosa, people["Jun"], ["staff"])  # no supervisor of its own
+    names = {p.name for p in alerts.supervisors(session, street.id)}
+    assert names == {dina.name, people["Marites"].name}
+
+
+def test_deactivation_ends_the_assignments_for_good(session: Session, rs: Ferinos) -> None:
+    mall, people = rs
+    jun = people["Jun"]
+    people_service.deactivate(session, Actor.person(people["Rosa"]), jun)
+    assert assignments.open_assignment(session, jun.id, mall.id) is None
+    ended = session.exec(select(Event).where(Event.action == "assignment.ended")).all()
+    assert [e.after["person_id"] for e in ended if e.after] == [jun.id]
+    assert jun.name not in {p.name for p in alerts.supervisors(session, mall.id)}
+    store.update(session, jun, {"status": "active"}, Actor.system(mall.id))  # reactivated
+    assert assignments.branches_of(session, jun, RS_TODAY) == {jun.branch_id}
+    assert _denied(_today(session, jun, mall.id))
+
+
+def test_losing_the_supervisor_role_ends_the_assignments(session: Session, rs: Ferinos) -> None:
+    _, people = rs
+    marites, rosa = people["Marites"], Actor.person(people["Rosa"])
+    people_service.set_roles(session, rosa, marites, ["clerk"])
+    people_service.set_roles(session, rosa, marites, ["supervisor"])  # promoted again
+    assert assignments.branches_of(session, marites, RS_TODAY) == {marites.branch_id}
+
+
+@pytest.mark.usefixtures("jev_on")
+def test_the_chat_assignment_event_carries_the_tool_call(
+    session: Session, bm: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mall, people = bm
+    _answers(monkeypatch, "assign_kiosk", [], supervisor=people["Nonoy"].id, branch=mall.id)
+    _turn(session, people["Rosa"], "assign Nonoy to the Mall kiosk")
+    (created,) = session.exec(
+        select(Event)
+        .where(Event.action == "assignment.created")
+        .where(Event.on_behalf_of == people["Rosa"].id)
+    ).all()
+    assert created.tool_call_id is not None
+
+
+@pytest.mark.parametrize(
+    "kind", [sales.REFUND, "bookkeeper.record_large_expense", "branch_manager.change_price"]
+)
+def test_an_assigned_supervisor_never_decides_owner_money(
+    session: Session, rs: Ferinos, kind: str
+) -> None:
+    mall, people = rs
+    a = approvals.request(
+        session, kind, ("sales_receipts", "x"), kind, Actor.person(people["Marites"]),
+        ["owner", "admin"], risk="money",
+    )  # fmt: skip
+    assert a.branch_id == mall.id
+    with pytest.raises(approvals.ApprovalError):
+        approvals.decide(
+            session, a.id, Actor.person(people["Jun"]), "approved", stepped_up_at=db.utcnow()
+        )
+
+
+def test_an_assigned_supervisor_never_writes_at_the_kiosk(session: Session, rs: Ferinos) -> None:
+    mall, people = rs
+    jun = people["Jun"]
+    args = ss_tools.SetTargetInput(period="day", starts_on=RS_TODAY, amount=100, branch_id=mall.id)
+    assert _denied(call_tool(ss_deps(session, jun), SS_BINDINGS[f"{SS.id}.set_target"], args, "c"))
+    deps = dataclasses.replace(ss_deps(session, jun), manifest=inv_tools.MANIFEST)
+    with pytest.raises(PermissionDenied):
+        inv_tools._branch(deps, mall.id, inv_tools.ORDERS, "write", "c")

@@ -1655,14 +1655,15 @@ def assign_kiosk(deps: AgentDeps, args: AssignKioskInput, tool_call_id: str) -> 
     """Assign a supervisor to a kiosk of the organisation from today, or end the assignment
     today (core.assignments: events assignment.created and assignment.ended). Owner and admin
     only (policy, and the service's write_all). Raises LookupError no_person, no_branch, or
-    the service's code (not_supervisor, home_branch, already_assigned, not_assigned)."""
+    the service's code (not_supervisor, not_a_kiosk, home_branch, already_assigned,
+    not_assigned)."""
     _check(deps, PEOPLE, "read", tool_call_id)
     _check(deps, BRANCHES, "read", tool_call_id)
     person = _person_of_org(deps, args.person_id)
     branch = _target_branch(deps, args.branch_id)
     change = assignments.unassign if args.remove else assignments.assign
     try:
-        change(deps.session, deps.actor, person, branch, deps.today)
+        change(deps.session, deps.actor, person, branch, deps.today, tool_call_id=tool_call_id)
     except assignments.AssignmentError as exc:
         raise LookupError(exc.code) from exc
     return AssignKioskOut(

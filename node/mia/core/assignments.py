@@ -17,8 +17,8 @@ ASSIGNABLE = "supervisor"  # clerks keep one kiosk; owner and admin already read
 
 
 class AssignmentError(ValueError):
-    """A refused assignment; the code is not_supervisor, other_organisation, home_branch,
-    already_assigned, not_assigned or dates."""
+    """A refused assignment; the code is not_supervisor, other_organisation, not_a_kiosk,
+    home_branch, already_assigned, not_assigned or dates."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -86,27 +86,44 @@ def _same_organisation(session: Session, person: Person, branch: Branch) -> bool
 
 
 def assign(
-    session: Session, actor: Actor, person: Person, branch: Branch, from_date: dt.date
+    session: Session,
+    actor: Actor,
+    person: Person,
+    branch: Branch,
+    from_date: dt.date,
+    *,
+    tool_call_id: str | None = None,
 ) -> BranchAssignment:
-    """Assign the supervisor to the branch from from_date (event assignment.created). Only an
+    """Assign the supervisor to the kiosk from from_date (event assignment.created). Only an
     owner or admin (write_all on branch_assignments; PermissionDenied). Raises
     AssignmentError before any write: not_supervisor (an inactive person or one without the
-    supervisor role), other_organisation, home_branch, already_assigned (an open one)."""
+    supervisor role), other_organisation, not_a_kiosk (a branch that sells nothing, such as
+    a commissary), home_branch, already_assigned (an open one)."""
+    from mia.core.sales import is_kiosk  # sales imports this module
+
     rbac.get_rbac().require(actor, ASSIGNMENTS, "write_all", session=session)
     if ASSIGNABLE not in person.roles or person.status != "active":
         raise AssignmentError("not_supervisor")
     if not _same_organisation(session, person, branch):
         raise AssignmentError("other_organisation")
+    if not is_kiosk(session, branch.id):
+        raise AssignmentError("not_a_kiosk")
     if branch.id == person.branch_id:
         raise AssignmentError("home_branch")
     if open_assignment(session, person.id, branch.id) is not None:
         raise AssignmentError("already_assigned")
     row = BranchAssignment(branch_id=branch.id, person_id=person.id, from_date=from_date)
-    return store.insert(session, row, actor, action="assignment.created")
+    return store.insert(session, row, actor, action="assignment.created", tool_call_id=tool_call_id)
 
 
 def unassign(
-    session: Session, actor: Actor, person: Person, branch: Branch, to_date: dt.date
+    session: Session,
+    actor: Actor,
+    person: Person,
+    branch: Branch,
+    to_date: dt.date,
+    *,
+    tool_call_id: str | None = None,
 ) -> BranchAssignment:
     """End the person's open assignment to the branch: it holds until the day before to_date
     (event assignment.ended). Only an owner or admin (PermissionDenied). Raises
@@ -118,4 +135,32 @@ def unassign(
         raise AssignmentError("not_assigned")
     if to_date < row.from_date:
         raise AssignmentError("dates")
-    return store.update(session, row, {"to_date": to_date}, actor, action="assignment.ended")
+    return store.update(
+        session,
+        row,
+        {"to_date": to_date},
+        actor,
+        action="assignment.ended",
+        tool_call_id=tool_call_id,
+    )
+
+
+def end_all(session: Session, actor: Actor, person: Person) -> list[BranchAssignment]:
+    """End every open assignment of the person today on their home branch's clock (one not
+    begun yet ends on its from_date, so it never holds), each through unassign with its
+    event. For deactivation and a lost supervisor role: an old assignment never comes back
+    on reactivation. PermissionDenied for an actor without write_all."""
+    home = session.get(Branch, person.branch_id)
+    today = local_day(home) if home is not None else db.utcnow().date()
+    rows = session.exec(
+        select(BranchAssignment)
+        .where(BranchAssignment.person_id == person.id)
+        .where(col(BranchAssignment.to_date).is_(None))
+        .order_by(col(BranchAssignment.id))
+    ).all()
+    ended = []
+    for row in rows:
+        branch = session.get(Branch, row.branch_id)
+        assert branch is not None  # a foreign key
+        ended.append(unassign(session, actor, person, branch, max(today, row.from_date)))
+    return ended

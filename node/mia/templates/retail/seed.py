@@ -236,9 +236,6 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
             language=lang,
             skills=SKILLS.get(name),
         )
-    # D50: each kiosk supervisor is also assigned to the other kiosk, from the counts' first day
-    for name, other in (("Marites", branches[1]), ("Jun", branches[0])):
-        assign(session, Actor.system(other.id), staff[name], other, today - dt.timedelta(days=14))
     clerks = {0: staff["Ana"], 1: staff["Pao"]}
     strategies = _seed_strategies(session, actor)
     planned: list[Planned] = []
@@ -291,6 +288,10 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
             set_by=staff["Rosa"].id,
         )
         store.insert(session, target_row, branch_actor)
+    # D50: each kiosk supervisor is also assigned to the other kiosk (a kiosk has hours rows
+    # now), from the counts' first day
+    for name, other in (("Marites", branches[1]), ("Jun", branches[0])):
+        assign(session, Actor.system(other.id), staff[name], other, today - dt.timedelta(days=14))
     _seed_hr(session, branches, staff, today)
     _seed_shift_supervisor(session, branches, staff, today)
     _seed_bookkeeper(session, branches, staff, today)
