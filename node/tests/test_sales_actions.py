@@ -268,6 +268,23 @@ def test_a_correction_by_rule_is_correct_sales_whatever_jevs_pick() -> None:
     assert d.action == "correct_sales" and d.raw_action == "sales_period"
 
 
+def test_today_per_kiosk_reads_every_kiosk_for_a_supervisor_only() -> None:
+    """Live 24 Oct: Jun (assigned to both kiosks) asked 'sales today per kiosk' and got his home
+    kiosk only; a clerk asking the same keeps her own kiosk."""
+    import dataclasses
+
+    answers = {
+        "action": {"choice": "sales_today", "confidence": 0.95, "probabilities": {}},
+        "branch": {"choice": "not_stated", "confidence": 0.9},
+    }
+    sup = dataclasses.replace(query("sales today per kiosk"), role="supervisor")
+    assert _parse(answers, sup).args["branch_id"] == "all"
+    clerk = dataclasses.replace(query("sales today per kiosk"), role="clerk")
+    assert _parse(answers, clerk).args["branch_id"] != "all"
+    plain = dataclasses.replace(query("sales today"), role="supervisor")
+    assert _parse(answers, plain).args["branch_id"] != "all"
+
+
 def test_a_breakdown_word_settles_a_doubtful_period_pick() -> None:
     """'benta kahapon bawat item' fell from 0.62 to 0.49 on sales_period (23 Oct run): code read
     the breakdown words, so the read answers instead of asking; without them it still asks."""

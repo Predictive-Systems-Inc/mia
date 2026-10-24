@@ -131,7 +131,12 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         count = {**_count(r, 0, quantity), "source_message_id": q.message_id}
         return count, None if count["item_id"] else "item_0"
     if action == "sales_today":
-        return {"branch_id": _branch(r)}, None
+        # "per kiosk" (code reads it) asks for every kiosk the sender may read; a clerk keeps
+        # her own kiosk (the tool's rbac decides what "all" covers)
+        many = breakdown_of(q.message) == "kiosk" and not {"clerk", "staff"} >= set(
+            q.role.replace(" ", "").split(",")
+        )
+        return {"branch_id": "all" if many else _branch(r)}, None
     if action == "sales_period":
         picked = r.pick("period", set(WEEKDAYS) | set(q.periods))
         start, end = _period(picked, q.today, q.lang) or _month(q.today.replace(day=1))
