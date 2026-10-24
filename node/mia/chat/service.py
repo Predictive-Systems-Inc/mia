@@ -24,7 +24,16 @@ from mia.agents.registry import AGENTS, DEFAULT
 from mia.agents.sales_supervisor import MANIFEST as SALES
 from mia.agents.sales_supervisor.actions import count_shaped
 from mia.agents.shift_supervisor.classifier import classify
-from mia.chat import agent_router, deferred, features, help_menu, language, phrases, route_memory
+from mia.chat import (
+    agent_router,
+    deferred,
+    features,
+    help_menu,
+    language,
+    phrases,
+    proposals,
+    route_memory,
+)
 from mia.chat.access import agents_for
 from mia.chat.blocks import ChatReply, QuickRepliesBlock, TextBlock
 from mia.chat.channels import NOTIFICATION
@@ -169,6 +178,8 @@ def _before_agent(session: Session, deps: AgentDeps, thread: Thread, text: str) 
     commits), or the text the agent should answer (committed, so no write lock is held)."""
     if (reply := safety_reply(session, deps, thread, text)) is not None:
         return reply
+    if (said := proposals.decide_tap(session, deps.person, text)) is not None:
+        return reply_text(session, deps, thread, said)  # a phrase proposal's Approve or Reject
     if (reply := _feature_request(session, deps, thread, text)) is not None:
         return reply
     if _asks_help(session, thread, text) and (agents := agents_for(session, deps.person)):
@@ -702,11 +713,23 @@ async def respond(
     spec, agent_deps, agent_ctx, text = routed
     own = agent if spec.id == DEFAULT else None  # the caller's agent is the default agent's
     try:
-        return await spec.handle_turn(Turn(session, agent_deps, thread, text, past, agent_ctx, own))
+        reply = await spec.handle_turn(
+            Turn(session, agent_deps, thread, text, past, agent_ctx, own)
+        )
     except JevUnreachable:
         if resumed:
             raise
         return await asyncio.to_thread(defer_turn, session, agent_deps, thread, "agent", spec.id)
+    await asyncio.to_thread(_unrecognised, session, agent_deps, message, reply)
+    return reply
+
+
+def _unrecognised(session: Session, deps: AgentDeps, message: Message, reply: ChatReply) -> None:
+    """intent.unrecognised (teach-Mia phase 2) when the agent's reply is the ask to rephrase
+    (also after a Something else tap the report step did not answer)."""
+    rephrase = _variants("clarify.rephrase", deps.lang)
+    if any(isinstance(b, TextBlock) and b.text in rephrase for b in reply.blocks):
+        phrases.record_unrecognised(session, deps.actor, deps.person, message, reply.agent_id)
 
 
 async def run_turn(

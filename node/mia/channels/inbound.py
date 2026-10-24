@@ -23,6 +23,7 @@ from mia.agents.shift_supervisor.agent import get_agent
 from mia.channels import linking, outbox, registry, transport
 from mia.channels.base import InboundMessage
 from mia.channels.service import deliver
+from mia.chat import proposals
 from mia.chat.blocks import ChatReply, TextBlock
 from mia.chat.service import run_turn
 from mia.core import events, store
@@ -112,6 +113,8 @@ def _begin(session: Session, inbound_id: str, now: dt.datetime) -> _Step | None:
     # decides, and that message's order; typed text equal to a label is refused, never a turn.
     label = msg.button or msg.text
     tapped = tools.decide_tap(session, person, label, msg.channel, msg.context_id)
+    if tapped is None:  # a phrase proposal's Approve or Reject (D47, the same rules)
+        tapped = proposals.decide_tap(session, person, label, msg.channel, msg.context_id)
     if tapped is not None:
         deliver(session, person, [TextBlock(text=tapped)], Actor.person(person), urgent=True)
         _finish(session, row, "done")

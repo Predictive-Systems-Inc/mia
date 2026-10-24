@@ -754,19 +754,22 @@ def _mine(person: Person) -> Any:
     )
 
 
-def _asked_by(session: Session, message_id: str) -> Approval | None:
-    """The chat place_order approval the message asks about, else None."""
+def _asked_by(session: Session, message_id: str, kind: str = PLACE_ORDER) -> Approval | None:
+    """The chat approval of type `kind` (an order; a phrase proposal shares these taps) the
+    message asks about, else None."""
     asked = session.exec(
         select(Event)
         .where(Event.action == "notification.sent")
         .where(Event.entity_id == message_id)
     ).first()
     approval = session.get(Approval, asked.approval_id) if asked and asked.approval_id else None
-    ours = approval is not None and approval.type == PLACE_ORDER and approval.channel == "chat"
+    ours = approval is not None and approval.type == kind and approval.channel == "chat"
     return approval if ours else None
 
 
-def _latest_ask(session: Session, person: Person, label: str) -> Approval | None:
+def _latest_ask(
+    session: Session, person: Person, label: str, kind: str = PLACE_ORDER
+) -> Approval | None:
     """The order asked by the person's latest message with buttons, when `label` is one of
     them (the app's tap, which carries no message id)."""
     rows = session.exec(
@@ -779,11 +782,16 @@ def _latest_ask(session: Session, person: Person, label: str) -> Approval | None
     last = next((m for m in rows if _buttons(m)), None)
     if last is None or label.strip().casefold() not in {b.casefold() for b in _buttons(last)}:
         return None
-    return _asked_by(session, last.id)
+    return _asked_by(session, last.id, kind)
 
 
 def _on_message(
-    session: Session, person: Person, channel: str, context_id: str, label: str
+    session: Session,
+    person: Person,
+    channel: str,
+    context_id: str,
+    label: str,
+    kind: str = PLACE_ORDER,
 ) -> Approval | None:
     """The order asked by the message a channel tap was made on: the person's sent outbox row
     on that channel with that channel message id, never a template notice (a held message's
@@ -799,10 +807,10 @@ def _on_message(
     message = session.get(Message, row.idempotency_key.split(":")[0]) if row else None
     if message is None or label.strip().casefold() not in {b.casefold() for b in _buttons(message)}:
         return None
-    return _asked_by(session, message.id)
+    return _asked_by(session, message.id, kind)
 
 
-def _open_asked(session: Session, person: Person) -> int:
+def _open_asked(session: Session, person: Person, kind: str = PLACE_ORDER) -> int:
     """How many open chat orders were asked of the person."""
     asked = select(Event.approval_id).where(
         Event.action == "notification.sent", col(Event.entity_id).in_(_mine(person))
@@ -811,7 +819,7 @@ def _open_asked(session: Session, person: Person) -> int:
         session.exec(
             select(Approval.id)
             .where(col(Approval.id).in_(asked))
-            .where(Approval.type == PLACE_ORDER)
+            .where(Approval.type == kind)
             .where(col(Approval.status).in_(OPEN))
         ).all()
     )
@@ -852,7 +860,13 @@ def _which(session: Session, approval: Approval) -> dict[str, str]:
 
 
 def _tapped(
-    session: Session, person: Person, label: str, channel: str | None, context_id: str | None
+    session: Session,
+    person: Person,
+    label: str,
+    channel: str | None,
+    context_id: str | None,
+    kind: str = PLACE_ORDER,
+    refuse: str = "cs.staff.decide_in_app",
 ) -> Approval | str | None:
     """The order a tap decides, the refusal key, or None (no order tap: the normal way).
     A channel tap decides only the order of the message it was made on (`context_id`); one
@@ -860,14 +874,14 @@ def _tapped(
     never decided. The app's tap (no channel) takes the latest message's order, refused while
     more than one order asked of the person is open."""
     if channel is not None and context_id is not None:
-        found = _on_message(session, person, channel, context_id, label)
+        found = _on_message(session, person, channel, context_id, label, kind)
         if found is not None:
             return found
-    latest = _latest_ask(session, person, label)
+    latest = _latest_ask(session, person, label, kind)
     if latest is None:
         return None
-    if channel is not None or _open_asked(session, person) > 1:
-        return "cs.staff.decide_in_app"
+    if channel is not None or _open_asked(session, person, kind) > 1:
+        return refuse
     return latest
 
 

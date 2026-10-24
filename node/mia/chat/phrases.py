@@ -27,7 +27,7 @@ from mia.agents.decider import Action
 from mia.agents.sales_supervisor import MANIFEST as SALES
 from mia.chat.route_memory import key_of
 from mia.core import events
-from mia.core.models import Actor, Event, Message, Thread
+from mia.core.models import Actor, Event, Message, Person, Thread
 from mia.i18n import t
 
 log = logging.getLogger(__name__)
@@ -42,6 +42,8 @@ REPORTS = (REPORT_SAVED, REPORT_RETIRED)
 REPORT_AGENT = SALES.id  # the one agent with a report form today
 REPORTS_CSV = "sales_supervisor_reports.csv"  # the saved reports as rows (text, key, form)
 ALL = (TAUGHT, RETIRED, CONFIRMED, *REPORTS)
+# A turn that ended in the ask to rephrase (teach-Mia phase 2): the key, never the text.
+UNRECOGNISED = "intent.unrecognised"
 UNTEACHABLE = frozenset({"money", "external", "delete"})
 EXAMPLES = 3  # taught examples per action in the decider's option text
 EXAMPLE_ROLES = frozenset({"owner", "admin"})  # whose taught phrases become examples
@@ -307,6 +309,38 @@ def confirm_tap(
         "person_id": actor.person_id,
     }
     events.emit(session, CONFIRMED, ("phrase", key), None, confirmed, actor)
+
+
+def record_unrecognised(
+    session: Session, actor: Actor, person: Person, message: Message, agent_id: str
+) -> Event | None:
+    """Emits intent.unrecognised (in the caller's transaction) for a user message whose turn
+    ended in the ask to rephrase: its key, the agent, the person and their role and branch,
+    never the text (it stays in the person's thread). A tap on Something else records the
+    user message before it (the one Mia asked about). None for a key with no letter."""
+    if message.text.strip() in _something_else():
+        message = (
+            session.exec(
+                select(Message)
+                .where(Message.thread_id == message.thread_id)
+                .where(Message.role == "user")
+                .where(col(Message.id) < message.id)
+                .order_by(col(Message.id).desc())
+            ).first()
+            or message
+        )
+    key = key_of(message.text)
+    if not has_letter(key) or message.text.strip() in _something_else():
+        return None
+    after = {
+        "key": key,
+        "agent_id": agent_id,
+        "message_id": message.id,
+        "person_id": person.id,
+        "role": person.roles[0] if person.roles else "",
+        "branch_id": person.branch_id,
+    }
+    return events.emit(session, UNRECOGNISED, ("message", message.id), None, after, actor)
 
 
 def _saved(found: Sequence[Event]) -> dict[str, dict[str, Any]]:

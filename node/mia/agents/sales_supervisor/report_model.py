@@ -7,7 +7,7 @@ between <message> markers (rule 8). The caller sets the egress context; this mod
 session, it uses the context's.
 
 Spending on the report model is capped at US$10 a calendar month (D49), summed from
-usage_cloud_requests rows of this purpose; past the cap the step is off and the caller's old
+usage_cloud_requests rows of this purpose and of the nightly phrase proposals; past the cap the step is off and the caller's old
 reply stands (a `report.capped` event notes each refused call).
 """
 
@@ -36,6 +36,8 @@ from mia.settings import get_settings
 
 log = logging.getLogger(__name__)
 PURPOSE = f"{MANIFEST.id}.report"
+PROPOSE = "phrases.propose"  # the nightly phrase proposals (teach-Mia phase 2) share the cap
+CAPPED_TASKS = (PURPOSE, PROPOSE)
 CAPPED = "report.capped"  # event: a report model call refused at the monthly cap
 CAP_USD_CENTS = 1000  # US$10 a month (D49)
 # usage_cloud_requests.cost_minor is in minor units of its row's currency (EUR by default).
@@ -128,7 +130,8 @@ def _month_start(today: dt.date) -> dt.datetime:
 
 
 def month_spend_usd_cents(ctx: EgressContext, today: dt.date) -> int:
-    """US cents spent on PURPOSE by the organisation since the first of today's month: each
+    """US cents spent on CAPPED_TASKS (report questions and phrase proposals) by the
+    organisation since the first of today's month: each
     row's cost_minor converted with USD_PER_UNIT when set, else its tokens priced with
     PRICES_USD_PER_MTOK (DEFAULT_PRICE for an unknown model), a row with neither at
     FLAT_CALL_USD_CENTS; plus FLAT_CALL_USD_CENTS for each billed call that passed the check
@@ -137,7 +140,7 @@ def month_spend_usd_cents(ctx: EgressContext, today: dt.date) -> int:
     rows = ctx.session.exec(
         select(UsageCloudRequest)
         .where(UsageCloudRequest.organisation_id == ctx.organisation_id)
-        .where(UsageCloudRequest.task == PURPOSE)
+        .where(col(UsageCloudRequest.task).in_(CAPPED_TASKS))
         .where(col(UsageCloudRequest.timestamp) >= since)
     ).all()
     # ponytail: a call is in flight until any later usage row lands; a call link on the usage

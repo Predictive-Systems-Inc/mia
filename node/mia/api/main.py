@@ -26,7 +26,7 @@ from mia.channels import inbound as channel_service
 from mia.channels import outbox, registry
 from mia.channels.router import router as channels_router
 from mia.channels.setup import register_configured
-from mia.chat import deferred
+from mia.chat import deferred, proposals
 from mia.chat.channels import NOTIFICATION
 from mia.chat.router import router as chat_router
 from mia.core import approvals, scheduling
@@ -78,6 +78,9 @@ async def run_due_work() -> tuple[int, int]:
     resumed = await deferred.retry_due(utcnow())  # turns that waited for Jev
     if resumed:
         log.info("closed %d deferred turn(s)", resumed)
+    proposed = await proposals.run_due(utcnow())  # the nightly phrase proposals (teach-Mia)
+    if proposed:
+        log.info("proposed %d phrase(s)", proposed)
     return advanced, sent
 
 
