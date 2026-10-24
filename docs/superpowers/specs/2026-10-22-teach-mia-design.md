@@ -240,6 +240,19 @@ purpose `phrases.propose`.
   in the backlog export. Nothing is taught without a person.
 - Off with `MIA_REPORT_MODEL` off or egress `none`. Its own plan, after phase 1c.
 
+Built in 83d7731 (node/mia/chat/proposals.py, tests node/tests/test_phrase_proposals.py), as
+the owner scoped it on 24 Oct: `intent.unrecognised` carries the key, the agent, the person,
+their role and branch (never the text); the run is due an hour after a shop's closing (21:00
+for a branch without hours), once per branch and date (`phrase.proposals_ran`); a key needs
+two occurrences (one in dev mode) and rests 30 days after `phrase.proposal_rejected` or a
+feature request; the model answers per message an agent and action from the offered list or
+`missing` with a note (no `report` or `none`: a skipped message is simply not proposed); the
+approval (`phrase.proposal`, channel chat, approvers owner and admin, seven days, no
+escalation) is the proposal record instead of a `phrase.proposed` event; a missing capability
+is a `feature.requested` row (source `phrases.propose`), not `capability.requested`. The run
+shares report_model's US$10 monthly cap. A branch with no owner or admin of its own sends the
+card to the organisation's first branch that has one.
+
 ## 6. Version control
 
 - Runtime: events, append-only, each with actor and time; version = event count; rollback =
