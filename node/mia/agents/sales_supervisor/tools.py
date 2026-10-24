@@ -22,6 +22,7 @@ from sqlmodel import Session, col, select
 
 from mia.agents.base import AgentDeps, ToolBinding
 from mia.agents.sales_supervisor import MANIFEST, calc
+from mia.agents.sales_supervisor import report as report_form
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
@@ -614,6 +615,55 @@ def _breakdown(
         line.amount += r.amount
     keys = sorted(sums, key=lambda k: names[k].sort_order) if by == "item" else list(sums)
     return [sums[k] for k in keys]
+
+
+# ---- report (teach-Mia 4c) ----------------------------------------------------------------
+
+
+class ReportInput(BaseModel):
+    form: report_form.ReportForm
+
+
+class ReportOutput(BaseModel):
+    result: report_form.Result
+
+
+def _report_branches(deps: AgentDeps, form: report_form.ReportForm, tcid: str) -> list[Branch]:
+    """The shops a form reads: every shop for "all" or a kiosk grouping with no kiosk named,
+    else the named kiosks, else the person's own; another kiosk needs read_all (_branch)."""
+    if report_form.ALL in form.kiosks or (form.group_by == "kiosk" and not form.kiosks):
+        return _branches(deps, "all", COUNTS, "read", tcid)
+    named: list[str | None] = [*form.kiosks] or [None]
+    found = [_branch(deps, k, COUNTS, "read", tcid) for k in named]
+    return list({b.id: b for b in found}.values())
+
+
+def report(deps: AgentDeps, args: ReportInput, tool_call_id: str) -> ReportOutput:
+    """A report form run by code (report.run) after period_report's checks: another kiosk or
+    every kiosk needs read_all on the counts and the receipt tables; the sales read is checked
+    as the reporter (a clerk then reads her own kiosk only, D49); a clerk grouping needs read on
+    sales_counts without that shortcut (never another clerk's figures for a clerk). Raises
+    LookupError with the report.ReportError code (range answers sales.refused.range), "form" for
+    an unknown item id and "branch" for a kiosk outside the organisation."""
+    form = args.form
+    branches = _report_branches(deps, form, tool_call_id)
+    if branches != [deps.branch]:
+        for table in RECEIPT_TABLES:
+            _check(deps, table, "read_all", tool_call_id)
+    for table in SALES:
+        _check(deps, _as_reporter(table, deps), "read", tool_call_id)
+    if form.group_by == "clerk":
+        _check(deps, COUNTS, "read", tool_call_id)
+    try:
+        start, end = report_form.resolve(form, deps.today, deps.lang)
+    except report_form.ReportError as exc:
+        raise LookupError(exc.code) from exc
+    names = _names(deps.session)
+    if any(i not in names for i in form.items):
+        raise LookupError("form")
+    clerks = {p.id: p.name for p in deps.session.exec(select(Person))}
+    result = report_form.run(deps.session, branches, form, start, end, names, clerks)
+    return ReportOutput(result=result)
 
 
 # ---- set_target ---------------------------------------------------------------------------
@@ -1368,6 +1418,12 @@ BINDINGS = [
         period_report,
         PeriodReportInput,
         "Sales per branch and item between two dates, with the best day.",
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.report",
+        report,
+        ReportInput,
+        "A report form (measure, period, grouping, filters, compare) summed by code.",
     ),
     ToolBinding(
         f"{MANIFEST.id}.set_target",

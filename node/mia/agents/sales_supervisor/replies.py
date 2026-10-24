@@ -7,7 +7,10 @@ import datetime as dt
 from typing import Any
 
 from mia.agents.decider import Decision
+from mia.agents.parsing import DAY_NAMES, EN_WEEKDAYS
 from mia.agents.sales_supervisor import calc
+from mia.agents.sales_supervisor.actions import WEEKDAYS
+from mia.agents.sales_supervisor.report import Result
 from mia.agents.sales_supervisor.tools import (
     BranchToday,
     CorrectCountOutput,
@@ -161,6 +164,62 @@ def tool_reply(tool: str, out: dict[str, Any], args: dict[str, Any], lang: str) 
         amount = format_money(st.amount, st.currency, lang)
         return _text("sales.target_set", lang, amount=amount, when=when)
     return _text("sales.note_thanks", lang)  # record_note
+
+
+def report_text(result: Result, lang: str) -> list[Block]:
+    """A report as one text block: the head (measure, dates, grouping, total), the top TOP
+    lines then "and N more", each line and the total with the percent change when the form
+    compared and the compared value is not zero (calc.compare). Every figure is the Result's."""
+
+    def value(n: int) -> str:
+        if result.head_measure == "amount":
+            return format_money(n, result.currency, lang)
+        return format_int(n, lang)
+
+    def name(raw: str) -> str:
+        if result.group_by == "weekday":
+            return DAY_NAMES.get(lang, EN_WEEKDAYS)[WEEKDAYS.index(raw)].capitalize()
+        return _tender(raw, lang) if result.group_by == "tender" else raw
+
+    def line(key: str, before: int | None, **values: str) -> str | None:
+        percent = calc.compare(int(values.pop("now")), before)
+        if before is None or percent is None:
+            return None
+        return t(key, lang, percent=format_int(percent, lang), before=value(before), **values)
+
+    by = ""
+    if result.group_by != "none":
+        by = t("sales.report.by", lang, group=t(f"sales.report.group.{result.group_by}", lang))
+    head = t(
+        "sales.report.head",
+        lang,
+        measure=t(f"sales.report.measure.{result.head_measure}", lang),
+        start=result.start.isoformat(),
+        end=result.end.isoformat(),
+        by=by,
+        total=value(result.total),
+    )
+    shown = []
+    for x in result.lines[:TOP]:
+        n = x.quantity if result.head_measure == "pieces" else x.amount
+        worded = {"name": name(x.name), "value": value(n)}
+        shown.append(
+            line("sales.report.row_vs", x.before, now=str(n), **worded)
+            or t("sales.report.row", lang, **worded)
+        )
+    more = len(result.lines) - TOP
+    if more > 0:
+        shown.append(t("sales.period.more", lang, n=format_int(more, lang)))
+    if result.total_before is not None:
+        total_vs = line(
+            "sales.report.total_vs",
+            result.total_before,
+            now=str(result.total),
+            total=value(result.total),
+        )
+        if total_vs:
+            shown.append(total_vs)
+    return [TextBlock(text="\n".join([head, *shown]))]
 
 
 def _asked(decision: Decision, args: dict[str, Any]) -> dict[str, Any]:

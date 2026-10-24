@@ -71,10 +71,11 @@ p, viewer, *, data:reports, read, allow
 p, staff, *, data:feature_requests, write, allow
 p, viewer, *, data:feature_requests, write, allow
 
-# clerk: report the day's counts, read them back, say why
+# clerk: report the day's counts, read them back, say why; report questions on her own kiosk (D49)
 p, clerk, *, tool:sales_supervisor.record_counts, execute, allow
 p, clerk, *, tool:sales_supervisor.correct_count, execute, allow
 p, clerk, *, tool:sales_supervisor.today, execute, allow
+p, clerk, *, tool:sales_supervisor.report, execute, allow
 p, clerk, *, tool:sales_supervisor.record_note, execute, allow
 p, clerk, *, tool:sales_supervisor.record_receipt, execute, allow
 p, clerk, *, tool:sales_supervisor.receipts, execute, allow
@@ -93,6 +94,7 @@ p, supervisor, *, tool:sales_supervisor.record_counts, execute, allow
 p, supervisor, *, tool:sales_supervisor.correct_count, execute, allow
 p, supervisor, *, tool:sales_supervisor.today, execute, allow
 p, supervisor, *, tool:sales_supervisor.period_report, execute, allow
+p, supervisor, *, tool:sales_supervisor.report, execute, allow
 p, supervisor, *, tool:sales_supervisor.set_target, execute, allow
 p, supervisor, *, tool:sales_supervisor.record_note, execute, allow
 p, supervisor, *, tool:sales_supervisor.record_receipt, execute, allow
