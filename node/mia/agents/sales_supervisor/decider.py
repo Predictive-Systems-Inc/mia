@@ -232,7 +232,18 @@ def _parse(answers: dict[str, Any], q: Query) -> Decision:
         }
         decision = shared.parse(forced, q, actions=ACTIONS, args=_args)
         return decision.model_copy(update={"raw_action": str(top.get("choice", ""))})
-    if q.source == "receipts" and q.counts_only and q.tender and isinstance(top, dict):
+    sure_sale = (
+        isinstance(top, dict)
+        and top.get("choice") == "record_receipt"
+        and float(top.get("confidence", 0)) >= THRESHOLD
+    )
+    if (
+        isinstance(top, dict)
+        and q.source == "receipts"
+        and q.counts_only
+        and q.tender
+        and not sure_sale
+    ):
         # only counts and one tender on a receipts kiosk ("2 classic 1 special gcash"): code
         # knows it is a sale, so it is the ring-up question (without a tender the tender
         # question or Did you mean stays as it was) (record_receipt; _for_kiosk asks to confirm
