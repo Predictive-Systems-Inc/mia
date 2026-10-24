@@ -41,6 +41,16 @@ CAP_USD_CENTS = 1000  # US$10 a month (D49)
 # usage_cloud_requests.cost_minor is in minor units of its row's currency (EUR by default).
 # ponytail: fixed rates, the cap is a guard and not an invoice; another currency counts 1:1.
 USD_PER_UNIT = {"USD": 1.0, "EUR": 1.10}
+# EgressTransport records tokens but never a cost (cost_minor stays 0), so the cap prices each
+# row's tokens here: USD per million (input, output) tokens by the model the row records (the
+# gateway's answer, else the route). Update this table when the route or its price changes
+# (the provider's price page); an unknown model counts at DEFAULT_PRICE, a mid-size model's
+# price, so it over-counts rather than under-counts. A row with a cost_minor uses that instead.
+PRICES_USD_PER_MTOK: dict[str, tuple[float, float]] = {
+    "gpt-4o-mini": (0.15, 0.60),
+    "openai/gpt-4o-mini": (0.15, 0.60),
+}
+DEFAULT_PRICE = (3.00, 15.00)
 
 
 class ReportClarify(BaseModel):
@@ -114,15 +124,23 @@ def _month_start(today: dt.date) -> dt.datetime:
 
 
 def month_spend_usd_cents(ctx: EgressContext, today: dt.date) -> int:
-    """US cents spent on PURPOSE by the organisation since the first of today's month (each
-    row's cost_minor converted with USD_PER_UNIT). Reads only."""
+    """US cents spent on PURPOSE by the organisation since the first of today's month: each
+    row's cost_minor converted with USD_PER_UNIT when set, else its tokens priced with
+    PRICES_USD_PER_MTOK (DEFAULT_PRICE for an unknown model). Reads only."""
     rows = ctx.session.exec(
         select(UsageCloudRequest)
         .where(UsageCloudRequest.organisation_id == ctx.organisation_id)
         .where(UsageCloudRequest.task == PURPOSE)
         .where(col(UsageCloudRequest.timestamp) >= _month_start(today))
     )
-    return round(sum(r.cost_minor * USD_PER_UNIT.get(r.currency, 1.0) for r in rows))
+    return round(sum(_usd_cents(r) for r in rows))
+
+
+def _usd_cents(row: UsageCloudRequest) -> float:
+    if row.cost_minor:
+        return row.cost_minor * USD_PER_UNIT.get(row.currency, 1.0)
+    price_in, price_out = PRICES_USD_PER_MTOK.get(row.model, DEFAULT_PRICE)
+    return (row.input_tokens * price_in + row.output_tokens * price_out) / 1_000_000 * 100
 
 
 def _capped(ctx: EgressContext, today: dt.date) -> bool:

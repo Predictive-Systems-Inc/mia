@@ -220,3 +220,40 @@ def test_eur_costs_are_converted_to_us_cents(session: Session, rs: Ferinos) -> N
     _spent(session, rosa, 909, "EUR", month)
     spent = report_model.month_spend_usd_cents(_egress(session, rosa), RS_TODAY)
     assert spent == round(909 * report_model.USD_PER_UNIT["EUR"]) == 1000
+
+
+def _tokens(session: Session, person: Person, tokens_in: int, tokens_out: int) -> None:
+    """A metered report call as EgressTransport writes it: tokens, no cost."""
+    branch = session.get(Branch, person.branch_id)
+    assert branch is not None
+    row = UsageCloudRequest(
+        branch_id=branch.id,
+        organisation_id=branch.organisation_id,
+        agent_id=MANIFEST.id,
+        task=report_model.PURPOSE,
+        model="some-unpriced-model",
+        provider="gateway",
+        input_tokens=tokens_in,
+        output_tokens=tokens_out,
+        timestamp=dt.datetime(RS_TODAY.year, RS_TODAY.month, 2, tzinfo=dt.UTC),
+    )
+    store.insert(session, row, Actor.system(branch.id))
+    session.commit()
+
+
+def test_the_cap_counts_tokens_at_the_default_price(
+    session: Session, rs: Ferinos, fake: list[str]
+) -> None:
+    """cost_minor is never filled: tokens priced at DEFAULT_PRICE (US$3 in, US$15 out per
+    million) reach US$10 and the next call is skipped."""
+    rosa = rs[1]["Rosa"]
+    _tokens(session, rosa, 2_000_000, 200_000)  # US$6 + US$3 = US$9
+    with egress_context(_egress(session, rosa)):
+        assert _ask("benta last week") is not None and len(fake) == 1
+        _tokens(session, rosa, 0, 66_667)  # + US$1.00
+        assert _ask("benta last week") is None
+    assert len(fake) == 1
+    (capped,) = session.exec(select(Event).where(Event.action == report_model.CAPPED)).all()
+    assert (capped.after or {})["spent_usd_cents"] == 1000
+    priced = report_model.PRICES_USD_PER_MTOK["gpt-4o-mini"]
+    assert priced < report_model.DEFAULT_PRICE  # a known cheap route counts at its own price

@@ -229,7 +229,7 @@ Sales report questions no existing read answers ("benta last week per item") go 
 old reply stands). The model only fills a fixed report form or asks one clarifying question; code
 checks permissions and sums every figure. The request goes through egress with purpose
 `sales_supervisor.report`, and spending is capped at US$10 a month, summed from
-`usage_cloud_requests` (costs in EUR are converted at a fixed rate). `MIA_REPORT_MODEL=test` is a
+`usage_cloud_requests` tokens priced per model in `PRICES_USD_PER_MTOK` (node/mia/agents/sales_supervisor/report_model.py; update it when the route or its price changes; an unknown model counts at a mid-size model's price). `MIA_REPORT_MODEL=test` is a
 deterministic fake for tests.
 
 Jev (TypeSafe, `MIA_TYPESAFE_KEY`): `MIA_DECIDER=jev` turns on both the shift supervisor's Jev
