@@ -643,7 +643,8 @@ def report(deps: AgentDeps, args: ReportInput, tool_call_id: str) -> ReportOutpu
     every kiosk needs read_all on the counts and the receipt tables; the sales read is checked
     as the reporter (a clerk then reads her own kiosk only, D49); a clerk grouping needs read on
     sales_counts without that shortcut (never another clerk's figures for a clerk). Raises
-    LookupError with the report.ReportError code (range answers sales.refused.range), "form" for
+    LookupError with the report.ReportError code (range answers sales.refused.range, also for
+    more than MAX_SALES_DAYS days times shops), "form" for
     an unknown item id and "branch" for a kiosk outside the organisation."""
     form = args.form
     branches = _report_branches(deps, form, tool_call_id)
@@ -658,10 +659,15 @@ def report(deps: AgentDeps, args: ReportInput, tool_call_id: str) -> ReportOutpu
         start, end = report_form.resolve(form, deps.today, deps.lang)
     except report_form.ReportError as exc:
         raise LookupError(exc.code) from exc
+    days = (end - start).days + 1
+    reads = days * len(branches) * (1 if form.compare_to == "none" else 2)
+    if reads > sales.MAX_SALES_DAYS:  # days times shops: one read stays bounded
+        raise LookupError("range")
     names = _names(deps.session)
     if any(i not in names for i in form.items):
         raise LookupError("form")
     clerks = {p.id: p.name for p in deps.session.exec(select(Person))}
+    deps.session.commit()  # rule 11: the rbac events are written; the long read holds no lock
     result = report_form.run(deps.session, branches, form, start, end, names, clerks)
     return ReportOutput(result=result)
 

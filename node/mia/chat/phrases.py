@@ -12,6 +12,7 @@ route_memory.key_of and need a letter (a bare number is never a phrase); the tex
 
 import csv
 import json
+import logging
 import re
 from collections import Counter
 from collections.abc import Sequence
@@ -29,6 +30,7 @@ from mia.core import events
 from mia.core.models import Actor, Event, Message, Thread
 from mia.i18n import t
 
+log = logging.getLogger(__name__)
 TAUGHT = "phrase.taught"
 RETIRED = "phrase.retired"
 CONFIRMED = "phrase.confirmed"
@@ -428,8 +430,14 @@ def _import_reports(session: Session, folder: Path, branch_id: str, every: bool)
     with path.open(encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
     added = 0
+    from mia.agents.sales_supervisor.report import ReportForm  # the agent imports chat
+
     for r in rows:
-        form = json.loads(r["form"])
+        try:
+            form = ReportForm.model_validate(json.loads(r["form"])).model_dump(mode="json")
+        except ValueError as exc:  # a bad JSON or an invalid form (ValidationError)
+            log.warning("saved report row %r skipped: %s", r.get("text"), exc)
+            continue
         if live.get(key_of(r["text"]), {}).get("form") == form:
             continue
         _emit_saved(session, Actor.system(branch_id), None if every else branch_id, r["text"], form)

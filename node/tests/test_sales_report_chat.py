@@ -125,17 +125,40 @@ def test_a_reply_only_other_on_a_report_question_runs_the_step(
 def test_a_clerk_gets_her_own_kiosk_and_never_another(
     session: Session, chat: Ferinos, model: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """D49: Pao at the Street stall asks about her own kiosk; naming the Mall kiosk is
+    """D49 and round 1: Pao at the Street stall gets her own kiosk, named in the head, with no
+    Save button (M1); the model reads only her kiosk (L4), so the Mall kiosk is not among the
+    choices and the reply says which kiosk it read (M2); a form naming the Mall kiosk anyway is
     refused by the report tool's rbac."""
     pao = chat[1]["Pao"]
     _rephrase(monkeypatch)
     reply = _turn(session, pao, WEEK)
     form = ReportForm(measure="amount", period="last_week", group_by="item")
     assert _first(reply) == _table(session, pao, form)
+    assert "(Street stall)" in _first(reply).split("\n")[0]
+    assert not _has_buttons(reply)  # a clerk gets the answer without Save
     street = session.exec(select(Branch).where(Branch.name == "Street stall")).one()
     assert pao.branch_id == street.id
-    refused = _turn(session, pao, "benta last week Mall kiosk", reply.thread_id)
-    assert refused.text() == t("denied.generic", "en") and len(model) == 2
+    named = _turn(session, pao, "benta last week Mall kiosk", reply.thread_id)
+    assert "(Street stall)" in _first(named) and "Mall" not in _first(named)
+    mall = chat[0]
+    forged = ReportForm(measure="amount", period="last_week", kiosks=[mall.id])
+    monkeypatch.setattr(report_model, "_fake_answer", lambda text, kiosks: Answer(form=forged))
+    refused = _turn(session, pao, "benta last week sa kabila", reply.thread_id)
+    assert refused.text() == t("denied.generic", "en")
+
+
+def test_the_model_reads_only_the_kiosks_the_person_may_read(
+    session: Session, chat: Ferinos
+) -> None:
+    """Round 1 (L4, spec 4c): a clerk's context names her kiosk only; the owner's every shop."""
+    people = chat[1]
+    pao = turn._report_context(_deps(session, people["Pao"]))
+    assert list(pao.kiosks.values()) == ["Street stall"]
+    rosa = dataclasses.replace(
+        _deps(session, people["Rosa"]),
+        actor=Actor.person(people["Rosa"]).as_agent("agent.sales_supervisor"),
+    )
+    assert set(turn._report_context(rosa).kiosks.values()) == {"Mall kiosk", "Street stall"}
 
 
 def test_the_owner_asks_across_kiosks_and_a_supervisor_is_refused(
@@ -323,3 +346,130 @@ def test_saved_reports_export_and_import(session: Session, chat: Ferinos, tmp_pa
     last = session.exec(select(Event).where(Event.action == phrases.REPORT_SAVED)).all()[-1]
     assert last.actor_type == "system"
     assert phrases.entries(session, rosa.branch_id) == []  # a saved report is no phrase
+
+
+def test_a_saved_report_never_outranks_a_taught_phrase(
+    session: Session, chat: Ferinos, model: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round 1 (M1): a phrase the owner taught for the same key wins over a saved report."""
+    rosa = chat[1]["Rosa"]
+    jev: list[dict[str, Any]] = []
+    _rephrase(monkeypatch, jev)
+    first = _turn(session, rosa, WEEK)
+    _turn(session, rosa, t("sales.report.save", "en"), first.thread_id)
+    phrases.teach(session, Actor.person(rosa), None, WEEK, "sales_supervisor", "sales_today",
+                  roles=["owner"])  # fmt: skip
+    asked = len(jev)
+    _answers(monkeypatch, "sales_today", jev, period="today")
+    again = _turn(session, rosa, WEEK)
+    assert len(jev) == asked + 1  # Jev decided; the saved form did not run first
+    assert _first(again) != _first(first)
+
+
+def test_a_saved_report_routes_as_a_tap_never_a_switch(session: Session, chat: Ferinos) -> None:
+    """Round 1 (M1): with another agent active a saved report key never switches to sales;
+    with none active it is chosen, as a learned tap is."""
+    from mia.agents.registry import AGENTS
+    from mia.chat import service
+
+    rosa = chat[1]["Rosa"]
+    form = ReportForm(measure="amount", period="last_week").model_dump(mode="json")
+    message = Message(thread_id="t", role="user", text=WEEK)
+    phrases.save_report(session, Actor.person(rosa), rosa.branch_id, message, form)
+    session.commit()
+    deps = _deps(session, rosa)
+    agents = [AGENTS["sales_supervisor"], AGENTS["inventory_manager"]]
+    assert service._taught(session, deps, WEEK, agents, "inventory_manager") is None
+    chosen = service._taught(session, deps, WEEK, agents, None)
+    assert chosen is not None and (chosen.kind, chosen.agent_id) == ("chosen", "sales_supervisor")
+
+
+def test_owners_and_admins_retire_a_saved_report_in_the_chat(
+    session: Session, chat: Ferinos, model: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round 1 (L3): "remove report <words>" by the owner; a supervisor or clerk is denied."""
+    people = chat[1]
+    _rephrase(monkeypatch)
+    first = _turn(session, people["Rosa"], WEEK)
+    _turn(session, people["Rosa"], t("sales.report.save", "en"), first.thread_id)
+    command = "remove report Benta last week per item"
+    assert _turn(session, people["Marites"], command).text() == t("denied.generic", "en")
+    assert _turn(session, people["Ana"], command).text() == t("denied.generic", "en")
+    assert phrases.saved_report(session, people["Rosa"].branch_id, key_of(WEEK)) is not None
+    done = _turn(session, people["Rosa"], command)
+    assert done.text() == t("sales.report.retired", "en")
+    assert phrases.saved_report(session, people["Rosa"].branch_id, key_of(WEEK)) is None
+    again = _turn(session, people["Rosa"], command)
+    assert again.text() == t("sales.report.not_found", "en")
+
+
+def test_owners_and_admins_retire_a_saved_report_in_the_app(
+    session: Session, chat: Ferinos
+) -> None:
+    """Round 1 (L3): GET /reports and POST /reports/retire, owner and admin only."""
+    from fastapi.testclient import TestClient
+
+    from mia.api.main import app
+
+    people = chat[1]
+    rosa = people["Rosa"]
+    form = ReportForm(measure="amount", period="last_week").model_dump(mode="json")
+    message = Message(thread_id="t", role="user", text=WEEK)
+    phrases.save_report(session, Actor.person(rosa), rosa.branch_id, message, form)
+    session.commit()
+    client = TestClient(app)
+    owner = {"x-mia-actor": rosa.id}
+    supervisor = {"x-mia-actor": people["Marites"].id}
+    assert client.get("/reports", headers=supervisor).status_code == 403
+    (row,) = client.get("/reports", headers=owner).json()
+    assert row["key"] == key_of(WEEK) and row["form"] == form
+    body = {"key": "Benta last week per item"}
+    assert client.post("/reports/retire", json=body, headers=supervisor).status_code == 403
+    assert client.post("/reports/retire", json=body, headers=owner).status_code == 200
+    assert client.post("/reports/retire", json=body, headers=owner).status_code == 404
+    session.expire_all()
+    assert phrases.saved_report(session, rosa.branch_id, key_of(WEEK)) is None
+
+
+def test_import_skips_an_invalid_report_row(
+    session: Session, chat: Ferinos, tmp_path: Path
+) -> None:
+    """Round 1 (L3): `mia phrases import` validates each form and skips a bad row."""
+    rosa = chat[1]["Rosa"]
+    good = json.dumps({"measure": "amount", "period": "last_week"})
+    bad = json.dumps({"measure": "amount", "period": "last_week", "total": 999})
+    with (tmp_path / phrases.REPORTS_CSV).open("w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f, lineterminator="\n")
+        writer.writerows([["text", "key", "form"], ["Benta last week", "benta last week", good],
+                          ["Total!", "total", bad], ["Broken", "broken", "{not json"]])  # fmt: skip
+    assert phrases.import_rows(session, tmp_path, rosa.branch_id) == 1
+    assert phrases.saved_report(session, rosa.branch_id, "total") is None
+
+
+def test_no_write_lock_is_held_while_the_report_reads(
+    session: Session, chat: Ferinos, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round 1 (L2, rule 11): the report read runs with every write committed."""
+    import sqlite3
+
+    from mia.agents.sales_supervisor import report as report_form
+
+    free: list[bool] = []
+    real = report_form.run
+
+    def probe(*args: Any, **kw: Any) -> Any:
+        other = sqlite3.connect(get_settings().MIA_DB_PATH, timeout=0)
+        try:
+            other.execute("BEGIN IMMEDIATE")
+            other.rollback()
+            free.append(True)
+        except sqlite3.OperationalError:
+            free.append(False)
+        finally:
+            other.close()
+        return real(*args, **kw)
+
+    monkeypatch.setattr(report_form, "run", probe)
+    _rephrase(monkeypatch)
+    _turn(session, chat[1]["Rosa"], "benta last week per kiosk")
+    assert free == [True]

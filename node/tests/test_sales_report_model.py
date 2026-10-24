@@ -257,3 +257,27 @@ def test_the_cap_counts_tokens_at_the_default_price(
     assert (capped.after or {})["spent_usd_cents"] == 1000
     priced = report_model.PRICES_USD_PER_MTOK["gpt-4o-mini"]
     assert priced < report_model.DEFAULT_PRICE  # a known cheap route counts at its own price
+
+
+def test_a_call_without_tokens_counts_at_the_flat_cost(session: Session, rs: Ferinos) -> None:
+    """Round 1: a metered call with no tokens and no cost is never free."""
+    rosa = rs[1]["Rosa"]
+    _tokens(session, rosa, 0, 0)
+    spent = report_model.month_spend_usd_cents(_egress(session, rosa), RS_TODAY)
+    assert spent == report_model.FLAT_CALL_USD_CENTS > 0
+
+
+def test_two_calls_cannot_both_pass_the_cap(session: Session, rs: Ferinos) -> None:
+    """Round 1: a billed call that passes is recorded under the lock (report.model_called) and
+    counts at the flat cost until its usage row lands, so the next check sees it."""
+    rosa = rs[1]["Rosa"]
+    month = dt.datetime(RS_TODAY.year, RS_TODAY.month, 2, tzinfo=dt.UTC)
+    _spent(
+        session, rosa, report_model.CAP_USD_CENTS - report_model.FLAT_CALL_USD_CENTS, "USD", month
+    )
+    ctx = _egress(session, rosa)
+    assert report_model._capped(ctx, RS_TODAY, billed=True) is False
+    assert report_model._capped(ctx, RS_TODAY, billed=True) is True
+    called = session.exec(select(Event).where(Event.action == report_model.CALLED)).all()
+    assert len(called) == 1
+    assert report_model._capped(_egress(session, rosa), RS_TODAY, billed=False) is True

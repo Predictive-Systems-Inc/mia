@@ -5,6 +5,7 @@ emergency script runs before this, in chat.service, for every agent."""
 import asyncio
 import html
 import logging
+import re
 from dataclasses import replace
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -54,7 +55,7 @@ from mia.core import events, sales
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
-from mia.core.models import Actor, Approval, Event, Message, SalesReceipt, Thread
+from mia.core.models import Actor, Approval, Branch, Event, Message, SalesReceipt, Thread
 from mia.core.rbac import Resource, get_rbac
 from mia.i18n import t
 from mia.settings import get_settings
@@ -69,6 +70,9 @@ RECEIPT_TOOLS = ("void_receipt", "refund_receipt")
 # form run by the report tool, and the Save as a report button (teach-Mia 4c).
 REPORT = "report"
 REPORT_SAVE = "report_save"
+REPORT_RETIRE = "report_retire"
+SAVE_RIGHT = Resource(kind="tool", name=f"{MANIFEST.id}.period_report")  # supervisors and up
+RETIRE_COMMAND = re.compile(r"^\s*remove report\s+(.+)$", re.IGNORECASE)
 REPORT_TOOL = Resource(kind="tool", name=f"{MANIFEST.id}.report")
 NAMED_PERIODS = ("today", "yesterday", "this_week", "last_week", "this_month", "last_month")
 # a void's or refund's refusal code -> its reply (each takes the receipt number as no)
@@ -145,6 +149,15 @@ def _said(session: Session, thread: Thread) -> str | None:
     ).first()
 
 
+def _saved_form(session: Session, deps: AgentDeps, text: str) -> dict[str, Any] | None:
+    """The saved report form for the message's key, unless a phrase taught for that key at the
+    branch outranks it (a saved report counts as a tap, never as a teach)."""
+    key = key_of(text)
+    if any(p.key == key and p.taught for p in phrases.entries(session, deps.branch.id)):
+        return None
+    return phrases.saved_report(session, deps.branch.id, key)
+
+
 def _query(
     session: Session, deps: AgentDeps, thread: Thread, text: str
 ) -> tuple[Decision | None, actions.Query | None]:
@@ -158,7 +171,11 @@ def _query(
     answered = slot_answer(session, deps, thread, text, SLOT_READERS)
     if answered is not None:
         return answered, None
-    saved = phrases.saved_report(session, deps.branch.id, key_of(text))
+    retire = RETIRE_COMMAND.match(html.unescape(text))
+    if retire is not None:
+        key = key_of(retire[1])
+        return Decision(action=REPORT_RETIRE, args={"key": key}, confidence=1.0), None
+    saved = _saved_form(session, deps, text)
     if saved is not None:  # a saved report runs with no Jev and no model request
         return Decision(action=REPORT, args={"form": saved}, confidence=1.0), None
     last = _last_question(session, thread)  # a notification (the why question) counts
@@ -274,6 +291,8 @@ def _act(session: Session, deps: AgentDeps, thread: Thread, decision: Decision) 
         return _report(session, deps, thread, decision)
     if decision.action == REPORT_SAVE:
         return _save_report(session, deps, thread, decision)
+    if decision.action == REPORT_RETIRE:
+        return _retire_report(session, deps, thread, str(decision.args.get("key", "")))
     action = decision.action
     item_missing = (decision.missing or "").startswith("item_")
     if action == "clarify" and item_missing and decision.confidence >= THRESHOLD:
@@ -426,15 +445,24 @@ def _wants_report(
     return (message.text, message.id) if actions.report_like(message.text, counts) else None
 
 
+def _readable(session: Session, deps: AgentDeps) -> tuple[list[Branch], bool]:
+    """The shops the person may read (her own; every shop with read_all on sales_counts) and
+    whether she may read every shop."""
+    wide = get_rbac().check(deps.actor, COUNTS, "read_all", session=session)
+    shops = [deps.branch]
+    if wide:
+        shops += [b for b in retail_hours.shops(session, deps.organisation_id) if b != deps.branch]
+    return shops, wide
+
+
 def _report_context(deps: AgentDeps) -> report_model.Context:
-    """What the report model reads beside the message: the business date, the menu, every
-    shop of the organisation (as Jev's query offers them; the tool refuses a kiosk the person
-    may not read) and the period ids."""
+    """What the report model reads beside the message (spec 4c): the business date, the menu,
+    the kiosks the person may read and the period ids."""
     session = deps.session
     return report_model.Context(
         today=deps.today,
         items={i.id: i.name for i in actions._menu(session, deps.branch.id)},
-        kiosks={b.id: b.name for b in retail_hours.shops(session, deps.organisation_id)},
+        kiosks={b.id: b.name for b in _readable(session, deps)[0]},
         periods=actions._periods(deps.lang),
     )
 
@@ -465,12 +493,7 @@ def _clarify_options(
     lang = deps.lang
     choices: dict[str, dict[str, Any]]
     if question == "which_kiosk":
-        shops = [deps.branch]
-        wide = get_rbac().check(deps.actor, COUNTS, "read_all", session=session)
-        if wide:
-            shops += [
-                b for b in retail_hours.shops(session, deps.organisation_id) if b != deps.branch
-            ]
+        shops, wide = _readable(session, deps)
         choices = {b.name: {"kiosks": [b.id]} for b in shops}
         if wide:
             choices[t("sales.report.all_kiosks", lang)] = {"kiosks": ["all"]}
@@ -526,6 +549,7 @@ def _report(session: Session, deps: AgentDeps, thread: Thread, decision: Decisio
         args = ReportInput.model_validate(decision.args)
     except ValidationError:
         return _report_failed(session, deps, thread, "form")
+    session.commit()  # rule 11: no write lock held while the report reads (L2)
     out = call_tool(deps, _BINDINGS[f"{MANIFEST.id}.report"], args, new_id())
     if "status" in out and "message" in out:  # a ToolRefusal
         if out["status"] == "invalid":
@@ -535,7 +559,9 @@ def _report(session: Session, deps: AgentDeps, thread: Thread, decision: Decisio
     blocks = replies.report_text(ReportOutput.model_validate(out).result, deps.lang)
     message_id = decision.args.get("message_id")
     message = session.get(Message, str(message_id)) if message_id else None
-    if args.form.period is None or message is None or not phrases.has_letter(key_of(message.text)):
+    savable = args.form.period is not None and message is not None
+    savable = savable and phrases.has_letter(key_of(message.text if message else ""))
+    if not savable or message is None or not _may_save(session, deps):
         return store_reply(session, deps, thread, blocks)
     label = t("sales.report.save", deps.lang)
     save = {"form": args.form.model_dump(mode="json"), "message_id": message.id}
@@ -551,12 +577,30 @@ def _report_failed(session: Session, deps: AgentDeps, thread: Thread, error: str
     return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
 
 
+def _may_save(session: Session, deps: AgentDeps) -> bool:
+    """Supervisors, the owner and admins may save a report (they hold period_report)."""
+    return get_rbac().check(deps.actor, SAVE_RIGHT, "execute", session=session)
+
+
+def _retire_report(session: Session, deps: AgentDeps, thread: Thread, key: str) -> ChatReply:
+    """ "remove report <words>": an owner or admin (read_all on sales_counts) withdraws the
+    saved report of that key at the branch (report.retired)."""
+    if not get_rbac().check(deps.actor, COUNTS, "read_all", session=session):
+        return reply_text(session, deps, thread, t("denied.generic", deps.lang))
+    if phrases.saved_report(session, deps.branch.id, key) is None:
+        return reply_text(session, deps, thread, t("sales.report.not_found", deps.lang))
+    phrases.retire_report(session, Actor.person(deps.person), deps.branch.id, key)
+    return reply_text(session, deps, thread, t("sales.report.retired", deps.lang))
+
+
 def _save_report(
     session: Session, deps: AgentDeps, thread: Thread, decision: Decision
 ) -> ChatReply:
     """Save the answered form for its message key (report.saved); anyone who got the answer
     may (it only reads, and rbac is checked again on every run)."""
     message = session.get(Message, str(decision.args.get("message_id")))
+    if not _may_save(session, deps):
+        return reply_text(session, deps, thread, t("denied.generic", deps.lang))
     if message is None or message.thread_id != thread.id:
         return reply_text(session, deps, thread, t("clarify.rephrase", deps.lang))
     try:

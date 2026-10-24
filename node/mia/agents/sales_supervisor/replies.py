@@ -167,7 +167,8 @@ def tool_reply(tool: str, out: dict[str, Any], args: dict[str, Any], lang: str) 
 
 
 def report_text(result: Result, lang: str) -> list[Block]:
-    """A report as one text block: the head (measure, dates, grouping, total), the top TOP
+    """A report as one text block: the head (measure, dates, grouping, the kiosks, items and
+    tenders read, total), the top TOP
     lines then "and N more", each line and the total with the percent change when the form
     compared and the compared value is not zero (calc.compare). Every figure is the Result's."""
 
@@ -187,6 +188,9 @@ def report_text(result: Result, lang: str) -> list[Block]:
             return None
         return t(key, lang, percent=format_int(percent, lang), before=value(before), **values)
 
+    scope = [", ".join(result.kiosks)] if result.kiosks else []
+    scope += [", ".join(result.items)] if result.items else []
+    scope += [", ".join(_tender(x, lang) for x in result.tenders)] if result.tenders else []
     by = ""
     if result.group_by != "none":
         by = t("sales.report.by", lang, group=t(f"sales.report.group.{result.group_by}", lang))
@@ -197,6 +201,7 @@ def report_text(result: Result, lang: str) -> list[Block]:
         start=result.start.isoformat(),
         end=result.end.isoformat(),
         by=by,
+        scope=f" ({'; '.join(scope)})" if scope else "",
         total=value(result.total),
     )
     shown = []

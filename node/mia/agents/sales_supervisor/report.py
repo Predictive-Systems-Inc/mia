@@ -20,6 +20,8 @@ GroupBy = Literal["none", "item", "day", "weekday", "kiosk", "tender", "clerk"]
 Compare = Literal["none", "previous_period", "same_period_last_year"]
 PERIOD_IDS = tuple(_periods("en"))  # the decider's period ids (weekdays as mon to sun)
 ALL = "all"  # kiosks: every shop of the organisation
+EARLIEST = dt.date(2000, 1, 1)  # a model-chosen date before this is refused as a range
+LATEST_AHEAD = dt.timedelta(days=366)  # and one more than a year after today
 
 
 class ReportForm(BaseModel):
@@ -73,7 +75,8 @@ def compared(start: dt.date, end: dt.date, compare: Compare) -> tuple[dt.date, d
 def resolve(form: ReportForm, today: dt.date, lang: str) -> tuple[dt.date, dt.date]:
     """The form's (start, end) dates: a named period (actions._period, its end cut at today), or
     the explicit dates. Raises ReportError for an unknown period id (or neither or both), an end
-    before the start, an end after today, more than sales.MAX_SALES_DAYS days read (the compared
+    before the start, an end after today, a date before EARLIEST or over a year ahead or a
+    comparison that cannot be computed (range), more than sales.MAX_SALES_DAYS days read (the compared
     range included), or a tender grouping or filter with pieces or with item or clerk grouping
     (DaySales.by_tender is per branch and day only)."""
     tender = form.group_by == "tender" or bool(form.tenders)
@@ -88,6 +91,12 @@ def resolve(form: ReportForm, today: dt.date, lang: str) -> tuple[dt.date, dt.da
         start, end = form.start, form.end
     else:
         raise ReportError("period")
+    if min(start, end) < EARLIEST or max(start, end) > today + LATEST_AHEAD:
+        raise ReportError("range")
+    try:
+        compared(start, end, form.compare_to)
+    except (ValueError, OverflowError) as exc:  # a comparison before year 1
+        raise ReportError("range") from exc
     if end < start:
         raise ReportError("order")
     if end > today:
@@ -118,6 +127,10 @@ class Result(BaseModel):
     total: int  # of the measure: pieces, or minor units of currency
     total_before: int | None
     currency: str
+    # what the form read, so the reply names it (a filter the model dropped is visible)
+    kiosks: list[str] = []
+    items: list[str] = []
+    tenders: list[str] = []
 
 
 Sums = dict[str, tuple[int, int]]  # group key -> (quantity, amount)
@@ -228,4 +241,7 @@ def run(
         total=total[pick],
         total_before=total_before,
         currency=currency,
+        kiosks=[b.name for b in branches],
+        items=[names[i].name for i in form.items if i in names],
+        tenders=list(form.tenders),
     )

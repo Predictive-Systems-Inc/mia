@@ -231,6 +231,10 @@ checks permissions and sums every figure. The request goes through egress with p
 `sales_supervisor.report`, and spending is capped at US$10 a month, summed from
 `usage_cloud_requests` tokens priced per model in `PRICES_USD_PER_MTOK` (node/mia/agents/sales_supervisor/report_model.py; update it when the route or its price changes; an unknown model counts at a mid-size model's price). `MIA_REPORT_MODEL=test` is a
 deterministic fake for tests.
+Supervisors, the owner and admins can tap Save as a report; the same question then runs the saved
+form with no model call (rbac is checked again for whoever asks). An owner or admin withdraws one
+in the chat with `remove report <the question>` or through `GET /reports` and
+`POST /reports/retire`.
 
 Jev (TypeSafe, `MIA_TYPESAFE_KEY`): `MIA_DECIDER=jev` turns on both the shift supervisor's Jev
 decider and the agent router; otherwise a person with several agents stays on the active one or

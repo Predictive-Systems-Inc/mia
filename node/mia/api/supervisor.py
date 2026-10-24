@@ -11,10 +11,13 @@ from sqlmodel import col, select
 from mia.api.deps import DbSession, PersonAuth
 from mia.api.schedule import VisitCard, branch_of, require_visit, visit_card
 from mia.channels.inbound import OUTSIDE_FENCE
+from mia.chat import phrases
+from mia.chat.route_memory import key_of
 from mia.core import scheduling, store
 from mia.core.db import utcnow
 from mia.core.models import Event, Incident, Location, Person, Visit
 from mia.core.orgconfig import load as load_org
+from mia.core.rbac import Resource, get_rbac
 
 router = APIRouter(tags=["supervisor"])
 
@@ -132,3 +135,37 @@ def resolve(session: DbSession, ctx: PersonAuth, problem_id: str) -> dict[str, s
             action="site_problem.resolved",
         )
     return {"id": row.id, "status": row.status}
+
+
+# Saved reports (teach-Mia 4c): owners and admins (read_all on sales_counts, who read every
+# kiosk's sales) list and retire them at their branch in production, not only on the dev sim.
+REPORTS_RIGHT = (Resource(kind="data", name="sales_counts"), "read_all")
+
+
+class ReportRetireIn(BaseModel):
+    key: str  # the saved question's words or its key
+
+
+def _require_reports(session: DbSession, ctx: PersonAuth) -> None:
+    if not get_rbac().check(ctx.actor, *REPORTS_RIGHT, session=session):
+        session.commit()  # keep the rbac.deny event
+        raise HTTPException(403, "owners and admins only")
+
+
+@router.get("/reports")
+def saved_reports(session: DbSession, ctx: PersonAuth) -> list[dict[str, object]]:
+    """The branch's live saved reports: key, text and form (owners and admins)."""
+    _require_reports(session, ctx)
+    found = phrases.saved_reports(session, ctx.actor.branch_id)
+    return [{"key": k, "text": a.get("text", k), "form": a["form"]} for k, a in found.items()]
+
+
+@router.post("/reports/retire")
+def retire_report(session: DbSession, ctx: PersonAuth, body: ReportRetireIn) -> dict[str, str]:
+    """Withdraw a saved report at the branch (report.retired); 404 when none is saved."""
+    _require_reports(session, ctx)
+    key = key_of(body.key)
+    if phrases.saved_report(session, ctx.actor.branch_id, key) is None:
+        raise HTTPException(404, "no saved report for that key")
+    phrases.retire_report(session, ctx.actor, ctx.actor.branch_id, key)
+    return {"key": key, "status": "retired"}

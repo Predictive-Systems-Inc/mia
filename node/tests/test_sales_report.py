@@ -27,6 +27,7 @@ from mia.core.models import TENDERS, Branch, Person
 from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied
 from mia.i18n import t
+from mia.templates.retail.models import RetailItem
 from tests.conftest import RS_TODAY
 from tests.test_sales_receipts import drawer, receipts_kiosk, ring
 from tests.test_sales_tools import deps_for
@@ -195,13 +196,14 @@ def _result(lines: list[Line], **kw: object) -> Result:
 
 def test_report_text_shows_ten_then_more() -> None:
     lines = [Line(name=f"Item {n}", quantity=n, amount=100 * n) for n in range(12, 0, -1)]
-    (block,) = replies.report_text(_result(lines), "en")
+    (block,) = replies.report_text(_result(lines, kiosks=["Mall kiosk"]), "en")
     assert isinstance(block, TextBlock)
     rows = block.text.split("\n")
     by = t("sales.report.by", "en", group=t("sales.report.group.item", "en"))
     assert rows[0] == t(
         "sales.report.head", "en", measure=t("sales.report.measure.amount", "en"),
-        start="2026-10-19", end="2026-10-25", by=by, total=format_money(7800, "PHP", "en"),
+        start="2026-10-19", end="2026-10-25", by=by, scope=" (Mall kiosk)",
+        total=format_money(7800, "PHP", "en"),
     )  # fmt: skip
     assert rows[1] == t("sales.report.row", "en", name="Item 12",
                         value=format_money(1200, "PHP", "en"))  # fmt: skip
@@ -218,3 +220,45 @@ def test_compare_lines_carry_the_percent() -> None:
         "sales.report.total_vs", "en", total=format_money(1200, "PHP", "en"), percent="20",
         before=money,
     )  # fmt: skip
+
+
+def test_dates_out_of_bounds_are_a_range(session: Session, rs: Ferinos) -> None:
+    """Round 1 (L1): a model-chosen date before 2000 or over a year ahead, or a comparison
+    before year 1, is refused as a range, never a crash."""
+    ancient = ReportForm(measure="amount", start=dt.date(1, 1, 1), end=dt.date(1, 1, 3))
+    bad = [
+        ancient.model_copy(update={"compare_to": "same_period_last_year"}),
+        ancient.model_copy(update={"compare_to": "previous_period"}),
+        ReportForm(measure="amount", start=dt.date(1999, 12, 31), end=dt.date(2000, 1, 2)),
+        ReportForm(measure="amount", start=RS_TODAY, end=dt.date(9999, 1, 1)),
+    ]
+    assert [_code(lambda f=f: resolve(f, RS_TODAY, "en")) for f in bad] == ["range"] * 4
+    rosa = ss_deps(session, rs[1]["Rosa"])
+    for form in bad:
+        assert call_tool(rosa, BINDING, ReportInput(form=form), "c")["message"] == "range"
+
+
+def test_days_times_shops_are_capped(session: Session, rs: Ferinos) -> None:
+    """Round 1 (L2): 251 days over both shops is 502 shop-days, over the 400 a read takes."""
+    rosa = ss_deps(session, rs[1]["Rosa"])
+    start = RS_TODAY - dt.timedelta(days=250)
+    wide = ReportForm(measure="amount", start=start, end=RS_TODAY, group_by="kiosk")
+    assert call_tool(rosa, BINDING, ReportInput(form=wide), "c")["message"] == "range"
+    one = wide.model_copy(update={"group_by": "none"})
+    assert call_tool(rosa, BINDING, ReportInput(form=one), "c")["result"]["kiosks"] == [
+        "Mall kiosk"
+    ]
+
+
+def test_the_result_names_its_filters(session: Session, rs: Ferinos) -> None:
+    """Round 1 (M2): the head names the kiosks, items and tenders the form read."""
+    ube = session.exec(select(RetailItem).where(RetailItem.name == "Ube")).one()
+    form = ReportForm(measure="pieces", period="last_week", items=[ube.id])
+    out = _run(session, rs[1]["Rosa"], form)
+    assert (out.kiosks, out.items, out.tenders) == (["Mall kiosk"], ["Ube"], [])
+    (block,) = replies.report_text(out, "en")
+    assert isinstance(block, TextBlock)
+    assert "(Mall kiosk; Ube):" in block.text.split("\n")[0]
+    cash = ReportForm(measure="amount", period="last_week", tenders=["gcash"])
+    (head,) = replies.report_text(_run(session, rs[1]["Rosa"], cash), "en")
+    assert isinstance(head, TextBlock) and "(Mall kiosk; GCash):" in head.text

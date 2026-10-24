@@ -31,7 +31,7 @@ from mia.agents.sales_supervisor import MANIFEST
 from mia.agents.sales_supervisor.report import ReportForm
 from mia.core import events
 from mia.core.egress import EgressBlocked, EgressContext, current_context
-from mia.core.models import UsageCloudRequest
+from mia.core.models import Event, UsageCloudRequest
 from mia.settings import get_settings
 
 log = logging.getLogger(__name__)
@@ -51,6 +51,10 @@ PRICES_USD_PER_MTOK: dict[str, tuple[float, float]] = {
     "openai/gpt-4o-mini": (0.15, 0.60),
 }
 DEFAULT_PRICE = (3.00, 15.00)
+# A metered call with no tokens (an error, a provider that reports none), and a call that passed
+# the cap check but is not metered yet (in flight), each count at this flat cost.
+FLAT_CALL_USD_CENTS = 5
+CALLED = "report.model_called"  # event: a billed call passed the cap check (under the lock)
 
 
 class ReportClarify(BaseModel):
@@ -126,33 +130,55 @@ def _month_start(today: dt.date) -> dt.datetime:
 def month_spend_usd_cents(ctx: EgressContext, today: dt.date) -> int:
     """US cents spent on PURPOSE by the organisation since the first of today's month: each
     row's cost_minor converted with USD_PER_UNIT when set, else its tokens priced with
-    PRICES_USD_PER_MTOK (DEFAULT_PRICE for an unknown model). Reads only."""
+    PRICES_USD_PER_MTOK (DEFAULT_PRICE for an unknown model), a row with neither at
+    FLAT_CALL_USD_CENTS; plus FLAT_CALL_USD_CENTS for each billed call that passed the check
+    (report.model_called) after the latest metered row (in flight). Reads only."""
+    since = _month_start(today)
     rows = ctx.session.exec(
         select(UsageCloudRequest)
         .where(UsageCloudRequest.organisation_id == ctx.organisation_id)
         .where(UsageCloudRequest.task == PURPOSE)
-        .where(col(UsageCloudRequest.timestamp) >= _month_start(today))
+        .where(col(UsageCloudRequest.timestamp) >= since)
+    ).all()
+    # ponytail: a call is in flight until any later usage row lands; a call link on the usage
+    # row would be exact if concurrent report calls become common
+    metered = max((r.timestamp for r in rows), default=since)
+    in_flight = len(
+        ctx.session.exec(
+            select(Event.id)
+            .where(Event.action == CALLED)
+            .where(Event.entity_id == ctx.organisation_id)
+            .where(col(Event.timestamp) > metered)
+        ).all()
     )
-    return round(sum(_usd_cents(r) for r in rows))
+    return round(sum(_usd_cents(r) for r in rows) + in_flight * FLAT_CALL_USD_CENTS)
 
 
 def _usd_cents(row: UsageCloudRequest) -> float:
     if row.cost_minor:
         return row.cost_minor * USD_PER_UNIT.get(row.currency, 1.0)
+    if not (row.input_tokens or row.output_tokens):
+        return FLAT_CALL_USD_CENTS
     price_in, price_out = PRICES_USD_PER_MTOK.get(row.model, DEFAULT_PRICE)
     return (row.input_tokens * price_in + row.output_tokens * price_out) / 1_000_000 * 100
 
 
-def _capped(ctx: EgressContext, today: dt.date) -> bool:
-    """True, with a report.capped event committed, when this month's spend is at the cap."""
+def _capped(ctx: EgressContext, today: dt.date, billed: bool) -> bool:
+    """True, with a report.capped event committed, when this month's spend is at the cap.
+    Check and record run under the write lock (rule 11): a billed call that passes writes
+    report.model_called before the lock is released, so two concurrent calls never both pass
+    on the same spend."""
+    events.write_lock(ctx.session)
     spent = month_spend_usd_cents(ctx, today)
-    if spent < CAP_USD_CENTS:
-        return False
-    after = {"month": today.strftime("%Y-%m"), "spent_usd_cents": spent, "cap": CAP_USD_CENTS}
     org = ("organisation", ctx.organisation_id)
-    events.emit(ctx.session, CAPPED, org, None, after, ctx.actor)
+    month = today.strftime("%Y-%m")
+    if spent >= CAP_USD_CENTS:
+        after = {"month": month, "spent_usd_cents": spent, "cap": CAP_USD_CENTS}
+        events.emit(ctx.session, CAPPED, org, None, after, ctx.actor)
+    elif billed:
+        events.emit(ctx.session, CALLED, org, None, {"month": month}, ctx.actor)
     ctx.session.commit()
-    return True
+    return spent >= CAP_USD_CENTS
 
 
 async def ask(message: str, ctx: Context, *, transport: Any = None) -> Answer | None:
@@ -168,11 +194,12 @@ async def ask(message: str, ctx: Context, *, transport: Any = None) -> Answer | 
         egress = current_context()
     except EgressBlocked:
         egress = None
-    if egress is not None and await asyncio.to_thread(_capped, egress, ctx.today):
-        log.warning("report model: the monthly cap of %d US cents is reached", CAP_USD_CENTS)
-        return None
-    if not name.startswith(("local/", "test")) and (egress is None or egress.level == "none"):
+    billed = not name.startswith(("local/", "test"))  # only a gateway route costs money
+    if billed and (egress is None or egress.level == "none"):
         log.warning("report model: egress blocks %s", name)
+        return None
+    if egress is not None and await asyncio.to_thread(_capped, egress, ctx.today, billed):
+        log.warning("report model: the monthly cap of %d US cents is reached", CAP_USD_CENTS)
         return None
     agent: Agent[None, Answer] = Agent(
         build_model(name, fake_model(), transport=transport),
