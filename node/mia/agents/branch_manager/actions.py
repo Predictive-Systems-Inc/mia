@@ -266,6 +266,14 @@ ACTIONS: dict[str, Action] = {
         "set_phone",
         ("person",),
     ),
+    "assign_kiosk": Action(
+        "The sender assigns a supervisor already in Mia to another kiosk or branch, or"
+        " removes them from one (assign Jun to the Mall kiosk, i-assign si Jun sa Mall,"
+        " ilagay si Jun sa Street stall, alisin si Jun sa Mall kiosk, remove Jun from the Mall"
+        " kiosk). Not a new person.",
+        "assign_kiosk",
+        ("supervisor", "branch"),
+    ),
     "reply_only": Action(
         "No action above fits: a greeting or thanks on its own (magandang umaga, hi, salamat),"
         " a goodbye, a question about who Mia is or what it can do, anything off topic, and any"
@@ -294,6 +302,7 @@ class Query:
     dates: dict[str, str] = field(default_factory=dict)  # d0 -> ISO date, from find_dates
     codes: dict[str, str] = field(default_factory=dict)  # c0 -> a message word, no code yet
     people: dict[str, str] = field(default_factory=dict)  # supervisors and leads: id -> name
+    supervisors: dict[str, str] = field(default_factory=dict)  # the organisation's, for leads
     strategies: dict[str, str] = field(default_factory=dict)  # active catalogue: id -> text
     names: dict[str, str] = field(default_factory=dict)  # n0 -> a new person's name, a word
     branches: dict[str, str] = field(default_factory=dict)  # the organisation's: id -> name
@@ -376,6 +385,16 @@ def build_query(
             .order_by(col(Person.name))
         ).all()
         people = {p.id: p.name for p in staff}
+    supervisors: dict[str, str] = {}
+    if set(deps.person.roles) & LEADS:  # assign_kiosk (D50): every supervisor of the org
+        org = select(Branch.id).where(Branch.organisation_id == deps.organisation_id)
+        heads = session.exec(
+            select(Person)
+            .where(col(Person.branch_id).in_(org))
+            .where(Person.status == "active")
+            .order_by(col(Person.name))
+        ).all()
+        supervisors = {p.id: p.name for p in heads if "supervisor" in p.roles}
     strategies = session.exec(select(Strategy).where(Strategy.active).order_by(col(Strategy.id)))
     branches = session.exec(
         select(Branch)
@@ -395,6 +414,7 @@ def build_query(
         dates={i: d.isoformat() for i, d in find_dates(words, deps.today, deps.lang)},
         codes={f"c{i}": w for i, w in enumerate(codes)},
         people=people,
+        supervisors=supervisors,
         strategies={s.id: s.description for s in strategies},
         names={
             f"n{i}": w for i, w in enumerate(name_candidates(words, [b.name for b in branches]))
@@ -479,8 +499,18 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
         "conversation": _choice("What kind of message is it?", CONVERSATION),
         "role": _choice("Which role does the new person get?", {**PERSON_ROLES, **unsaid}),
         "branch": _choice(
-            "At which kiosk or branch does the new person work?", {**q.branches, **unsaid}
+            "At which kiosk or branch does the new person work, or which kiosk is the"
+            " supervisor assigned to or removed from?",
+            {**q.branches, **unsaid},
         ),
+        "remove": {
+            "type": "noul",
+            "instructions": "Does the sender remove the supervisor from the kiosk?",
+            "criteria": {
+                "true": "Yes, remove them from the kiosk",
+                "false": "No, assign them to it",
+            },
+        },
         "language": _choice(
             "In which language does the new person want Mia's replies?",
             {**PERSON_LANGUAGES, **unsaid},
@@ -491,6 +521,11 @@ def build_request(q: Query, model: str) -> dict[str, Any]:
             "Which word of `names` in the state is the new person's name? Each option is a"
             " position in `names`, the first being 1.",
             {**{n: f"Word {i + 1} of `names`" for i, n in enumerate(q.names)}, **unsaid},
+        )
+    if q.supervisors:
+        questions["supervisor"] = _choice(
+            "Which supervisor does `message` assign to a kiosk or remove from one?",
+            {**q.supervisors, **unsaid},
         )
     if q.people:
         questions["person"] = _choice(

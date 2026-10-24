@@ -1,7 +1,7 @@
 id: branch_manager
 name: "Branch Manager"
 version: 0.1.0
-standard_version: "1.9"
+standard_version: "1.10"
 job_description: job.md
 instructions: {base: prompts/base.md}
 roles:
@@ -48,6 +48,10 @@ roles:
     - tool:branch_manager.monthly_letter:execute
     - tool:branch_manager.add_person:execute
     - tool:branch_manager.set_phone:execute
+    - tool:branch_manager.assign_kiosk:execute
+    - data:branch_assignments:read
+    - data:branch_assignments:write
+    - data:branch_assignments:write_all
   denies: [tool:*:approve]
   # Money waits for the owner (or an admin), in the app with the PIN step-up; the owner's own
   # request is decided by the owner with the step-up (D37).
@@ -66,5 +70,7 @@ tools:
   - {id: branch_manager.monthly_letter, kind: agent, risk: read, approval: never, reads: [sales_counts, sales_receipts, sales_receipt_lines, sales_payments, sales_targets, branch_manager_experiments]}
   # Creates an identity (Q117): admin only by policy; sensitive, so tool.called keeps the ids.
   - {id: branch_manager.add_person, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [core.person, core.branch], writes: [core.person, core.channel_identity, auth_codes]}
+  # A supervisor's extra kiosks (D50): owner and admin only by policy.
+  - {id: branch_manager.assign_kiosk, kind: agent, risk: write_internal, approval: never, reads: [core.person, core.branch, branch_assignments], writes: [branch_assignments]}
   - {id: branch_manager.set_phone, kind: agent, risk: write_internal, sensitive: true, approval: never, reads: [core.person, core.channel_identity], writes: [core.channel_identity]}
 tests: {suite: tests/scenarios.yaml, min_pass_rate: 0.9}

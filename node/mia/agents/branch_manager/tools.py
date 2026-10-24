@@ -44,6 +44,7 @@ from mia.agents.sales_supervisor.tools import (
     SALES,
     TARGETS,
     _as_reporter,
+    _beyond,
     _branches,
     _business_day,
     _catalog,
@@ -56,7 +57,7 @@ from mia.agents.sales_supervisor.tools import (
 from mia.channels import linking
 from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
-from mia.core import approvals, events, orgconfig, people, store
+from mia.core import approvals, assignments, events, orgconfig, people, store
 from mia.core.db import utcnow
 from mia.core.models import (
     Actor,
@@ -1310,7 +1311,7 @@ def weekly_summary(deps: AgentDeps, args: WeeklyInput, tool_call_id: str) -> Wee
     if branch_id is None and _is_lead(deps.person):
         branch_id = "all"
     branches = _branches(deps, branch_id, COUNTS, "read", tool_call_id)
-    if branches != [deps.branch]:
+    if _beyond(deps, branches):  # an assigned kiosk is the supervisor's own (D50)
         for resource in (*RECEIPT_TABLES, TARGETS, STOCK, EXPERIMENTS):
             _check(deps, resource, "read_all", tool_call_id)
     for resource in (*SALES, TARGETS, STOCK, EXPERIMENTS):
@@ -1634,6 +1635,41 @@ def set_phone(deps: AgentDeps, args: SetPhoneInput, tool_call_id: str) -> Person
     )
 
 
+# ---- assign_kiosk (D50) --------------------------------------------------------------------
+
+
+class AssignKioskInput(BaseModel):
+    person_id: str
+    branch_id: str
+    remove: bool = False  # True: end the assignment today
+
+
+class AssignKioskOut(BaseModel):
+    person_id: str
+    name: str
+    branch: str
+    removed: bool
+
+
+def assign_kiosk(deps: AgentDeps, args: AssignKioskInput, tool_call_id: str) -> AssignKioskOut:
+    """Assign a supervisor to a kiosk of the organisation from today, or end the assignment
+    today (core.assignments: events assignment.created and assignment.ended). Owner and admin
+    only (policy, and the service's write_all). Raises LookupError no_person, no_branch, or
+    the service's code (not_supervisor, home_branch, already_assigned, not_assigned)."""
+    _check(deps, PEOPLE, "read", tool_call_id)
+    _check(deps, BRANCHES, "read", tool_call_id)
+    person = _person_of_org(deps, args.person_id)
+    branch = _target_branch(deps, args.branch_id)
+    change = assignments.unassign if args.remove else assignments.assign
+    try:
+        change(deps.session, deps.actor, person, branch, deps.today)
+    except assignments.AssignmentError as exc:
+        raise LookupError(exc.code) from exc
+    return AssignKioskOut(
+        person_id=person.id, name=person.name, branch=branch.name, removed=args.remove
+    )
+
+
 # ---- bindings -----------------------------------------------------------------------------
 
 
@@ -1708,5 +1744,11 @@ BINDINGS = [
         SetPhoneInput,
         "Link a Philippine mobile number to a person so their WhatsApp messages act as them.",
         precheck=check_phone,
+    ),
+    ToolBinding(
+        f"{MANIFEST.id}.assign_kiosk",
+        assign_kiosk,
+        AssignKioskInput,
+        "Assign a supervisor to another kiosk, or remove them from one (owner or admin).",
     ),
 ]

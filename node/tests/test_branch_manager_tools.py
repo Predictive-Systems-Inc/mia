@@ -442,11 +442,17 @@ def test_a_price_change_in_the_past_or_unchanged_is_refused(session: Session, bm
     assert session.exec(select(Approval).where(Approval.type == tools.CHANGE_PRICE)).all() == []
 
 
-def test_a_supervisor_reads_their_branch_only(session: Session, bm: Ferinos) -> None:
+def test_a_supervisor_reads_their_kiosks_only(session: Session, bm: Ferinos) -> None:
+    """D50: Marites is assigned to the Street stall in the seed; Nonoy (the commissary) is
+    assigned to no kiosk."""
     with pytest.raises(PermissionDenied):
         tools.weekly_summary(
-            deps_for(session, bm[1]["Marites"]), WeeklyInput(branch_id=stall(session).id), "w1"
+            deps_for(session, bm[1]["Nonoy"]), WeeklyInput(branch_id=bm[0].id), "w1"
         )
+    out = tools.weekly_summary(
+        deps_for(session, bm[1]["Marites"]), WeeklyInput(branch_id=stall(session).id), "w2"
+    )
+    assert [b.branch_id for b in out.branches] == [stall(session).id]
 
 
 def test_the_weekly_summary_reads_sales_and_stock(session: Session, bm: Ferinos) -> None:

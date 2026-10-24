@@ -120,6 +120,11 @@ def _args(action: str, r: Reader) -> tuple[dict[str, Any], str | None]:
         person = _pick(r, "person", q.people)
         args = {"person_id": person, "phone": q.phone or None}
         return args, "person" if not person else None if q.phone else "phone"
+    if action == "assign_kiosk":
+        person = _pick(r, "supervisor", q.supervisors)
+        branch = _pick(r, "branch", q.branches)
+        chosen = {"person_id": person, "branch_id": branch, "remove": r.yes("remove")}
+        return chosen, "person" if not person else None if branch else "kiosk"
     if action == "decide_experiment_result":
         return {"keep": r.yes("keep")}, None
     if action == "reply_only":

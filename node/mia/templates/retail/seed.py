@@ -30,6 +30,7 @@ from mia.agents.production_planner import tools as pp_tools
 from mia.agents.production_planner.models import Recipe
 from mia.agents.shift_supervisor import roster
 from mia.core import events, orgconfig, scheduling, store
+from mia.core.assignments import assign
 from mia.core.models import (
     Actor,
     Availability,
@@ -235,6 +236,9 @@ def seed(session: Session, today: dt.date | None = None) -> Branch:
             language=lang,
             skills=SKILLS.get(name),
         )
+    # D50: each kiosk supervisor is also assigned to the other kiosk, from the counts' first day
+    for name, other in (("Marites", branches[1]), ("Jun", branches[0])):
+        assign(session, Actor.system(other.id), staff[name], other, today - dt.timedelta(days=14))
     clerks = {0: staff["Ana"], 1: staff["Pao"]}
     strategies = _seed_strategies(session, actor)
     planned: list[Planned] = []

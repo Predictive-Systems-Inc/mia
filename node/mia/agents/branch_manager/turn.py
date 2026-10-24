@@ -29,7 +29,7 @@ from mia.core import auth, events, orgconfig
 from mia.core.egress import EgressContext, egress_context
 from mia.core.ids import new_id
 from mia.core.jev import JevError, JevUnreachable
-from mia.core.models import Event, Message, Person, Thread
+from mia.core.models import Branch, Event, Message, Person, Thread
 from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied, Resource, get_rbac
 from mia.i18n import t
@@ -41,16 +41,21 @@ _BINDINGS = {b.tool_id: b for b in tools.BINDINGS}  # importing tools registers 
 _DECIDE_TOOL = Resource(kind="tool", name=f"{MANIFEST.id}.decide_experiment")
 OWN_SUGGESTION = "bm.strategy.seasonal"  # the agent's own suggestion (Q74): last year's month
 MAX_OPTIONS = 5  # proposal buttons; a QuickRepliesBlock holds six
-PEOPLE_TOOLS = ("add_person", "set_phone")
+PEOPLE_TOOLS = ("add_person", "set_phone", "assign_kiosk")
 # A people action missing an input asks for it; set_phone's person is asked as a name.
 PERSON_ASKS = {"name": "bm.person.ask_name", "role": "bm.person.ask_role",
-               "phone": "bm.person.ask_phone", "person": "bm.person.ask_who"}  # fmt: skip
+               "phone": "bm.person.ask_phone", "person": "bm.person.ask_who",
+               "kiosk": "bm.assign.ask_kiosk"}  # fmt: skip
 PERSON_REFUSALS = {
     "person_exists": "bm.person.exists",
     "phone_invalid": "bm.person.ask_phone",
     "phone_taken": "bm.person.phone_taken",
     "phone_set": "bm.person.phone_set",
     "phone_role": "bm.person.phone_role",
+    "not_supervisor": "bm.assign.not_supervisor",
+    "home_branch": "bm.assign.home_branch",
+    "already_assigned": "bm.assign.already_assigned",
+    "not_assigned": "bm.assign.not_assigned",
 }
 PHONE_EXAMPLE = "0917 123 4567"
 
@@ -410,6 +415,10 @@ def _result(
         blocks = replies.weekly(tools.WeeklyOutput.model_validate(out), names, currency, lang)
     elif tool == "monthly_letter":
         blocks = replies.monthly(tools.MonthlyOutput.model_validate(out), names, lang)
+    elif tool == "assign_kiosk":
+        a = tools.AssignKioskOut.model_validate(out)
+        key = "bm.assign.removed" if a.removed else "bm.assign.done"
+        blocks = [TextBlock(text=t(key, lang, name=a.name, branch=a.branch))]
     elif tool in PEOPLE_TOOLS:
         days = auth.CODE_TTL["invite"].days
         blocks = replies.person(tools.PersonOut.model_validate(out), days, lang)
@@ -457,7 +466,9 @@ def _run(
             key = PERSON_REFUSALS[str(out["message"])]
             who = deps.session.get(Person, str(args.get("person_id") or ""))
             name = who.name if who is not None else str(args.get("name") or "")
-            text = t(key, deps.lang, name=name, example=PHONE_EXAMPLE)
+            where = deps.session.get(Branch, str(args.get("branch_id") or ""))
+            branch = where.name if where is not None else ""
+            text = t(key, deps.lang, name=name, branch=branch, example=PHONE_EXAMPLE)
             return reply_text(session, deps, thread, text)
         key = replies.refusal_key(str(out["message"]))
         return reply_text(session, deps, thread, t(key, deps.lang, **tools.WORDED))
@@ -550,7 +561,8 @@ SPEC = AgentSpec(
     router_description=(
         "Leading the shop: coaching and tips for staff, how to sell more and advice on low sales,"
         " upselling, price and promo experiments, menu prices, changing short codes and combos,"
-        " opening hours, who is in charge, people and roles and who approves what, permits and"
+        " opening hours, who is in charge, people and roles and who approves what, assigning a"
+        " supervisor to another kiosk or removing them from one, permits and"
         " renewals, the weekly coaching summary; not sales figures for a day, week or month (benta"
         " kahapon, last week per item), not the list of item codes, not sales counts or targets"
         " and not a shift change."
