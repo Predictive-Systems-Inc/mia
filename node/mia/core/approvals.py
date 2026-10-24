@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlmodel import Session, col, select
 
-from mia.core import events, store
+from mia.core import assignments, events, store
 from mia.core.db import utcnow
 from mia.core.models import Actor, Approval, Person
 from mia.core.rbac import get_rbac
@@ -211,6 +211,7 @@ def decide(
     """Record a decision. Raises ApprovalError when any approval rule is broken (a requester
     decides their own request only as an owner of its branch with a fresh step-up); an app_only
     approval also needs the app channel, aal2 and a PIN step-up in the last five minutes
+    (the approval's branch is the decider's or one they are assigned to, D50)
     (StepUpRequired); a chat decision is taken only for a `chat` approval (D47); each refusal
     is written as `approval.refused`. A request that times out
     at the decision expires and is committed, then runs its type's opted-in reject handler
@@ -219,7 +220,7 @@ def decide(
     if outcome not in ("approved", "rejected"):
         raise ValueError("outcome must be approved or rejected")
     approval = session.get(Approval, approval_id)
-    if approval is None or approval.branch_id != decider.branch_id:
+    if approval is None or approval.branch_id not in assignments.actor_branches(session, decider):
         raise ApprovalError("approval not found")
     was_open = approval.status in ("pending", "escalated")
     approval = expire_if_due(session, approval, decider)

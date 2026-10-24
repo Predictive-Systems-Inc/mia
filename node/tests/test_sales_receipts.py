@@ -58,7 +58,7 @@ from mia.i18n import t
 from mia.settings import get_settings
 from mia.templates.retail import items as retail_items
 from mia.templates.retail.items import price_on
-from tests.conftest import BK_TODAY, RS_TODAY, Pin
+from tests.conftest import BK_TODAY, RS_TODAY, Pin, single_kiosks
 from tests.test_bookkeeper_chat import _answers, _turn, jev_on  # noqa: F401 (a fixture)
 from tests.test_bookkeeper_tools import deps_for as bk_deps
 from tests.test_bookkeeper_tools import told
@@ -1695,6 +1695,7 @@ def test_a_covering_clerks_void_goes_to_the_visits_kiosk(
     """Pao (Street stall home) covers the Mall kiosk and voids a Mall receipt: the approval is
     the Mall's, its card goes to Marites (Mall), not Jun (Street); Jun cannot decide it,
     Pao never decides his own, Marites can."""
+    single_kiosks(session)  # D50: no supervisor is assigned to the other kiosk here
     receipts_kiosk(monkeypatch)
     people = rs[1]
     pao, jun, marites = people["Pao"], people["Jun"], people["Marites"]

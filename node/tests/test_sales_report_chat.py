@@ -23,7 +23,7 @@ from mia.core.models import Actor, Branch, EgressLog, Event, Message, Person, Th
 from mia.core.rbac import Rbac, Resource
 from mia.i18n import t
 from mia.settings import get_settings
-from tests.conftest import RS_TODAY
+from tests.conftest import RS_TODAY, single_kiosks
 from tests.evals.cases import FOLDER
 from tests.test_sales_chat import _answers, _buttons, _only_sales, _turn
 from tests.test_sales_tools import deps_for
@@ -164,6 +164,7 @@ def test_the_model_reads_only_the_kiosks_the_person_may_read(
 def test_the_owner_asks_across_kiosks_and_a_supervisor_is_refused(
     session: Session, chat: Ferinos, model: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    single_kiosks(session)  # D50: no supervisor is assigned to the other kiosk here
     people = chat[1]
     _rephrase(monkeypatch)
     reply = _turn(session, people["Rosa"], "benta last week per kiosk")
@@ -281,6 +282,7 @@ def test_a_saved_report_runs_with_no_model_call(
 def test_a_saved_report_checks_the_new_askers_rights(
     session: Session, chat: Ferinos, model: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    single_kiosks(session)  # D50: no supervisor is assigned to the other kiosk here
     people = chat[1]
     _rephrase(monkeypatch)
     first = _turn(session, people["Rosa"], "benta last week per kiosk")

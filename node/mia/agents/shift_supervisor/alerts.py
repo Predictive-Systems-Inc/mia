@@ -26,7 +26,7 @@ from mia.agents.shift_supervisor.rules import _visit_card, is_retail, word_key
 from mia.agents.shift_supervisor.tools import LATE_HOLD_MAX, LATE_NOTICE, VisitInfo, visit_info
 from mia.chat.blocks import Block, TextBlock
 from mia.chat.channels import notify
-from mia.core import approvals, events, scheduling
+from mia.core import approvals, assignments, events, scheduling
 from mia.core.models import Actor, Approval, Branch, Event, Person, Timesheet, Visit
 from mia.core.orgconfig import load as load_org
 from mia.i18n import t
@@ -72,8 +72,12 @@ def _people(session: Session, branch_id: str, role: str) -> list[Person]:
 
 
 def supervisors(session: Session, branch_id: str) -> list[Person]:
-    """The branch's supervisors, or its admins and owners when it has none; each once."""
+    """The branch's supervisors and the supervisors assigned to it today (D50), or its admins
+    and owners when it has none; each once."""
+    branch = session.get(Branch, branch_id)
     found = _people(session, branch_id, "supervisor")
+    if branch is not None:
+        found += assignments.assigned_to(session, branch_id, assignments.local_day(branch))
     if not found:
         found = _people(session, branch_id, "admin") + _people(session, branch_id, "owner")
     seen: set[str] = set()

@@ -31,6 +31,7 @@ from mia.core.models import (
 )
 from mia.core.rbac import PermissionDenied
 from mia.templates.retail.models import RetailBranchHours, RetailItem
+from tests.conftest import single_kiosks
 
 Ferinos = tuple[Branch, dict[str, Person]]
 MNL = ZoneInfo("Asia/Manila")
@@ -269,6 +270,7 @@ def test_a_breakdown_keeps_the_range_cap(session: Session, ferinos: Ferinos) -> 
 
 
 def test_a_supervisor_cannot_report_all_branches(session: Session, ferinos: Ferinos) -> None:
+    single_kiosks(session)  # D50: no supervisor is assigned to the other kiosk here
     _, people = ferinos
     args = PeriodReportInput(start=today(), end=today(), branch_id="all")
     with pytest.raises(PermissionDenied):
@@ -314,6 +316,7 @@ def test_a_correction_for_a_named_day(session: Session, ferinos: Ferinos) -> Non
 def test_a_supervisor_reading_another_branch_is_an_rbac_deny(
     session: Session, ferinos: Ferinos
 ) -> None:
+    single_kiosks(session)  # D50: no supervisor is assigned to the other kiosk here
     _, people = ferinos
     with pytest.raises(PermissionDenied):
         tools.today(

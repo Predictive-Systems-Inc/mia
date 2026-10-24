@@ -34,6 +34,8 @@ from mia.i18n import t
 from mia.settings import get_settings
 from tests.conftest import CLOCK_USERS
 
+pytestmark = pytest.mark.usefixtures("one_kiosk_each")  # D50: one kiosk per supervisor
+
 Ferinos = tuple[Branch, dict[str, Person]]
 Pin = Callable[[dt.datetime], dt.datetime]
 MNL = ZoneInfo("Asia/Manila")

@@ -4,7 +4,8 @@ the business date and the hours are the retail template's (mia.templates.retail.
 
 Branch scoping: every tool works on the person's own branch. Naming another branch needs the
 read_all or write_all action on the data resource in RBAC (admin, and the owner through the
-hierarchy); anyone else gets PermissionDenied.
+hierarchy); anyone else gets PermissionDenied. A supervisor reads the kiosks they are assigned
+to (D50) without it.
 
 A supplier order is money: the manifest gives draft_order risk money, so the guard in
 agents/base.py creates the approval (evidence: the tool call id and the validated input) and
@@ -67,11 +68,13 @@ def _as_reporter(resource: Resource, deps: AgentDeps) -> Resource:
 def _branch(
     deps: AgentDeps, branch_id: str | None, resource: Resource, action: str, tool_call_id: str
 ) -> Branch:
-    """The person's branch, or another branch of the organisation after the `<action>_all`
-    check (PermissionDenied without it). Raises LookupError for a branch outside it."""
+    """The person's branch, a kiosk they are assigned to for a read (D50, deps.kiosks), or
+    another branch of the organisation after the `<action>_all` check (PermissionDenied
+    without it). Raises LookupError for a branch outside it."""
     if branch_id is None or branch_id == deps.branch.id:
         return deps.branch
-    _check(deps, resource, f"{action}_all", tool_call_id)
+    if action != "read" or branch_id not in deps.kiosks():
+        _check(deps, resource, f"{action}_all", tool_call_id)
     branch = deps.session.get(Branch, branch_id)
     if branch is None or branch.organisation_id != deps.organisation_id:
         raise LookupError("branch")

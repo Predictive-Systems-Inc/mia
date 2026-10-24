@@ -45,6 +45,8 @@ from tests.conftest import BK_TODAY, Pin
 from tests.test_bookkeeper_tools import BINDING, deps_for
 from tests.test_sales_tools import stall
 
+pytestmark = pytest.mark.usefixtures("one_kiosk_each")  # D50: one kiosk per supervisor
+
 Ferinos = tuple[Branch, dict[str, Person]]
 MNL = ZoneInfo("Asia/Manila")
 EN = "en"

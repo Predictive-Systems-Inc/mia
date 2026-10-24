@@ -34,6 +34,8 @@ from mia.i18n import t
 from mia.templates.retail.models import RetailBranchHours, RetailItem
 from tests.test_sales_tools import deps_for
 
+pytestmark = pytest.mark.usefixtures("one_kiosk_each")  # D50: one kiosk per supervisor
+
 Ferinos = tuple[Branch, dict[str, Person]]
 At = Callable[[int, int], dt.datetime]
 BRANCH_MANAGER = BM.id

@@ -642,3 +642,27 @@ def pp_en(pp_shop: Shop, session: Session) -> tuple[Branch, dict[str, Person]]:
 def pp_pin(pp_shop: Shop) -> Pin:
     """Move the pp_shop clock to an aware moment (_set_at from PP_TODAY)."""
     return _set_at(pp_shop, PP_TODAY)
+
+
+def single_kiosks(session: Session) -> None:
+    """D50: end every seeded kiosk assignment where it began (never active), so each
+    supervisor is back to one kiosk; for tests of one kiosk's alerts and reads."""
+    from mia.core import assignments
+    from mia.core.models import BranchAssignment
+
+    for row in session.exec(select(BranchAssignment)).all():
+        person, branch = session.get(Person, row.person_id), session.get(Branch, row.branch_id)
+        assert person is not None and branch is not None
+        assignments.unassign(session, Actor.system(branch.id), person, branch, row.from_date)
+    session.commit()
+
+
+@pytest.fixture
+def one_kiosk_each(request: pytest.FixtureRequest, session: Session) -> None:
+    """single_kiosks after the test's Ferino's shop is seeded (ferinos, rs_shop, bk_shop or a
+    module's hr)."""
+    for name in ("ferinos", "rs_shop", "bk_shop", "bm_shop", "hr"):
+        if name in request.fixturenames:
+            request.getfixturevalue(name)
+            single_kiosks(session)
+            return

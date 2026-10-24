@@ -29,6 +29,8 @@ from mia.templates.retail.models import RetailBranchHours, RetailClosure
 from tests.conftest import Shop
 from tests.test_inventory_tools import deps_for, ingredient, item, stall
 
+pytestmark = pytest.mark.usefixtures("one_kiosk_each")  # D50: one kiosk per supervisor
+
 Ferinos = tuple[Branch, dict[str, Person]]
 At = Callable[[int, int], dt.datetime]
 DAY = dt.timedelta(days=1)

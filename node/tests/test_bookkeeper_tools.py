@@ -48,7 +48,7 @@ from mia.core.models import (
 from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied
 from mia.i18n import t
-from tests.conftest import BK_TODAY, Pin
+from tests.conftest import BK_TODAY, Pin, single_kiosks
 from tests.test_sales_tools import stall
 
 Ferinos = tuple[Branch, dict[str, Person]]
@@ -237,6 +237,7 @@ def test_a_supervisor_never_sees_a_payslip_total(session: Session, bk: Ferinos) 
 
 
 def test_a_supervisor_reads_their_branch_only(session: Session, bk: Ferinos) -> None:
+    single_kiosks(session)  # D50: no supervisor is assigned to the other kiosk here
     with pytest.raises(PermissionDenied):
         tools.balances(
             deps_for(session, bk[1]["Marites"]), BalancesInput(branch_id=stall(session).id), "b1"

@@ -446,13 +446,14 @@ def _wants_report(
 
 
 def _readable(session: Session, deps: AgentDeps) -> tuple[list[Branch], bool]:
-    """The shops the person may read (her own; every shop with read_all on sales_counts) and
-    whether she may read every shop."""
+    """The shops the person may read (her own and the kiosks she is assigned to, D50; every
+    shop with read_all on sales_counts) and whether All kiosks is offered (read_all, or two or
+    more kiosks of her own: "all" is then hers)."""
     wide = get_rbac().check(deps.actor, COUNTS, "read_all", session=session)
-    shops = [deps.branch]
-    if wide:
-        shops += [b for b in retail_hours.shops(session, deps.organisation_id) if b != deps.branch]
-    return shops, wide
+    kiosks = deps.kiosks()
+    others = [b for b in retail_hours.shops(session, deps.organisation_id) if b != deps.branch]
+    shops = [deps.branch, *(b for b in others if wide or b.id in kiosks)]
+    return shops, wide or len(shops) > 1
 
 
 def _report_context(deps: AgentDeps) -> report_model.Context:

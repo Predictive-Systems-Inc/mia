@@ -41,6 +41,8 @@ from tests.conftest import MNL, RS_TODAY, Shop
 from tests.day import Day, Said
 from tests.test_data_standard_1_7 import visit_of
 
+pytestmark = pytest.mark.usefixtures("one_kiosk_each")  # D50: one kiosk per supervisor
+
 FIL = "fil"
 MILA = "+639170000101"  # the seeded customer Mila Reyes (fil)
 SS, SH, IM, BK, CS, BM = (

@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, col, select
 
 from mia.agents.shift_supervisor import scoring
-from mia.core import approvals, events, store
+from mia.core import approvals, assignments, events, store
 from mia.core.db import utcnow  # bound here, so the tests' clock pins never reach it
 from mia.core.models import (
     Actor,
@@ -600,7 +600,8 @@ def week(
 
 
 def inbox(session: Session, actor: Actor) -> list[Approval]:
-    """Pending and escalated approvals the actor may decide (approver roles, or the escalation
+    """Pending and escalated approvals the actor may decide at their branch or a kiosk they
+    are assigned to (D50) (approver roles, or the escalation
     roles once escalated; their own request only as an owner of its branch, D37), oldest
     first. Roles inherit through policy.csv (owner > admin > ...)."""
     from mia.core.rbac import get_rbac
@@ -610,7 +611,9 @@ def inbox(session: Session, actor: Actor) -> list[Approval]:
     for role in list(mine):
         mine.update(enforcer.get_implicit_roles_for_user(role, "*"))
     out = []
-    for approval in approvals.pending(session, actor.branch_id):
+    branches = sorted(assignments.actor_branches(session, actor))  # home and assigned (D50)
+    found = [a for b in branches for a in approvals.pending(session, b)]
+    for approval in sorted(found, key=lambda a: a.id):
         own = actor.ids & approvals.requester_ids(approval)
         if own and not approvals.owner_of_own(session, approval, actor):
             continue  # nobody approves a request they made or triggered, but an owner (D37)

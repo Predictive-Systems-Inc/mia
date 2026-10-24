@@ -5,7 +5,9 @@ Branch scoping: every tool works on the person's own branch, or on the shop of h
 visit of the day when she covers another (at_visit, applied once to the turn's deps). Naming another branch of the
 organisation (or "all") needs the read_all or write_all action on the data resource in RBAC
 (admin, and the owner through the hierarchy); anyone else gets PermissionDenied. An owner or
-admin who names no branch in `today` sees every branch.
+admin who names no branch in `today` sees every branch. A supervisor also reads the kiosks
+they are assigned to (D50, deps.kiosks: home plus active assignments) without read_all, and
+"all" is those kiosks for them; writes keep needing write_all.
 
 The business date of a count (the retail template's hours.business_date) is the day before
 only just after a late closing, before the next opening; it is never asked.
@@ -26,7 +28,7 @@ from mia.agents.sales_supervisor import report as report_form
 from mia.agents.shift_supervisor import alerts
 from mia.chat.blocks import TextBlock
 from mia.chat.channels import notify
-from mia.core import approvals, events, sales, scheduling, store
+from mia.core import approvals, assignments, events, sales, scheduling, store
 from mia.core.db import utcnow
 from mia.core.models import (
     TENDERS,
@@ -125,13 +127,15 @@ def _is_lead(person: Person | None) -> bool:
 def _branch(
     deps: AgentDeps, branch_id: str | None, resource: Resource, action: str, tool_call_id: str
 ) -> Branch:
-    """The person's branch, or another branch of the organisation when RBAC allows
-    `<action>_all` on the resource (logged as an rbac event; PermissionDenied otherwise).
-    The person's own Branch row is read without a check: it is already in deps.
-    Raises LookupError for a branch outside the organisation."""
+    """The person's branch, a kiosk they are assigned to for a read (D50, deps.kiosks), or
+    another branch of the organisation when RBAC allows `<action>_all` on the resource
+    (logged as an rbac event; PermissionDenied otherwise). The person's own Branch row is
+    read without a check: it is already in deps. Raises LookupError for a branch outside
+    the organisation."""
     if branch_id is None or branch_id == deps.branch.id:
         return deps.branch
-    _check(deps, resource, f"{action}_all", tool_call_id)
+    if action != "read" or branch_id not in deps.kiosks():
+        _check(deps, resource, f"{action}_all", tool_call_id)
     branch = deps.session.get(Branch, branch_id)
     if branch is None or branch.organisation_id != deps.organisation_id:
         raise LookupError("branch")
@@ -142,11 +146,24 @@ def _branches(
     deps: AgentDeps, branch_id: str | None, resource: Resource, action: str, tool_call_id: str
 ) -> list[Branch]:
     """Every shop of the organisation by name for "all" (after the `<action>_all` check; the
-    commissary sells nothing), else the one branch _branch gives."""
+    commissary sells nothing), for a read without it the shops of deps.kiosks when there are
+    two or more (D50: an assigned supervisor's kiosks, never others), else the one branch
+    _branch gives."""
     if branch_id != "all":
         return [_branch(deps, branch_id, resource, action, tool_call_id)]
+    shops = retail_hours.shops(deps.session, deps.organisation_id)
+    mine = [b for b in shops if b.id in deps.kiosks()] if action == "read" else []
+    if len(mine) > 1 and not get_rbac().check(deps.actor, resource, f"{action}_all"):
+        return mine
     _check(deps, resource, f"{action}_all", tool_call_id)
-    return retail_hours.shops(deps.session, deps.organisation_id)
+    return shops
+
+
+def _beyond(deps: AgentDeps, branches: Sequence[Branch]) -> bool:
+    """True when a branch is outside the person's kiosks (deps.kiosks): its reads need
+    read_all."""
+    kiosks = deps.kiosks()
+    return any(b.id not in kiosks for b in branches)
 
 
 def _catalog(session: Session, branch_id: str) -> list[RetailItem]:
@@ -561,7 +578,7 @@ def period_report(
     branch read together) or per kiosk (the branches' order). Raises LookupError when end is
     before start, and sales.SalesRangeError("range") for more than MAX_SALES_DAYS days."""
     branches = _branches(deps, args.branch_id, COUNTS, "read", tool_call_id)
-    if branches != [deps.branch]:
+    if _beyond(deps, branches):
         for table in RECEIPT_TABLES:
             _check(deps, table, "read_all", tool_call_id)
     for table in SALES:
@@ -648,7 +665,7 @@ def report(deps: AgentDeps, args: ReportInput, tool_call_id: str) -> ReportOutpu
     an unknown item id and "branch" for a kiosk outside the organisation."""
     form = args.form
     branches = _report_branches(deps, form, tool_call_id)
-    if branches != [deps.branch]:
+    if _beyond(deps, branches):
         for table in RECEIPT_TABLES:
             _check(deps, table, "read_all", tool_call_id)
     for table in SALES:
@@ -1140,9 +1157,15 @@ def _tell(session: Session, person: Person, key: str, **params: object) -> None:
 
 
 def _others(deps: AgentDeps, people: list[Person]) -> list[Person]:
-    """The people of the requester's branch other than the requester: only they can decide
-    (approvals.decide refuses another branch)."""
-    return [p for p in people if p.id != deps.person.id and p.branch_id == deps.branch.id]
+    """The people other than the requester whose branch scope holds the requester's branch
+    (home or an assignment, D50): only they can decide (approvals.decide refuses another
+    branch)."""
+    here, day = deps.branch.id, deps.today
+    return [
+        p
+        for p in people
+        if p.id != deps.person.id and here in assignments.branches_of(deps.session, p, day)
+    ]
 
 
 def _request_void(deps: AgentDeps, args: VoidReceiptInput, tool_call_id: str) -> Approval:

@@ -33,7 +33,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 from sqlmodel import Session
 
-from mia.core import approvals, events
+from mia.core import approvals, assignments, events
 from mia.core.approvals import RISKY, ApprovalRequired
 from mia.core.egress import EgressContext, EgressTransport
 from mia.core.ids import new_id
@@ -162,6 +162,11 @@ class AgentDeps:
     notice: list[Any] = field(default_factory=list)  # blocks put before the reply (switch notice)
     resumed: bool = False  # a deferred turn answered later: the reply is a notification
     answer_id: str | None = None  # the message answered when a tap swapped in an earlier one
+
+    def kiosks(self) -> set[str]:
+        """The branches the person reads without read_all (D50): deps.branch (a cover's
+        kiosk too), their home and their active assignments on deps.today."""
+        return {self.branch.id} | assignments.branches_of(self.session, self.person, self.today)
 
 
 class ToolDeps(Protocol):

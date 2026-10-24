@@ -28,7 +28,7 @@ from mia.core.money import format_money
 from mia.core.rbac import PermissionDenied
 from mia.i18n import t
 from mia.templates.retail.models import RetailItem
-from tests.conftest import RS_TODAY
+from tests.conftest import RS_TODAY, single_kiosks
 from tests.test_sales_receipts import drawer, receipts_kiosk, ring
 from tests.test_sales_tools import deps_for
 
@@ -130,6 +130,7 @@ def test_report_sums_on_a_receipts_day(
 
 
 def test_kiosk_grouping_needs_read_all(session: Session, rs: Ferinos) -> None:
+    single_kiosks(session)  # D50: no supervisor is assigned to the other kiosk here
     people = rs[1]
     form = ReportForm(measure="amount", period="last_week", group_by="kiosk")
     with pytest.raises(PermissionDenied):

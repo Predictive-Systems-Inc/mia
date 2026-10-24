@@ -5,7 +5,7 @@ checks rights before it calls them.
 
 Scope: every tool works on the acting person's branch. Naming another branch needs read_all on
 every resource read (admin, and the owner through the hierarchy); anyone else gets
-PermissionDenied. tax_quarter and monthly_profit cover every branch the person may read_all.
+PermissionDenied. balances also reads a kiosk the person is assigned to (D50). tax_quarter and monthly_profit cover every branch the person may read_all.
 
 Money: record_expense refuses an amount over the expense limit in its precheck (over_limit),
 so a large expense has one path, record_large_expense (risk money, approval always, approvers
@@ -187,11 +187,18 @@ def _settings() -> orgconfig.BookkeeperSettings:
 
 
 def _read(
-    deps: AgentDeps, branches: list[Branch], resources: list[Resource], tool_call_id: str
+    deps: AgentDeps,
+    branches: list[Branch],
+    resources: list[Resource],
+    tool_call_id: str,
+    *,
+    kiosks: bool = False,
 ) -> None:
     """The read check on every resource, and read_all on each when a branch is not the
-    person's own (PermissionDenied otherwise)."""
-    other = any(b.id != deps.branch.id for b in branches)
+    person's own (PermissionDenied otherwise); with kiosks, a kiosk the person is assigned to
+    counts as their own (D50: cash counts and balances, never the books)."""
+    own = deps.kiosks() if kiosks else {deps.branch.id}
+    other = any(b.id not in own for b in branches)
     for resource in resources:
         _check(deps, resource, "read", tool_call_id)
         if other:
@@ -199,12 +206,18 @@ def _read(
 
 
 def _scoped(
-    deps: AgentDeps, branch_id: str | None, resources: list[Resource], tool_call_id: str
+    deps: AgentDeps,
+    branch_id: str | None,
+    resources: list[Resource],
+    tool_call_id: str,
+    *,
+    kiosks: bool = False,
 ) -> Branch:
-    """The person's branch, or the named branch of the organisation after read_all on every
-    resource. Raises PermissionDenied, or LookupError for a branch outside the organisation."""
+    """The person's branch, with kiosks one they are assigned to (D50), or the named branch of
+    the organisation after read_all on every resource. Raises PermissionDenied, or
+    LookupError for a branch outside the organisation."""
     branch = _branch(deps, branch_id, resources[0], "read", tool_call_id)
-    _read(deps, [branch], resources, tool_call_id)
+    _read(deps, [branch], resources, tool_call_id, kiosks=kiosks)
     return branch
 
 
@@ -942,8 +955,9 @@ class BalancesOut(BaseModel):
 
 def balances(deps: AgentDeps, args: BalancesInput, tool_call_id: str) -> BalancesOut:
     """The branch's petty balance, undeposited cash and the business dates in a row it was over
-    the limit. Another branch needs read_all on every table read."""
-    branch = _scoped(deps, args.branch_id, [CASH, EXPENSES, DEPOSITS], tool_call_id)
+    the limit. Another branch needs read_all on every table read, but a kiosk the person is
+    assigned to (D50)."""
+    branch = _scoped(deps, args.branch_id, [CASH, EXPENSES, DEPOSITS], tool_call_id, kiosks=True)
     petty, undeposited, days = _balances(deps, branch, tool_call_id)
     return BalancesOut(
         branch_id=branch.id,

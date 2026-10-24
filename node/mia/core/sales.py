@@ -15,7 +15,7 @@ from typing import Literal, NamedTuple
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, or_, select
 
-from mia.core import events, orgconfig, store
+from mia.core import assignments, events, orgconfig, store
 from mia.core.models import (
     DISCOUNT_REASONS,
     Actor,
@@ -509,9 +509,10 @@ def receipts(
     session: Session, actor: Actor, branch_id: str, business_date: dt.date
 ) -> list[SalesReceipt]:
     """The branch's receipts of a business date the actor may read: another branch needs
-    read_all, a clerk (read_own) sees only their own. PermissionDenied otherwise."""
+    read_all (a kiosk the person is assigned to does not, D50), a clerk (read_own) sees only
+    their own. PermissionDenied otherwise."""
     rbac = get_rbac()
-    if branch_id != actor.branch_id:
+    if branch_id not in assignments.actor_branches(session, actor):
         rbac.require(actor, RECEIPTS, "read_all", session=session)
     stmt = select(SalesReceipt).where(
         SalesReceipt.branch_id == branch_id, SalesReceipt.business_date == business_date
