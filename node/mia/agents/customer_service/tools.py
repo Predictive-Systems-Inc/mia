@@ -37,6 +37,7 @@ from mia.agents.customer_service import MANIFEST, calc, public
 from mia.agents.customer_service.actions import STAFF_ORDER_STATUSES, open_orders
 from mia.agents.customer_service.models import Complaint, Customer
 from mia.agents.customer_service.public import CustomerDeps
+from mia.channels.service import TEMPLATE_KIND
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.chat.channels import notify
 from mia.core import approvals, db, orgconfig, store
@@ -781,16 +782,24 @@ def _latest_ask(session: Session, person: Person, label: str) -> Approval | None
     return _asked_by(session, last.id)
 
 
-def _on_message(session: Session, person: Person, channel: str, context_id: str) -> Approval | None:
+def _on_message(
+    session: Session, person: Person, channel: str, context_id: str, label: str
+) -> Approval | None:
     """The order asked by the message a channel tap was made on: the person's sent outbox row
-    with that channel message id, its message (the idempotency key's prefix), its approval."""
+    on that channel with that channel message id, never a template notice (a held message's
+    notice shares its key), its message (the idempotency key's prefix) with `label` among its
+    buttons, and that message's approval."""
     row = session.exec(
         select(ChannelOutbox)
         .where(ChannelOutbox.channel == channel)
         .where(ChannelOutbox.channel_message_id == context_id)
         .where(ChannelOutbox.person_id == person.id)
+        .where(ChannelOutbox.kind != TEMPLATE_KIND)
     ).first()
-    return _asked_by(session, row.idempotency_key.split(":")[0]) if row else None
+    message = session.get(Message, row.idempotency_key.split(":")[0]) if row else None
+    if message is None or label.strip().casefold() not in {b.casefold() for b in _buttons(message)}:
+        return None
+    return _asked_by(session, message.id)
 
 
 def _open_asked(session: Session, person: Person) -> int:
@@ -851,7 +860,7 @@ def _tapped(
     never decided. The app's tap (no channel) takes the latest message's order, refused while
     more than one order asked of the person is open."""
     if channel is not None and context_id is not None:
-        found = _on_message(session, person, channel, context_id)
+        found = _on_message(session, person, channel, context_id, label)
         if found is not None:
             return found
     latest = _latest_ask(session, person, label)

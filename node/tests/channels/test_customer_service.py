@@ -1079,6 +1079,68 @@ def test_a_held_order_message_is_not_decided_by_a_tap_on_an_older_one(
     assert orders_of(session) == {"Mila": "confirmed", "Juan": "waiting"}
 
 
+def test_a_tap_on_a_held_messages_notice_decides_nothing(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ana_identity = linking.identity_for(session, "sim", ANA_ADDR)
+    assert ana_identity is not None
+    old = {"last_inbound_at": db.utcnow() - dt.timedelta(hours=30)}  # her window closed
+    store.update(session, ana_identity, old, Actor.system(ana_identity.branch_id))
+    session.commit()
+    mila_orders(client, sim, monkeypatch)  # held for Ana behind the new-message notice
+    (notice,) = [p.message_id for p in sim.sent if p.address == ANA_ADDR]
+    assert notice is not None
+    got = tap(client, sim, ANA_ADDR, CONFIRM, notice)  # the tap also releases the held message
+    assert got[-1] == t("cs.staff.decide_in_app", "fil")
+    assert new_order(session).status == "waiting"
+
+
+def test_a_tap_must_be_a_button_of_the_message_it_names(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mila_orders(client, sim, monkeypatch)
+    english = t("cs.staff.confirm", "en")  # Ana's message is in Filipino: not its button
+    got = tap(client, sim, ANA_ADDR, english)  # no order tap: it goes the normal chat way
+    assert t("cs.staff.you_confirmed", "fil", **MILAS) not in got
+    assert new_order(session).status == "waiting"
+
+
+def test_a_tap_with_someone_elses_message_decides_nothing(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mila_orders(client, sim, monkeypatch)
+    anas = asked_id(sim, ANA_ADDR)
+    refused = [t("cs.staff.decide_in_app", "fil")]
+    assert tap(client, sim, MARITES_ADDR, CONFIRM, anas) == refused  # same branch, Ana's message
+    assert new_order(session).status == "waiting"
+
+
+def test_a_message_id_from_another_channel_decides_nothing(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mila_orders(client, sim, monkeypatch)
+    anas = asked_id(sim, ANA_ADDR)  # a sim message id, tapped as if on WhatsApp
+    got = tools.decide_tap(session, staff["Ana"], CONFIRM, "whatsapp", anas)
+    assert got == t("cs.staff.decide_in_app", "fil")
+    assert new_order(session).status == "waiting"
+
+
 def test_a_denied_tap_answers_and_finishes_the_message(
     staff: dict[str, Person],
     client: TestClient,
