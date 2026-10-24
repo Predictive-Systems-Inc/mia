@@ -1,6 +1,6 @@
 """The branch manager's work on the tick: the experiment tick (prices due, experiments started,
 ended and scored), the morning message to each clerk on shift (yesterday's branch total, today's
-target, one tip and one quote), cheers and one kind nudge after the closing, the experiment's
+target, one tip and one word of encouragement), cheers and one kind nudge after the closing, the experiment's
 start and result to the leads and the requester, the weekly summary on Monday (the first open
 day after a closed one) and the monthly numbers letter on the month's first open day.
 
@@ -9,11 +9,11 @@ What is due is pure code (rule 7): the window functions take the branch, its hou
 closing's business date after midnight (retail_hours.after_close). Every number is code: the
 day share (the sales supervisor's _share: the owner's target wins, a day target beats a month
 target), the personal best (calc.personal_best over the clerk's own amounts), the nudge
-(calc.nudge_due), the tip rotation (calc.pick_tip). Tips and quotes come only from
+(calc.nudge_due), the tip rotation (calc.pick_tip). Tips and cheers come only from
 branch_manager_tips rows; a person with every tip given within 30 days gets no tip line.
 
 Markers: one Coaching row per person and day for the morning message, a cheer and a nudge
-(and one per tip or quote given), written with the send; `{id}.weekly_sent` per branch and
+(and one per tip or cheer given), written with the send; `{id}.weekly_sent` per branch and
 Monday, `{id}.monthly_sent` per branch and month. Cheers and nudges are urgent (a branch may
 close as quiet hours start); the morning message, the weekly and the monthly wait out quiet
 hours in deliver. Nothing is sent with nothing to say. An experiment's result goes with Keep and
@@ -171,7 +171,7 @@ def _once_each(people: Sequence[Person]) -> list[Person]:
 
 
 def _pick(session: Session, person: Person, kind: str, day: dt.date) -> Tip | None:
-    """A general tip or quote in the person's language (English rows when it has none), not
+    """A general tip or word of encouragement in the person's language (English rows when it has none), not
     given to them within calc.TIP_DAYS (calc.pick_tip); None when every one was."""
     rows = tools._tips(session, _lang(person), kind) or tools._tips(
         session, tools.DEFAULT_LANGUAGE, kind
@@ -185,29 +185,29 @@ def _pick(session: Session, person: Person, kind: str, day: dt.date) -> Tip | No
 
 
 def morning_text(
-    lang: str, yesterday: str | None, target: str | None, tip: Tip | None, quote: Tip | None
+    lang: str, yesterday: str | None, target: str | None, tip: Tip | None, cheer: Tip | None
 ) -> str | None:
     """The morning words: yesterday's total and today's target (or what is missing), the tip
-    and the quote with its source, each line only when it has a row; None with nothing to
-    say."""
-    if tip is None and quote is None and yesterday is None and target is None:
+    and the word of encouragement (never a source line), each only when it has a row; None
+    with nothing to say."""
+    if tip is None and cheer is None and yesterday is None and target is None:
         return None
     values = {
         "yesterday": yesterday or t("bm.morning.no_counts", lang),
         "target": target or t("bm.morning.no_target", lang),
     }
-    if tip is not None and quote is not None:
-        return t("bm.morning", lang, tip=tip.text, quote=quote.text, source=quote.source, **values)
-    if quote is not None:
-        return t("bm.morning.no_tip", lang, quote=quote.text, source=quote.source, **values)
+    if tip is not None and cheer is not None:
+        return t("bm.morning", lang, tip=tip.text, cheer=cheer.text, **values)
+    if cheer is not None:
+        return t("bm.morning.no_tip", lang, cheer=cheer.text, **values)
     if tip is not None:
-        return t("bm.morning.no_quote", lang, tip=tip.text, **values)
+        return t("bm.morning.no_cheer", lang, tip=tip.text, **values)
     return t("bm.morning.result", lang, **values)
 
 
 def _morning(session: Session, branch: Branch, hours: Hours, day: dt.date) -> list[Message]:
     """The morning message to each clerk on shift without one today, its Coaching rows (the
-    morning marker, the tip and the quote given) written with the send."""
+    morning marker, the tip and the word given) written with the send."""
     yesterday = day - dt.timedelta(days=1)
     counted = retail_hours.open_days(hours)(yesterday) and sales_due._reporters(
         session, branch.id, yesterday
@@ -220,19 +220,19 @@ def _morning(session: Session, branch: Branch, hours: Hours, day: dt.date) -> li
         if _had(session, person.id, "morning", day):
             continue
         lang = _lang(person)
-        tip, quote = _pick(session, person, "tip", day), _pick(session, person, "quote", day)
+        tip, cheer = _pick(session, person, "tip", day), _pick(session, person, "cheer", day)
         text = morning_text(
             lang,
             None if total is None else format_money(total, currency, lang),
             None if share is None else format_money(share, currency, lang),
             tip,
-            quote,
+            cheer,
         )
         if text is None:
             continue
         message = _send(session, branch, person, [TextBlock(text=text)])
         _coached(session, branch, person, "morning", "morning_sent", day, message)
-        for row in (tip, quote):
+        for row in (tip, cheer):
             if row is not None:
                 _coached(session, branch, person, "tip", "tip_given", day, message, row.id)
         sent.append(message)

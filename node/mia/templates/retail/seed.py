@@ -403,11 +403,9 @@ def _seed_branch_manager(session: Session, items: list[RetailItem], actor: Actor
                 source=source,
             )
             store.insert(session, tip, actor)
-    for fil, en, source in bm_tips.QUOTES:
+    for fil, en in bm_tips.CHEERS:
         for language, text in (("fil", fil), ("en", en)):
-            store.insert(
-                session, Tip(language=language, kind="quote", text=text, source=source), actor
-            )
+            store.insert(session, Tip(language=language, kind="cheer", text=text, source=""), actor)
 
 
 def _seed_strategies(session: Session, actor: Actor) -> list[Strategy]:

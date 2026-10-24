@@ -423,3 +423,8 @@ Answers to docs/questions.md. Reference the question number. Decisions that chan
 - Context: the receipts day passed end to end with the real classifier on a scratch copy (check-in opens the drawer, receipts by text, the ring-up question with the total, a void approved by head staff from the approvals inbox, the closing count to the peso, the owner's report from receipts); the owner was asked whether to switch.
 - Decision: yes. Ferino's Mall kiosk records sales as receipts from 23 October 2026 with a PHP 1,000.00 opening float (settings.yaml `sales.receipts_from` and `sales.opening_float`); the Street stall stays on counts.
 - Consequences: clerks at the Mall kiosk ring up each sale in the chat (the chat is the till, Q119); voids go to head staff and refunds to the owner or an admin; a count typed there is asked as a receipt; the tests keep Ferino's on counts unless a test asks for receipts (conftest `_counts_only`).
+
+## D48: The morning message carries a word of encouragement, not a quote (24 Oct 2026)
+- Context: the owner: "proverbs sound more like sermon than motivation... tips or words of encouragement would be enough."
+- Decision: the branch manager's morning message is yesterday's total, today's target, one tip and one short word of encouragement written for a kiosk clerk (en and fil, about 20 lines each, plain text-message register). No proverb, no sourced quote, no source line. Tip rows of kind cheer replace kind quote; the source column stays and is empty for them; rotation is calc.pick_tip as for tips. Supersedes the curated, source-named quote of the agents catalogue and Q75 for the morning message.
+- Consequences: i18n keys bm.morning* take {cheer} and no {source} (all ten languages); no data standard change.

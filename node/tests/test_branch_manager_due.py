@@ -1,5 +1,5 @@
 """The branch manager's due work on the tick at fixed clocks (bm_en, BM_TODAY a Monday): the
-morning message with a tip and a quote, cheers and one kind nudge after the closing, the
+morning message with a tip and a word of encouragement, cheers and one kind nudge after the closing, the
 experiment's result with Keep and Revert, the weekly summary and the monthly numbers letter."""
 
 import datetime as dt
@@ -68,7 +68,7 @@ def texts(session: Session, person: Person) -> list[str]:
 
 
 def given(session: Session, person: Person, kind: str) -> Tip:
-    """The one tip or quote (Tip.kind) the person was given, through its Coaching row."""
+    """The one tip or cheer (Tip.kind) the person was given, through its Coaching row."""
     stmt = select(Coaching).where(Coaching.person_id == person.id).where(Coaching.kind == "tip")
     rows = [session.get(Tip, c.tip_id) for c in session.exec(stmt)]
     (row,) = [r for r in rows if r is not None and r.kind == kind]
@@ -149,36 +149,51 @@ def test_a_closed_monday_moves_the_weekly_to_the_first_open_day(
 # ---- the morning message --------------------------------------------------------------------
 
 
-def test_the_morning_message_has_result_tip_and_quote(
+def test_the_morning_message_has_result_tip_and_cheer(
     session: Session, bm_en: Ferinos, pin: Pin
 ) -> None:
     kiosk, people = bm_en
     assert _tick(session, pin, at(TODAY, 9, 10)) >= 2
     (note,) = notifications(session, people["Ana"])
-    tip, quote = given(session, people["Ana"], "tip"), given(session, people["Ana"], "quote")
+    tip, cheer = given(session, people["Ana"], "tip"), given(session, people["Ana"], "cheer")
     assert note.text == t(
         "bm.morning",
         EN,
         yesterday=money(day_total(session, kiosk, YESTERDAY)),
         target=money(share(session, kiosk, TODAY)),
         tip=tip.text,
-        quote=quote.text,
-        source=quote.source,
+        cheer=cheer.text,
     )
+    assert cheer.language == "en" and cheer.text in note.text and cheer.source == ""
+    assert not any(w in note.text.lower() for w in ("salawikain", "proverb", "public domain"))
     assert tip.item_id is None and [
         c.message_id for c in coached(session, people["Ana"], "morning")
     ] == [note.id]
 
 
+def test_the_encouragement_line_changes_on_consecutive_days(
+    session: Session, bm_en: Ferinos, pin: Pin
+) -> None:
+    _, people = bm_en
+    _tick(session, pin, at(TODAY, 9, 10))
+    _tick(session, pin, at(TODAY + ONE_DAY, 9, 10))
+    lines = [
+        r.text
+        for r in (session.get(Tip, c.tip_id) for c in coached(session, people["Ana"], "tip"))
+        if r is not None and r.kind == "cheer"
+    ]
+    assert len(lines) == 2 and lines[0] != lines[1]
+
+
 def test_the_morning_message_in_filipino(session: Session, bm: Ferinos, pin: Pin) -> None:
     """The proof shop's language end to end: Ana (fil) gets the morning words, the money and
-    a tip and a quote of her language."""
+    a tip and an encouragement line of her language."""
     kiosk, people = bm
     assert people["Ana"].language == "fil"
     _tick(session, pin, at(TODAY, 9, 10))
     (note,) = notifications(session, people["Ana"])
-    tip, quote = given(session, people["Ana"], "tip"), given(session, people["Ana"], "quote")
-    assert (tip.language, quote.language) == ("fil", "fil")
+    tip, cheer = given(session, people["Ana"], "tip"), given(session, people["Ana"], "cheer")
+    assert (tip.language, cheer.language) == ("fil", "fil")
     target = share(session, kiosk, TODAY)
     assert target is not None
     assert note.text == t(
@@ -187,8 +202,7 @@ def test_the_morning_message_in_filipino(session: Session, bm: Ferinos, pin: Pin
         yesterday=format_money(day_total(session, kiosk, YESTERDAY), "PHP", "fil"),
         target=format_money(target, "PHP", "fil"),
         tip=tip.text,
-        quote=quote.text,
-        source=quote.source,
+        cheer=cheer.text,
     )
 
 
@@ -213,14 +227,13 @@ def test_a_clerk_with_every_tip_used_gets_no_tip_line(
     session.commit()
     _tick(session, pin, at(TODAY, 9, 10))
     (note,) = notifications(session, ana)
-    quote = given(session, ana, "quote")
+    cheer = given(session, ana, "cheer")
     assert note.text == t(
         "bm.morning.no_tip",
         EN,
         yesterday=money(day_total(session, kiosk, YESTERDAY)),
         target=money(share(session, kiosk, TODAY)),
-        quote=quote.text,
-        source=quote.source,
+        cheer=cheer.text,
     )
 
 

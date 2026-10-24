@@ -9,14 +9,14 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
 
-TIP_DAYS = 30  # a tip or quote is never given to the same person twice within 30 days
+TIP_DAYS = 30  # a tip or cheer is never given to the same person twice within 30 days
 BEST_DAYS = 90  # a personal best is the best amount in the 90 days before
 NUDGE_GAP = 7  # never two nudges to one person in a week
 
 
 @dataclass(frozen=True)
 class TipRef:
-    """What pick_tip needs of a tip row: its id, kind (tip or quote) and item (None: general)."""
+    """What pick_tip needs of a tip row: its id, kind (tip or cheer) and item (None: general)."""
 
     id: str
     kind: str

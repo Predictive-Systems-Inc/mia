@@ -55,7 +55,7 @@ dates. 8. "Why did it go well" asked after a good day, answers stored with a the
 9. Questions across days and branches. 10. First contact on a channel (language question).
 
 **branch_manager (part 3)**
-1. Morning message to staff: result, target, one tip, one quote (curated, source named).
+1. Morning message to staff: result, target, one tip, one word of encouragement (curated, no source; was a sourced quote until 24 Oct 2026, the owner: proverbs sounded like sermons).
 2. Cheer on a met target or personal best; a kind nudge after three misses.
 3. Per-clerk coaching for the owner or head staff: who sells which items well, who improved, a
 suggested pairing. 4. "How do I sell more salted egg" answered from the branch's own why notes

@@ -99,13 +99,16 @@ def test_set_short_codes_logs_the_change(session: Session, bm: Ferinos) -> None:
     assert event.after and event.after["short_codes"] == ["cl", "bib"]
 
 
-def test_seed_has_tips_and_quotes_with_sources(session: Session, bm: Ferinos) -> None:
+def test_seed_has_tips_with_sources_and_sourceless_encouragement(
+    session: Session, bm: Ferinos
+) -> None:
     rows = session.exec(select(Tip)).all()
     assert all(
-        Counter(r.kind for r in rows if r.language == lang) == {"tip": 20, "quote": 20}
+        Counter(r.kind for r in rows if r.language == lang) == {"tip": 20, "cheer": 20}
         for lang in ("fil", "en")
     )
-    assert all(r.source.strip() for r in rows)
+    assert all(r.source.strip() for r in rows if r.kind == "tip")
+    assert all(r.source == "" for r in rows if r.kind == "cheer")
     general = [r for r in rows if r.kind == "tip" and r.language == "en" and r.item_id is None]
     assert len(general) == 10
     named = {item(session, n).id for n in ("Classic", "Puto bumbong", "Salted egg")}

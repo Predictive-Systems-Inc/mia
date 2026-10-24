@@ -51,7 +51,7 @@ class Experiment(BranchScoped, table=True):
 
 
 class Tip(Stamped, table=True):
-    """A selling tip or a quote (kind tip or quote) in one language, for one item or general
+    """A selling tip or a word of encouragement (kind tip or cheer) in one language, for one item or general
     (item_id None), with its source. Seeded from tips.py; no staff or model text lands here."""
 
     __tablename__: ClassVar[str] = "branch_manager_tips"

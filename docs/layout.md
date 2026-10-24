@@ -69,7 +69,7 @@ mia/
                             tools.py, replies.py
         branch_manager/     Branch Manager: the mia agent scaffold shape (turn.py, actions.py, ...)
                             plus models.py (experiments, strategies, tips, coaching), tips.py
-                            (data only: the seeded tips, quotes and pricing strategies),
+                            (data only: the seeded tips, encouragement lines and pricing strategies),
                             experiments.py (pure: baseline, score, the strategy proposals and
                             guard rails) and calc.py (pure: tip rotation, nudge, best day,
                             pairing); its prices go through templates/retail/items.py

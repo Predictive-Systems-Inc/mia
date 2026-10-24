@@ -1,4 +1,4 @@
-"""Seed data only: the curated tips, quotes and pricing strategies of the branch manager.
+"""Seed data only: the curated tips, words of encouragement and pricing strategies of the branch manager.
 
 The retail seed writes these into branch_manager_tips and branch_manager_strategies. Every row
 names its source: the shop's own line ("Ferino's house line") or a public-domain work (Q75).
@@ -8,10 +8,6 @@ No code reads this module at run time; the agent reads the tables.
 from typing import Any
 
 HOUSE = "Ferino's house line"
-SALAWIKAIN = "Filipino proverb (salawikain), public domain"
-FRANKLIN = "Benjamin Franklin, Poor Richard's Almanack (1730s to 1750s), public domain"
-AESOP = "Aesop's Fables, public domain"
-KARTILYA = "Emilio Jacinto, Kartilya ng Katipunan (1896), public domain"
 
 # item name (None for a general tip), Filipino, English, source
 TIPS: list[tuple[str | None, str, str, str]] = [
@@ -140,97 +136,30 @@ TIPS: list[tuple[str | None, str, str, str]] = [
     ),
 ]
 
-# Filipino, English, source
-QUOTES: list[tuple[str, str, str]] = [
-    (
-        "Ang hindi lumingon sa pinanggalingan ay hindi makararating sa paroroonan.",
-        "One who does not look back to where they came from will not reach where they are going.",
-        SALAWIKAIN,
-    ),
-    ("Kapag may itinanim, may aanihin.", "What you plant, you will harvest.", SALAWIKAIN),
-    ("Pag may tiyaga, may nilaga.", "With patience, there is food on the table.", SALAWIKAIN),
-    (
-        (
-            "Ang lumakad nang matulin, kung matinik ay malalim; ang lumakad nang marahan, matinik man "
-            "ay mababaw."
-        ),
-        (
-            "Who walks fast and steps on a thorn is pricked deep; who walks slowly is pricked only "
-            "lightly."
-        ),
-        SALAWIKAIN,
-    ),
-    (
-        "Ang pagsasabi ng tapat ay pagsasama nang maluwag.",
-        "Telling the truth makes working together easy.",
-        SALAWIKAIN,
-    ),
-    (
-        "Walang mahirap na gawa kapag dinaan sa tiyaga.",
-        "No work is hard when it is done with patience.",
-        SALAWIKAIN,
-    ),
-    (
-        "Habang maikli ang kumot, matutong mamaluktot.",
-        "While the blanket is short, learn to curl up.",
-        SALAWIKAIN,
-    ),
-    ("Nasa Diyos ang awa, nasa tao ang gawa.", "Mercy is God's, the work is ours.", SALAWIKAIN),
-    (
-        "Ang sakit ng kalingkingan, ramdam ng buong katawan.",
-        "The pain of the little finger is felt by the whole body.",
-        SALAWIKAIN,
-    ),
-    ("Kung ano ang puno, siya ang bunga.", "As the tree is, so is its fruit.", SALAWIKAIN),
-    (
-        "Mas mabuti ang mahusay na nagawa kaysa sa mahusay na nasabi.",
-        "Well done is better than well said.",
-        FRANKLIN,
-    ),
-    ("Ang sipag ang ina ng suwerte.", "Diligence is the mother of good luck.", FRANKLIN),
-    (
-        "Ang nasayang na oras ay hindi na muling matatagpuan.",
-        "Lost time is never found again.",
-        FRANKLIN,
-    ),
-    (
-        "Ang mabagal pero tuloy-tuloy ang nananalo sa karera.",
-        "Slow and steady wins the race.",
-        f"{AESOP} (The Tortoise and the Hare)",
-    ),
-    (
-        "Paunti-unti, nagagawa rin.",
-        "Little by little does the trick.",
-        f"{AESOP} (The Crow and the Pitcher)",
-    ),
-    (
-        "Ang ayaw mong gawin sa iyo, huwag mong gawin sa iba.",
-        "What you do not want done to yourself, do not do to others.",
-        "Confucius, Analects 15.24 (James Legge translation, 1861), public domain",
-    ),
-    (
-        "Ang paglalakbay na sanlibong milya ay nagsisimula sa isang hakbang.",
-        "A journey of a thousand miles begins with a single step.",
-        "Laozi, Tao Te Ching, chapter 64, public domain",
-    ),
-    (
-        "Huwag nang mag-aksaya ng oras sa pagtatalo kung ano ang mabuting tao. Maging isa ka.",
-        "Waste no more time arguing what a good man should be. Be one.",
-        "Marcus Aurelius, Meditations 10.16, public domain",
-    ),
-    (
-        "Sa taong may hiya, salita'y panunumpa.",
-        "To a person of honour, a word is an oath.",
-        KARTILYA,
-    ),
-    (
-        (
-            "Huwag mong sasayangin ang panahon; ang yamang nawala'y magyayaring magbalik, nguni't "
-            "panahong nagdaan na'y di na muli pang magdadaan."
-        ),
-        "Do not waste time; lost riches may come back, but time gone by will never return.",
-        KARTILYA,
-    ),
+# Filipino, English: short words of encouragement for a kiosk clerk, text-message register.
+# No proverbs, no quotes, no sources (the owner, 24 Oct 2026); the seed stores them with an empty
+# source.
+CHEERS: list[tuple[str, str]] = [
+    ("Kaya mo 'yan ngayon!", "You've got this today."),
+    ("Salamat sa sipag mo.", "Thanks for your hard work."),
+    ("Isang magandang benta sa bawat oras.", "One good sale at a time."),
+    ("Magaan lang, isa-isang customer.", "Easy does it, one customer at a time."),
+    ("Ang ganda ng simula mo!", "Great start!"),
+    ("Ipagpatuloy mo lang 'yan.", "Keep it going."),
+    ("Ang galing mo kahapon, ulitin natin.", "You did well yesterday, let's do it again."),
+    ("Nandito lang kami kung kailangan mo ng tulong.", "We're here if you need a hand."),
+    ("Ngiti lang, kaya 'yan.", "Just smile, you can do this."),
+    ("Masarap ang paninda mo ngayon, ialok mo!", "Today's bake is good, offer it!"),
+    ("Isang hakbang lang bawat order.", "One order at a time."),
+    ("Ang saya kapag may suking bumabalik. Ikaw 'yon!", "Regulars come back because of you."),
+    ("Okay lang kung mabagal, tuloy lang.", "Slow start is fine, keep going."),
+    ("Magandang araw para magbenta!", "Good day to sell!"),
+    ("Salamat sa pagbubukas ngayong umaga.", "Thanks for opening up this morning."),
+    ("Kayang-kaya mo ang araw na ito.", "You can handle today."),
+    ("Naniniwala kami sa iyo.", "We believe in you."),
+    ("Pahinga kapag kailangan, tubig din.", "Take a breather and a drink of water when you need."),
+    ("Bawat customer, bagong pagkakataon.", "Every customer is a fresh chance."),
+    ("Ingat ka ngayon, at enjoy lang!", "Take care today and enjoy it!"),
 ]
 
 NAGLE = "Nagle and Muller, The Strategy and Tactics of Pricing"

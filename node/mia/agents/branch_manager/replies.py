@@ -1,6 +1,6 @@
 """Reply blocks for the branch manager: each tool result worded from bm.* keys (money through
 format_money, dates as ISO, theme ids as sales.theme.* labels), the experiment and price cards,
-and the conversation replies. Code words every reply; no model writes one. Tips and quotes come
+and the conversation replies. Code words every reply; no model writes one. Tips and cheers come
 only from branch_manager_tips rows (the tool's output); a note's text never reaches a reply."""
 
 from collections.abc import Mapping
