@@ -114,6 +114,13 @@ def test_unknown_template_or_wrong_params_refused(wa: WhatsAppAdapter, call: Tem
         wa.render_template(ADDR, call)
 
 
+def test_a_button_reply_keeps_the_id_of_the_message_it_was_on(wa: WhatsAppAdapter) -> None:
+    (m,) = wa.receive(sample("inbound_button_reply"))
+    assert isinstance(m, InboundMessage) and m.context_id == "wamid.ASKED"  # D47
+    (text,) = wa.receive(sample("inbound_text"))
+    assert isinstance(text, InboundMessage) and text.context_id is None
+
+
 @pytest.mark.parametrize(
     ("name", "text", "button", "media"),
     [

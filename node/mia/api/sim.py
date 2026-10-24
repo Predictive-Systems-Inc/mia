@@ -75,8 +75,13 @@ def address_for(session: Session, person: Person) -> str:
 
 
 def _drain(sim: SimAdapter, address: str) -> list[dict[str, Any]]:
-    """The payloads sent to the address, removed from `sent`; other addresses' stay."""
-    mine = [p.body for p in sim.sent if p.address == address]
+    """The payloads sent to the address, removed from `sent`; other addresses' stay. A sent
+    payload carries its message id (`id`), which a button tap sends back as its context."""
+    mine = [
+        p.body | ({"id": p.message_id} if p.message_id else {})
+        for p in sim.sent
+        if p.address == address
+    ]
     sim.sent[:] = [p for p in sim.sent if p.address != address]
     return mine
 
@@ -185,6 +190,7 @@ class SimMessage(BaseModel):
     address: str
     text: str = ""
     button: str | None = None  # a tapped button or list row title
+    context: str | None = None  # the id of the message the tapped button is on (as WhatsApp)
     name: str | None = None  # display name of an unlinked (customer) number
 
 
@@ -213,6 +219,7 @@ async def send_message(session: DbSession, body: SimMessage) -> list[dict[str, A
         channel_message_id=new_id(),
         text=body.text,
         button=body.button,
+        context_id=body.context if body.button else None,
         name=body.name,
         received_at=db.utcnow(),
     )

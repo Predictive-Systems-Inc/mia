@@ -260,6 +260,8 @@ def guard(
             evidence={"tool_call_id": tool_call_id}
             | ({"input": args.model_dump(mode="json")} if args is not None else {}),
             tool_call_id=tool_call_id,
+            # D47: a chat approval (a customer order) expires at its deadline, never escalates.
+            escalate_to=[] if spec.approval_channel == "chat" else None,
         )
         raise ApprovalRequired(approval.id)
 

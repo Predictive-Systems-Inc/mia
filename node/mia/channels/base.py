@@ -35,6 +35,7 @@ class InboundMessage(BaseModel):
     text: str = ""
     name: str | None = None  # the profile name the channel gives (kept on a customer row only)
     button: str | None = None  # label of a tapped button or list row
+    context_id: str | None = None  # the channel's id of the message a tapped button is on
     has_media: bool = False
     media_id: str | None = None  # the channel's id of the attachment, for fetch_media
     media_kind: str | None = None  # image, document, video, audio
@@ -84,6 +85,7 @@ class ChannelPayload(BaseModel):
     channel: str
     address: str
     body: dict[str, Any]
+    message_id: str | None = None  # the channel's id once sent (the sim keeps it for its phones)
 
 
 class DeliveryResult(BaseModel):

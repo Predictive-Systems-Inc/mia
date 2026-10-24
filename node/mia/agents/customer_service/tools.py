@@ -25,7 +25,7 @@ Refusals raise LookupError(reason), so call_tool answers `invalid` with the reas
 import contextlib
 import datetime as dt
 from collections.abc import Callable
-from typing import Literal
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from pydantic import AwareDatetime, BaseModel, Field
@@ -40,8 +40,18 @@ from mia.agents.customer_service.public import CustomerDeps
 from mia.chat.blocks import Block, QuickRepliesBlock, TextBlock
 from mia.chat.channels import notify
 from mia.core import approvals, db, orgconfig, store
-from mia.core.models import Actor, Approval, Branch, CustomerOrder, Event, Message, Person, Thread
-from mia.core.rbac import Resource, get_rbac
+from mia.core.models import (
+    Actor,
+    Approval,
+    Branch,
+    ChannelOutbox,
+    CustomerOrder,
+    Event,
+    Message,
+    Person,
+    Thread,
+)
+from mia.core.rbac import PermissionDenied, Resource, get_rbac
 from mia.i18n import SUPPORTED, t
 from mia.templates.retail import hours as shop_hours
 from mia.templates.retail import items as retail_items
@@ -68,6 +78,7 @@ DONE = {  # outcome: (told after the tap, told on a later tap)
     "approved": ("cs.staff.confirmed_by", "cs.staff.already_confirmed"),
     "rejected": ("cs.staff.declined_by", "cs.staff.already_declined"),
 }
+YOU = {"approved": "cs.staff.you_confirmed", "rejected": "cs.staff.you_declined"}
 RECENT = 20  # how far back a tap looks for the message whose buttons it answers
 
 
@@ -314,17 +325,20 @@ def place_order(deps: CustomerDeps, args: PlaceOrderInput, tool_call_id: str) ->
     return StatusOutput(order_id=row.id, status=row.status)
 
 
+def _items(session: Session, order: CustomerOrder) -> str:
+    names = {i.id: i.name for i in session.exec(select(RetailItem)).all()}
+    return ", ".join(f"{ln['quantity']} {names.get(ln['item_id'], '?')}" for ln in order.lines)
+
+
 def _order_ask(
     session: Session, order: CustomerOrder, customer: Customer, branch: Branch, lang: str
 ) -> list[Block]:
     """The staff's order message (D47): items, pickup time, the customer's first name and the
     last four digits of their number, with the Confirm and Decline buttons."""
-    names = {i.id: i.name for i in session.exec(select(RetailItem)).all()}
-    items = ", ".join(f"{ln['quantity']} {names.get(ln['item_id'], '?')}" for ln in order.lines)
     text = t(
         "cs.staff.new_order",
         lang,
-        items=items,
+        items=_items(session, order),
         time=_local(order.pickup_at, branch),
         name=_first_name(customer),
         last4=calc.last_four(customer.address),
@@ -730,13 +744,33 @@ def _buttons(message: Message) -> list[str]:
     return [o for b in message.blocks if b.get("type") == "quick_replies" for o in b["options"]]
 
 
-def _tapped_order(session: Session, person: Person, label: str) -> Approval | None:
-    """The chat-decided place_order approval asked by the person's latest message with
-    buttons, when `label` is one of them; None otherwise (another message's button)."""
-    rows = session.exec(
-        select(Message)
+def _mine(person: Person) -> Any:
+    """The ids of the messages in the person's threads (a subquery)."""
+    return (
+        select(Message.id)
         .join(Thread, col(Thread.id) == col(Message.thread_id))
         .where(Thread.person_id == person.id)
+    )
+
+
+def _asked_by(session: Session, message_id: str) -> Approval | None:
+    """The chat place_order approval the message asks about, else None."""
+    asked = session.exec(
+        select(Event)
+        .where(Event.action == "notification.sent")
+        .where(Event.entity_id == message_id)
+    ).first()
+    approval = session.get(Approval, asked.approval_id) if asked and asked.approval_id else None
+    ours = approval is not None and approval.type == PLACE_ORDER and approval.channel == "chat"
+    return approval if ours else None
+
+
+def _latest_ask(session: Session, person: Person, label: str) -> Approval | None:
+    """The order asked by the person's latest message with buttons, when `label` is one of
+    them (the app's tap, which carries no message id)."""
+    rows = session.exec(
+        select(Message)
+        .where(col(Message.id).in_(_mine(person)))
         .where(Message.role != "user")
         .order_by(col(Message.id).desc())
         .limit(RECENT)  # ponytail: a tap answers a recent message, older buttons go the chat way
@@ -744,12 +778,34 @@ def _tapped_order(session: Session, person: Person, label: str) -> Approval | No
     last = next((m for m in rows if _buttons(m)), None)
     if last is None or label.strip().casefold() not in {b.casefold() for b in _buttons(last)}:
         return None
-    asked = session.exec(
-        select(Event).where(Event.action == "notification.sent").where(Event.entity_id == last.id)
+    return _asked_by(session, last.id)
+
+
+def _on_message(session: Session, person: Person, channel: str, context_id: str) -> Approval | None:
+    """The order asked by the message a channel tap was made on: the person's sent outbox row
+    with that channel message id, its message (the idempotency key's prefix), its approval."""
+    row = session.exec(
+        select(ChannelOutbox)
+        .where(ChannelOutbox.channel == channel)
+        .where(ChannelOutbox.channel_message_id == context_id)
+        .where(ChannelOutbox.person_id == person.id)
     ).first()
-    approval = session.get(Approval, asked.approval_id) if asked and asked.approval_id else None
-    ours = approval is not None and approval.type == PLACE_ORDER and approval.channel == "chat"
-    return approval if ours else None
+    return _asked_by(session, row.idempotency_key.split(":")[0]) if row else None
+
+
+def _open_asked(session: Session, person: Person) -> int:
+    """How many open chat orders were asked of the person."""
+    asked = select(Event.approval_id).where(
+        Event.action == "notification.sent", col(Event.entity_id).in_(_mine(person))
+    )
+    return len(
+        session.exec(
+            select(Approval.id)
+            .where(col(Approval.id).in_(asked))
+            .where(Approval.type == PLACE_ORDER)
+            .where(col(Approval.status).in_(OPEN))
+        ).all()
+    )
 
 
 def _first(session: Session, person_id: str | None) -> str:
@@ -773,28 +829,76 @@ def _asked(session: Session, approval_id: str) -> list[Person]:
     )
 
 
-def decide_tap(session: Session, person: Person, label: str) -> str | None:
-    """A Confirm or Decline tap on the order message (D47), decided through approvals.decide
+def _which(session: Session, approval: Approval) -> dict[str, str]:
+    """The order a reply names: the customer's first name, its items and pickup time."""
+    order = session.exec(
+        select(CustomerOrder).where(CustomerOrder.approval_id == approval.id)
+    ).first()
+    customer = session.get(Customer, order.customer_id) if order else None
+    branch = session.get(Branch, order.branch_id) if order else None
+    if order is None or customer is None or branch is None:
+        return {"customer": "?", "order": "?"}
+    when = _local(order.pickup_at, branch)
+    return {"customer": _first_name(customer), "order": f"{_items(session, order)}, {when}"}
+
+
+def _tapped(
+    session: Session, person: Person, label: str, channel: str | None, context_id: str | None
+) -> Approval | str | None:
+    """The order a tap decides, the refusal key, or None (no order tap: the normal way).
+    A channel tap decides only the order of the message it was made on (`context_id`); one
+    without it, or typed text, that the latest message's order buttons would match is refused,
+    never decided. The app's tap (no channel) takes the latest message's order, refused while
+    more than one order asked of the person is open."""
+    if channel is not None and context_id is not None:
+        found = _on_message(session, person, channel, context_id)
+        if found is not None:
+            return found
+    latest = _latest_ask(session, person, label)
+    if latest is None:
+        return None
+    if channel is not None or _open_asked(session, person) > 1:
+        return "cs.staff.decide_in_app"
+    return latest
+
+
+def decide_tap(
+    session: Session,
+    person: Person,
+    label: str,
+    channel: str | None = None,
+    context_id: str | None = None,
+) -> str | None:
+    """A Confirm or Decline tap on an order message (D47), decided through approvals.decide
     with channel chat and the tapping person as the actor (their approver role and branch
-    checked there, no step-up). Returns the reply for the tapper: decided by them (the others
-    asked are told the same), already decided by someone (nothing changes, the first tap
-    wins), expired, closed, or not allowed. None when the label is no order button of the
-    person's latest message with buttons. Commits the caller's work before deciding, and
+    checked there, no step-up). On a channel only a real button with the tapped message's id
+    (`context_id`) decides, and only that message's order (_tapped). Returns the reply for the
+    tapper, naming the order: decided by them (the others asked are told), already decided
+    (nothing changes, the first tap wins), expired, closed, not allowed, or decide it in the
+    app. None when the label is no order tap. Commits the caller's work before deciding, and
     reads the status under the write lock (rule 11)."""
     outcome = TAPPED.get(label.strip().casefold())
-    approval = _tapped_order(session, person, label) if outcome else None
-    if approval is None or outcome is None:
+    if outcome is None:
         return None
-    lang, approval_id = person.language or "en", approval.id
+    lang = person.language or "en"
+    tapped = _tapped(session, person, label, channel, context_id)
+    if tapped is None or isinstance(tapped, str):
+        return t(tapped, lang) if tapped else None
+    approval_id = tapped.id
     session.commit()  # a refused handler rolls back only the decision
     session.execute(sql_text(f"UPDATE {Approval.__tablename__} SET id = id WHERE 0"))
     approval = session.get(Approval, approval_id, populate_existing=True)
     assert approval is not None
+    which = _which(session, approval)
     if approval.status in DONE:
-        return t(DONE[approval.status][1], lang, name=_first(session, approval.decided_by))
+        name = _first(session, approval.decided_by)
+        return t(DONE[approval.status][1], lang, name=name, **which)
     actor = Actor.person(person)
     try:
         approvals.decide(session, approval_id, actor, outcome, channel="chat", aal="aal1")
+    except PermissionDenied:  # a handler's rbac check: nothing decided, the message answered
+        session.rollback()
+        return t("denied.generic", lang)
     except (approvals.ApprovalError, LookupError) as exc:
         if isinstance(exc, LookupError):  # the handler refused: the row changed (the app's 409)
             session.rollback()
@@ -808,9 +912,9 @@ def decide_tap(session: Session, person: Person, label: str) -> str | None:
     name = _first(session, person.id)
     for other in _asked(session, approval_id):
         if other.id != person.id:
-            text = t(DONE[outcome][0], other.language or "en", name=name)
+            text = t(DONE[outcome][0], other.language or "en", name=name, **which)
             notify(session, other, [TextBlock(text=text)], actor, MANIFEST.id, urgent=True)
-    return t(DONE[outcome][0], lang, name=name)
+    return t(YOU[outcome], lang, **which)
 
 
 approvals.register_handler(PLACE_ORDER, apply_order_approval)

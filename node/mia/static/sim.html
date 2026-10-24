@@ -289,7 +289,7 @@ function render(v, entry) {
     if (b.kind === "list" && b.button) chips.append(el("span", "status", b.button));
     for (const opt of options) {
       const c = el("button", null, opt);
-      c.onclick = () => send(v, opt, opt);
+      c.onclick = () => send(v, opt, opt, b.id);  // the tapped message's id, as WhatsApp's context
       chips.append(c);
     }
     box.append(chips);
@@ -312,7 +312,7 @@ function show(v, entry) {
   v.thread.scrollTop = v.thread.scrollHeight;
 }
 
-async function send(v, text, button) {
+async function send(v, text, button, context) {
   if (!button) v.asked = text;
   show(v, {me: true, body: {text}});
   const wait = el("div", "sys", "Mia is typing...");
@@ -321,7 +321,7 @@ async function send(v, text, button) {
   try {
     const res = await fetch("/sim/messages", {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({address: v.p.address, text: button ? "" : text, button, name: v.p.customer ? v.p.name : null}),
+      body: JSON.stringify({address: v.p.address, text: button ? "" : text, button, context: button ? context : null, name: v.p.customer ? v.p.name : null}),
     });
     if (!res.ok) { wait.textContent = `Error ${res.status}: ${(await res.text()).slice(0, 160)}`; return; }
     wait.remove();

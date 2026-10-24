@@ -115,6 +115,7 @@ class WhatsAppAdapter:
             text=text,
             name=name,
             button=button,
+            context_id=(m.get("context") or {}).get("id") if button else None,
             has_media=media,
             media_id=media_id,
             media_kind=media_kind,

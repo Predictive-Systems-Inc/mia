@@ -25,8 +25,13 @@ the chat, not only in the app.
   the notification.sent event, which names the approval.
 - A tap decides through approvals.decide with channel `chat` and the tapping person as the
   actor: an approver role at the approval's branch, never the requester (the customer), no
-  step-up. A tap decides only a `chat` approval of type place_order asked by the person's latest
-  message with buttons. The status is read under the write lock: the first tap wins, the others
+  step-up. A channel tap decides only the `chat` place_order approval asked by the message it
+  was made on: the channel's context id (WhatsApp `context.id`, the phones page sends the same)
+  resolved through the outbox row to the message and its notification.sent approval. A tap
+  without it, or typed text equal to a label, decides nothing and points to the app; the app's
+  own tap takes the latest order message and refuses while more than one order asked of the
+  person is open. decide refuses a chat decision on any approval that is not `chat`, and a chat
+  approval expires at its deadline without escalating. The status is read under the write lock: the first tap wins, the others
   asked are told who decided, a later tap gets "Already confirmed by ..." and changes nothing,
   an expired approval says so.
 - Money, external-money and delete approvals stay app-only with a fresh PIN; decide refuses a
@@ -37,6 +42,5 @@ the chat, not only in the app.
 - Clerks confirm orders from WhatsApp and the phones page; the app decide route still works.
 - The customer's first name and last four digits reach staff phones as text (WhatsApp keeps a
   copy); the full number never leaves the node and the event log holds neither.
-- A tap is matched by its label on the person's latest message with buttons (channels report
-  the label, not the message); a tap on an older order after a newer message with buttons goes
-  the normal chat way, and that order is decided in the app.
+- A held order message (24-hour window, quiet hours) has no channel id until it is sent, so no
+  tap can decide it before the person sees it. Replies name the order (customer, items, time).

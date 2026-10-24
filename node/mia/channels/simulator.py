@@ -89,6 +89,7 @@ class SimAdapter:
                     text=m.get("text") or "",
                     name=m.get("name"),
                     button=m.get("button"),
+                    context_id=m.get("context") if m.get("button") else None,
                     has_media=bool(m.get("media")),
                     media_id=m["media"] if isinstance(m.get("media"), str) else None,
                     media_kind="image" if m.get("media") else None,
@@ -144,5 +145,6 @@ class SimAdapter:
         if self.fail_next is not None:
             code, self.fail_next = self.fail_next, None
             return DeliveryResult(ok=False, error_code=code)
-        self.sent.append(payload)
-        return DeliveryResult(ok=True, channel_message_id=new_id())
+        message_id = new_id()
+        self.sent.append(payload.model_copy(update={"message_id": message_id}))
+        return DeliveryResult(ok=True, channel_message_id=message_id)

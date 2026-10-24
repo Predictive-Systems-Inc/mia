@@ -339,7 +339,9 @@ def test_an_always_tool_waits_for_approval_when_not_risky(
         Person(branch_id=branch.id, name="Otto Osakas", roles=["owner"]),
         Actor.system(branch.id),
     )
-    approvals.decide(session, approval.id, Actor.person(co_owner), "approved", channel="chat")
+    with pytest.raises(ApprovalError, match="Mia app"):  # D47: a chat tap only on a chat approval
+        approvals.decide(session, approval.id, Actor.person(co_owner), "approved", channel="chat")
+    approvals.decide(session, approval.id, Actor.person(co_owner), "approved", channel="whatsapp")
     deps.approved.add(approval.id)
     assert call_tool(deps, _pay_binding(executed), PayInput(amount_minor=7), "w2") == {"paid": True}
     assert executed == [7]

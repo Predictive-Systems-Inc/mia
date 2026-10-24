@@ -3,6 +3,7 @@
 before the network and nothing goes out past the 24-hour window."""
 
 import asyncio
+import datetime as dt
 import functools
 import json
 import threading
@@ -37,7 +38,7 @@ from mia.core.models import (
 )
 from mia.core.money import format_money
 from mia.core.orgconfig import ChannelConfig, DeliveryArea
-from mia.core.rbac import Resource, get_rbac
+from mia.core.rbac import PermissionDenied, Resource, get_rbac
 from mia.i18n import t
 from mia.settings import get_settings
 from tests.channels.conftest import LinkFn
@@ -887,6 +888,7 @@ def test_the_first_budget_hold_of_an_hour_alarms_the_owner_once(
 # ---- staff confirm or decline an order with buttons in the chat (D47) ------------------------
 
 ANA_ADDR, MARITES_ADDR, PAO_ADDR = "+639170000301", "+639170000302", "+639170000303"
+JUAN_ADDR = "+639170000188"  # a second new customer
 
 
 @pytest.fixture
@@ -899,20 +901,48 @@ def staff(shop: Shop, link: LinkFn) -> dict[str, Person]:
     return shop.people
 
 
-def mila_orders(client: TestClient, sim: SimAdapter, monkeypatch: pytest.MonkeyPatch) -> None:
+def mila_orders(
+    client: TestClient,
+    sim: SimAdapter,
+    monkeypatch: pytest.MonkeyPatch,
+    address: str = ADDR,
+    name: str = "Mila Santos",
+    text: str = ORDER_TEXT,
+) -> None:
     answer(monkeypatch, "place_order", day="d0", time="t0")
-    say(client, sim, ORDER_TEXT, name="Mila Santos")
+    say(client, sim, text, address=address, name=name)
 
 
-def tap(client: TestClient, sim: SimAdapter, address: str, label: str) -> list[str]:
-    """A button tap from the address; the texts sent to it because of it."""
+def asked_id(sim: SimAdapter, address: str, nth: int = -1) -> str:
+    """The channel id of an order message (with buttons) sent to the address."""
+    ids = [p.message_id for p in sim.sent if p.address == address and p.body.get("buttons")]
+    found = ids[nth]
+    assert found
+    return found
+
+
+def tap(
+    client: TestClient,
+    sim: SimAdapter,
+    address: str,
+    label: str,
+    context: str | None = None,
+    typed: bool = False,
+) -> list[str]:
+    """A button tap from the address on the message `context` (default its latest order
+    message), or the label typed as text; the texts sent to it because of it."""
     before = len(texts_at(sim, address))
-    m = {"from": address, "id": new_id(), "text": "", "button": label}
+    if typed:
+        m = {"from": address, "id": new_id(), "text": label}
+    else:
+        context = context or asked_id(sim, address)
+        m = {"from": address, "id": new_id(), "text": "", "button": label, "context": context}
     assert post(client, sim, json.dumps({"messages": [m]}).encode()) == 200
     return texts_at(sim, address)[before:]
 
 
 CONFIRM, DECLINE = t("cs.staff.confirm", "fil"), t("cs.staff.decline", "fil")
+MILAS = {"customer": "Mila", "order": "10 Classic, 10:00"}
 
 
 def test_staff_get_the_order_as_text_with_buttons_and_a_masked_number(
@@ -930,7 +960,8 @@ def test_staff_get_the_order_as_text_with_buttons_and_a_masked_number(
         sent = [p.body for p in sim.sent if p.address == address]
         assert sent == [{"kind": "buttons", "text": text, "buttons": [CONFIRM, DECLINE]}]
     assert not [p for p in sim.sent if p.address == PAO_ADDR]  # the other branch is not asked
-    assert one(session, Approval).channel == "chat"
+    approval = one(session, Approval)
+    assert (approval.channel, approval.escalate_to) == ("chat", [])  # never escalates
     full = ADDR.lstrip("+")[-10:]  # the number without its country code
     payloads = json.dumps([p.body for p in sim.sent if p.address != ADDR])
     chain = json.dumps([e.model_dump(mode="json") for e in session.exec(select(Event))])
@@ -946,7 +977,7 @@ def test_ana_confirms_from_her_phone_and_marites_is_told(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     mila_orders(client, sim, monkeypatch)
-    assert tap(client, sim, ANA_ADDR, CONFIRM) == [t("cs.staff.confirmed_by", "fil", name="Ana")]
+    assert tap(client, sim, ANA_ADDR, CONFIRM) == [t("cs.staff.you_confirmed", "fil", **MILAS)]
     ana = staff["Ana"]
     approval = one(session, Approval)
     assert (approval.status, approval.decided_by) == ("approved", ana.id)
@@ -955,10 +986,11 @@ def test_ana_confirms_from_her_phone_and_marites_is_told(
     assert decided.actor_id == ana.id
     asyncio.run(public.send_pending(db.utcnow()))
     assert texts_to(sim)[-1] == t("cs.order_confirmed", "fil", time="10:00")
-    assert texts_at(sim, MARITES_ADDR)[-1] == t("cs.staff.confirmed_by", "fil", name="Ana")
+    told = t("cs.staff.confirmed_by", "fil", name="Ana", **MILAS)
+    assert texts_at(sim, MARITES_ADDR)[-1] == told
     # the second tap changes nothing
     again = tap(client, sim, MARITES_ADDR, CONFIRM)
-    assert again == [t("cs.staff.already_confirmed", "fil", name="Ana")]
+    assert again == [t("cs.staff.already_confirmed", "fil", name="Ana", **MILAS)]
     assert len(session.exec(select(Event).where(Event.action == "approval.approved")).all()) == 1
     assert one(session, Approval).decided_by == ana.id
 
@@ -971,17 +1003,98 @@ def test_a_decline_from_the_phone_sends_the_refusal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     mila_orders(client, sim, monkeypatch)
-    assert tap(client, sim, MARITES_ADDR, DECLINE) == [
-        t("cs.staff.declined_by", "fil", name="Marites")
-    ]
+    assert tap(client, sim, MARITES_ADDR, DECLINE) == [t("cs.staff.you_declined", "fil", **MILAS)]
     assert (one(session, Approval).status, new_order(session).status) == ("rejected", "rejected")
     asyncio.run(public.send_pending(db.utcnow()))
     assert texts_to(sim)[-1] == t("cs.order_rejected.other", "fil", time="10:00")
-    assert texts_at(sim, ANA_ADDR)[-1] == t("cs.staff.declined_by", "fil", name="Marites")
-    assert tap(client, sim, ANA_ADDR, CONFIRM) == [
-        t("cs.staff.already_declined", "fil", name="Marites")
+    told = t("cs.staff.declined_by", "fil", name="Marites", **MILAS)
+    assert texts_at(sim, ANA_ADDR)[-1] == told
+    assert tap(client, sim, ANA_ADDR, CONFIRM, asked_id(sim, ANA_ADDR, 0)) == [
+        t("cs.staff.already_declined", "fil", name="Marites", **MILAS)
     ]
     assert new_order(session).status == "rejected"
+
+
+def orders_of(session: Session) -> dict[str, str]:
+    """The order status of Mila (ADDR) and Juan (JUAN_ADDR) by first name."""
+    session.expire_all()
+    found = {}
+    for name, address in (("Mila", ADDR), ("Juan", JUAN_ADDR)):
+        who = select(Customer.id).where(Customer.address == address)
+        row = session.exec(select(CustomerOrder).where(col(CustomerOrder.customer_id).in_(who)))
+        found[name] = row.one().status
+    return found
+
+
+def test_a_tap_decides_the_order_of_the_message_it_was_made_on(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mila_orders(client, sim, monkeypatch)
+    mila_orders(client, sim, monkeypatch, address=JUAN_ADDR, name="Juan Cruz")
+    milas = asked_id(sim, ANA_ADDR, 0)
+    assert tap(client, sim, ANA_ADDR, DECLINE, milas) == [
+        t("cs.staff.you_declined", "fil", **MILAS)
+    ]
+    assert orders_of(session) == {"Mila": "rejected", "Juan": "waiting"}
+
+
+def test_a_tap_without_its_message_or_typed_text_decides_nothing(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mila_orders(client, sim, monkeypatch)
+    refused = [t("cs.staff.decide_in_app", "fil")]
+    assert tap(client, sim, ANA_ADDR, CONFIRM, typed=True) == refused  # "Kumpirmahin" typed
+    assert tap(client, sim, ANA_ADDR, CONFIRM, context="wamid.unknown") == refused
+    m = {"from": ANA_ADDR, "id": new_id(), "text": "", "button": CONFIRM}  # no context id
+    assert post(client, sim, json.dumps({"messages": [m]}).encode()) == 200
+    assert texts_at(sim, ANA_ADDR)[-1] == refused[0]
+    assert (one(session, Approval).status, new_order(session).status) == ("pending", "waiting")
+
+
+def test_a_held_order_message_is_not_decided_by_a_tap_on_an_older_one(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mila_orders(client, sim, monkeypatch)
+    milas = asked_id(sim, ANA_ADDR)
+    ana_identity = linking.identity_for(session, "sim", ANA_ADDR)
+    assert ana_identity is not None
+    old = {"last_inbound_at": db.utcnow() - dt.timedelta(hours=30)}  # her window closed
+    store.update(session, ana_identity, old, Actor.system(ana_identity.branch_id))
+    session.commit()
+    mila_orders(client, sim, monkeypatch, address=JUAN_ADDR, name="Juan Cruz")  # held for Ana
+    assert asked_id(sim, ANA_ADDR) == milas  # Juan's message never reached her phone
+    tap(client, sim, ANA_ADDR, CONFIRM, milas)
+    assert orders_of(session) == {"Mila": "confirmed", "Juan": "waiting"}
+
+
+def test_a_denied_tap_answers_and_finishes_the_message(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mila_orders(client, sim, monkeypatch)
+
+    def deny(*args: Any, **kwargs: Any) -> None:
+        raise PermissionDenied("agent", "data:customer_orders:write")
+
+    monkeypatch.setattr(tools, "_require", deny)
+    assert tap(client, sim, ANA_ADDR, CONFIRM) == [t("denied.generic", "fil")]
+    assert (one(session, Approval).status, new_order(session).status) == ("pending", "waiting")
+    assert one(session, ChannelInbound).status == "done"
 
 
 def test_an_expired_order_says_so(
@@ -993,8 +1106,7 @@ def test_an_expired_order_says_so(
 ) -> None:
     mila_orders(client, sim, monkeypatch)
     approval = one(session, Approval)
-    due = {"expires_at": db.utcnow(), "escalate_to": []}  # no escalation: it expires
-    store.update(session, approval, due, Actor.system(approval.branch_id))
+    store.update(session, approval, {"expires_at": db.utcnow()}, Actor.system(approval.branch_id))
     session.commit()
     assert tap(client, sim, ANA_ADDR, CONFIRM) == [t("cs.staff.order_expired", "fil")]
     assert one(session, Approval).status == "expired"
@@ -1009,7 +1121,9 @@ def test_a_stranger_or_another_branch_cannot_decide_from_the_chat(
 ) -> None:
     mila_orders(client, sim, monkeypatch)
     answer(monkeypatch, "greeting")
-    tap(client, sim, "+639170000777", CONFIRM)  # an unlinked phone: the customer turn
+    context = asked_id(sim, ANA_ADDR)
+    tap(client, sim, "+639170000777", CONFIRM, context)  # an unlinked phone: the customer turn
+    tap(client, sim, PAO_ADDR, CONFIRM, context)  # Ana's message id from Pao's phone
     approval = one(session, Approval)
     pao = Actor.person(staff["Pao"])
     with pytest.raises(approvals.ApprovalError):
@@ -1050,5 +1164,25 @@ def test_a_tap_on_the_buttons_in_the_app_decides_too(
     reply = asyncio.run(run_turn(session, None, ana, CONFIRM, thread_id))
     session.commit()
     texts = [b.text for b in reply.blocks if isinstance(b, TextBlock)]
-    assert texts == [t("cs.staff.confirmed_by", "fil", name="Ana")]
+    assert texts == [t("cs.staff.you_confirmed", "fil", **MILAS)]
     assert new_order(session).status == "confirmed"
+
+
+def test_an_app_tap_with_two_open_orders_decides_nothing(
+    staff: dict[str, Person],
+    client: TestClient,
+    sim: SimAdapter,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mia.chat.service import run_turn
+
+    mila_orders(client, sim, monkeypatch)
+    mila_orders(client, sim, monkeypatch, address=JUAN_ADDR, name="Juan Cruz")
+    ana = staff["Ana"]
+    thread_id = notifications(session, ana)[0].thread_id
+    reply = asyncio.run(run_turn(session, None, ana, CONFIRM, thread_id))
+    session.commit()
+    texts = [b.text for b in reply.blocks if isinstance(b, TextBlock)]
+    assert texts == [t("cs.staff.decide_in_app", "fil")]
+    assert orders_of(session) == {"Mila": "waiting", "Juan": "waiting"}

@@ -108,8 +108,11 @@ def _begin(session: Session, inbound_id: str, now: dt.datetime) -> _Step | None:
     if msg.button and msg.button.strip().casefold() in SHOW_LABELS:
         _finish(session, row, "done")  # the new-message notice's button only releases held
         return _Step(person=person)
-    tapped = tools.decide_tap(session, person, msg.button) if msg.button else None
-    if tapped is not None:  # an order's Confirm or Decline (D47), decided without a chat turn
+    # An order's Confirm or Decline (D47): only a real button with the tapped message's id
+    # decides, and that message's order; typed text equal to a label is refused, never a turn.
+    label = msg.button or msg.text
+    tapped = tools.decide_tap(session, person, label, msg.channel, msg.context_id)
+    if tapped is not None:
         deliver(session, person, [TextBlock(text=tapped)], Actor.person(person), urgent=True)
         _finish(session, row, "done")
         return _Step(person=person)

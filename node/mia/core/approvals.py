@@ -211,7 +211,8 @@ def decide(
     """Record a decision. Raises ApprovalError when any approval rule is broken (a requester
     decides their own request only as an owner of its branch with a fresh step-up); an app_only
     approval also needs the app channel, aal2 and a PIN step-up in the last five minutes
-    (StepUpRequired), each refusal written as `approval.refused`. A request that times out
+    (StepUpRequired); a chat decision is taken only for a `chat` approval (D47); each refusal
+    is written as `approval.refused`. A request that times out
     at the decision expires and is committed, then runs its type's opted-in reject handler
     (on_refused, so the requester is told; its writes are committed before the ApprovalError,
     and its own error propagates with the expiry kept)."""
@@ -236,6 +237,8 @@ def decide(
         raise ApprovalError("nobody approves a request they made or triggered")
     if not _holds_role(decider, approval.approver_roles):
         raise ApprovalError("decider does not hold an approver role")
+    if channel == "chat" and approval.channel != "chat":  # D47: only a chat approval takes a tap
+        _refused(session, approval, decider, "this approval can only be decided in the Mia app")
     if approval.channel == "app_only":
         if channel != "app":
             _refused(session, approval, decider, "this approval can only be decided in the Mia app")
